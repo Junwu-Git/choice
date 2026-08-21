@@ -18,12 +18,7 @@
       <input v-model="api.apiurl" class="text_pole" :placeholder="t`API 地址`" />
       <input v-model="api.key" class="text_pole" type="password" :placeholder="t`API 密钥`" />
       <div class="choice-model-row">
-        <input
-          v-model="api.model"
-          class="text_pole"
-          :list="`choice-models-${api.id}`"
-          :placeholder="t`模型名称`"
-        />
+        <input v-model="api.model" class="text_pole" :list="`choice-models-${api.id}`" :placeholder="t`模型名称`" />
         <button
           class="menu_button choice-fetch-btn"
           :disabled="isFetching(api.id)"

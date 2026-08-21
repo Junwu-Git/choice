@@ -11,7 +11,12 @@
             <i class="fa-solid fa-chevron-left"></i>
           </button>
           <span class="choice-panel-pager">{{ currentIndex + 1 }}/{{ generations.length }}</span>
-          <button class="choice-panel-btn" :disabled="currentIndex >= generations.length - 1" title="下一组" @click="onNext">
+          <button
+            class="choice-panel-btn"
+            :disabled="currentIndex >= generations.length - 1"
+            title="下一组"
+            @click="onNext"
+          >
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </template>
@@ -32,7 +37,12 @@
         {{ t`正在生成选项...` }}
       </div>
       <template v-else-if="visibleOptions.length > 0">
-        <button v-for="(option, index) in visibleOptions" :key="index" class="choice-option-btn" @click="onSelect(option)">
+        <button
+          v-for="(option, index) in visibleOptions"
+          :key="index"
+          class="choice-option-btn"
+          @click="onSelect(option)"
+        >
           {{ option.text }}
         </button>
         <div v-if="underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
@@ -210,7 +220,9 @@ const onSelect = async (option: ChoiceOption) => {
   font-size: 13px;
   cursor: pointer;
   line-height: 1.4;
-  transition: transform 0.05s ease, border-color 0.1s ease;
+  transition:
+    transform 0.05s ease,
+    border-color 0.1s ease;
 }
 
 .choice-option-btn:hover {

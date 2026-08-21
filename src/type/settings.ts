@@ -35,8 +35,7 @@ export const DEFAULT_AI_PERSONA =
 
 export const DEFAULT_PERSON = '以第二人称叙述，描述角色当前可以采取的行动。';
 
-export const DEFAULT_PROMPT_OUTPUT_FORMAT =
-  '每条选项以动词开头，描述一个具体行动，语言简练，贴合角色语气。';
+export const DEFAULT_PROMPT_OUTPUT_FORMAT = '每条选项以动词开头，描述一个具体行动，语言简练，贴合角色语气。';
 
 export const DEFAULT_PROMPT_EXTRA =
   '选项应涵盖不同方向(对话、探索、行动、情感等)，避免重复。\n' +

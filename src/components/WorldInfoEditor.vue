@@ -27,11 +27,7 @@
             <span class="choice-wi-badge" :class="book.source === 'global' ? 'badge-global' : 'badge-character'">
               {{ book.source === 'global' ? t`全局` : t`角色` }}
             </span>
-            <input
-              type="checkbox"
-              :checked="!isBookExcluded(book.name)"
-              @change="toggleBook(book.name)"
-            />
+            <input type="checkbox" :checked="!isBookExcluded(book.name)" @change="toggleBook(book.name)" />
           </div>
           <div v-if="!isBookExcluded(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
@@ -257,8 +253,12 @@ onActivated(refreshAll);
   flex-shrink: 0;
 }
 
-.badge-global { background: #4a6a8a; }
-.badge-character { background: #8a6a4a; }
+.badge-global {
+  background: #4a6a8a;
+}
+.badge-character {
+  background: #8a6a4a;
+}
 
 .choice-wi-entries {
   margin-left: 22px;
@@ -288,10 +288,18 @@ onActivated(refreshAll);
   flex-shrink: 0;
 }
 
-.choice-wi-entry-light.green { background: #4caf50; }
-.choice-wi-entry-light.red { background: #f44336; }
-.choice-wi-entry-light.blue { background: #2196f3; }
-.choice-wi-entry-light.normal { background: #888; }
+.choice-wi-entry-light.green {
+  background: #4caf50;
+}
+.choice-wi-entry-light.red {
+  background: #f44336;
+}
+.choice-wi-entry-light.blue {
+  background: #2196f3;
+}
+.choice-wi-entry-light.normal {
+  background: #888;
+}
 
 .choice-wi-entry-name {
   flex: 1;

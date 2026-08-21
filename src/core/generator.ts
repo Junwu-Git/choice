@@ -18,7 +18,14 @@ let cancelled = false;
 type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
 
 const resolveCount = (cm: GenerationSettings['count_mode']): number => {
-  switch (cm) { case 'fixed4': return 4; case 'fixed6': return 6; case 'random4to8': return 4 + Math.floor(Math.random() * 5); }
+  switch (cm) {
+    case 'fixed4':
+      return 4;
+    case 'fixed6':
+      return 6;
+    case 'random4to8':
+      return 4 + Math.floor(Math.random() * 5);
+  }
   return 4;
 };
 
@@ -26,13 +33,19 @@ const resolveCustomApi = (id: string | null, apis: SecondaryApi[]): SecondaryApi
   id ? apis.find(a => a.id === id) : undefined;
 
 type Ctx = { count: number; pinned: string; poolSelected: string };
-const sub = (t: string, c: Ctx) => t.replaceAll('{{count}}', String(c.count)).replaceAll('{{pinned}}', c.pinned).replaceAll('{{pool_selected}}', c.poolSelected);
+const sub = (t: string, c: Ctx) =>
+  t
+    .replaceAll('{{count}}', String(c.count))
+    .replaceAll('{{pinned}}', c.pinned)
+    .replaceAll('{{pool_selected}}', c.poolSelected);
 
 const buildUserInstr = (c: Ctx): string => {
   const l = [`请为角色的当前处境生成 ${c.count} 条行动选项。`];
   if (c.pinned) l.push(`固定行动(必须原样包含):\n${c.pinned}`);
   if (c.poolSelected) l.push(`候选行动(可在其基础上修改或发挥):\n${c.poolSelected}`);
-  l.push('请将所有行动选项放在 <options></options> 标签内,每行一条,不要编号,不要序号,不要解释。标签外的任何内容将被忽略。');
+  l.push(
+    '请将所有行动选项放在 <options></options> 标签内,每行一条,不要编号,不要序号,不要解释。标签外的任何内容将被忽略。',
+  );
   return l.join('\n');
 };
 
@@ -55,18 +68,26 @@ const buildWI = async (excl: string[], redlight: boolean, ejs: boolean): Promise
   try {
     let e = (await getSortedEntries()) as WIEntry[];
     if (excl.length) e = e.filter(x => !excl.includes(`${x.world}::${x.uid}`));
-    const b: string[] = [], a: string[] = [];
+    const b: string[] = [],
+      a: string[] = [];
     for (const x of e) {
       if (redlight && x.disable) continue;
       let t = substituteParams(x.content || '');
       if (ejs && typeof (window as any).ejs?.render === 'function' && t.includes('<%')) {
-        try { t = (window as any).ejs.render(t, { async: false }) as string; } catch (err) { console.error('[Choice] EJS render failed', err); }
+        try {
+          t = (window as any).ejs.render(t, { async: false }) as string;
+        } catch (err) {
+          console.error('[Choice] EJS render failed', err);
+        }
       }
       if (!t) continue;
       (x.position === 1 ? a : b).push(t);
     }
     return { before: b.join('\n\n'), after: a.join('\n\n') };
-  } catch (err) { console.error('[Choice] buildWI failed', err); return { before: '', after: '' }; }
+  } catch (err) {
+    console.error('[Choice] buildWI failed', err);
+    return { before: '', after: '' };
+  }
 };
 
 type Restore = { restore: () => void } | null;
@@ -79,18 +100,41 @@ const applyWIExcl = (excl: string[]): Restore => {
   const cw = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
   const cwEx = cw ? excl.includes(cw) : false;
   if (cwEx && chid !== undefined && characters[chid]?.data?.extensions) characters[chid].data.extensions.world = '';
-  return { restore: () => { selected_world_info.length = 0; selected_world_info.push(...saved); if (cwEx && chid !== undefined && characters[chid]?.data?.extensions) characters[chid].data.extensions.world = cw; } };
+  return {
+    restore: () => {
+      selected_world_info.length = 0;
+      selected_world_info.push(...saved);
+      if (cwEx && chid !== undefined && characters[chid]?.data?.extensions) characters[chid].data.extensions.world = cw;
+    },
+  };
 };
 
 export function parseOptions(text: string, count: number): string[] {
   let c = text.replace(/<(?:think|reasoning|thought)>[\s\S]*?<\/(?:think|reasoning|thought)>/gi, '').trim();
   const m = c.match(/<options>([\s\S]*?)<\/options>/i);
-  if (m) c = m[1].trim(); else c = c.replace(/^```[a-zA-Z]*\s*/i, '').replace(/\s*```$/, '').trim();
-  if (c.startsWith('[')) try {
-    const p = JSON.parse(c);
-    if (Array.isArray(p)) { const i = p.map(x => typeof x === 'string' ? x.trim() : x?.text?.trim() ?? x?.option?.trim() ?? '').filter(Boolean); if (i.length) return i.slice(0, count); }
-  } catch (err) { /* not JSON */ }
-  return c.split(/\r?\n/).map(l => l.replace(/^\s*(?:[-*•·]|\d+[.)、]|\[.\])\s*/, '').trim()).filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l)).slice(0, count);
+  if (m) c = m[1].trim();
+  else
+    c = c
+      .replace(/^```[a-zA-Z]*\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  if (c.startsWith('['))
+    try {
+      const p = JSON.parse(c);
+      if (Array.isArray(p)) {
+        const i = p
+          .map(x => (typeof x === 'string' ? x.trim() : (x?.text?.trim() ?? x?.option?.trim() ?? '')))
+          .filter(Boolean);
+        if (i.length) return i.slice(0, count);
+      }
+    } catch (err) {
+      /* not JSON */
+    }
+  return c
+    .split(/\r?\n/)
+    .map(l => l.replace(/^\s*(?:[-*•·]|\d+[.)、]|\[.\])\s*/, '').trim())
+    .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l))
+    .slice(0, count);
 }
 
 const buildMessages = async (
@@ -149,23 +193,34 @@ const requestViaFetch = async (messages: ChatMsg[], api: SecondaryApi): Promise<
 };
 
 export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
-  if (generatorState.loading) { toastr.info(t`选项生成中,请稍候`); return null; }
-  const gs = useGlobalSettingsStore(), cs = useChatSettingsStore(), ps = usePoolSelectorStore();
+  if (generatorState.loading) {
+    toastr.info(t`选项生成中,请稍候`);
+    return null;
+  }
+  const gs = useGlobalSettingsStore(),
+    cs = useChatSettingsStore(),
+    ps = usePoolSelectorStore();
   const gid = uuidv4();
-  generatorState.loading = true; generatorState.generationId = gid;
+  generatorState.loading = true;
+  generatorState.generationId = gid;
   const wi = cs.settings.world_info;
   const restore = wi.enabled && wi.excluded_books.length > 0 ? applyWIExcl(wi.excluded_books) : null;
   try {
     const count = resolveCount(gs.settings.generation.count_mode);
     const pool = resolvePool({
-      effectivePool: ps.effectivePool, count,
+      effectivePool: ps.effectivePool,
+      count,
       categoriesEnabled: gs.settings.generation.categories_enabled,
       shuffleFinal: gs.settings.generation.shuffle_final,
       pinnedFollowsCondition: gs.settings.generation.pinned_follows_condition,
       pinnedOverflow: gs.settings.generation.pinned_overflow,
       conditionMet: e => evaluateCondition(e.condition),
     });
-    const c: Ctx = { count, pinned: pool.pinned.map(e => e.text).join('\n'), poolSelected: pool.drawn.map(e => e.text).join('\n') };
+    const c: Ctx = {
+      count,
+      pinned: pool.pinned.map(e => e.text).join('\n'),
+      poolSelected: pool.drawn.map(e => e.text).join('\n'),
+    };
     const rules = gs.settings.prompt_rules;
 
     const sp: string[] = [];
@@ -188,7 +243,10 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     const raw = await requestViaFetch(messages, api);
     if (cancelled) return null;
     const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
-    if (!options.length) { toastr.error(t`未能解析出任何选项,请检查模型输出`); return null; }
+    if (!options.length) {
+      toastr.error(t`未能解析出任何选项,请检查模型输出`);
+      return null;
+    }
     return { id: gid, timestamp: Date.now(), count, options };
   } catch (e) {
     if (cancelled) return null;
@@ -197,7 +255,9 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     return null;
   } finally {
     if (restore) restore.restore();
-    cancelled = false; generatorState.loading = false; generatorState.generationId = null;
+    cancelled = false;
+    generatorState.loading = false;
+    generatorState.generationId = null;
   }
 }
 
