@@ -1,11 +1,7 @@
 import { saveSettingsDebounced } from '@sillytavern/script';
 import { extension_settings } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import {
-  GlobalSettings,
-  SCHEMA_VERSION,
-  setting_field,
-} from '@/type/settings';
+import { GlobalSettings, SCHEMA_VERSION, setting_field } from '@/type/settings';
 import type { GlobalSettings as GlobalSettingsType } from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 

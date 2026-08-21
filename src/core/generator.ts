@@ -208,7 +208,10 @@ const requestViaFetch = async (messages: ChatMsg[], api: SecondaryApi, signal?: 
   };
 
   if (api.exclude_params) {
-    for (const key of api.exclude_params.split(',').map(s => s.trim()).filter(Boolean)) {
+    for (const key of api.exclude_params
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)) {
       delete body[key];
     }
   }
@@ -242,7 +245,9 @@ const requestViaFetch = async (messages: ChatMsg[], api: SecondaryApi, signal?: 
           const json = JSON.parse(data);
           const delta = json?.choices?.[0]?.delta?.content ?? '';
           full += delta;
-        } catch { /* 忽略解析失败的行 */ }
+        } catch {
+          /* 忽略解析失败的行 */
+        }
       }
     }
     return full;
@@ -292,9 +297,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     };
     const rules = gs.settings.prompt_rules;
 
-    const systemPrompt = rules.system_prompt
-      ? substituteParams(sub(rules.system_prompt, c))
-      : '';
+    const systemPrompt = rules.system_prompt ? substituteParams(sub(rules.system_prompt, c)) : '';
 
     const userInstruction = sub(buildUserInstr(c), c);
     console.log('[Choice] 发送给AI的指令', userInstruction.slice(0, 1000));

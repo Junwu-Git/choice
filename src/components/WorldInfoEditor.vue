@@ -21,7 +21,11 @@
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
-          <div class="choice-wi-row" :class="{ excluded: isBookExcluded(book.name) }" @click="toggleBookExpand(book.name)">
+          <div
+            class="choice-wi-row"
+            :class="{ excluded: isBookExcluded(book.name) }"
+            @click="toggleBookExpand(book.name)"
+          >
             <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
@@ -30,7 +34,10 @@
             </span>
             <input type="checkbox" :checked="!isBookExcluded(book.name)" @click.stop @change="toggleBook(book.name)" />
           </div>
-          <div v-if="bookExpanded.has(book.name) && !isBookExcluded(book.name) && bookEntries[book.name]" class="choice-wi-entries">
+          <div
+            v-if="bookExpanded.has(book.name) && !isBookExcluded(book.name) && bookEntries[book.name]"
+            class="choice-wi-entries"
+          >
             <div
               v-for="entry in bookEntries[book.name]"
               :key="entry.uid"

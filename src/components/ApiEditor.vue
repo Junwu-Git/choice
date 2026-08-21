@@ -25,7 +25,13 @@
       <div v-if="expandedCards.has(api.id)" class="choice-api-card-body">
         <div class="choice-api-url-row">
           <input v-model="api.apiurl" class="text_pole" :placeholder="t`API 地址`" />
-          <input v-model="api.key" class="text_pole" type="password" :placeholder="t`API 密钥`" style="width:140px;flex-shrink:0" />
+          <input
+            v-model="api.key"
+            class="text_pole"
+            type="password"
+            :placeholder="t`API 密钥`"
+            style="width: 140px; flex-shrink: 0"
+          />
         </div>
         <div class="choice-model-row">
           <input v-model="api.model" class="text_pole" :list="`choice-models-${api.id}`" :placeholder="t`模型名称`" />
@@ -68,8 +74,13 @@
               {{ t`预填充` }}
             </label>
           </div>
-          <input v-model="api.exclude_params" class="text_pole" :placeholder="t`排除参数`" style="flex:1;min-width:0" />
-          <input v-model="api.name" class="text_pole" :placeholder="t`配置名称`" style="width:120px;flex-shrink:0" />
+          <input
+            v-model="api.exclude_params"
+            class="text_pole"
+            :placeholder="t`排除参数`"
+            style="flex: 1; min-width: 0"
+          />
+          <input v-model="api.name" class="text_pole" :placeholder="t`配置名称`" style="width: 120px; flex-shrink: 0" />
         </div>
       </div>
     </div>

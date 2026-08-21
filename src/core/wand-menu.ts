@@ -13,7 +13,10 @@ export function initWandMenu() {
       createWandEntry($menu);
     } else if (pollCount >= MAX_POLLS) {
       clearInterval(interval);
-      console.warn('[Choice] 魔法棒菜单容器 #extensionsMenu 未在 %d 秒内出现，已放弃注入', (MAX_POLLS * POLL_INTERVAL) / 1000);
+      console.warn(
+        '[Choice] 魔法棒菜单容器 #extensionsMenu 未在 %d 秒内出现，已放弃注入',
+        (MAX_POLLS * POLL_INTERVAL) / 1000,
+      );
     }
   }, POLL_INTERVAL);
 }

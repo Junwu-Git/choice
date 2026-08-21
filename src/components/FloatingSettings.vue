@@ -1,11 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="isSettingsOpen" class="choice-floating-overlay" @click.self="closeSettings">
-      <div
-        ref="dialogEl"
-        class="choice-floating-dialog"
-        :style="{ left: posX + 'px', top: posY + 'px' }"
-      >
+      <div ref="dialogEl" class="choice-floating-dialog" :style="{ left: posX + 'px', top: posY + 'px' }">
         <div class="choice-floating-header" ref="headerEl">
           <span class="choice-floating-title">
             <i class="fa-solid fa-wand-magic-sparkles"></i>

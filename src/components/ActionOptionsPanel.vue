@@ -38,21 +38,15 @@
       </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
-          <button
-            class="choice-behavior-btn"
-            :class="{ active: behavior === 'send' }"
-            @click="behavior = 'send'"
-          >{{ t`发送` }}</button>
-          <button
-            class="choice-behavior-btn"
-            :class="{ active: behavior === 'fill' }"
-            @click="behavior = 'fill'"
-          >{{ t`覆盖` }}</button>
-          <button
-            class="choice-behavior-btn"
-            :class="{ active: behavior === 'append' }"
-            @click="behavior = 'append'"
-          >{{ t`尾附` }}</button>
+          <button class="choice-behavior-btn" :class="{ active: behavior === 'send' }" @click="behavior = 'send'">
+            {{ t`发送` }}
+          </button>
+          <button class="choice-behavior-btn" :class="{ active: behavior === 'fill' }" @click="behavior = 'fill'">
+            {{ t`覆盖` }}
+          </button>
+          <button class="choice-behavior-btn" :class="{ active: behavior === 'append' }" @click="behavior = 'append'">
+            {{ t`尾附` }}
+          </button>
         </div>
         <button
           v-for="(option, index) in visibleOptions"
@@ -84,7 +78,9 @@ const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
 const chatStore = useChatSettingsStore();
 const behavior = ref(chatStore.settings.behavior);
-watch(behavior, v => { chatStore.settings.behavior = v; });
+watch(behavior, v => {
+  chatStore.settings.behavior = v;
+});
 
 const visible = computed(() => {
   if (isGenerating.value) {
@@ -125,9 +121,7 @@ const onNext = () => {
 };
 
 const formatOptionDisplay = (text: string): string => {
-  return text
-    .replace(/"/g, '')
-    .replace(/: /, ' | ');
+  return text.replace(/"/g, '').replace(/: /, ' | ');
 };
 
 const onSelect = async (option: ChoiceOption) => {

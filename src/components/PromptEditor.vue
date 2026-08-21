@@ -9,7 +9,12 @@
             <button class="menu_button" @click="resetSystemPrompt">{{ t`恢复默认` }}</button>
           </div>
         </div>
-        <textarea v-model="rules.system_prompt" class="text_pole" rows="8" :placeholder="t`点击「载入默认」获取推荐提示词`"></textarea>
+        <textarea
+          v-model="rules.system_prompt"
+          class="text_pole"
+          rows="8"
+          :placeholder="t`点击「载入默认」获取推荐提示词`"
+        ></textarea>
       </label>
       <label class="choice-field">
         <div class="choice-field-head">
@@ -19,14 +24,19 @@
             <button class="menu_button" @click="resetCoreRules">{{ t`恢复默认` }}</button>
           </div>
         </div>
-        <textarea v-model="rules.core_rules" class="text_pole" rows="8" :placeholder="t`点击「载入默认」获取推荐规则`"></textarea>
+        <textarea
+          v-model="rules.core_rules"
+          class="text_pole"
+          rows="8"
+          :placeholder="t`点击「载入默认」获取推荐规则`"
+        ></textarea>
       </label>
     </div>
 
     <div class="choice-prompt-row">
       <label class="choice-field">
         <span>{{ t`上下文轮数(0=全部)` }}</span>
-        <input v-model.number="rules.context_rounds" class="text_pole" type="number" min="0" style="width:80px" />
+        <input v-model.number="rules.context_rounds" class="text_pole" type="number" min="0" style="width: 80px" />
       </label>
       <button class="menu_button" @click="togglePreview">
         <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
@@ -38,7 +48,12 @@
       <div v-if="previewMessages.length === 0" class="choice-preview-empty">
         {{ t`暂无聊天历史` }}
       </div>
-      <div v-for="(msg, i) in previewMessages" :key="i" class="choice-preview-msg" :class="`choice-preview-${msg.role}`">
+      <div
+        v-for="(msg, i) in previewMessages"
+        :key="i"
+        class="choice-preview-msg"
+        :class="`choice-preview-${msg.role}`"
+      >
         <span class="choice-preview-role">{{ msg.role.toUpperCase() }}</span>
         <pre class="choice-preview-content">{{ msg.content }}</pre>
       </div>
@@ -54,10 +69,18 @@ import { chat, characters, this_chid } from '@sillytavern/script';
 const globalStore = useGlobalSettingsStore();
 const rules = globalStore.settings.prompt_rules;
 
-const loadSystemPrompt = () => { rules.system_prompt = DEFAULT_SYSTEM_PROMPT; };
-const resetSystemPrompt = () => { rules.system_prompt = DEFAULT_SYSTEM_PROMPT; };
-const loadCoreRules = () => { rules.core_rules = DEFAULT_CORE_RULES; };
-const resetCoreRules = () => { rules.core_rules = DEFAULT_CORE_RULES; };
+const loadSystemPrompt = () => {
+  rules.system_prompt = DEFAULT_SYSTEM_PROMPT;
+};
+const resetSystemPrompt = () => {
+  rules.system_prompt = DEFAULT_SYSTEM_PROMPT;
+};
+const loadCoreRules = () => {
+  rules.core_rules = DEFAULT_CORE_RULES;
+};
+const resetCoreRules = () => {
+  rules.core_rules = DEFAULT_CORE_RULES;
+};
 
 const showPreview = ref(false);
 
@@ -85,7 +108,9 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   return msgs;
 });
 
-const togglePreview = () => { showPreview.value = !showPreview.value; };
+const togglePreview = () => {
+  showPreview.value = !showPreview.value;
+};
 </script>
 
 <style scoped>
