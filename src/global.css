@@ -1,0 +1,6 @@
+/* 覆盖酒馆全局 .menu_button 的 width: min-content + white-space: normal，
+   这两条规则会导致中文按钮文字逐字竖向排列（min-content 宽度 = 最宽单字宽） */
+.menu_button {
+  width: auto;
+  white-space: nowrap;
+}

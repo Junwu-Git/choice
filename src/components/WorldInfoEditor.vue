@@ -1,19 +1,19 @@
 <template>
   <div class="choice-wi-editor">
-    <label class="choice-check">
-      <input v-model="chatStore.settings.world_info.enabled" type="checkbox" />
-      {{ t`启用世界书` }}
-    </label>
-    <label class="choice-check">
-      <input v-model="chatStore.settings.world_info.redlight_mode" type="checkbox" />
-      {{ t`遵循红绿灯规则` }}
-      <span class="choice-wi-sub">{{ t`开:按红绿灯(常量/关键词/禁用)过滤;关:全量发送` }}</span>
-    </label>
-    <label class="choice-check">
-      <input v-model="chatStore.settings.world_info.ejs_compat" type="checkbox" />
-      {{ t`兼容提示词模板(EJS)` }}
-      <span class="choice-wi-sub">{{ t`开:处理世界书条目中的 EJS 模板语法` }}</span>
-    </label>
+    <div class="choice-wi-checks">
+      <label class="choice-check">
+        <input v-model="chatStore.settings.world_info.enabled" type="checkbox" />
+        {{ t`启用世界书` }}
+      </label>
+      <label class="choice-check">
+        <input v-model="chatStore.settings.world_info.redlight_mode" type="checkbox" />
+        {{ t`红绿灯过滤` }}
+      </label>
+      <label class="choice-check">
+        <input v-model="chatStore.settings.world_info.ejs_compat" type="checkbox" />
+        {{ t`EJS 兼容` }}
+      </label>
+    </div>
 
     <button class="menu_button" @click="refreshAll">{{ t`刷新列表` }}</button>
 
@@ -21,15 +21,16 @@
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
-          <div class="choice-wi-row" :class="{ excluded: isBookExcluded(book.name) }">
+          <div class="choice-wi-row" :class="{ excluded: isBookExcluded(book.name) }" @click="toggleBookExpand(book.name)">
+            <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
             <span class="choice-wi-badge" :class="book.source === 'global' ? 'badge-global' : 'badge-character'">
               {{ book.source === 'global' ? t`全局` : t`角色` }}
             </span>
-            <input type="checkbox" :checked="!isBookExcluded(book.name)" @change="toggleBook(book.name)" />
+            <input type="checkbox" :checked="!isBookExcluded(book.name)" @click.stop @change="toggleBook(book.name)" />
           </div>
-          <div v-if="!isBookExcluded(book.name) && bookEntries[book.name]" class="choice-wi-entries">
+          <div v-if="bookExpanded.has(book.name) && !isBookExcluded(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
               v-for="entry in bookEntries[book.name]"
               :key="entry.uid"
@@ -63,7 +64,7 @@
       {{ t`未找到任何世界书` }}
     </div>
 
-    <div class="choice-hint">{{ t`取消勾选可从行动选项生成中排除该书或条目` }}</div>
+    <div class="choice-hint">{{ t`取消勾选可排除书或条目` }}</div>
   </div>
 </template>
 
@@ -92,6 +93,7 @@ type EntryInfo = {
 
 const allBooks = ref<BookInfo[]>([]);
 const bookEntries = ref<Record<string, EntryInfo[]>>({});
+const bookExpanded = ref<Set<string>>(new Set());
 
 const activeBooks = computed(() => allBooks.value.filter(b => b.active && !isBookExcluded(b.name)));
 const inactiveBooks = computed(() => allBooks.value.filter(b => !b.active));
@@ -105,6 +107,11 @@ const toggleBook = (name: string) => {
   const idx = excluded.indexOf(name);
   if (idx !== -1) excluded.splice(idx, 1);
   else excluded.push(name);
+};
+
+const toggleBookExpand = (name: string) => {
+  if (bookExpanded.value.has(name)) bookExpanded.value.delete(name);
+  else bookExpanded.value.add(name);
 };
 
 const toggleEntry = (bookName: string, uid: string | number) => {
@@ -177,17 +184,18 @@ onActivated(refreshAll);
   gap: 8px;
 }
 
-.choice-check {
+.choice-wi-checks {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: #dcdcdc;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.choice-wi-sub {
-  font-size: 10px;
-  color: #8a8a8a;
+.choice-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #dcdcdc;
 }
 
 .choice-wi-section-title {
@@ -213,6 +221,11 @@ onActivated(refreshAll);
   border: 1px solid rgba(128, 128, 128, 0.2);
   border-radius: 6px;
   background: rgba(40, 40, 40, 0.3);
+  cursor: pointer;
+}
+
+.choice-wi-row:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .choice-wi-row.excluded {

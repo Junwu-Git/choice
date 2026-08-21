@@ -1,34 +1,80 @@
-export const setting_field = 'choice';
+# 整合用户规则到插件提示词
 
-export const PoolEntry = z
-  .object({
-    id: z.string(),
-    text: z.string(),
-    pinned: z.boolean().default(false),
-    weight: z.number().min(0).default(1),
-    category: z.string().default(''),
-    condition: z.string().default(''),
-  })
-  .prefault({});
-export type PoolEntry = z.infer<typeof PoolEntry>;
+## 背景
+将用户提供的 roleplay 选项生成规则（约 25 条规则）整理后，整合进插件现有的提示词系统中。输出格式从 `<options>` 改为 `<roleplay_options>`，单个选项格式从纯文本改为 "标题: 内容"，末尾增加思维链（CoT）预填充结构。
 
-export const GenerationSettings = z
-  .object({
-    count_mode: z.string().default('4'),
-    categories_enabled: z.boolean().default(true),
-    shuffle_final: z.boolean().default(true),
-    pinned_follows_condition: z.boolean().default(true),
-    pinned_overflow: z.enum(['send_all', 'trim']).default('send_all'),
-    cross_layer_fallback: z.boolean().default(false),
-  })
-  .prefault({});
-export type GenerationSettings = z.infer<typeof GenerationSettings>;
+## 涉及文件
 
+| 文件 | 改动 |
+|------|------|
+| `src/type/settings.ts` | 更新默认 prompt 值（`DEFAULT_AI_PERSONA`、`DEFAULT_PERSON`、`DEFAULT_PROMPT_OUTPUT_FORMAT`、`DEFAULT_PROMPT_EXTRA`、`option_length` 默认值）；bump SCHEMA_VERSION |
+| `src/core/generator.ts` | 更新 `buildUserInstr`（加入格式指令）、更新 `parseOptions`（兼容 `<roleplay_options>` 和 "标题: 内容" 格式）、更新 `OPTIONS_PREFILL` 常量（思维链预填充）、新增 system 消息 "【输出前思考】" |
+| `i18n/en.json` | 新增/更新相关翻译 |
+
+## 规则整理 → 字段映射
+
+### 1. `DEFAULT_AI_PERSONA` (系统角色定义)
+核心身份 + 行为规则（决定 AI "如何思考"）：
+- 独立与假设性、双向防越权
+- 强制直接引语（有条件）
+- **输出纯净度铁律（修改版）**：允许 `<thinking>` 块在 `<roleplay_options>` 之前
+- 防极端化
+- 防阴暗基调蔓延
+- 防表情措辞老套化
+- 句式结构多变性
+- 对白真实感
+- 场景逻辑核查
+- 留白式收尾
+- 必须避免的表述类型
+
+### 2. `DEFAULT_PERSON` (叙述人称)
+视角与交互规则：
+- 第三人称沉浸感（含例外：视角切换/与此同时/跳过场景）
+- 环境与空间交互
+- 动态互动锚点
+
+### 3. `DEFAULT_PROMPT_OUTPUT_FORMAT` (输出格式)
+格式与结构规则：
+- 输出位置（`<roleplay_options>` 标签）
+- 格式与结构强制要求（标题: 内容）
+- 正误格式对比教学
+- 字数与信息量（30-80 字）
+- 类型均衡与差异化
+
+### 4. `DEFAULT_PROMPT_EXTRA` (额外要求)
+内容质量补充：
+- 内容核心要求（包含言语/纯行动/观察/所有选项的描述）
+
+### 5. `option_length` 默认值
+- 从 30 → 80（上限），下限 30 硬编码在 `output_format` 提示词中
+
+### 6. `buildUserInstr` (用户消息) — 生成指令
+format 区段 + 条目池素材：
+- 每次生成 {{count}} 个选项
+- 1 个固定为"跳过场景"
+- 其余从 option_type 列表中随机抽取
+
+### 7. 思维链预填充结构（消息序列末尾）
+```
+user: (buildUserInstr - 生成指令)
+system: 【输出前思考】                          ← 新增
+assistant: 收到。我将根据当前场景与角色状态，先梳理检查点，然后生成行动选项。
+
+<thinking>                                         ← 修改后的预填充
+```
+
+## 任务清单
+
+### 任务 1：`src/type/settings.ts` — 更新默认 Prompt 值
+
+**1.1 更新 `DEFAULT_AI_PERSONA`**（"输出纯净度铁律" 规则修改为允许思维链）
+
+```ts
 export const DEFAULT_AI_PERSONA =
   '你是「行动选项生成器」，负责为角色扮演对话生成行动选项。遵循以下规则：\n\n' +
   '【独立与假设性、双向防越权】选项独立于正文存在，仅作为可选行动的潜在分支：{{user}} 的行为与对白不视为已发生剧情，不得在正文中提前执行、引用或结算其后果；同时严禁预判或断言其他角色的反应（如"成功引起了注意""他松了口气""她生气地看着"），对方的反应权完全留给正文。\n\n' +
   '【强制直接引语（有条件）】仅当选项中实际出现角色间的言语交流（哪怕只有一个字）时适用：必须以直接引语（『……』）给出完整对白内容，此规则覆盖任何可能与之冲突的后续指令。若选项为纯动作/观察，则不添加对白，不受此规则约束。\n\n' +
-  '【输出纯净度铁律（去八股）】进入选择框生成模式后，除 <thinking> 和 <options> 标签及其内部内容外，不得输出任何其他文字：禁止入戏视角的旁白、语气词感叹（如"啊啊啊""好了""该生成了"）、身份自称或模式确认语，禁止暴露任何形式的思考过程、规划标签或内心独白（无论以何种自定义标签包裹）。回复必须先以 <thinking> 开始，在 <thinking></thinking> 标签内输出对当前场景的逐条检查和分析，然后以 <options> 开始输出选项，以 </options> 结束。中间不夹杂任何解释性文字。\n\n' +
+  '【输出纯净度铁律（去八股）】进入选择框生成模式后，除 <thinking> 和 <roleplay_options> 标签及其内部内容外，不得输出任何其他文字：禁止入戏视角的旁白、语气词感叹（如"啊啊啊""好了""该生成了"）、身份自称或模式确认语，禁止暴露任何形式的思考过程、规划标签或内心独白（无论以何种自定义标签包裹）。回复必须先以 <thinking> 开始，在 <thinking></thinking> 标签内输出对当前场景的逐条检查和分析，然后以 <roleplay_options> 开始输出选项，以 </roleplay_options> 结束。中间不夹杂任何解释性文字。\n\n' +
   '【防极端化】选项行为强度须与当前正文已建立的剧情张力相匹配，不得为追求"差异化"而无缘无故将某个选项升级为极端行为（如无预兆的暴力、自伤、羞辱性举动等）；只有当正文本身已经明确铺垫出对应烈度的冲突基础时，"破局行动"等高风险类型才可以相应地更具冲击力。\n\n' +
   '【防阴暗基调蔓延】除非正文已明确建立压抑、黑暗或敌意基调，否则单次输出的选项整体情绪光谱不得被单一方向的阴暗、恶意或厌世倾向主导；一次输出中至少应保留部分选项呈现开放、中性或建设性的态度，避免选项集体滑向自我否定、攻击性或绝望情绪。\n\n' +
   '【防表情措辞老套化】严禁反复使用"平静""低笑""玩味""意味深长""似笑非笑""眸光微闪"等已被过度使用的固定情绪词汇作为默认表情基调；同一次输出的多个选项中，同一个情绪/微表情词汇（或其近义替换）不得重复出现超过一次。情绪表达须根据当前选项的策略类型与情境具体化：可以是眉梢的细微动作、呼吸节奏的变化、手指的下意识小动作、语调的实际起伏（而非用"平静"这类笼统词一笔带过），也可以是更强烈或更外露的情绪状态（如慌乱、不耐、雀跃、戒备），不必默认收敛克制。\n\n' +
@@ -42,18 +88,30 @@ export const DEFAULT_AI_PERSONA =
   '  - 结果性/裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了\n' +
   '  - 越权代演他人（绝对禁止）：对方笑了/他答应了/她感到很生气/他惊讶地看着\n' +
   '  - 完成态标记（改为进行时或悬念态）：...好/...完/...毕/已.../（应改为：试图.../准备.../指尖刚触碰到...）';
+```
 
+**1.2 更新 `DEFAULT_PERSON`**
+
+```ts
 export const DEFAULT_PERSON =
   '【第三人称沉浸感】选项内容须以第三人称 {{user}} 为绝对主语，须在动作中融入 {{user}} 的微表情、肢体语言、语气特征或感官体验（如：眼神交汇、指尖微颤、刻意放缓的语调），让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受"绝对主语须为{{user}}"约束——视角切换以其他角色为主语/视角展开；与此同时可以{{user}}之外的角色的行动为主语；跳过场景可以时间/空间过渡为叙事焦点，不强求具体主语。\n\n' +
   '【环境与空间交互】为了增强 {{user}} 在场景中的实体存在感，鼓励在动作描写中加入与"当前环境或道具"的物理交互（例如：靠在门框上、拉开椅子坐下、捡起地上的物品、把玩手中的杯子），避免角色像在真空中对话。\n\n' +
   '【动态互动锚点】选项的切入点须紧扣正文末尾其他角色的"当前状态"（如对方闪躲的眼神、紧握的双拳、地上的水渍），{{user}} 的行为是对这一状态的即时反馈；当"环境交互"与"对方状态"两个锚点无法同时兼顾时，以"贴合对方当前状态"为优先，环境交互作为补充细节而非必须项。';
+```
 
+**1.3 更新 `DEFAULT_PROMPT_OUTPUT_FORMAT`**
+
+```ts
 export const DEFAULT_PROMPT_OUTPUT_FORMAT =
-  '【输出位置】必须在每次回复的绝对末尾，将生成的选项包裹在 <options> 标签内输出。\n\n' +
+  '【输出位置】必须在每次回复的绝对末尾，将生成的选项包裹在 <roleplay_options> 标签内输出。\n\n' +
   '【格式与结构强制要求】所有选项必须严格遵循"标题: 内容"的格式。标题必须是2-5个纯汉字组成的概括性短语（如：强势追问/递出纸巾/战术后撤/拔出武器），标题内部严禁出现任何标点、特殊字符或格式标签，绝对禁止将内容中的直接对白用作标题。标题后仅允许出现唯一的一个半角冒号（:）作为分隔符。标题内部、以及正文内容中，绝对禁止使用冒号（全角"："或半角":"）作为"对话引导符"（错误示例：{{user}}说：『……』；正确示例：{{user}}轻声说『……』）。此禁令仅针对"对话引导"用法，若对白本身合理需要冒号（如引用第三方原话、报数据、列举等），不受此限制。\n\n' +
   '【字数与信息量】每个单项的字数需控制在 30-80 个中文字符之间，确保有充足的篇幅展现动作细节、对白与情绪。\n\n' +
   '【类型均衡与差异化】选项之间必须在"切入点"和"情绪态度"上截然不同，涵盖不同的应对策略（如：理性分析、强势试探、温和安抚、幽默化解、纯物理行动或静观其变），严禁生成同质化（只是换种说法）的选项。';
+```
 
+**1.4 更新 `DEFAULT_PROMPT_EXTRA`**
+
+```ts
 export const DEFAULT_PROMPT_EXTRA =
   '【内容核心要求】\n' +
   '  - 包含言语的选项：必须包含引号标注的可朗读对白，对白需带有情绪，并自然融入神态/动作描写中。\n' +
@@ -68,108 +126,139 @@ export const DEFAULT_PROMPT_EXTRA =
   '  正确格式（纯动作且有环境交互）: 寻找铁罐: {{user}}向她微微点头，随后径直走向基座，蹲下身在积满灰尘的杂物中仔细翻找，试图找出那个生锈的铁罐。\n' +
   '  正确格式（先声夺人+微表情收尾）: 强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。\n' +
   '  正确格式（基于对方状态的温和互动）: 递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』';
+```
 
-export const DEFAULT_SYSTEM_PROMPT =
-  '你是「行动选项生成器」，负责为角色扮演对话生成行动选项。根据当前对话上下文和场景，为 {{user}} 生成多样化的可选行动方案，供玩家选择后续剧情走向。';
+**1.5 更新 `option_length` 默认值**
 
-export const DEFAULT_CORE_RULES = `【核心规则 - 生成选项时严格遵守】
-1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判其他角色反应（如"对方笑了""他松了口气"）。
-2. 直接引语：含言语交流的选项，必须以『……』给出完整对白；纯动作/观察选项不强制。
-3. 输出纯净度：除 <thinking> 和 <options> 标签及其内容外，不输出任何文字。
-4. 防极端化：行为强度与剧情张力匹配，不无故升级为极端行为。
-5. 防阴暗基调：一次输出中至少保留部分中性/建设性选项，避免集体滑向阴暗。
-6. 防老套化：禁止反复使用"平静""低笑""玩味""意味深长"等词，同一次输出中同一情绪词不重复。
-7. 句式多变：禁止"动作+说话+等待"公式，可先声夺人、只行动不说话、说话中途戛然而止。
-8. 对白真实感：对白须有明确情感，不得出现空对白『……』；动作描写作为对白的伴随状态。
-9. 场景逻辑：严禁与已离开/不存在的角色互动，严禁凭空变出道具。
-10. 留白收尾：动作须是未完成态，收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文。
-11. 禁止概括性说话动词：讨论/谈论/询问/告诉/回应/暗示/提议/劝说/解释/商量 → 必须展开为具体对白。
-12. 禁止裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了。
-13. 禁止越权代演：对方笑了/他答应了/她感到很生气/他惊讶地看着。
-14. 禁止完成态：...好/...完/...毕/已... → 改为试图.../准备.../指尖刚触碰到...
+```ts
+// 第 49 行
+option_length: z.number().min(0).default(80),
+```
 
-【叙述风格】
-选项内容以第三人称 {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互（如：靠在门框上、把玩手中的杯子），避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。
+### 任务 2：`src/core/generator.ts` — 更新生成逻辑
 
-【输出格式】
-必须在回复末尾将选项包裹在 <options> 标签内输出。所有选项严格遵循"标题: 内容"格式。标题必须是2-5个纯汉字（如：强势追问/递出纸巾/战术后撤），标题内部严禁标点符号、特殊字符或格式标签，严禁将直接对白用作标题。标题后仅允许一个半角冒号（:）作为分隔符，严禁将冒号用作对话引导符（错误：{{user}}说：『……』；正确：{{user}}轻声说『……』）。每个选项字数控制在 30-80 个中文字符。选项之间必须在切入点和情绪态度上截然不同，涵盖不同应对策略，严禁同质化。
+**2.1 更新 `OPTIONS_PREFILL` 常量（思维链预填充）**
 
-【内容要求】
-包含言语的选项必须包含引号标注的可朗读对白，对白需带有情绪。纯行动选项需包含与环境或物品的物理交互细节。观察选项描述视线焦点与内心揣测，不断言客观事实。所有选项只写行为过程、动机和期待，把最终反应权留给正文。
+```ts
+/**
+ * 预填充文本：思维链引导，强制模型先输出 <thinking> 分析再输出 <roleplay_options>。
+ * 与柏宝书（ST-BaiBai-Book）的 THINKING_PREFILL 设计理念一致：
+ * 开关（send_prefill）只控制是否发送，内容本身由开发者写死，与解析逻辑强绑定。
+ */
+const OPTIONS_PREFILL = `收到。我将根据当前场景与角色状态，先梳理检查点，然后生成行动选项。
 
-【正误示例】
-错误：『净界粉？我知道了。』: 走向石像基座...（标题含符号）
-错误：『你为什么在这？』: {{user}}感到很疑惑。（对白当标题+越权裁定）
-错误：追问: {{user}}问他：『为什么？』他听后低下了头。（对话引导冒号+越权代演）
-错误：递出水杯: {{user}}递出水杯说『喝水。』静静等待他接过去。（句式机械+完成态收尾）
-正确：寻找铁罐: {{user}}向她微微点头，随后径直走向基座，蹲下身在积满灰尘的杂物中仔细翻找，试图找出那个生锈的铁罐。
-正确：强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。
-正确：递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』`;
+<thinking>
+`;
+```
 
-export const PromptRules = z
-  .object({
-    system_prompt: z.string().default(''),
-    core_rules: z.string().default(''),
-    context_rounds: z.number().min(0).default(10),
-  })
-  .prefault({});
-export type PromptRules = z.infer<typeof PromptRules>;
+**2.2 更新 `buildUserInstr` 函数**
 
-export const SecondaryApi = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    apiurl: z.string(),
-    key: z.string(),
-    model: z.string(),
-    temperature: z.number().min(0).max(2).default(1),
-    max_tokens: z.number().min(1).default(4096),
-    timeout: z.number().min(0).default(0),
-    stream: z.boolean().default(false),
-    send_prefill: z.boolean().default(false),
-    exclude_params: z.string().default(''),
-  })
-  .prefault({});
-export type SecondaryApi = z.infer<typeof SecondaryApi>;
+```ts
+const buildUserInstr = (c: Ctx): string => {
+  const l = [`请为角色的当前处境生成 ${c.count} 条行动选项。`];
+  if (c.pinned) l.push(`固定行动(必须原样包含):\n${c.pinned}`);
+  if (c.poolSelected) l.push(`候选行动(可在其基础上修改或发挥):\n${c.poolSelected}`);
+  l.push(`
+生成规则：
+1. 其中 1 个固定为"跳过场景"类型
+2. 其余 ${c.count - 1} 个从以下类型中随机且互不重复地抽取，确保类型、切入点、情绪态度均有明显差异：理性分析、强势试探、温和安抚、幽默化解、纯物理行动、静观其变、视角切换、与此同时
+3. 若当前候选类型总数不足以支撑本次抽取数量，允许类型重复，但重复类型生成的选项须在切入点与情绪态度上明显不同
+4. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
+5. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <roleplay_options> 选项`);
+  return l.join('\n');
+};
+```
 
-export const SCHEMA_VERSION = 7;
+**2.3 更新 `parseOptions` 函数**
 
-export const GlobalSettings = z
-  .object({
-    schema_version: z.number().default(0),
-    generation: GenerationSettings.prefault({}),
-    prompt_rules: PromptRules.prefault({}),
-    apis: z.array(SecondaryApi).prefault([]),
-    pool: z.array(PoolEntry).prefault([]),
-  })
-  .prefault({});
-export type GlobalSettings = z.infer<typeof GlobalSettings>;
+```ts
+export function parseOptions(text: string, count: number): string[] {
+  // 先去除 thinking/reasoning/thought 标签块（包括预填充产生的 <thinking> 块）
+  let c = text.replace(/<(?:think|reasoning|thought)>[\s\S]*?<\/(?:think|reasoning|thought)>/gi, '').trim();
 
-export const CharacterSettings = z
-  .object({
-    pool: z.array(PoolEntry).prefault([]),
-  })
-  .prefault({});
-export type CharacterSettings = z.infer<typeof CharacterSettings>;
+  // 优先匹配 <roleplay_options> 标签
+  const m = c.match(/<roleplay_options>([\s\S]*?)<\/roleplay_options>/i);
+  if (m) {
+    c = m[1].trim();
+  } else {
+    // 回退：匹配旧版 <options> 标签
+    const legacy = c.match(/<options>([\s\S]*?)<\/options>/i);
+    if (legacy) c = legacy[1].trim();
+    else {
+      // 无标签匹配时，清理代码块标记
+      c = c
+        .replace(/^```[a-zA-Z]*\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+    }
+  }
 
-export const WorldInfoSettings = z
-  .object({
-    enabled: z.boolean().default(true),
-    redlight_mode: z.boolean().default(true),
-    ejs_compat: z.boolean().default(false),
-    excluded_books: z.array(z.string()).prefault([]),
-    excluded_entries: z.array(z.string()).prefault([]),
-  })
-  .prefault({});
-export type WorldInfoSettings = z.infer<typeof WorldInfoSettings>;
+  // 尝试 JSON 解析
+  if (c.startsWith('['))
+    try {
+      const p = JSON.parse(c);
+      if (Array.isArray(p)) {
+        const i = p
+          .map(x => (typeof x === 'string' ? x.trim() : (x?.text?.trim() ?? x?.option?.trim() ?? '')))
+          .filter(Boolean);
+        if (i.length) return i.slice(0, count);
+      }
+    } catch (err) {
+      /* not JSON */
+    }
 
-export const ChatSettings = z
-  .object({
-    pool: z.array(PoolEntry).prefault([]),
-    active_api_id: z.string().default(''),
-    auto_generate: z.boolean().default(true),
-    behavior: z.enum(['send', 'fill', 'append']).default('send'),
-    world_info: WorldInfoSettings.prefault({}),
-  })
-  .prefault({});
-export type ChatSettings = z.infer<typeof ChatSettings>;
+  // 按行解析，兼容 "标题: 内容" 格式和纯文本格式
+  return c
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l))
+    .slice(0, count);
+}
+```
+
+**2.4 更新 `generateOptions` 中的消息组装逻辑 — 在 user 消息后插入 system "【输出前思考】"**
+
+在 `buildMessages` 调用之后、`requestViaFetch` 调用之前，修改预填充逻辑：
+
+```ts
+// 预填充：开关开启时，在 user 消息和 assistant 预填充之间插入 system 消息
+if (api.send_prefill) {
+  // system 消息告诉模型"先思考再输出"
+  messages.push({ role: 'system', content: '【输出前思考】' });
+  // assistant 预填充强制模型以思维链模式开始
+  messages.push({ role: 'assistant', content: OPTIONS_PREFILL });
+}
+```
+
+完整消息序列末尾：
+```
+user: (buildUserInstr)
+system: 【输出前思考】          ← 新增
+assistant: 收到。我将根据当前场景与角色状态...\n\n<thinking>\n  ← 修改
+```
+
+### 任务 3：`i18n/en.json` — 更新翻译
+
+```json
+"请先在设置中配置 API（API 地址 + 模型），然后重新生成": "Please configure an API (URL + model) in Settings first, then regenerate"
+```
+
+### 任务 4：`SCHEMA_VERSION` 升级
+
+```ts
+export const SCHEMA_VERSION = 6;  // 原 5 → 6
+```
+
+## 验证清单
+
+1. `pnpm build` 通过，无类型错误
+2. 打开酒馆设置面板 → 提示词标签页：
+   - 各字段显示新的默认内容
+   - "每条选项字数" 默认值为 80
+3. 生成选项时（`send_prefill` 开启）：
+   - 消息序列末尾为：`user(生成指令)` → `system(【输出前思考】)` → `assistant(思维链预填充)`
+   - 模型输出被 `<thinking>` 和 `<roleplay_options>` 标签包裹
+   - `parseOptions` 正确剥离 `<thinking>` 块，解析 `<roleplay_options>` 内的选项
+4. 生成选项时（`send_prefill` 关闭）：
+   - 消息序列末尾仅有 `user(生成指令)`，无 system 和 assistant 预填充消息
+   - 模型输出仍被正确解析

@@ -64,6 +64,9 @@ export function initPanelMount() {
       if (type === 'quiet') {
         return;
       }
+      if (messageId === 0) {
+        return;
+      }
       const chatStore = useChatSettingsStore(pinia);
       if (!chatStore.settings.auto_generate) {
         return;

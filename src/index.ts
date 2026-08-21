@@ -1,10 +1,19 @@
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
-import { initPanel } from '@/panel';
+import { initWandMenu } from '@/core/wand-menu';
 import { pinia } from '@/pinia';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
+import FloatingRoot from '@/components/FloatingRoot.vue';
+
+function initFloatingApp() {
+  const $root = $('<div id="choice-floating-root">').appendTo(document.body);
+  const app = createApp(FloatingRoot);
+  app.use(pinia);
+  app.config.globalProperties.t = t;
+  app.mount($root[0]);
+}
 
 $(() => {
   try {
@@ -29,7 +38,8 @@ $(() => {
       }
     });
 
-    initPanel();
+    initFloatingApp();
+    initWandMenu();
     initPanelMount();
   } catch (error) {
     console.error('[Choice] init failed', error);

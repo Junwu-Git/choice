@@ -37,13 +37,30 @@
         {{ t`正在生成选项...` }}
       </div>
       <template v-else-if="visibleOptions.length > 0">
+        <div class="choice-behavior-bar">
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'send' }"
+            @click="behavior = 'send'"
+          >{{ t`发送` }}</button>
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'fill' }"
+            @click="behavior = 'fill'"
+          >{{ t`覆盖` }}</button>
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'append' }"
+            @click="behavior = 'append'"
+          >{{ t`尾附` }}</button>
+        </div>
         <button
           v-for="(option, index) in visibleOptions"
           :key="index"
           class="choice-option-btn"
           @click="onSelect(option)"
         >
-          {{ option.text }}
+          {{ formatOptionDisplay(option.text) }}
         </button>
         <div v-if="underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
       </template>
@@ -65,6 +82,9 @@ const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistor
 
 const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
+const chatStore = useChatSettingsStore();
+const behavior = ref(chatStore.settings.behavior);
+watch(behavior, v => { chatStore.settings.behavior = v; });
 
 const visible = computed(() => {
   if (isGenerating.value) {
@@ -104,11 +124,21 @@ const onNext = () => {
   panelStore.goTo(panelStore.currentIndex + 1);
 };
 
+const formatOptionDisplay = (text: string): string => {
+  return text
+    .replace(/"/g, '')
+    .replace(/: /, ' | ');
+};
+
 const onSelect = async (option: ChoiceOption) => {
-  const chatStore = useChatSettingsStore();
+  const content = option.text.includes(': ') ? option.text.slice(option.text.indexOf(': ') + 2) : option.text;
   const $textarea = $('#send_textarea');
-  $textarea.val(option.text)[0].dispatchEvent(new Event('input', { bubbles: true }));
-  if (chatStore.settings.behavior === 'send') {
+  if (behavior.value === 'append') {
+    $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+    return;
+  }
+  $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+  if (behavior.value === 'send') {
     await sendTextareaMessage();
   }
 };
@@ -208,6 +238,34 @@ const onSelect = async (option: ChoiceOption) => {
   color: #b8943a;
   font-size: 11px;
   padding-top: 2px;
+}
+
+.choice-behavior-bar {
+  display: inline-flex;
+  gap: 2px;
+  background: rgba(50, 50, 50, 0.5);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.choice-behavior-btn {
+  background: transparent;
+  color: #a0a0a0;
+  border: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.choice-behavior-btn:hover {
+  color: #d0d0d0;
+}
+
+.choice-behavior-btn.active {
+  background: rgba(74, 144, 217, 0.5);
+  color: #e8e8e8;
 }
 
 .choice-option-btn {
