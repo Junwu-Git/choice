@@ -4,20 +4,10 @@
     "module": "ESNext",
     "outDir": "dist",
     "baseUrl": "src",
-    "types": [
-      "jquery",
-      "jqueryui",
-      "lodash",
-      "toastr",
-      "type-fest",
-    ],
+    "types": ["jquery", "jqueryui", "lodash", "toastr", "type-fest"],
     "paths": {
-      "@sillytavern/*": [
-        "../../../../../*"
-      ],
-      "@/*": [
-        "./*"
-      ]
+      "@sillytavern/*": ["../../../../../*"],
+      "@/*": ["./*"]
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",
@@ -40,10 +30,8 @@
   "include": [
     "*.d.ts",
     "src/**/*.ts",
-    "../../../../**/*.js" // for intelligence
+    "../../../../**/*.js", // for intelligence
+    "@types/**/*.ts"
   ],
-  "exclude": [
-    "**/node_modules/**",
-    "**/dist/**",
-  ]
+  "exclude": ["**/node_modules/**", "**/dist/**"]
 }

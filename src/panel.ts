@@ -1,9 +1,9 @@
-import Panel from '@/Panel.vue';
+import SettingsPanel from '@/components/SettingsPanel.vue';
+import { pinia } from '@/pinia';
 import { App } from 'vue';
 
-const app = createApp(Panel);
+const app = createApp(SettingsPanel);
 
-const pinia = createPinia();
 app.use(pinia);
 
 declare module 'vue' {
@@ -19,6 +19,6 @@ const i18n = {
 app.use(i18n);
 
 export function initPanel() {
-  const $app = $('<div id="tavern_extension_example">').appendTo('#extensions_settings2');
+  const $app = $('<div id="choice-settings">').appendTo('#extensions_settings2');
   app.mount($app[0]);
 }
