@@ -4,10 +4,27 @@
     "module": "ESNext",
     "outDir": "dist",
     "baseUrl": "src",
+<<<<<<< HEAD
     "types": ["jquery", "jqueryui", "lodash", "toastr", "type-fest"],
     "paths": {
       "@sillytavern/*": ["../../../../../*"],
       "@/*": ["./*"]
+=======
+    "types": [
+      "jquery",
+      "jqueryui",
+      "lodash",
+      "toastr",
+      "type-fest",
+    ],
+    "paths": {
+      "@sillytavern/*": [
+        "../../../../../*"
+      ],
+      "@/*": [
+        "./*"
+      ]
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",
@@ -30,8 +47,17 @@
   "include": [
     "*.d.ts",
     "src/**/*.ts",
+<<<<<<< HEAD
     "../../../../**/*.js", // for intelligence
     "@types/**/*.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
+=======
+    "../../../../**/*.js" // for intelligence
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+  ]
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
 }

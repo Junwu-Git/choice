@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "行动选项": "Action Options",
   "条目池": "Pool",
   "提示词": "Prompt",
@@ -101,4 +102,9 @@
   "开:按红绿灯(常量/关键词/禁用)过滤;关:全量发送": "On: filter by red/green light (constant/keyword/disabled). Off: send all entries.",
   "兼容提示词模板(EJS)": "EJS Template Compatibility",
   "开:处理世界书条目中的 EJS 模板语法": "On: process EJS template syntax in world info entries."
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
 }

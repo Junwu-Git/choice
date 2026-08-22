@@ -1,4 +1,5 @@
 import '@/global.css';
+<<<<<<< HEAD
 import { initPanelMount } from '@/core/panel-mount';
 import { initWandMenu } from '@/core/wand-menu';
 import { pinia } from '@/pinia';
@@ -45,4 +46,10 @@ $(() => {
     console.error('[Choice] init failed', error);
     toastr.error(`Choice 初始化失败: ${error instanceof Error ? error.message : String(error)}`);
   }
+=======
+import { initPanel } from '@/panel';
+
+$(() => {
+  initPanel();
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
 });

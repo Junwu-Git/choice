@@ -1,5 +1,9 @@
 {
+<<<<<<< HEAD
   "name": "Choice",
+=======
+  "name": "<插件名称>",
+>>>>>>> c089c330016918a4f48ceacf41f76f19206f9604
   "version": "1.0.0",
   "scripts": {
     "build": "vite build",
