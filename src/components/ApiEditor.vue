@@ -2,8 +2,9 @@
   <div class="choice-api-editor">
     <label class="choice-field">
       <span>{{ t`生成 API` }}</span>
+      <!-- 下拉只遍历已保存配置；活动选择仍是草稿，随「保存」一起提交，避免未保存草稿污染生成 API 选择 -->
       <select v-model="draftActiveApiId" class="text_pole">
-        <option v-for="api in draftApis" :key="api.id" :value="api.id">{{ api.name || t`<未命名>` }}</option>
+        <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">{{ api.name || t`<未命名>` }}</option>
       </select>
     </label>
 
@@ -23,6 +24,10 @@
         </button>
       </div>
       <div v-if="expandedCards.has(api.id)" class="choice-api-card-body">
+        <!-- 配置名称置于卡片顶端第一行，便于一眼识别当前编辑的是哪张卡 -->
+        <div class="choice-api-name-row">
+          <input v-model="api.name" class="text_pole" :placeholder="t`配置名称`" />
+        </div>
         <div class="choice-api-url-row">
           <input v-model="api.apiurl" class="text_pole" :placeholder="t`API 地址`" />
           <input
@@ -80,7 +85,6 @@
             :placeholder="t`排除参数`"
             style="flex: 1; min-width: 0"
           />
-          <input v-model="api.name" class="text_pole" :placeholder="t`配置名称`" style="width: 120px; flex-shrink: 0" />
         </div>
       </div>
     </div>
@@ -238,6 +242,14 @@ const reset = () => {
   padding: 0 8px 8px;
   border-top: 1px solid rgba(128, 128, 128, 0.12);
   padding-top: 6px;
+}
+
+.choice-api-name-row {
+  display: flex;
+}
+
+.choice-api-name-row .text_pole {
+  flex: 1;
 }
 
 .choice-api-url-row {

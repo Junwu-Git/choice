@@ -132,7 +132,25 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
+
+export const WorldInfoGlobalSettings = z
+  .object({
+    enabled: z.boolean().default(true),
+    redlight_mode: z.boolean().default(true),
+    ejs_compat: z.boolean().default(false),
+  })
+  .prefault({});
+export type WorldInfoGlobalSettings = z.infer<typeof WorldInfoGlobalSettings>;
+
+export const WorldInfoChatSettings = z
+  .object({
+    excluded_books: z.array(z.string()).prefault([]),
+    excluded_entries: z.array(z.string()).prefault([]),
+    enabled_books: z.array(z.string()).prefault([]),
+  })
+  .prefault({});
+export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
 
 export const GlobalSettings = z
   .object({
@@ -141,6 +159,7 @@ export const GlobalSettings = z
     prompt_rules: PromptRules.prefault({}),
     apis: z.array(SecondaryApi).prefault([]),
     pool: z.array(PoolEntry).prefault([]),
+    world_info: WorldInfoGlobalSettings.prefault({}),
   })
   .prefault({});
 export type GlobalSettings = z.infer<typeof GlobalSettings>;
@@ -152,24 +171,13 @@ export const CharacterSettings = z
   .prefault({});
 export type CharacterSettings = z.infer<typeof CharacterSettings>;
 
-export const WorldInfoSettings = z
-  .object({
-    enabled: z.boolean().default(true),
-    redlight_mode: z.boolean().default(true),
-    ejs_compat: z.boolean().default(false),
-    excluded_books: z.array(z.string()).prefault([]),
-    excluded_entries: z.array(z.string()).prefault([]),
-  })
-  .prefault({});
-export type WorldInfoSettings = z.infer<typeof WorldInfoSettings>;
-
 export const ChatSettings = z
   .object({
     pool: z.array(PoolEntry).prefault([]),
     active_api_id: z.string().default(''),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append']).default('send'),
-    world_info: WorldInfoSettings.prefault({}),
+    world_info: WorldInfoChatSettings.prefault({}),
   })
   .prefault({});
 export type ChatSettings = z.infer<typeof ChatSettings>;

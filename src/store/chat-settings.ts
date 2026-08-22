@@ -5,10 +5,16 @@ import { validateInplace } from '@/util/zod';
 
 export const useChatSettingsStore = defineStore('chat-settings', () => {
   let reloading = false;
+  if (!chat_metadata[setting_field]) {
+    chat_metadata[setting_field] = {};
+  }
   const settings = ref(validateInplace(ChatSettings, chat_metadata[setting_field]));
 
   const reload = () => {
     reloading = true;
+    if (!chat_metadata[setting_field]) {
+      chat_metadata[setting_field] = {};
+    }
     settings.value = validateInplace(ChatSettings, chat_metadata[setting_field]);
     nextTick(() => {
       reloading = false;

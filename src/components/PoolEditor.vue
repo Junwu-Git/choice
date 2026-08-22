@@ -19,6 +19,10 @@
         <button class="menu_button" :disabled="selectedIds.size === 0" @click="importSelected">
           {{ t`复制选中到聊天层(${selectedIds.size})` }}
         </button>
+        <button class="menu_button" @click="showGen = true">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          {{ t`AI 生成` }}
+        </button>
         <button class="menu_button" @click="addEntry">{{ t`添加条目` }}</button>
       </div>
     </div>
@@ -66,11 +70,14 @@
     <div v-else class="choice-empty-hint">{{ t`当前层级暂无条目` }}</div>
 
     <div class="choice-hint">{{ t`覆盖规则:聊天层 > 角色层 > 全局层,高优先级层有条目时低层不参与抽取` }}</div>
+
+    <PoolGenDialog :open="showGen" :default-layer="genDefaultLayer" @close="showGen = false" @confirm="onGenConfirm" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -88,6 +95,9 @@ const filter = ref<FilterTab>('all');
 const selectedIds = ref<Set<string>>(new Set());
 const expanded = ref<Set<string>>(new Set());
 const allExpanded = ref(false);
+const showGen = ref(false);
+// AI 生成对话框默认层级：随当前筛选；「全部」时落回聊天层
+const genDefaultLayer = computed<PoolLayer>(() => (filter.value === 'all' ? 'chat' : filter.value));
 
 const filterTabs: { value: FilterTab; label: string }[] = [
   { value: 'all', label: t`全部` },
@@ -211,6 +221,26 @@ const importSelected = () => {
     }
   }
   selectedIds.value = new Set();
+};
+
+// 注入选中项：替换项原地改目标条目 text（保留 id/位置/固定/权重/分类/条件），新增项 push
+// 直接改 store 数组，深层 watch 已自动持久化（与「添加条目」同一通道）
+const onGenConfirm = ({
+  additions,
+  replacements,
+  layer,
+}: {
+  additions: PoolEntry[];
+  replacements: { id: string; text: string }[];
+  layer: PoolLayer;
+}) => {
+  const pool = poolOf(layer);
+  for (const r of replacements) {
+    const target = pool.find(e => e.id === r.id);
+    if (target) target.text = r.text;
+  }
+  if (additions.length) pool.push(...additions);
+  showGen.value = false;
 };
 </script>
 

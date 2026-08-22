@@ -1,21 +1,34 @@
 import { chat, characters, substituteParams, this_chid } from '@sillytavern/script';
-import { getSortedEntries, selected_world_info } from '@sillytavern/scripts/world-info';
+import { getSortedEntries, loadWorldInfo, selected_world_info } from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { resolvePool } from '@/core/pool-resolver';
 import { evaluateCondition } from '@/core/variable-bridge';
+import { callSecondaryApi, type ChatMsg } from '@/core/api-client';
 import { useChatSettingsStore } from '@/store/chat-settings';
+import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { usePoolSelectorStore } from '@/store/pool-selector';
+import { usePoolSelectorStore, type PoolLayer } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PromptRules, SecondaryApi, WorldInfoSettings } from '@/type/settings';
+import type { PoolEntry, PromptRules, SecondaryApi, WorldInfoChatSettings, WorldInfoGlobalSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
+
+/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（仅改 text），否则为新增条目。
+ *  replaceOriginal 仅用于 UI 预览被替换的原文，不参与注入逻辑。 */
+export type PoolGenItem = {
+  text: string;
+  replaceTargetId?: string;
+  replaceOriginal?: string;
+};
 
 export const generatorState = reactive({ loading: false, generationId: null as string | null });
 
 let cancelled = false;
 
-type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };
+/** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
+ *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
+export const poolGenState = reactive({ loading: false });
+let poolGenController: AbortController | null = null;
 
 const resolveCount = (cm: string): number => {
   const s = cm.trim();
@@ -34,6 +47,19 @@ const resolveCount = (cm: string): number => {
 
 const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
+
+/** 读取指定层当前池数组（store 读取集中在 core，与 generateOptions 同模式）。
+ *  返回的是 store 内的响应式数组引用；调用方做快照后再用于编号/映射。 */
+const poolOfLayer = (layer: PoolLayer): PoolEntry[] => {
+  switch (layer) {
+    case 'global':
+      return useGlobalSettingsStore().settings.pool;
+    case 'character':
+      return useCharacterSettingsStore().settings.pool;
+    case 'chat':
+      return useChatSettingsStore().settings.pool;
+  }
+};
 
 type Ctx = { count: number; pinned: string; poolSelected: string };
 const sub = (t: string, c: Ctx) =>
@@ -69,16 +95,48 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   return h;
 };
 
-type WIEntry = { uid: string | number; world: string; content: string; disable: boolean; position: number };
+type WIEntry = { uid: string | number; world: string; content: string; disable: boolean; constant: boolean; vectorized: boolean; position: number };
+
+const getAllWIEntries = async (): Promise<WIEntry[]> => {
+  const result: WIEntry[] = [];
+  const activeBooks = [...(selected_world_info ?? [])];
+  const chid = this_chid;
+  const charWorld = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
+  if (charWorld && !activeBooks.includes(charWorld)) {
+    activeBooks.push(charWorld);
+  }
+  for (const name of activeBooks) {
+    try {
+      const data = await loadWorldInfo(name);
+      if (data?.entries) {
+        for (const entry of Object.values(data.entries) as any[]) {
+          result.push({
+            uid: entry.uid,
+            world: name,
+            content: entry.content || '',
+            disable: entry.disable || false,
+            constant: entry.constant || false,
+            vectorized: entry.vectorized || false,
+            position: entry.position || 0,
+          });
+        }
+      }
+    } catch {
+      // ignore load errors
+    }
+  }
+  return result;
+};
 
 const buildWI = async (excl: string[], redlight: boolean, ejs: boolean): Promise<{ before: string; after: string }> => {
   try {
-    let e = (await getSortedEntries()) as WIEntry[];
+    let e = redlight ? ((await getSortedEntries()) as WIEntry[]) : await getAllWIEntries();
     if (excl.length) e = e.filter(x => !excl.includes(`${x.world}::${x.uid}`));
     const b: string[] = [],
       a: string[] = [];
     for (const x of e) {
       if (redlight && x.disable) continue;
+      if (redlight && x.vectorized) continue;
       let t = substituteParams(x.content || '');
       if (ejs && typeof (window as any).ejs?.render === 'function' && t.includes('<%')) {
         try {
@@ -98,11 +156,20 @@ const buildWI = async (excl: string[], redlight: boolean, ejs: boolean): Promise
 };
 
 type Restore = { restore: () => void } | null;
-const applyWIExcl = (excl: string[]): Restore => {
-  if (!excl.length) return null;
+const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
   const saved = [...(selected_world_info ?? [])];
+  const hasExcl = excl.length > 0;
+  const hasEnabled = enabled.length > 0;
+  if (!hasExcl && !hasEnabled) return null;
+
   selected_world_info.length = 0;
-  selected_world_info.push(...saved.filter(n => !excl.includes(n)));
+  let newList = hasExcl ? saved.filter(n => !excl.includes(n)) : [...saved];
+  if (hasEnabled) {
+    for (const name of enabled) {
+      if (!newList.includes(name)) newList.push(name);
+    }
+  }
+  selected_world_info.push(...newList);
   const chid = this_chid;
   const cw = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
   const cwEx = cw ? excl.includes(cw) : false;
@@ -116,9 +183,14 @@ const applyWIExcl = (excl: string[]): Restore => {
   };
 };
 
+/** 思维链标签块剥离正则：parseOptions 与 parsePoolGenItems 共用。
+ *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步两处解析，
+ *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
+const STRIP_REASONING_TAGS_RE = /<(?:think|reasoning|thought)>[\s\S]*?<\/(?:think|reasoning|thought)>/gi;
+
 export function parseOptions(text: string, count: number): string[] {
   // 先去除 thinking/reasoning/thought 标签块（包括预填充产生的 <thinking> 块）
-  let c = text.replace(/<(?:think|reasoning|thought)>[\s\S]*?<\/(?:think|reasoning|thought)>/gi, '').trim();
+  let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
 
   const m = c.match(/<options>([\s\S]*?)<\/options>/i);
   if (m) c = m[1].trim();
@@ -153,7 +225,8 @@ export function parseOptions(text: string, count: number): string[] {
 const buildMessages = async (
   systemPrompt: string,
   userInstruction: string,
-  wi: WorldInfoSettings,
+  wi: WorldInfoGlobalSettings,
+  wiChat: WorldInfoChatSettings,
   contextRounds: number,
 ): Promise<ChatMsg[]> => {
   const msgs: ChatMsg[] = [];
@@ -163,10 +236,7 @@ const buildMessages = async (
   if (ch?.data?.personality) msgs.push({ role: 'system', content: substituteParams(ch.data.personality) });
   if (ch?.data?.scenario) msgs.push({ role: 'system', content: substituteParams(ch.data.scenario) });
   if (wi.enabled) {
-    const needManual = !wi.redlight_mode || wi.excluded_entries.length > 0;
-    const w = needManual
-      ? await buildWI(wi.excluded_entries, wi.redlight_mode, wi.ejs_compat)
-      : await buildWI([], true, wi.ejs_compat);
+    const w = await buildWI(wiChat.excluded_entries, wi.redlight_mode, wi.ejs_compat);
     if (w.before) msgs.push({ role: 'system', content: w.before });
     if (w.after) msgs.push({ role: 'system', content: w.after });
   }
@@ -193,70 +263,21 @@ const OPTIONS_PREFILL = `收到。我将根据当前场景与角色状态，先�
 <thinking>
 `;
 
-const GENERATE_URL = '/api/backends/chat-completions/generate';
+/** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
+ *  与行动选项生成提示词刻意分离：条目池只要简短"行动方向"，
+ *  不要求标题/对白/格式标签，输出契约不同，故不复用 parseOptions。
+ *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 替换#序号 提替换建议。 */
+const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
 
-const requestViaFetch = async (messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> => {
-  const body: Record<string, unknown> = {
-    chat_completion_source: 'openai',
-    reverse_proxy: api.apiurl,
-    proxy_password: api.key || '',
-    model: api.model,
-    messages,
-    temperature: api.temperature,
-    max_tokens: api.max_tokens,
-    stream: api.stream,
-  };
+用户消息中会给出【当前层已有条目】（带序号 1、2、3…）。
 
-  if (api.exclude_params) {
-    for (const key of api.exclude_params
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)) {
-      delete body[key];
-    }
-  }
-
-  const ctx = window.SillyTavern?.getContext?.();
-  const resp = await fetch(GENERATE_URL, {
-    method: 'POST',
-    headers: ctx?.getRequestHeaders?.() ?? {},
-    body: JSON.stringify(body),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => '');
-    throw new Error(`API 请求失败 (${resp.status}): ${text.slice(0, 300)}`);
-  }
-
-  if (api.stream && resp.body) {
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let full = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') continue;
-        try {
-          const json = JSON.parse(data);
-          const delta = json?.choices?.[0]?.delta?.content ?? '';
-          full += delta;
-        } catch {
-          /* 忽略解析失败的行 */
-        }
-      }
-    }
-    return full;
-  }
-
-  const data = await resp.json();
-  if (data?.error) throw new Error(data.error.message || 'API 返回错误');
-  return data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? '';
-};
+【输出要求】
+1. 共输出 N 条建议，每条文本 5-25 个中文字符，只写行动方向，不写对白原文/越权结果（不预判他人反应）/动作细节描写。
+2. 新增条目不得与已有条目重复或高度雷同。
+3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可用"替换#序号：新文本"提出替换建议，序号对应【当前层已有条目】列表中的序号。
+4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
+5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
+6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
 
 export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
@@ -269,8 +290,9 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const gid = uuidv4();
   generatorState.loading = true;
   generatorState.generationId = gid;
-  const wi = cs.settings.world_info;
-  const restore = wi.enabled && wi.excluded_books.length > 0 ? applyWIExcl(wi.excluded_books) : null;
+  const gwi = gs.settings.world_info;
+  const cwi = cs.settings.world_info;
+  const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
   try {
     const count = resolveCount(gs.settings.generation.count_mode);
     const pool = resolvePool({
@@ -301,7 +323,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
 
     const userInstruction = sub(buildUserInstr(c), c);
     console.log('[Choice] 发送给AI的指令', userInstruction.slice(0, 1000));
-    const messages = await buildMessages(systemPrompt, userInstruction, wi, rules.context_rounds);
+    const messages = await buildMessages(systemPrompt, userInstruction, gwi, cwi, rules.context_rounds);
 
     if (rules.core_rules) {
       messages.push({ role: 'system', content: substituteParams(sub(rules.core_rules, c)) });
@@ -329,7 +351,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     }
 
     try {
-      const raw = await requestViaFetch(messages, api, signal);
+      const raw = await callSecondaryApi(messages, api, signal);
       if (cancelled) return null;
       const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
       if (!options.length) {
@@ -357,4 +379,122 @@ export function cancelGeneration() {
   cancelled = true;
   generatorState.loading = false;
   generatorState.generationId = null;
+}
+
+/** 解析条目池生成输出：宽松按行解析，兼容编号列表/无序列表/纯文本。
+ *  与 parseOptions 刻意分离：条目池不依赖 <options> 标签，输出契约不同，勿合并逻辑。
+ *  返回中间结构 {text, replaceTarget?}：replaceTarget 为已有条目的 1-based 序号，
+ *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。 */
+export function parsePoolGenItems(
+  text: string,
+  count: number,
+): { text: string; replaceTarget?: number }[] {
+  // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
+  let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
+  // 去掉可能的代码块包裹
+  c = c
+    .replace(/^```[a-zA-Z]*\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  // 替换前缀："替换#N：文本" 或 "替换N: 文本"（N=已有条目序号），序号后须紧跟 : 或 ：
+  const replaceRe = /^替换\s*#?(\d+)\s*[:：]\s*(.+)$/;
+  // 去掉行首编号 "1." / "2)" / "3、" 与无序列表符 "- " / "• "；
+  // 编号分隔符后须非数字，避免误吞 "10.5" 这类十进制开头的条目
+  const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
+  const items: { text: string; replaceTarget?: number }[] = [];
+  for (const raw of c.split(/\r?\n/)) {
+    let l = raw.trim();
+    if (!l || /^<\/?\w+>$/i.test(l)) continue;
+    // 先剥行首列表标记，再去判别是否为替换前缀
+    l = stripMarker(l);
+    if (!l) continue;
+    const m = l.match(replaceRe);
+    if (m) {
+      // 替换行的文本也剥一次列表标记（模型可能写 "替换#2：1. 新文本"）
+      const t = stripMarker(m[2]);
+      if (t) items.push({ text: t, replaceTarget: parseInt(m[1], 10) });
+    } else {
+      items.push({ text: l });
+    }
+    if (items.length >= count) break;
+  }
+  return items;
+}
+
+/** 条目池 AI 生成：复用活动 API（与 generateOptions 同一套 resolveCustomApi），
+ *  始终带角色描述/性格/场景以贴合角色语气；includeContext 时纳入近 N 轮聊天历史。
+ *  不走思维链预填充（区别于行动选项生成），stream 由 api.stream 决定。 */
+export async function generatePoolEntries(params: {
+  count: number;
+  requirements: string;
+  includeContext: boolean;
+  layer: PoolLayer;
+}): Promise<PoolGenItem[]> {
+  if (poolGenState.loading) {
+    toastr.info(t`条目生成中,请稍候`);
+    return [];
+  }
+  const gs = useGlobalSettingsStore();
+  const cs = useChatSettingsStore();
+  const api = resolveCustomApi(cs.settings.active_api_id, gs.settings.apis);
+  if (!api) {
+    toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
+    return [];
+  }
+  poolGenState.loading = true;
+  poolGenController = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  if (api.timeout > 0) {
+    timeoutId = setTimeout(() => poolGenController?.abort(), api.timeout * 1000);
+  }
+  try {
+    // 快照当前层已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
+    const existing = poolOfLayer(params.layer).map(e => ({ id: e.id, text: e.text }));
+    const existingList = existing.length
+      ? existing.map((e, i) => `${i + 1}. ${e.text}`).join('\n')
+      : '（无）';
+    const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
+    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
+    const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+    if (ch?.data?.description) messages.push({ role: 'system', content: substituteParams(ch.data.description) });
+    if (ch?.data?.personality) messages.push({ role: 'system', content: substituteParams(ch.data.personality) });
+    if (ch?.data?.scenario) messages.push({ role: 'system', content: substituteParams(ch.data.scenario) });
+    if (params.includeContext) {
+      for (const m of buildChatHistory(gs.settings.prompt_rules.context_rounds)) messages.push(m);
+    }
+    messages.push({
+      role: 'user',
+      content: `请生成 ${params.count} 条行动条目建议。\n当前层已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
+    });
+    const raw = await callSecondaryApi(messages, api, poolGenController.signal);
+    const parsed = parsePoolGenItems(raw, params.count);
+    // 把 1-based 序号映射为已解析的 replaceTargetId + 原文；越界序号降级为新增条目
+    const items: PoolGenItem[] = parsed.map(p => {
+      const idx = p.replaceTarget;
+      if (idx !== undefined && idx >= 1 && idx <= existing.length) {
+        const tgt = existing[idx - 1];
+        return { text: p.text, replaceTargetId: tgt.id, replaceOriginal: tgt.text };
+      }
+      return { text: p.text };
+    });
+    if (!items.length) {
+      toastr.error(t`未解析出条目,请检查模型输出`);
+    }
+    return items;
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') return [];
+    console.error('[Choice] pool generation failed', e);
+    toastr.error(t`条目生成失败:${e instanceof Error ? e.message : String(e)}`);
+    return [];
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    poolGenController = null;
+    poolGenState.loading = false;
+  }
+}
+
+export function cancelPoolGen() {
+  poolGenController?.abort();
+  poolGenController = null;
+  poolGenState.loading = false;
 }

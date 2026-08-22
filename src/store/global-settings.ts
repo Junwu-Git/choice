@@ -1,4 +1,4 @@
-import { saveSettingsDebounced } from '@sillytavern/script';
+import { chat_metadata, saveSettingsDebounced } from '@sillytavern/script';
 import { extension_settings } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { GlobalSettings, SCHEMA_VERSION, setting_field } from '@/type/settings';
@@ -15,6 +15,20 @@ const createDefaultPool = () => [
 const applyDefaults = (validated: GlobalSettingsType) => {
   if (validated.pool.length === 0) {
     validated.pool = createDefaultPool();
+  }
+  if ((validated.schema_version ?? 0) < 8) {
+    try {
+      const chatWI = chat_metadata?.[setting_field]?.world_info;
+      if (chatWI && (chatWI.enabled !== undefined || chatWI.redlight_mode !== undefined || chatWI.ejs_compat !== undefined)) {
+        validated.world_info = {
+          enabled: chatWI.enabled ?? true,
+          redlight_mode: chatWI.redlight_mode ?? true,
+          ejs_compat: chatWI.ejs_compat ?? false,
+        };
+      }
+    } catch {
+      // chat_metadata 不可用时跳过迁移，使用默认值
+    }
   }
   validated.schema_version = SCHEMA_VERSION;
 };
