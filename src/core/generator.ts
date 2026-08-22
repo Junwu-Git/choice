@@ -9,7 +9,13 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore, type PoolLayer } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PoolEntry, PromptRules, SecondaryApi, WorldInfoChatSettings, WorldInfoGlobalSettings } from '@/type/settings';
+import type {
+  PoolEntry,
+  PromptRules,
+  SecondaryApi,
+  WorldInfoChatSettings,
+  WorldInfoGlobalSettings,
+} from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -95,7 +101,15 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   return h;
 };
 
-type WIEntry = { uid: string | number; world: string; content: string; disable: boolean; constant: boolean; vectorized: boolean; position: number };
+type WIEntry = {
+  uid: string | number;
+  world: string;
+  content: string;
+  disable: boolean;
+  constant: boolean;
+  vectorized: boolean;
+  position: number;
+};
 
 const getAllWIEntries = async (): Promise<WIEntry[]> => {
   const result: WIEntry[] = [];
@@ -385,10 +399,7 @@ export function cancelGeneration() {
  *  与 parseOptions 刻意分离：条目池不依赖 <options> 标签，输出契约不同，勿合并逻辑。
  *  返回中间结构 {text, replaceTarget?}：replaceTarget 为已有条目的 1-based 序号，
  *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。 */
-export function parsePoolGenItems(
-  text: string,
-  count: number,
-): { text: string; replaceTarget?: number }[] {
+export function parsePoolGenItems(text: string, count: number): { text: string; replaceTarget?: number }[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹
@@ -450,9 +461,7 @@ export async function generatePoolEntries(params: {
   try {
     // 快照当前层已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
     const existing = poolOfLayer(params.layer).map(e => ({ id: e.id, text: e.text }));
-    const existingList = existing.length
-      ? existing.map((e, i) => `${i + 1}. ${e.text}`).join('\n')
-      : '（无）';
+    const existingList = existing.length ? existing.map((e, i) => `${i + 1}. ${e.text}`).join('\n') : '（无）';
     const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
     const ch = this_chid !== undefined ? characters[this_chid] : undefined;

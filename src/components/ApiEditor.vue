@@ -4,7 +4,9 @@
       <span>{{ t`生成 API` }}</span>
       <!-- 下拉只遍历已保存配置；活动选择仍是草稿，随「保存」一起提交，避免未保存草稿污染生成 API 选择 -->
       <select v-model="draftActiveApiId" class="text_pole">
-        <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">{{ api.name || t`<未命名>` }}</option>
+        <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
+          {{ api.name || t`<未命名>` }}
+        </option>
       </select>
     </label>
 

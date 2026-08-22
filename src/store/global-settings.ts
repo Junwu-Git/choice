@@ -19,7 +19,10 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   if ((validated.schema_version ?? 0) < 8) {
     try {
       const chatWI = chat_metadata?.[setting_field]?.world_info;
-      if (chatWI && (chatWI.enabled !== undefined || chatWI.redlight_mode !== undefined || chatWI.ejs_compat !== undefined)) {
+      if (
+        chatWI &&
+        (chatWI.enabled !== undefined || chatWI.redlight_mode !== undefined || chatWI.ejs_compat !== undefined)
+      ) {
         validated.world_info = {
           enabled: chatWI.enabled ?? true,
           redlight_mode: chatWI.redlight_mode ?? true,
