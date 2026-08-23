@@ -9,7 +9,11 @@
             <span class="choice-epool-count">({{ masterPool.length }})</span>
           </span>
           <div class="choice-epool-header-actions">
-            <button class="choice-icon-btn" :title="allGroupsExpanded ? t`全部收起` : t`全部展开`" @click="toggleExpandAllGroups">
+            <button
+              class="choice-icon-btn"
+              :title="allGroupsExpanded ? t`全部收起` : t`全部展开`"
+              @click="toggleExpandAllGroups"
+            >
               <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
             </button>
             <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
@@ -24,7 +28,12 @@
 
         <div class="choice-epool-body choice-scrollbar">
           <div v-if="groupedEntries.length > 0" ref="groupList" class="choice-epool-list">
-            <div v-for="group in groupedEntries" :key="group.key" class="choice-epool-group" :data-group-key="group.key">
+            <div
+              v-for="group in groupedEntries"
+              :key="group.key"
+              class="choice-epool-group"
+              :data-group-key="group.key"
+            >
               <div class="choice-epool-group-head" @dragenter="onGroupDragEnter(group.key)">
                 <label class="choice-check" @click.stop>
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
@@ -34,20 +43,16 @@
                   :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"
                   @click="toggleGroup(group.key)"
                 ></i>
-                <span class="choice-epool-group-name" @click="toggleGroup(group.key)">{{ group.key || t`未分组` }}</span>
-                <span class="choice-epool-group-count" @click="toggleGroup(group.key)">({{ group.entries.length }})</span>
-                <button
-                  class="choice-icon-btn"
-                  :title="t`添加条目`"
-                  @click.stop="addEntryToGroup(group.key)"
+                <span class="choice-epool-group-name" @click="toggleGroup(group.key)">{{
+                  group.key || t`未分组`
+                }}</span>
+                <span class="choice-epool-group-count" @click="toggleGroup(group.key)"
+                  >({{ group.entries.length }})</span
                 >
+                <button class="choice-icon-btn" :title="t`添加条目`" @click.stop="addEntryToGroup(group.key)">
                   <i class="fa-solid fa-plus"></i>
                 </button>
-                <button
-                  class="choice-icon-btn"
-                  :title="t`复制全部`"
-                  @click.stop="copyGroup(group)"
-                >
+                <button class="choice-icon-btn" :title="t`复制全部`" @click.stop="copyGroup(group)">
                   <i class="fa-solid fa-copy"></i>
                 </button>
                 <button
@@ -58,11 +63,19 @@
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
               </div>
-              <div :class="['choice-epool-group-body', { 'is-collapsed': !expandedGroups.has(group.key) }]" :data-group-key="group.key">
+              <div
+                :class="['choice-epool-group-body', { 'is-collapsed': !expandedGroups.has(group.key) }]"
+                :data-group-key="group.key"
+              >
                 <div v-if="group.entries.length === 0" class="choice-empty-hint">
                   <span>{{ t`暂无条目，点击 + 添加` }}</span>
                 </div>
-                <div v-for="entry in group.entries" :key="entry.id" class="choice-epool-entry" :data-entry-id="entry.id">
+                <div
+                  v-for="entry in group.entries"
+                  :key="entry.id"
+                  class="choice-epool-entry"
+                  :data-entry-id="entry.id"
+                >
                   <div class="choice-epool-entry-head">
                     <label class="choice-check" @click.stop>
                       <input type="checkbox" :checked="selected.has(entry.id)" @change="toggleSelectEntry(entry.id)" />
@@ -72,7 +85,9 @@
                       :class="expanded.has(entry.id) ? 'fa-chevron-down' : 'fa-chevron-right'"
                       @click="toggleEntry(entry.id)"
                     ></i>
-                    <span class="choice-epool-entry-summary" @click="toggleEntry(entry.id)">{{ entrySummary(entry) }}</span>
+                    <span class="choice-epool-entry-summary" @click="toggleEntry(entry.id)">{{
+                      entrySummary(entry)
+                    }}</span>
                     <span v-if="entry.pinned" class="choice-pin-badge">📌</span>
                     <select
                       v-model="entry.category"
@@ -92,12 +107,7 @@
                     </button>
                   </div>
                   <div v-if="expanded.has(entry.id)" class="choice-epool-entry-body">
-                    <textarea
-                      v-model="entry.text"
-                      class="text_pole"
-                      :placeholder="t`条目内容`"
-                      rows="2"
-                    ></textarea>
+                    <textarea v-model="entry.text" class="text_pole" :placeholder="t`条目内容`" rows="2"></textarea>
                     <div class="choice-epool-entry-fields">
                       <label class="choice-check">
                         <input v-model="entry.pinned" type="checkbox" />
@@ -110,11 +120,7 @@
                         min="0"
                         :title="t`权重(加权随机)`"
                       />
-                      <input
-                        v-model="entry.condition"
-                        class="text_pole"
-                        :placeholder="t`如:战斗场景、关系亲密时`"
-                      />
+                      <input v-model="entry.condition" class="text_pole" :placeholder="t`如:战斗场景、关系亲密时`" />
                     </div>
                   </div>
                 </div>
@@ -129,9 +135,7 @@
 
         <div v-if="selected.size > 0" class="choice-epool-batch-bar">
           <span class="choice-epool-batch-count">{{ t`已选 ${selected.size} 条` }}</span>
-          <button class="choice-btn-sm" @click="copySelected">
-            <i class="fa-solid fa-copy"></i> {{ t`复制` }}
-          </button>
+          <button class="choice-btn-sm" @click="copySelected"><i class="fa-solid fa-copy"></i> {{ t`复制` }}</button>
           <button class="choice-btn-sm" :title="t`移动到分组`" @click="moveSelected = !moveSelected">
             <i class="fa-solid fa-arrow-right"></i> {{ t`移动` }}
           </button>
@@ -142,13 +146,18 @@
           <button v-if="moveSelected" class="choice-btn-sm" @click="moveSelectedEntries">
             {{ t`确认移动` }}
           </button>
-          <button
-            class="choice-btn-sm choice-btn-del"
-            @click="deleteTarget = { type: 'batch', count: selected.size }"
-          >
+          <button class="choice-btn-sm choice-btn-del" @click="deleteTarget = { type: 'batch', count: selected.size }">
             <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
           </button>
-          <button class="choice-btn-sm" @click="selected.clear(); deleteTarget = null">{{ t`取消` }}</button>
+          <button
+            class="choice-btn-sm"
+            @click="
+              selected.clear();
+              deleteTarget = null;
+            "
+          >
+            {{ t`取消` }}
+          </button>
         </div>
 
         <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
@@ -186,19 +195,27 @@ const expanded = ref<Set<string>>(new Set());
 const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
 const showGen = ref(false);
-const deleteTarget = ref<{ type: 'entry'; id: string; summary: string } | { type: 'group'; key: string; count: number } | { type: 'batch'; count: number } | null>(null);
+const deleteTarget = ref<
+  | { type: 'entry'; id: string; summary: string }
+  | { type: 'group'; key: string; count: number }
+  | { type: 'batch'; count: number }
+  | null
+>(null);
 const selected = ref<Set<string>>(new Set());
 const moveSelected = ref(false);
 const moveTargetCat = ref('');
 const pendingGroups = ref<Set<string>>(new Set());
 
-watch(() => props.open, (val) => {
-  if (!val) {
-    deleteTarget.value = null;
-    selected.value = new Set();
-    moveSelected.value = false;
-  }
-});
+watch(
+  () => props.open,
+  val => {
+    if (!val) {
+      deleteTarget.value = null;
+      selected.value = new Set();
+      moveSelected.value = false;
+    }
+  },
+);
 
 const categoryNames = computed(() => {
   const names = new Set<string>();
@@ -278,26 +295,32 @@ const toggleExpandAllGroups = () => {
 
 const copyGroup = (group: EntryGroup) => {
   deleteTarget.value = null;
-  const texts = group.entries.map(e => e.text).filter(t => t.trim()).join('\n');
+  const texts = group.entries
+    .map(e => e.text)
+    .filter(t => t.trim())
+    .join('\n');
   if (!texts) {
     toastr.warning(t`没有可复制的内容`);
     return;
   }
-  navigator.clipboard.writeText(texts).then(() => {
-    toastr.success(t`已复制 ${group.entries.length} 条到剪贴板`);
-  }).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = texts;
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      document.execCommand('copy');
+  navigator.clipboard
+    .writeText(texts)
+    .then(() => {
       toastr.success(t`已复制 ${group.entries.length} 条到剪贴板`);
-    } catch {
-      toastr.error(t`复制失败`);
-    }
-    document.body.removeChild(ta);
-  });
+    })
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = texts;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        toastr.success(t`已复制 ${group.entries.length} 条到剪贴板`);
+      } catch {
+        toastr.error(t`复制失败`);
+      }
+      document.body.removeChild(ta);
+    });
 };
 
 const toggleSelectEntry = (id: string) => {
@@ -328,21 +351,24 @@ const copySelected = () => {
     toastr.warning(t`没有可复制的内容`);
     return;
   }
-  navigator.clipboard.writeText(texts).then(() => {
-    toastr.success(t`已复制到剪贴板`);
-  }).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = texts;
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      document.execCommand('copy');
+  navigator.clipboard
+    .writeText(texts)
+    .then(() => {
       toastr.success(t`已复制到剪贴板`);
-    } catch {
-      toastr.error(t`复制失败`);
-    }
-    document.body.removeChild(ta);
-  });
+    })
+    .catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = texts;
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        toastr.success(t`已复制到剪贴板`);
+      } catch {
+        toastr.error(t`复制失败`);
+      }
+      document.body.removeChild(ta);
+    });
 };
 
 const moveSelectedEntries = () => {
@@ -465,18 +491,24 @@ const onGenConfirm = ({
 const deleteDialogTitle = computed(() => {
   if (!deleteTarget.value) return '';
   switch (deleteTarget.value.type) {
-    case 'entry': return t`删除条目`;
-    case 'group': return t`删除分组`;
-    case 'batch': return t`批量删除`;
+    case 'entry':
+      return t`删除条目`;
+    case 'group':
+      return t`删除分组`;
+    case 'batch':
+      return t`批量删除`;
   }
 });
 
 const deleteDialogMessage = computed(() => {
   if (!deleteTarget.value) return '';
   switch (deleteTarget.value.type) {
-    case 'entry': return t`确定要删除条目「${deleteTarget.value.summary}」吗？此操作不可撤销。`;
-    case 'group': return t`确定要删除分组「${deleteTarget.value.key || t`未分组`}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
-    case 'batch': return t`确定要删除选中的 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+    case 'entry':
+      return t`确定要删除条目「${deleteTarget.value.summary}」吗？此操作不可撤销。`;
+    case 'group':
+      return t`确定要删除分组「${deleteTarget.value.key || t`未分组`}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+    case 'batch':
+      return t`确定要删除选中的 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
   }
 });
 
@@ -510,7 +542,7 @@ const initGroupSortable = () => {
     handle: '.choice-epool-group-head',
     draggable: '.choice-epool-group',
     animation: 150,
-    onEnd: (evt) => {
+    onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
       const keys = groupedEntries.value.map(g => g.key);
       const [moved] = keys.splice(evt.oldIndex, 1);
@@ -530,15 +562,21 @@ const initEntrySortables = () => {
   for (const [key, s] of entrySortables) s.destroy();
   entrySortables.clear();
   const bodies = document.querySelectorAll('.choice-epool-group-body');
-  bodies.forEach((body) => {
+  bodies.forEach(body => {
     const groupKey = (body as HTMLElement).dataset.groupKey || '';
     const s = Sortable.create(body as HTMLElement, {
       group: 'entries',
       draggable: '.choice-epool-entry',
       animation: 150,
-      onEnd: (evt) => {
+      onEnd: evt => {
         const entryId = evt.item.dataset.entryId;
-        console.log('[Choice] 条目拖拽 onEnd', { entryId, fromKey: evt.from.dataset.groupKey, toKey: (evt.to as HTMLElement).dataset.groupKey, oldIndex: evt.oldIndex, newIndex: evt.newIndex });
+        console.log('[Choice] 条目拖拽 onEnd', {
+          entryId,
+          fromKey: evt.from.dataset.groupKey,
+          toKey: (evt.to as HTMLElement).dataset.groupKey,
+          oldIndex: evt.oldIndex,
+          newIndex: evt.newIndex,
+        });
         if (!entryId) return;
         const fromKey = evt.from.dataset.groupKey || '';
         const toKey = (evt.to as HTMLElement).dataset.groupKey || '';
@@ -574,12 +612,16 @@ const initEntrySortables = () => {
 };
 
 onMounted(() => {
-  watch([groupList, () => groupedEntries.value.length], () => {
-    nextTick(() => {
-      initGroupSortable();
-      initEntrySortables();
-    });
-  }, { immediate: true });
+  watch(
+    [groupList, () => groupedEntries.value.length],
+    () => {
+      nextTick(() => {
+        initGroupSortable();
+        initEntrySortables();
+      });
+    },
+    { immediate: true },
+  );
 });
 
 onUnmounted(() => {
@@ -660,7 +702,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-epool-close:hover {
@@ -809,7 +853,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-icon-btn:hover:not(:disabled) {
@@ -887,7 +933,9 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-btn-sm:hover:not(:disabled) {

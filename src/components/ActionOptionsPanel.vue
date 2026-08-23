@@ -267,7 +267,10 @@ const onSelect = async (option: ChoiceOption) => {
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--choice-transition), color var(--choice-transition), box-shadow var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition),
+    box-shadow var(--choice-transition);
 }
 
 .choice-behavior-btn:hover {
@@ -293,7 +296,10 @@ const onSelect = async (option: ChoiceOption) => {
   font-size: 13px;
   cursor: pointer;
   line-height: 1.4;
-  transition: transform var(--choice-transition), border-color var(--choice-transition), box-shadow var(--choice-transition);
+  transition:
+    transform var(--choice-transition),
+    border-color var(--choice-transition),
+    box-shadow var(--choice-transition);
 }
 
 .choice-option-btn:hover {

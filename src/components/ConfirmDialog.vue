@@ -97,7 +97,9 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-cfdlg-close:hover {

@@ -35,12 +35,23 @@
 }
 
 @keyframes choice-bubble-pulse {
-  0%, 100% { box-shadow: 0 0 16px var(--choice-primary-glow); }
-  50% { box-shadow: 0 0 28px rgba(74, 144, 217, 0.45); }
+  0%,
+  100% {
+    box-shadow: 0 0 16px var(--choice-primary-glow);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(74, 144, 217, 0.45);
+  }
 }
 
 @keyframes choice-skeleton {
-  0% { opacity: 0.3; }
-  50% { opacity: 0.6; }
-  100% { opacity: 0.3; }
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.3;
+  }
 }

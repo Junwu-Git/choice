@@ -1,15 +1,15 @@
 <template>
   <Teleport to="body">
     <div v-if="isSettingsOpen" class="choice-floating-overlay" @click.self="closeSettings">
-<div
-          ref="dialogEl"
-          class="choice-floating-dialog"
-          :class="{ 'choice-floating-dialog--dragging': isDragging }"
-          :style="{
-            '--choice-x': x + 'px',
-            '--choice-y': y + 'px',
-            transition: isDragging ? 'none' : 'transform 0.3s ease-out',
-          }"
+      <div
+        ref="dialogEl"
+        class="choice-floating-dialog"
+        :class="{ 'choice-floating-dialog--dragging': isDragging }"
+        :style="{
+          '--choice-x': x + 'px',
+          '--choice-y': y + 'px',
+          transition: isDragging ? 'none' : 'transform 0.3s ease-out',
+        }"
       >
         <div class="choice-floating-header" ref="headerEl">
           <span class="choice-floating-title">
@@ -166,7 +166,9 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-floating-close:hover {
@@ -198,7 +200,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transition: background var(--choice-transition), color var(--choice-transition), box-shadow var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition),
+    box-shadow var(--choice-transition);
 }
 
 .choice-tab:hover {

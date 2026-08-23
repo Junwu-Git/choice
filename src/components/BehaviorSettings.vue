@@ -112,7 +112,9 @@ const generation = computed(() => poolSelector.effectiveConfig?.generation ?? Ge
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background var(--choice-transition), border-color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    border-color var(--choice-transition);
   position: relative;
 }
 

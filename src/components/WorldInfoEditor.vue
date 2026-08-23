@@ -13,23 +13,25 @@
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
-          <div
-            class="choice-wi-row"
-            :class="{ excluded: !isBookChecked(book) }"
-            @click="toggleBookExpand(book.name)"
-          >
+          <div class="choice-wi-row" :class="{ excluded: !isBookChecked(book) }" @click="toggleBookExpand(book.name)">
             <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
-            <span class="choice-wi-badge" :class="book.source === 'global' ? 'badge-global' : book.source === 'character' ? 'badge-character' : 'badge-plugin'">
+            <span
+              class="choice-wi-badge"
+              :class="
+                book.source === 'global'
+                  ? 'badge-global'
+                  : book.source === 'character'
+                    ? 'badge-character'
+                    : 'badge-plugin'
+              "
+            >
               {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
             </span>
             <input type="checkbox" :checked="isBookChecked(book)" @click.stop @change="toggleBook(book)" />
           </div>
-          <div
-            v-if="bookExpanded.has(book.name) && bookEntries[book.name]"
-            class="choice-wi-entries"
-          >
+          <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
               v-for="entry in bookEntries[book.name]"
               :key="entry.uid"
@@ -102,12 +104,12 @@ const bookEntries = ref<Record<string, EntryInfo[]>>({});
 const bookExpanded = ref<Set<string>>(new Set());
 const showInactive = ref(false);
 
-const activeBooks = computed(() => allBooks.value.filter(b =>
-  b.active || chatStore.settings.world_info.enabled_books.includes(b.name)
-));
-const inactiveBooks = computed(() => allBooks.value.filter(b =>
-  !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)
-));
+const activeBooks = computed(() =>
+  allBooks.value.filter(b => b.active || chatStore.settings.world_info.enabled_books.includes(b.name)),
+);
+const inactiveBooks = computed(() =>
+  allBooks.value.filter(b => !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)),
+);
 
 const isBookExcluded = (name: string) => chatStore.settings.world_info.excluded_books.includes(name);
 const isEntryExcluded = (bookName: string, uid: string | number) =>
@@ -425,7 +427,10 @@ onUnmounted(() => {
   color: var(--choice-text-muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--choice-transition), border-color var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    border-color var(--choice-transition),
+    color var(--choice-transition);
 }
 .choice-wi-enable-btn:hover {
   background: rgba(76, 175, 80, 0.2);

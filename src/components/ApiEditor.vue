@@ -12,12 +12,7 @@
     <div class="choice-api-form">
       <div class="choice-api-form-head">
         <span class="choice-form-title">{{ draftForm.name || t`<未命名>` }}</span>
-        <button
-          v-if="globalStore.settings.apis.length > 0"
-          class="choice-icon-btn"
-          :title="t`删除`"
-          @click="removeApi"
-        >
+        <button v-if="globalStore.settings.apis.length > 0" class="choice-icon-btn" :title="t`删除`" @click="removeApi">
           <i class="fa-solid fa-trash-can"></i>
         </button>
       </div>
@@ -62,7 +57,10 @@
             :key="model"
             class="choice-model-item"
             :class="{ 'choice-model-item--active': draftForm.model === model }"
-            @click="draftForm.model = model; modelDropdownOpen = false"
+            @click="
+              draftForm.model = model;
+              modelDropdownOpen = false;
+            "
           >
             {{ model }}
           </div>

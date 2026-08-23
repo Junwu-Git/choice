@@ -68,7 +68,10 @@ const tabs = [
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transition: background var(--choice-transition), color var(--choice-transition), box-shadow var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition),
+    box-shadow var(--choice-transition);
 }
 
 .choice-tab:hover {

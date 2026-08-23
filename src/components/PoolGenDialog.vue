@@ -25,9 +25,9 @@
                 <input v-model="includeContext" type="checkbox" />
                 {{ t`结合近期对话` }}
               </label>
-              <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px;">
+              <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
                 <span>{{ t`目标分组` }}</span>
-                <select v-model="targetCategory" class="text_pole" style="width: auto; min-width: 100px;">
+                <select v-model="targetCategory" class="text_pole" style="width: auto; min-width: 100px">
                   <option value="">{{ t`未分组` }}</option>
                   <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
                 </select>
@@ -239,7 +239,9 @@ const onInject = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-poolgen-close:hover {

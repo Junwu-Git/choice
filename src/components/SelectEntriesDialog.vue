@@ -8,7 +8,11 @@
             {{ title }}
           </span>
           <div class="choice-sedlg-header-actions">
-            <button class="choice-icon-btn" :title="allGroupsExpanded ? t`全部收起` : t`全部展开`" @click="toggleExpandAll">
+            <button
+              class="choice-icon-btn"
+              :title="allGroupsExpanded ? t`全部收起` : t`全部展开`"
+              @click="toggleExpandAll"
+            >
               <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
             </button>
             <button class="choice-sedlg-close" :title="t`取消`" @click="onCancel">&times;</button>
@@ -27,8 +31,12 @@
                   :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"
                   @click="toggleGroup(group.key)"
                 ></i>
-                <span class="choice-sedlg-group-name" @click="toggleGroup(group.key)">{{ group.key || t`未分组` }}</span>
-                <span class="choice-sedlg-group-count" @click="toggleGroup(group.key)">({{ group.entries.length }})</span>
+                <span class="choice-sedlg-group-name" @click="toggleGroup(group.key)">{{
+                  group.key || t`未分组`
+                }}</span>
+                <span class="choice-sedlg-group-count" @click="toggleGroup(group.key)"
+                  >({{ group.entries.length }})</span
+                >
               </div>
               <div v-if="expandedGroups.has(group.key)" class="choice-sedlg-group-body">
                 <div v-for="entry in group.entries" :key="entry.id" class="choice-sedlg-entry">
@@ -77,13 +85,16 @@ const pending = ref<Set<string>>(new Set());
 const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
 
-watch(() => props.open, (val) => {
-  if (val) {
-    pending.value = new Set(props.selectedIds);
-    expandedGroups.value = new Set();
-    allGroupsExpanded.value = false;
-  }
-});
+watch(
+  () => props.open,
+  val => {
+    if (val) {
+      pending.value = new Set(props.selectedIds);
+      expandedGroups.value = new Set();
+      allGroupsExpanded.value = false;
+    }
+  },
+);
 
 type EntryGroup = { key: string; entries: PoolEntry[] };
 
@@ -222,7 +233,9 @@ const onCancel = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-sedlg-close:hover {
@@ -327,7 +340,9 @@ const onCancel = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-icon-btn:hover:not(:disabled) {

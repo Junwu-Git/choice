@@ -7,13 +7,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type {
-  PoolEntry,
-  PromptModule,
-  PromptRules,
-  SecondaryApi,
-  WorldInfoGlobalSettings,
-} from '@/type/settings';
+import type { PoolEntry, PromptModule, PromptRules, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
 import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -69,9 +63,7 @@ const buildMessages = async (
   contextRounds: number,
 ): Promise<ChatMsg[]> => {
   const msgs: ChatMsg[] = [];
-  const wiBuckets = wi.enabled
-    ? await buildWI()
-    : null;
+  const wiBuckets = wi.enabled ? await buildWI() : null;
 
   const sorted = [...modules].sort((a, b) => a.order - b.order);
 
@@ -225,8 +217,14 @@ const buildWI = async (): Promise<WIBuckets> => {
       after: result.worldInfoAfter ?? '',
       anBefore: (result.anBefore ?? []).join('\n'),
       anAfter: (result.anAfter ?? []).join('\n'),
-      em: (result.worldInfoExamples ?? []).map((e: any) => e?.content ?? '').filter(Boolean).join('\n'),
-      atDepth: (result.worldInfoDepth ?? []).flatMap((d: any) => d?.entries ?? []).filter(Boolean).join('\n'),
+      em: (result.worldInfoExamples ?? [])
+        .map((e: any) => e?.content ?? '')
+        .filter(Boolean)
+        .join('\n'),
+      atDepth: (result.worldInfoDepth ?? [])
+        .flatMap((d: any) => d?.entries ?? [])
+        .filter(Boolean)
+        .join('\n'),
     };
   } catch (err) {
     console.error('[Choice] buildWI failed', err);
@@ -368,7 +366,9 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     const c: Ctx = {
       count,
       pinned: pool.pinned.map(e => e.text).join('\n'),
-      poolSelected: pool.drawn.map(e => e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text).join('\n'),
+      poolSelected: pool.drawn
+        .map(e => (e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text))
+        .join('\n'),
     };
     const rules = gs.settings.prompt_rules;
 

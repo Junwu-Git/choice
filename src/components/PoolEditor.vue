@@ -27,7 +27,12 @@
           >
             <i class="fa-solid fa-user"></i>
           </button>
-          <button class="choice-btn-sm choice-btn-del" :title="t`删除`" :disabled="selectedConfig?.is_default" @click="removeConfig">
+          <button
+            class="choice-btn-sm choice-btn-del"
+            :title="t`删除`"
+            :disabled="selectedConfig?.is_default"
+            @click="removeConfig"
+          >
             <i class="fa-solid fa-trash-can"></i>
           </button>
           <button class="choice-btn-sm choice-btn-new" :title="t`新建`" @click="showCreateDialog = true">
@@ -54,7 +59,11 @@
         <div class="choice-inline-gen">
           <label class="choice-inline-gen-item">
             <span>{{ t`数量` }}</span>
-            <input v-model="selectedConfig.generation.count_mode" class="text_pole choice-small-input" :placeholder="t`如 4 或 3-6`" />
+            <input
+              v-model="selectedConfig.generation.count_mode"
+              class="text_pole choice-small-input"
+              :placeholder="t`如 4 或 3-6`"
+            />
           </label>
           <label class="choice-check" :title="t`按条目分类分组轮流抽取，避免同组扎堆`">
             <input v-model="selectedConfig.generation.categories_enabled" type="checkbox" />
@@ -83,14 +92,14 @@
           </button>
         </div>
         <div v-if="selectedEntries.length > 0" ref="entriesContainer" class="choice-inline-entries">
-          <div
-            v-for="cfgEntry in selectedEntries"
-            :key="cfgEntry.entry_id"
-            class="choice-inline-entry"
-          >
+          <div v-for="cfgEntry in selectedEntries" :key="cfgEntry.entry_id" class="choice-inline-entry">
             <div class="choice-inline-entry-row">
               <span class="choice-inline-entry-text">
-                <span class="choice-inline-cat-badge" :class="{ 'choice-inline-cat-badge--muted': !getEntryCategory(cfgEntry.entry_id) }">{{ getEntryCategory(cfgEntry.entry_id) || t`未分组` }}</span>
+                <span
+                  class="choice-inline-cat-badge"
+                  :class="{ 'choice-inline-cat-badge--muted': !getEntryCategory(cfgEntry.entry_id) }"
+                  >{{ getEntryCategory(cfgEntry.entry_id) || t`未分组` }}</span
+                >
                 {{ getEntryText(cfgEntry.entry_id) }}
               </span>
               <div class="choice-inline-entry-fields">
@@ -100,12 +109,7 @@
                 </label>
                 <label class="choice-inline-field-item">
                   <span class="choice-inline-field-label">{{ t`权重` }}</span>
-                  <input
-                    v-model.number="cfgEntry.weight"
-                    class="text_pole choice-small-input"
-                    type="number"
-                    min="0"
-                  />
+                  <input v-model.number="cfgEntry.weight" class="text_pole choice-small-input" type="number" min="0" />
                 </label>
                 <label class="choice-inline-field-item">
                   <span class="choice-inline-field-label">{{ t`条件` }}</span>
@@ -146,11 +150,7 @@
 
     <EntryPoolDialog :open="showEntryPool" @close="showEntryPool = false" />
 
-    <CreateConfigDialog
-      :open="showCreateDialog"
-      @close="showCreateDialog = false"
-      @create="onCreateConfig"
-    />
+    <CreateConfigDialog :open="showCreateDialog" @close="showCreateDialog = false" @create="onCreateConfig" />
 
     <SelectEntriesDialog
       :open="showSelectDialog"
@@ -322,20 +322,24 @@ const entriesContainer = ref<HTMLElement | null>(null);
 let sortable: Sortable | null = null;
 
 onMounted(() => {
-  watch(entriesContainer, (el) => {
-    if (sortable) sortable.destroy();
-    if (!el || !selectedConfig.value) return;
-    sortable = Sortable.create(el, {
-      animation: 150,
-      onEnd: (evt) => {
-        if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
-        const entries = selectedConfig.value?.entries;
-        if (!entries) return;
-        const [moved] = entries.splice(evt.oldIndex, 1);
-        entries.splice(evt.newIndex, 0, moved);
-      },
-    });
-  }, { immediate: true });
+  watch(
+    entriesContainer,
+    el => {
+      if (sortable) sortable.destroy();
+      if (!el || !selectedConfig.value) return;
+      sortable = Sortable.create(el, {
+        animation: 150,
+        onEnd: evt => {
+          if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
+          const entries = selectedConfig.value?.entries;
+          if (!entries) return;
+          const [moved] = entries.splice(evt.oldIndex, 1);
+          entries.splice(evt.newIndex, 0, moved);
+        },
+      });
+    },
+    { immediate: true },
+  );
 });
 
 onUnmounted(() => {
@@ -393,7 +397,9 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-btn-sm:hover:not(:disabled) {
@@ -482,7 +488,9 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background var(--choice-transition), border-color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    border-color var(--choice-transition);
 }
 
 .choice-entrypool-btn:hover {
@@ -664,7 +672,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-icon-btn:hover:not(:disabled) {

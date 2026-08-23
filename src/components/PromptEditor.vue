@@ -24,11 +24,7 @@
       </div>
       <div v-if="showFilter" class="choice-filter-body">
         <p class="choice-filter-desc">{{ t`过滤聊天记录中标签包裹或匹配正则的内容（如思维链、小剧场、防截断等）` }}</p>
-        <div
-          v-for="group in rules.chat_filter_groups"
-          :key="group.id"
-          class="choice-filter-group"
-        >
+        <div v-for="group in rules.chat_filter_groups" :key="group.id" class="choice-filter-group">
           <div class="choice-filter-group-header">
             <i
               class="fa-solid choice-filter-group-caret"
@@ -39,7 +35,8 @@
               v-if="groupRenameId !== group.id"
               class="choice-filter-group-name"
               @dblclick="startGroupRename(group)"
-            >{{ group.name }}</span>
+              >{{ group.name }}</span
+            >
             <input
               v-else
               ref="groupRenameInput"
@@ -53,39 +50,24 @@
             <label class="choice-module-toggle" :title="group.enabled ? t`启用` : t`禁用`">
               <input type="checkbox" :checked="group.enabled" @change="group.enabled = !group.enabled" />
             </label>
-            <button class="menu_button choice-filter-del" :title="t`新增规则`" @click="addFilterRule(group.id)">+</button>
+            <button class="menu_button choice-filter-del" :title="t`新增规则`" @click="addFilterRule(group.id)">
+              +
+            </button>
             <button class="menu_button choice-filter-del" :title="t`删除分组`" @click="deleteGroupTarget = group.id">
               <i class="fa-solid fa-trash" style="color: #e06666"></i>
             </button>
           </div>
           <div v-if="groupExpanded[group.id]" class="choice-filter-group-body">
-            <div
-              v-for="(rule, idx) in group.rules"
-              :key="idx"
-              class="choice-filter-row"
-            >
+            <div v-for="(rule, idx) in group.rules" :key="idx" class="choice-filter-row">
               <select v-model="rule.type" class="text_pole choice-filter-type">
                 <option value="tag">{{ t`标签匹配` }}</option>
                 <option value="regex">{{ t`正则表达式` }}</option>
               </select>
               <template v-if="rule.type === 'tag'">
-                <input
-                  v-model="rule.start"
-                  class="text_pole"
-                  :placeholder="t`标签头`"
-                />
-                <input
-                  v-model="rule.end"
-                  class="text_pole"
-                  :placeholder="t`标签尾`"
-                />
+                <input v-model="rule.start" class="text_pole" :placeholder="t`标签头`" />
+                <input v-model="rule.end" class="text_pole" :placeholder="t`标签尾`" />
               </template>
-              <input
-                v-else
-                v-model="rule.pattern"
-                class="text_pole"
-                :placeholder="t`正则表达式`"
-              />
+              <input v-else v-model="rule.pattern" class="text_pole" :placeholder="t`正则表达式`" />
               <button class="menu_button choice-filter-del" @click="removeFilterRule(group.id, idx)">✕</button>
             </div>
           </div>
@@ -94,89 +76,89 @@
       </div>
     </div>
 
-    <div
-      class="choice-module-list"
-      @dragover.prevent="onListDragOver"
-      @drop.prevent="onListDrop"
-    >
-      <template
-        v-for="(mod, idx) in allModules"
-        :key="mod.id"
-      >
+    <div class="choice-module-list" @dragover.prevent="onListDragOver" @drop.prevent="onListDrop">
+      <template v-for="(mod, idx) in allModules" :key="mod.id">
         <div
-        class="choice-module-card"
-        :class="{
-          'choice-module-card-marker': mod.marker,
-          'choice-module-card-dragging': dragIndex === idx,
-          'choice-module-card-drag-over': dragOverIndex === idx && dragIndex !== idx,
-        }"
-        :draggable="true"
-        @dragstart="onDragStart($event, idx)"
-        @dragover.prevent="onDragOver($event, idx)"
-        @dragleave="onDragLeave(idx)"
-        @drop.prevent="onDrop(idx)"
-        @dragend="onDragEnd"
-      >
-        <span class="choice-module-drag" :draggable="true">☰</span>
+          class="choice-module-card"
+          :class="{
+            'choice-module-card-marker': mod.marker,
+            'choice-module-card-dragging': dragIndex === idx,
+            'choice-module-card-drag-over': dragOverIndex === idx && dragIndex !== idx,
+          }"
+          :draggable="true"
+          @dragstart="onDragStart($event, idx)"
+          @dragover.prevent="onDragOver($event, idx)"
+          @dragleave="onDragLeave(idx)"
+          @drop.prevent="onDrop(idx)"
+          @dragend="onDragEnd"
+        >
+          <span class="choice-module-drag" :draggable="true">☰</span>
 
-        <div class="choice-module-body">
-          <div class="choice-module-header">
-            <span
-              v-if="renamingId !== mod.id"
-              class="choice-module-name"
-              @dblclick="startRename(mod)"
-            >{{ mod.name }}</span>
-            <input
-              v-else
-              ref="renameInput"
-              v-model="renameText"
-              class="text_pole choice-rename-input"
-              @blur="finishRename(mod)"
-              @keydown.enter="finishRename(mod)"
-              @keydown.escape="cancelRename"
-            />
-            <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
-            <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
+          <div class="choice-module-body">
+            <div class="choice-module-header">
+              <span v-if="renamingId !== mod.id" class="choice-module-name" @dblclick="startRename(mod)">{{
+                mod.name
+              }}</span>
+              <input
+                v-else
+                ref="renameInput"
+                v-model="renameText"
+                class="text_pole choice-rename-input"
+                @blur="finishRename(mod)"
+                @keydown.enter="finishRename(mod)"
+                @keydown.escape="cancelRename"
+              />
+              <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
+              <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
+            </div>
+            <div class="choice-module-preview">
+              {{ previewContent(mod) }}
+            </div>
           </div>
-          <div class="choice-module-preview">
-            {{ previewContent(mod) }}
+
+          <div class="choice-module-actions">
+            <label class="choice-module-toggle" :title="mod.enabled ? t`启用` : t`禁用`">
+              <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
+            </label>
+            <button
+              v-if="!READONLY_MODULE_IDS.has(mod.id)"
+              class="menu_button choice-module-btn"
+              :title="t`复制`"
+              @click="copyModule(mod.id)"
+            >
+              📋
+            </button>
+            <button
+              v-if="!mod.marker"
+              class="menu_button choice-module-btn"
+              :title="t`编辑`"
+              @click="toggleEdit(mod.id)"
+            >
+              {{ editingId === mod.id ? '✕' : '🖉' }}
+            </button>
+            <button
+              v-if="!mod.system"
+              class="menu_button choice-module-btn"
+              :title="t`删除`"
+              @click="deleteTarget = mod.id"
+            >
+              <i class="fa-solid fa-trash" style="color: #e06666"></i>
+            </button>
           </div>
         </div>
 
-        <div class="choice-module-actions">
-          <label class="choice-module-toggle" :title="mod.enabled ? t`启用` : t`禁用`">
-            <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
-          </label>
-          <button v-if="!READONLY_MODULE_IDS.has(mod.id)" class="menu_button choice-module-btn" :title="t`复制`" @click="copyModule(mod.id)">📋</button>
-          <button v-if="!mod.marker" class="menu_button choice-module-btn" :title="t`编辑`" @click="toggleEdit(mod.id)">
-            {{ editingId === mod.id ? '✕' : '🖉' }}
-          </button>
-          <button v-if="!mod.system" class="menu_button choice-module-btn" :title="t`删除`" @click="deleteTarget = mod.id">
-            <i class="fa-solid fa-trash" style="color: #e06666"></i>
-          </button>
+        <div v-if="editingId === mod.id" class="choice-module-edit">
+          <div class="choice-module-edit-head">
+            <span>{{ t`编辑模块` }}: {{ editingModule?.name }}</span>
+            <select v-if="editingModule" v-model="editingModule.role" class="text_pole" style="width: auto">
+              <option value="system">system</option>
+              <option value="user">user</option>
+              <option value="assistant">assistant</option>
+            </select>
+          </div>
+          <textarea v-if="editingModule" v-model="editingModule.content" class="text_pole" rows="8"></textarea>
         </div>
-      </div>
-
-      <div
-        v-if="editingId === mod.id"
-        class="choice-module-edit"
-      >
-        <div class="choice-module-edit-head">
-          <span>{{ t`编辑模块` }}: {{ editingModule?.name }}</span>
-          <select v-if="editingModule" v-model="editingModule.role" class="text_pole" style="width: auto">
-            <option value="system">system</option>
-            <option value="user">user</option>
-            <option value="assistant">assistant</option>
-          </select>
-        </div>
-        <textarea
-          v-if="editingModule"
-          v-model="editingModule.content"
-          class="text_pole"
-          rows="8"
-        ></textarea>
-      </div>
-    </template>
+      </template>
     </div>
 
     <ConfirmDialog
@@ -441,7 +423,10 @@ const previewMessages = computed<PreviewMsg[]>(() => {
           if (m.is_system) continue;
           const c = m.mes ?? '';
           if (!c) continue;
-          msgs.push({ role: m.is_user ? 'user' : 'assistant', content: c.slice(0, 200) + (c.length > 200 ? '...' : '') });
+          msgs.push({
+            role: m.is_user ? 'user' : 'assistant',
+            content: c.slice(0, 200) + (c.length > 200 ? '...' : ''),
+          });
         }
         break;
       }
@@ -516,7 +501,10 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
   cursor: default;
-  transition: border-color var(--choice-transition), box-shadow var(--choice-transition), transform var(--choice-transition);
+  transition:
+    border-color var(--choice-transition),
+    box-shadow var(--choice-transition),
+    transform var(--choice-transition);
   user-select: none;
 }
 

@@ -1,8 +1,21 @@
-import { chat_metadata, characters, saveCharacterDebounced, saveSettingsDebounced, this_chid } from '@sillytavern/script';
+import {
+  chat_metadata,
+  characters,
+  saveCharacterDebounced,
+  saveSettingsDebounced,
+  this_chid,
+} from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
-import type { GlobalSettings as GlobalSettingsType, PoolConfig, PoolConfigEntry, PoolEntry, PromptModule as PromptModuleType, ChatFilterGroup } from '@/type/settings';
+import type {
+  GlobalSettings as GlobalSettingsType,
+  PoolConfig,
+  PoolConfigEntry,
+  PoolEntry,
+  PromptModule as PromptModuleType,
+  ChatFilterGroup,
+} from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
 // 提示词模块化迁移：旧格式(schema_version=0) → 模块化格式(schema_version=1)
@@ -205,7 +218,12 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       configs.push({
         id: uuidv4(),
         name: '默认配置',
-        entries: defaultEntries.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight, condition: e.condition })),
+        entries: defaultEntries.map(e => ({
+          entry_id: e.id,
+          pinned: e.pinned,
+          weight: e.weight,
+          condition: e.condition,
+        })),
         is_default: true,
         generation: GenerationSettings.prefault({}),
       });
@@ -315,19 +333,13 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   );
 
   const sortedEnabledModules = computed(() =>
-    settings.value.prompt_rules.modules
-      .filter(m => m.enabled)
-      .sort((a, b) => a.order - b.order),
+    settings.value.prompt_rules.modules.filter(m => m.enabled).sort((a, b) => a.order - b.order),
   );
 
-  const allModules = computed(() =>
-    [...settings.value.prompt_rules.modules].sort((a, b) => a.order - b.order),
-  );
+  const allModules = computed(() => [...settings.value.prompt_rules.modules].sort((a, b) => a.order - b.order));
 
   const sortedEnabledFilterRules = computed(() =>
-    (settings.value.prompt_rules.chat_filter_groups ?? [])
-      .filter(g => g.enabled)
-      .flatMap(g => g.rules),
+    (settings.value.prompt_rules.chat_filter_groups ?? []).filter(g => g.enabled).flatMap(g => g.rules),
   );
 
   function addModule(afterId?: string) {
