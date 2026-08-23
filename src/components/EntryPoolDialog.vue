@@ -1,0 +1,911 @@
+<template>
+  <Teleport to="body">
+    <div v-if="open" class="choice-epool-overlay" @click.self="emit('close')">
+      <div class="choice-epool-dialog">
+        <div class="choice-epool-header">
+          <span class="choice-epool-title">
+            <i class="fa-solid fa-database"></i>
+            {{ t`条目库` }}
+            <span class="choice-epool-count">({{ masterPool.length }})</span>
+          </span>
+          <div class="choice-epool-header-actions">
+            <button class="choice-icon-btn" :title="allGroupsExpanded ? t`全部收起` : t`全部展开`" @click="toggleExpandAllGroups">
+              <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
+            </button>
+            <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
+              <i class="fa-solid fa-folder-plus"></i>
+            </button>
+            <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+            </button>
+            <button class="choice-epool-close" :title="t`关闭`" @click="emit('close')">&times;</button>
+          </div>
+        </div>
+
+        <div class="choice-epool-body choice-scrollbar">
+          <div v-if="groupedEntries.length > 0" ref="groupList" class="choice-epool-list">
+            <div v-for="group in groupedEntries" :key="group.key" class="choice-epool-group" :data-group-key="group.key">
+              <div class="choice-epool-group-head" @dragenter="onGroupDragEnter(group.key)">
+                <label class="choice-check" @click.stop>
+                  <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
+                </label>
+                <i
+                  class="fa-solid"
+                  :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                  @click="toggleGroup(group.key)"
+                ></i>
+                <span class="choice-epool-group-name" @click="toggleGroup(group.key)">{{ group.key || t`未分组` }}</span>
+                <span class="choice-epool-group-count" @click="toggleGroup(group.key)">({{ group.entries.length }})</span>
+                <button
+                  class="choice-icon-btn"
+                  :title="t`添加条目`"
+                  @click.stop="addEntryToGroup(group.key)"
+                >
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+                <button
+                  class="choice-icon-btn"
+                  :title="t`复制全部`"
+                  @click.stop="copyGroup(group)"
+                >
+                  <i class="fa-solid fa-copy"></i>
+                </button>
+                <button
+                  class="choice-icon-btn choice-delete-btn"
+                  :title="t`删除分组`"
+                  @click.stop="deleteTarget = { type: 'group', key: group.key, count: group.entries.length }"
+                >
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+              <div :class="['choice-epool-group-body', { 'is-collapsed': !expandedGroups.has(group.key) }]" :data-group-key="group.key">
+                <div v-if="group.entries.length === 0" class="choice-empty-hint">
+                  <span>{{ t`暂无条目，点击 + 添加` }}</span>
+                </div>
+                <div v-for="entry in group.entries" :key="entry.id" class="choice-epool-entry" :data-entry-id="entry.id">
+                  <div class="choice-epool-entry-head">
+                    <label class="choice-check" @click.stop>
+                      <input type="checkbox" :checked="selected.has(entry.id)" @change="toggleSelectEntry(entry.id)" />
+                    </label>
+                    <i
+                      class="fa-solid"
+                      :class="expanded.has(entry.id) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                      @click="toggleEntry(entry.id)"
+                    ></i>
+                    <span class="choice-epool-entry-summary" @click="toggleEntry(entry.id)">{{ entrySummary(entry) }}</span>
+                    <span v-if="entry.pinned" class="choice-pin-badge">📌</span>
+                    <select
+                      v-model="entry.category"
+                      class="text_pole choice-cat-select"
+                      :title="t`移动到分组`"
+                      @click.stop
+                    >
+                      <option value="">{{ t`未分组` }}</option>
+                      <option v-for="cat in categoryNames" :key="cat" :value="cat">{{ cat }}</option>
+                    </select>
+                    <button
+                      class="choice-icon-btn choice-delete-btn"
+                      :title="t`删除`"
+                      @click.stop="deleteTarget = { type: 'entry', id: entry.id, summary: entrySummary(entry) }"
+                    >
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                  <div v-if="expanded.has(entry.id)" class="choice-epool-entry-body">
+                    <textarea
+                      v-model="entry.text"
+                      class="text_pole"
+                      :placeholder="t`条目内容`"
+                      rows="2"
+                    ></textarea>
+                    <div class="choice-epool-entry-fields">
+                      <label class="choice-check">
+                        <input v-model="entry.pinned" type="checkbox" />
+                        {{ t`固定` }}
+                      </label>
+                      <input
+                        v-model.number="entry.weight"
+                        class="text_pole choice-small-input"
+                        type="number"
+                        min="0"
+                        :title="t`权重(加权随机)`"
+                      />
+                      <input
+                        v-model="entry.condition"
+                        class="text_pole"
+                        :placeholder="t`如:战斗场景、关系亲密时`"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="choice-empty-hint">
+            <i class="fa-solid fa-database"></i>
+            <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
+          </div>
+        </div>
+
+        <div v-if="selected.size > 0" class="choice-epool-batch-bar">
+          <span class="choice-epool-batch-count">{{ t`已选 ${selected.size} 条` }}</span>
+          <button class="choice-btn-sm" @click="copySelected">
+            <i class="fa-solid fa-copy"></i> {{ t`复制` }}
+          </button>
+          <button class="choice-btn-sm" :title="t`移动到分组`" @click="moveSelected = !moveSelected">
+            <i class="fa-solid fa-arrow-right"></i> {{ t`移动` }}
+          </button>
+          <select v-if="moveSelected" v-model="moveTargetCat" class="text_pole choice-cat-select" @click.stop>
+            <option value="">{{ t`未分组` }}</option>
+            <option v-for="cat in categoryNames" :key="cat" :value="cat">{{ cat }}</option>
+          </select>
+          <button v-if="moveSelected" class="choice-btn-sm" @click="moveSelectedEntries">
+            {{ t`确认移动` }}
+          </button>
+          <button
+            class="choice-btn-sm choice-btn-del"
+            @click="deleteTarget = { type: 'batch', count: selected.size }"
+          >
+            <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
+          </button>
+          <button class="choice-btn-sm" @click="selected.clear(); deleteTarget = null">{{ t`取消` }}</button>
+        </div>
+
+        <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
+
+        <ConfirmDialog
+          :open="deleteTarget !== null"
+          :title="deleteDialogTitle"
+          :message="deleteDialogMessage"
+          :confirm-text="t`删除`"
+          :cancel-text="t`取消`"
+          @confirm="onDeleteConfirm"
+          @cancel="deleteTarget = null"
+        />
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<script setup lang="ts">
+import { uuidv4 } from '@sillytavern/scripts/utils';
+import PoolGenDialog from '@/components/PoolGenDialog.vue';
+import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import { useGlobalSettingsStore } from '@/store/global-settings';
+import type { PoolEntry } from '@/type/settings';
+import Sortable from 'sortablejs';
+
+const props = defineProps<{ open: boolean }>();
+const emit = defineEmits<{ close: [] }>();
+
+const globalStore = useGlobalSettingsStore();
+const masterPool = computed(() => globalStore.settings.master_pool);
+const configs = computed(() => globalStore.settings.configs);
+
+const expanded = ref<Set<string>>(new Set());
+const expandedGroups = ref<Set<string>>(new Set());
+const allGroupsExpanded = ref(false);
+const showGen = ref(false);
+const deleteTarget = ref<{ type: 'entry'; id: string; summary: string } | { type: 'group'; key: string; count: number } | { type: 'batch'; count: number } | null>(null);
+const selected = ref<Set<string>>(new Set());
+const moveSelected = ref(false);
+const moveTargetCat = ref('');
+const pendingGroups = ref<Set<string>>(new Set());
+
+watch(() => props.open, (val) => {
+  if (!val) {
+    deleteTarget.value = null;
+    selected.value = new Set();
+    moveSelected.value = false;
+  }
+});
+
+const categoryNames = computed(() => {
+  const names = new Set<string>();
+  for (const e of masterPool.value) {
+    if (e.category.trim()) names.add(e.category.trim());
+  }
+  for (const name of pendingGroups.value) {
+    names.add(name);
+  }
+  return [...names].sort();
+});
+
+type EntryGroup = { key: string; entries: PoolEntry[] };
+
+const groupedEntries = computed<EntryGroup[]>(() => {
+  const map = new Map<string, PoolEntry[]>();
+  for (const entry of masterPool.value) {
+    const key = entry.category.trim() || '';
+    let group = map.get(key);
+    if (!group) {
+      group = [];
+      map.set(key, group);
+    }
+    group.push(entry);
+  }
+  for (const name of pendingGroups.value) {
+    if (!map.has(name)) {
+      map.set(name, []);
+    }
+  }
+  const groups: EntryGroup[] = [];
+  for (const [key, entries] of map) {
+    groups.push({ key, entries });
+  }
+  groups.sort((a, b) => {
+    if (!a.key) return 1;
+    if (!b.key) return -1;
+    return a.key.localeCompare(b.key);
+  });
+  return groups;
+});
+
+const entrySummary = (entry: PoolEntry): string => {
+  const text = entry.text.trim();
+  if (!text) return t`<空条目>`;
+  if (text.includes(': ')) {
+    const parts = text.split(': ');
+    return parts[0].replace(/"/g, '') + ' | ' + parts.slice(1).join(': ').replace(/"/g, '').slice(0, 40);
+  }
+  return text.replace(/"/g, '').slice(0, 50);
+};
+
+const toggleEntry = (id: string) => {
+  deleteTarget.value = null;
+  if (expanded.value.has(id)) expanded.value.delete(id);
+  else expanded.value.add(id);
+};
+
+const toggleGroup = (key: string) => {
+  deleteTarget.value = null;
+  if (expandedGroups.value.has(key)) expandedGroups.value.delete(key);
+  else expandedGroups.value.add(key);
+};
+
+const toggleExpandAllGroups = () => {
+  deleteTarget.value = null;
+  if (allGroupsExpanded.value) {
+    expandedGroups.value = new Set();
+    allGroupsExpanded.value = false;
+  } else {
+    const allKeys = new Set(groupedEntries.value.map(g => g.key));
+    for (const name of pendingGroups.value) allKeys.add(name);
+    expandedGroups.value = allKeys;
+    allGroupsExpanded.value = true;
+  }
+};
+
+const copyGroup = (group: EntryGroup) => {
+  deleteTarget.value = null;
+  const texts = group.entries.map(e => e.text).filter(t => t.trim()).join('\n');
+  if (!texts) {
+    toastr.warning(t`没有可复制的内容`);
+    return;
+  }
+  navigator.clipboard.writeText(texts).then(() => {
+    toastr.success(t`已复制 ${group.entries.length} 条到剪贴板`);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = texts;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toastr.success(t`已复制 ${group.entries.length} 条到剪贴板`);
+    } catch {
+      toastr.error(t`复制失败`);
+    }
+    document.body.removeChild(ta);
+  });
+};
+
+const toggleSelectEntry = (id: string) => {
+  deleteTarget.value = null;
+  if (selected.value.has(id)) selected.value.delete(id);
+  else selected.value.add(id);
+};
+
+const isGroupAllSelected = (group: EntryGroup) =>
+  group.entries.length > 0 && group.entries.every(e => selected.value.has(e.id));
+
+const toggleSelectGroup = (group: EntryGroup) => {
+  deleteTarget.value = null;
+  if (isGroupAllSelected(group)) {
+    for (const e of group.entries) selected.value.delete(e.id);
+  } else {
+    for (const e of group.entries) selected.value.add(e.id);
+  }
+};
+
+const copySelected = () => {
+  const texts = masterPool.value
+    .filter(e => selected.value.has(e.id))
+    .map(e => e.text)
+    .filter(t => t.trim())
+    .join('\n');
+  if (!texts) {
+    toastr.warning(t`没有可复制的内容`);
+    return;
+  }
+  navigator.clipboard.writeText(texts).then(() => {
+    toastr.success(t`已复制到剪贴板`);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = texts;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      toastr.success(t`已复制到剪贴板`);
+    } catch {
+      toastr.error(t`复制失败`);
+    }
+    document.body.removeChild(ta);
+  });
+};
+
+const moveSelectedEntries = () => {
+  const target = moveTargetCat.value;
+  for (const e of masterPool.value) {
+    if (selected.value.has(e.id)) {
+      e.category = target;
+    }
+  }
+  selected.value = new Set();
+  moveSelected.value = false;
+  moveTargetCat.value = '';
+  expandedGroups.value.add(target);
+};
+
+const deleteSelected = () => {
+  const ids = new Set(selected.value);
+  for (let i = masterPool.value.length - 1; i >= 0; i--) {
+    if (ids.has(masterPool.value[i].id)) {
+      masterPool.value.splice(i, 1);
+    }
+  }
+  for (const id of ids) {
+    expanded.value.delete(id);
+  }
+  selected.value = new Set();
+  deleteTarget.value = null;
+  for (const cfg of configs.value) {
+    for (let i = cfg.entries.length - 1; i >= 0; i--) {
+      if (ids.has(cfg.entries[i].entry_id)) {
+        cfg.entries.splice(i, 1);
+      }
+    }
+  }
+};
+
+const createGroup = () => {
+  deleteTarget.value = null;
+  const name = prompt(t`请输入分组名称`);
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  if (categoryNames.value.includes(trimmed)) {
+    toastr.warning(t`分组「${trimmed}」已存在`);
+    return;
+  }
+  pendingGroups.value.add(trimmed);
+  expandedGroups.value.add(trimmed);
+  allGroupsExpanded.value = false;
+};
+
+const addEntryToGroup = (groupKey: string) => {
+  deleteTarget.value = null;
+  const entry: PoolEntry = {
+    id: uuidv4(),
+    text: '',
+    pinned: false,
+    weight: 1,
+    category: groupKey,
+    condition: '',
+  };
+  masterPool.value.push(entry);
+  expanded.value.add(entry.id);
+  expandedGroups.value.add(groupKey);
+  if (pendingGroups.value.has(groupKey)) {
+    pendingGroups.value.delete(groupKey);
+  }
+};
+
+const addEntry = () => {
+  addEntryToGroup('');
+};
+
+const removeEntry = (id: string) => {
+  const idx = masterPool.value.findIndex(e => e.id === id);
+  if (idx !== -1) masterPool.value.splice(idx, 1);
+  expanded.value.delete(id);
+  deleteTarget.value = null;
+  for (const cfg of configs.value) {
+    const eidx = cfg.entries.findIndex(e => e.entry_id === id);
+    if (eidx !== -1) cfg.entries.splice(eidx, 1);
+  }
+};
+
+const removeGroup = (group: EntryGroup) => {
+  const ids = new Set(group.entries.map(e => e.id));
+  for (let i = masterPool.value.length - 1; i >= 0; i--) {
+    if (ids.has(masterPool.value[i].id)) {
+      masterPool.value.splice(i, 1);
+    }
+  }
+  for (const id of ids) {
+    expanded.value.delete(id);
+  }
+  expandedGroups.value.delete(group.key);
+  deleteTarget.value = null;
+  for (const cfg of configs.value) {
+    for (let i = cfg.entries.length - 1; i >= 0; i--) {
+      if (ids.has(cfg.entries[i].entry_id)) {
+        cfg.entries.splice(i, 1);
+      }
+    }
+  }
+};
+
+const onGenConfirm = ({
+  additions,
+  replacements,
+}: {
+  additions: PoolEntry[];
+  replacements: { id: string; text: string }[];
+}) => {
+  for (const r of replacements) {
+    const target = masterPool.value.find(e => e.id === r.id);
+    if (target) target.text = r.text;
+  }
+  if (additions.length) masterPool.value.push(...additions);
+  showGen.value = false;
+};
+
+const deleteDialogTitle = computed(() => {
+  if (!deleteTarget.value) return '';
+  switch (deleteTarget.value.type) {
+    case 'entry': return t`删除条目`;
+    case 'group': return t`删除分组`;
+    case 'batch': return t`批量删除`;
+  }
+});
+
+const deleteDialogMessage = computed(() => {
+  if (!deleteTarget.value) return '';
+  switch (deleteTarget.value.type) {
+    case 'entry': return t`确定要删除条目「${deleteTarget.value.summary}」吗？此操作不可撤销。`;
+    case 'group': return t`确定要删除分组「${deleteTarget.value.key || t`未分组`}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+    case 'batch': return t`确定要删除选中的 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+  }
+});
+
+const onDeleteConfirm = () => {
+  if (!deleteTarget.value) return;
+  switch (deleteTarget.value.type) {
+    case 'entry': {
+      removeEntry(deleteTarget.value.id);
+      break;
+    }
+    case 'group': {
+      const group = groupedEntries.value.find(g => g.key === deleteTarget.value.key);
+      if (group) removeGroup(group);
+      break;
+    }
+    case 'batch': {
+      deleteSelected();
+      break;
+    }
+  }
+};
+
+const groupList = ref<HTMLElement | null>(null);
+let groupSortable: Sortable | null = null;
+const entrySortables = new Map<string, Sortable>();
+
+const initGroupSortable = () => {
+  if (!groupList.value) return;
+  if (groupSortable) groupSortable.destroy();
+  groupSortable = Sortable.create(groupList.value, {
+    handle: '.choice-epool-group-head',
+    draggable: '.choice-epool-group',
+    animation: 150,
+    onEnd: (evt) => {
+      if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
+      const keys = groupedEntries.value.map(g => g.key);
+      const [moved] = keys.splice(evt.oldIndex, 1);
+      keys.splice(evt.newIndex, 0, moved);
+      globalStore.settings.group_order = keys;
+    },
+  });
+};
+
+const onGroupDragEnter = (groupKey: string) => {
+  if (!expandedGroups.value.has(groupKey)) {
+    expandedGroups.value.add(groupKey);
+  }
+};
+
+const initEntrySortables = () => {
+  for (const [key, s] of entrySortables) s.destroy();
+  entrySortables.clear();
+  const bodies = document.querySelectorAll('.choice-epool-group-body');
+  bodies.forEach((body) => {
+    const groupKey = (body as HTMLElement).dataset.groupKey || '';
+    const s = Sortable.create(body as HTMLElement, {
+      group: 'entries',
+      draggable: '.choice-epool-entry',
+      animation: 150,
+      onEnd: (evt) => {
+        const entryId = evt.item.dataset.entryId;
+        console.log('[Choice] 条目拖拽 onEnd', { entryId, fromKey: evt.from.dataset.groupKey, toKey: (evt.to as HTMLElement).dataset.groupKey, oldIndex: evt.oldIndex, newIndex: evt.newIndex });
+        if (!entryId) return;
+        const fromKey = evt.from.dataset.groupKey || '';
+        const toKey = (evt.to as HTMLElement).dataset.groupKey || '';
+        if (toKey) expandedGroups.value.add(toKey);
+        const entry = masterPool.value.find(e => e.id === entryId);
+        if (!entry) return;
+        if (fromKey !== toKey) {
+          entry.category = toKey;
+          if (pendingGroups.value.has(toKey)) pendingGroups.value.delete(toKey);
+          const fromEntries = masterPool.value.filter(e => (e.category.trim() || '') === fromKey);
+          if (fromEntries.length === 0) {
+            pendingGroups.value.add(fromKey);
+          }
+        }
+        const oldIdx = masterPool.value.indexOf(entry);
+        if (oldIdx !== -1) masterPool.value.splice(oldIdx, 1);
+        const toEntries = masterPool.value.filter(e => (e.category.trim() || '') === toKey);
+        if (evt.newIndex !== undefined && evt.newIndex < toEntries.length) {
+          const ref = toEntries[evt.newIndex];
+          const refIdx = masterPool.value.indexOf(ref);
+          masterPool.value.splice(refIdx, 0, entry);
+        } else {
+          masterPool.value.push(entry);
+        }
+        if (!masterPool.value.includes(entry)) {
+          console.warn('[Choice] 条目拖拽后丢失，重新加入', entryId);
+          masterPool.value.push(entry);
+        }
+      },
+    });
+    entrySortables.set(groupKey, s);
+  });
+};
+
+onMounted(() => {
+  watch([groupList, () => groupedEntries.value.length], () => {
+    nextTick(() => {
+      initGroupSortable();
+      initEntrySortables();
+    });
+  }, { immediate: true });
+});
+
+onUnmounted(() => {
+  if (groupSortable) groupSortable.destroy();
+  for (const s of entrySortables.values()) s.destroy();
+});
+</script>
+
+<style scoped>
+.choice-epool-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choice-epool-dialog {
+  width: 600px;
+  max-width: 92vw;
+  max-height: 85vh;
+  background: var(--choice-bg-panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-lg);
+  box-shadow: var(--choice-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.choice-epool-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  border-bottom: 1px solid var(--choice-border);
+}
+
+.choice-epool-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--choice-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.choice-epool-count {
+  font-size: 11px;
+  color: var(--choice-text-muted);
+  font-weight: normal;
+}
+
+.choice-epool-header-actions {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.choice-epool-close {
+  background: none;
+  border: none;
+  color: var(--choice-text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--choice-transition), color var(--choice-transition);
+}
+
+.choice-epool-close:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-epool-body {
+  overflow-y: auto;
+  padding: 14px;
+  flex: 1;
+}
+
+.choice-epool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 分组 */
+.choice-epool-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.choice-epool-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+  border: 1px solid var(--choice-border);
+  font-size: 13px;
+  color: var(--choice-text);
+}
+
+.choice-epool-group-head:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-epool-group-name {
+  font-weight: bold;
+  flex: 1;
+}
+
+.choice-epool-group-count {
+  font-size: 11px;
+  color: var(--choice-text-muted);
+  cursor: pointer;
+}
+
+.choice-epool-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 0 4px 16px;
+}
+
+.choice-epool-group-body.is-collapsed {
+  max-height: 4px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+/* 条目 */
+.choice-epool-entry {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+  overflow: hidden;
+}
+
+.choice-epool-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  min-height: 0;
+}
+
+.choice-epool-entry-head:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-epool-entry-summary {
+  flex: 1;
+  font-size: 12px;
+  color: var(--choice-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.choice-pin-badge {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.choice-cat-select {
+  font-size: 10px;
+  padding: 1px 4px;
+  width: auto;
+  min-width: 60px;
+  max-width: 90px;
+  flex-shrink: 0;
+}
+
+.choice-epool-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--choice-border);
+  padding-top: 6px;
+}
+
+.choice-epool-entry-fields {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.choice-small-input {
+  width: 56px;
+}
+
+.choice-icon-btn {
+  background: transparent;
+  color: var(--choice-text-muted);
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--choice-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--choice-transition), color var(--choice-transition);
+}
+
+.choice-icon-btn:hover:not(:disabled) {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-delete-btn {
+  color: #c86a6a;
+}
+
+.choice-delete-btn:hover:not(:disabled) {
+  color: #e07070;
+}
+
+.choice-confirm-btn {
+  color: #e07070;
+  background: rgba(200, 106, 106, 0.15);
+}
+
+.choice-confirm-btn:hover {
+  background: rgba(200, 106, 106, 0.3);
+}
+
+.choice-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--choice-text-secondary);
+  white-space: nowrap;
+}
+
+.choice-empty-hint {
+  color: var(--choice-text-muted);
+  font-size: 12px;
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.choice-empty-hint i {
+  font-size: 32px;
+}
+
+/* 批量操作栏 */
+.choice-epool-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--choice-border);
+  background: rgba(74, 144, 217, 0.06);
+  flex-shrink: 0;
+}
+
+.choice-epool-batch-count {
+  font-size: 12px;
+  color: var(--choice-text);
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.choice-btn-sm {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-full);
+  background: var(--choice-bg-element);
+  color: var(--choice-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background var(--choice-transition), color var(--choice-transition);
+}
+
+.choice-btn-sm:hover:not(:disabled) {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-btn-del {
+  color: #c86a6a;
+}
+
+.choice-btn-del:hover:not(:disabled) {
+  color: #e07070;
+}
+
+.choice-confirm-btn {
+  color: #e07070 !important;
+  background: rgba(200, 106, 106, 0.15) !important;
+  border-color: rgba(200, 106, 106, 0.3) !important;
+}
+</style>

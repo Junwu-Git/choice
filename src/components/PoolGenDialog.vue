@@ -10,7 +10,7 @@
           <button class="choice-poolgen-close" :title="t`取消`" @click="emit('close')">&times;</button>
         </div>
 
-        <div class="choice-poolgen-body">
+        <div class="choice-poolgen-body choice-scrollbar">
           <div class="choice-poolgen-form">
             <label class="choice-poolgen-field">
               <span>{{ t`条目数` }}</span>
@@ -25,16 +25,15 @@
                 <input v-model="includeContext" type="checkbox" />
                 {{ t`结合近期对话` }}
               </label>
-              <label class="choice-poolgen-field choice-poolgen-layer">
-                <span>{{ t`注入到` }}</span>
-                <select v-model="layer" class="text_pole">
-                  <option value="global">{{ t`全局` }}</option>
-                  <option value="character">{{ t`角色` }}</option>
-                  <option value="chat">{{ t`聊天` }}</option>
+              <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px;">
+                <span>{{ t`目标分组` }}</span>
+                <select v-model="targetCategory" class="text_pole" style="width: auto; min-width: 100px;">
+                  <option value="">{{ t`未分组` }}</option>
+                  <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
                 </select>
               </label>
             </div>
-            <div class="choice-poolgen-hint">{{ t`注入到低层(如全局)后,若聊天层非空,新条目本轮抽取不生效` }}</div>
+            <div class="choice-poolgen-hint">{{ t`生成的条目将注入到总条目库，可在配置中勾选后使用` }}</div>
           </div>
 
           <div class="choice-poolgen-actions">
@@ -58,6 +57,7 @@
               class="choice-poolgen-result-row"
               :class="{ 'is-replace': !!item.replaceTargetId }"
             >
+              <span class="choice-poolgen-index">{{ i + 1 }}</span>
               <input v-model="selected" type="checkbox" :value="i" />
               <div class="choice-poolgen-result-main">
                 <div v-if="item.replaceTargetId" class="choice-poolgen-replace-info">
@@ -87,25 +87,22 @@
 <script setup lang="ts">
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { cancelPoolGen, generatePoolEntries, poolGenState, type PoolGenItem } from '@/core/generator';
-import type { PoolLayer } from '@/store/pool-selector';
 import type { PoolEntry } from '@/type/settings';
 
-const props = defineProps<{ open: boolean; defaultLayer: PoolLayer }>();
+const props = defineProps<{ open: boolean; categories: string[] }>();
 const emit = defineEmits<{
   close: [];
-  confirm: [payload: { layer: PoolLayer; additions: PoolEntry[]; replacements: { id: string; text: string }[] }];
+  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; text: string }[] }];
 }>();
 
 const count = ref(6);
 const requirements = ref('');
 const includeContext = ref(true);
-// 注入层级：打开时随 PoolEditor 当前筛选，否则 chat
-const layer = ref<PoolLayer>('chat');
+const targetCategory = ref('');
 const results = ref<PoolGenItem[]>([]);
 const selected = ref<Set<number>>(new Set());
 const attempted = ref(false);
 
-// 打开时重置结果并同步默认层级，避免上一次的残留条目混入本轮
 watch(
   () => props.open,
   open => {
@@ -113,27 +110,16 @@ watch(
       results.value = [];
       selected.value = new Set();
       attempted.value = false;
-      layer.value = props.defaultLayer;
+      targetCategory.value = '';
     } else {
-      // 关闭即取消在途生成：否则 loading 拘留会阻塞再次打开（超时 0 + 请求挂起时无 UI 恢复手段）
       cancelPoolGen();
     }
   },
   { immediate: true },
 );
 
-// 切换注入层后，旧结果（序号→id 映射）不再对应，清空强制重生成
-watch(layer, () => {
-  if (results.value.length) {
-    results.value = [];
-    selected.value = new Set();
-  }
-});
-
 const doGenerate = async () => {
   const n = Math.max(1, Math.floor(count.value) || 1);
-  // 记住发起生成时的层；在途期间用户可能切层，旧层结果（替换目标 id 指向旧层）与新层不匹配
-  const startLayer = layer.value;
   attempted.value = true;
   results.value = [];
   selected.value = new Set();
@@ -141,13 +127,9 @@ const doGenerate = async () => {
     count: n,
     requirements: requirements.value,
     includeContext: includeContext.value,
-    layer: startLayer,
   });
-  // 生成在途期间切换了注入层 → 丢弃过期结果（替换目标 id 已不对应新层，注入会静默错位）
-  if (layer.value !== startLayer) return;
   if (items.length) {
     results.value = items;
-    // 默认全选，用户可逐条取消
     selected.value = new Set(items.map((_, i) => i));
   }
 };
@@ -160,7 +142,6 @@ const toggleSelectAll = () => {
   }
 };
 
-// 删除条目后下方索引上移，需重建选中集合以免错位
 const removeResult = (i: number) => {
   results.value.splice(i, 1);
   const next = new Set<number>();
@@ -171,7 +152,6 @@ const removeResult = (i: number) => {
   selected.value = next;
 };
 
-// 仅注入选中的项：替换项原地改目标条目 text，新增项 push
 const onInject = () => {
   const additions: PoolEntry[] = [];
   const replacements: { id: string; text: string }[] = [];
@@ -188,13 +168,13 @@ const onInject = () => {
         text,
         pinned: false,
         weight: 1,
-        category: '',
+        category: targetCategory.value,
         condition: '',
       });
     }
   }
   if (!additions.length && !replacements.length) return;
-  emit('confirm', { layer: layer.value, additions, replacements });
+  emit('confirm', { additions, replacements });
   emit('close');
 };
 </script>
@@ -204,7 +184,9 @@ const onInject = () => {
   position: fixed;
   inset: 0;
   z-index: 10002;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -214,10 +196,12 @@ const onInject = () => {
   width: 520px;
   max-width: 92vw;
   max-height: 85vh;
-  background: #1e1e1e;
-  border: 1px solid rgba(128, 128, 128, 0.45);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  background: var(--choice-bg-panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-lg);
+  box-shadow: var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -228,14 +212,14 @@ const onInject = () => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(50, 50, 50, 0.6);
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-poolgen-title {
   font-size: 14px;
   font-weight: bold;
-  color: #e8e8e8;
+  color: var(--choice-text);
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -244,15 +228,23 @@ const onInject = () => {
 .choice-poolgen-close {
   background: none;
   border: none;
-  color: #a0a0a0;
+  color: var(--choice-text-muted);
   font-size: 20px;
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--choice-transition), color var(--choice-transition);
 }
 
 .choice-poolgen-close:hover {
-  color: #e8e8e8;
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
 }
 
 .choice-poolgen-body {
@@ -275,7 +267,7 @@ const onInject = () => {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
 .choice-poolgen-field .text_pole {
@@ -294,18 +286,13 @@ const onInject = () => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
   white-space: nowrap;
   margin-bottom: 4px;
 }
 
-.choice-poolgen-layer {
-  flex: 1;
-  min-width: 140px;
-}
-
 .choice-poolgen-hint {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -333,25 +320,40 @@ const onInject = () => {
 
 .choice-poolgen-results-count {
   font-size: 11px;
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
 }
 
 .choice-poolgen-result-row {
   display: flex;
-  gap: 4px;
-  align-items: stretch;
+  gap: 6px;
+  align-items: flex-start;
   border-radius: 4px;
+  padding: 4px;
 }
 
-/* 替换建议行用琥珀色与新增行区分 */
 .choice-poolgen-result-row.is-replace {
-  border-left: 3px solid #b8943a;
-  background: rgba(184, 148, 58, 0.08);
+  border-left: 3px solid var(--choice-text-hint);
+  background: rgba(184, 148, 58, 0.06);
 }
 
 .choice-poolgen-result-row > input[type='checkbox'] {
   flex-shrink: 0;
-  margin-top: 4px;
+  margin-top: 6px;
+}
+
+.choice-poolgen-index {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .choice-poolgen-result-main {
@@ -376,17 +378,17 @@ const onInject = () => {
 }
 
 .choice-poolgen-replace-badge {
-  color: #b8943a;
+  color: var(--choice-text-hint);
   font-size: 10px;
   font-weight: bold;
-  border: 1px solid #b8943a;
+  border: 1px solid var(--choice-text-hint);
   border-radius: 4px;
   padding: 0 4px;
   white-space: nowrap;
 }
 
 .choice-poolgen-orig {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -395,7 +397,7 @@ const onInject = () => {
 }
 
 .choice-poolgen-empty {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 12px;
   padding: 8px 0;
 }
@@ -404,7 +406,7 @@ const onInject = () => {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
-  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  border-top: 1px solid var(--choice-border);
   padding-top: 10px;
 }
 
@@ -415,5 +417,16 @@ const onInject = () => {
   cursor: pointer;
   font-size: 13px;
   flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--choice-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--choice-transition);
+}
+
+.choice-icon-btn:hover {
+  background: var(--choice-bg-hover);
 }
 </style>

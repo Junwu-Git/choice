@@ -1,21 +1,20 @@
-import { chat, characters, substituteParams, this_chid } from '@sillytavern/script';
-import { getSortedEntries, loadWorldInfo, selected_world_info } from '@sillytavern/scripts/world-info';
+import { characters, substituteParams, this_chid } from '@sillytavern/script';
+import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { resolvePool } from '@/core/pool-resolver';
-import { evaluateCondition } from '@/core/variable-bridge';
 import { callSecondaryApi, type ChatMsg } from '@/core/api-client';
 import { useChatSettingsStore } from '@/store/chat-settings';
-import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { usePoolSelectorStore, type PoolLayer } from '@/store/pool-selector';
+import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
 import type {
   PoolEntry,
+  PromptModule,
   PromptRules,
   SecondaryApi,
-  WorldInfoChatSettings,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -30,6 +29,7 @@ export type PoolGenItem = {
 export const generatorState = reactive({ loading: false, generationId: null as string | null });
 
 let cancelled = false;
+let genController: AbortController | null = null;
 
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
@@ -54,118 +54,183 @@ const resolveCount = (cm: string): number => {
 const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
-/** 读取指定层当前池数组（store 读取集中在 core，与 generateOptions 同模式）。
- *  返回的是 store 内的响应式数组引用；调用方做快照后再用于编号/映射。 */
-const poolOfLayer = (layer: PoolLayer): PoolEntry[] => {
-  switch (layer) {
-    case 'global':
-      return useGlobalSettingsStore().settings.pool;
-    case 'character':
-      return useCharacterSettingsStore().settings.pool;
-    case 'chat':
-      return useChatSettingsStore().settings.pool;
-  }
-};
-
 type Ctx = { count: number; pinned: string; poolSelected: string };
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
+    .replaceAll('{{count_minus_1}}', String(Math.max(0, c.count - 1)))
     .replaceAll('{{pinned}}', c.pinned)
     .replaceAll('{{pool_selected}}', c.poolSelected);
 
-const buildUserInstr = (c: Ctx): string => {
-  const l = [`请为角色的当前处境生成 ${c.count} 条行动选项。`];
-  if (c.pinned) l.push(`固定行动(必须原样包含):\n${c.pinned}`);
-  if (c.poolSelected) l.push(`候选行动(可在其基础上修改或发挥):\n${c.poolSelected}`);
-  l.push(`
-生成规则：
-1. 其中 1 个固定为"跳过场景"类型
-2. 其余 ${c.count - 1} 个从以下类型中随机且互不重复地抽取，确保类型、切入点、情绪态度均有明显差异：理性分析、强势试探、温和安抚、幽默化解、纯物理行动、静观其变、视角切换、与此同时
-3. 若当前候选类型总数不足以支撑本次抽取数量，允许类型重复，但重复类型生成的选项须在切入点与情绪态度上明显不同
-4. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
-5. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项`);
-  return l.join('\n');
+const buildMessages = async (
+  modules: PromptModule[],
+  ctx: Ctx,
+  wi: WorldInfoGlobalSettings,
+  contextRounds: number,
+): Promise<ChatMsg[]> => {
+  const msgs: ChatMsg[] = [];
+  const wiBuckets = wi.enabled
+    ? await buildWI()
+    : null;
+
+  const sorted = [...modules].sort((a, b) => a.order - b.order);
+
+  for (const mod of sorted) {
+    if (!mod.enabled) continue;
+
+    switch (mod.id) {
+      case 'system_prompt': {
+        const content = substituteParams(sub(mod.content, ctx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+      case 'world_info_before': {
+        if (wiBuckets) {
+          const merged = [wiBuckets.before, wiBuckets.anBefore, wiBuckets.em].filter(Boolean).join('\n\n');
+          if (merged) msgs.push({ role: 'system', content: merged });
+        }
+        break;
+      }
+      case 'persona_description': {
+        const personaDesc = (window as any).power_user?.persona_description;
+        if (personaDesc) {
+          msgs.push({ role: 'system', content: substituteParams(personaDesc) });
+        }
+        break;
+      }
+      case 'world_info_after': {
+        if (wiBuckets) {
+          const merged = [wiBuckets.after, wiBuckets.anAfter, wiBuckets.atDepth].filter(Boolean).join('\n\n');
+          if (merged) msgs.push({ role: 'system', content: merged });
+        }
+        break;
+      }
+      case 'chat_history': {
+        const history = buildChatHistory(contextRounds);
+        for (const m of history) msgs.push(m);
+        break;
+      }
+      case 'user_instruction': {
+        const content = sub(mod.content, ctx);
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+      case 'core_rules': {
+        const content = substituteParams(sub(mod.content, ctx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+      case 'assistant_ack':
+      case 'thinking_prompt':
+      case 'assistant_thinking': {
+        // 预填充模块：直接输出内容，不做变量替换
+        const content = mod.content;
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+      default: {
+        // 用户自定义模块
+        const content = substituteParams(sub(mod.content, ctx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+    }
+  }
+
+  console.log('[Choice] 消息数组', {
+    总数: msgs.length,
+    聊天历史条数: msgs.filter(m => m.role === 'user' || m.role === 'assistant').length,
+    system条数: msgs.filter(m => m.role === 'system').length,
+    模块顺序: sorted.map(m => m.id),
+  });
+
+  return msgs;
 };
 
 const buildChatHistory = (contextRounds: number): ChatMsg[] => {
-  let msgs = chat.filter(m => !m.is_hidden);
+  const ctx = window.SillyTavern?.getContext?.();
+  const chatArr: any[] = ctx?.chat ?? [];
+  let msgs = chatArr.filter(m => !m.is_hidden);
   if (contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
+  const gs = useGlobalSettingsStore();
+  const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   for (const m of msgs) {
     if (m.is_system) continue;
-    const c = m.message ?? '';
-    if (!c) continue;
-    h.push({ role: m.is_user ? 'user' : 'assistant', content: c });
+    let content = m.mes ?? '';
+    if (!content) continue;
+    for (const rule of rules) {
+      try {
+        if (rule.type === 'tag') {
+          if (!rule.start && !rule.end) continue;
+          const startPat = rule.start ? escapeRegExp(rule.start) : '';
+          const endPat = rule.end ? escapeRegExp(rule.end) : '';
+          // 仅标签头：从起始标签匹配到字符串末尾；仅标签尾：从开头匹配到结束标签；两者都有：匹配标签对
+          const body = rule.start ? (rule.end ? '[\\s\\S]*?' : '[\\s\\S]*') : '[\\s\\S]*?';
+          const re = new RegExp(startPat + body + endPat, 'g');
+          content = content.replace(re, '');
+        } else {
+          if (!rule.pattern) continue;
+          content = content.replace(new RegExp(rule.pattern, 'gs'), '');
+        }
+      } catch {
+        console.warn('[choice] 无效过滤规则:', rule);
+      }
+    }
+    if (!content.trim()) continue;
+    const role = m.role === 'user' || m.is_user ? 'user' : 'assistant';
+    h.push({ role, content });
   }
   return h;
 };
 
-type WIEntry = {
-  uid: string | number;
-  world: string;
-  content: string;
-  disable: boolean;
-  constant: boolean;
-  vectorized: boolean;
-  position: number;
+// 将标签头/尾按字面量转义，避免 <思考>、[小剧场] 等含正则特殊字符的标签被误解析
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+type WIBuckets = {
+  before: string;
+  after: string;
+  anBefore: string;
+  anAfter: string;
+  em: string;
+  atDepth: string;
 };
 
-const getAllWIEntries = async (): Promise<WIEntry[]> => {
-  const result: WIEntry[] = [];
-  const activeBooks = [...(selected_world_info ?? [])];
-  const chid = this_chid;
-  const charWorld = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
-  if (charWorld && !activeBooks.includes(charWorld)) {
-    activeBooks.push(charWorld);
-  }
-  for (const name of activeBooks) {
-    try {
-      const data = await loadWorldInfo(name);
-      if (data?.entries) {
-        for (const entry of Object.values(data.entries) as any[]) {
-          result.push({
-            uid: entry.uid,
-            world: name,
-            content: entry.content || '',
-            disable: entry.disable || false,
-            constant: entry.constant || false,
-            vectorized: entry.vectorized || false,
-            position: entry.position || 0,
-          });
-        }
-      }
-    } catch {
-      // ignore load errors
-    }
-  }
-  return result;
-};
-
-const buildWI = async (excl: string[], redlight: boolean, ejs: boolean): Promise<{ before: string; after: string }> => {
+const buildWI = async (): Promise<WIBuckets> => {
+  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', atDepth: '' };
   try {
-    let e = redlight ? ((await getSortedEntries()) as WIEntry[]) : await getAllWIEntries();
-    if (excl.length) e = e.filter(x => !excl.includes(`${x.world}::${x.uid}`));
-    const b: string[] = [],
-      a: string[] = [];
-    for (const x of e) {
-      if (redlight && x.disable) continue;
-      if (redlight && x.vectorized) continue;
-      let t = substituteParams(x.content || '');
-      if (ejs && typeof (window as any).ejs?.render === 'function' && t.includes('<%')) {
-        try {
-          t = (window as any).ejs.render(t, { async: false }) as string;
-        } catch (err) {
-          console.error('[Choice] EJS render failed', err);
-        }
-      }
-      if (!t) continue;
-      (x.position === 1 ? a : b).push(t);
-    }
-    return { before: b.join('\n\n'), after: a.join('\n\n') };
+    const ctx = window.SillyTavern?.getContext?.();
+    const chatArr: any[] = ctx?.chat ?? [];
+    const chatStrings = chatArr.map((m: any) => m?.mes ?? '');
+    const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+
+    // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
+    // 但行动选项是独立 API 调用，沿用 8192 会让角色世界书的大条目先耗尽预算，
+    // 导致额外启用的世界书 constant 条目在预算检查阶段被丢弃（"budget of N reached"）。
+    // 这里放宽到较大上下文估算值，使预算不再成为额外世界书条目的瓶颈。
+    const maxCtx = 128000;
+
+    const result = await getWorldInfoPrompt(chatStrings, maxCtx, false, {
+      trigger: 'normal',
+      personaDescription: (window as any).power_user?.persona_description ?? '',
+      characterDescription: ch?.data?.description ?? '',
+      characterPersonality: ch?.data?.personality ?? '',
+      characterDepthPrompt: '',
+      scenario: ch?.data?.scenario ?? '',
+      creatorNotes: '',
+    });
+
+    return {
+      before: result.worldInfoBefore ?? '',
+      after: result.worldInfoAfter ?? '',
+      anBefore: (result.anBefore ?? []).join('\n'),
+      anAfter: (result.anAfter ?? []).join('\n'),
+      em: (result.worldInfoExamples ?? []).map((e: any) => e?.content ?? '').filter(Boolean).join('\n'),
+      atDepth: (result.worldInfoDepth ?? []).flatMap((d: any) => d?.entries ?? []).filter(Boolean).join('\n'),
+    };
   } catch (err) {
     console.error('[Choice] buildWI failed', err);
-    return { before: '', after: '' };
+    return empty;
   }
 };
 
@@ -180,7 +245,8 @@ const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
   let newList = hasExcl ? saved.filter(n => !excl.includes(n)) : [...saved];
   if (hasEnabled) {
     for (const name of enabled) {
-      if (!newList.includes(name)) newList.push(name);
+      // excluded_books 优先于 enabled_books：被排除的书即使仍在 enabled 列表里也不注入
+      if (!newList.includes(name) && !excl.includes(name)) newList.push(name);
     }
   }
   selected_world_info.push(...newList);
@@ -236,47 +302,6 @@ export function parseOptions(text: string, count: number): string[] {
     .slice(0, count);
 }
 
-const buildMessages = async (
-  systemPrompt: string,
-  userInstruction: string,
-  wi: WorldInfoGlobalSettings,
-  wiChat: WorldInfoChatSettings,
-  contextRounds: number,
-): Promise<ChatMsg[]> => {
-  const msgs: ChatMsg[] = [];
-  if (systemPrompt) msgs.push({ role: 'system', content: systemPrompt });
-  const ch = this_chid !== undefined ? characters[this_chid] : undefined;
-  if (ch?.data?.description) msgs.push({ role: 'system', content: substituteParams(ch.data.description) });
-  if (ch?.data?.personality) msgs.push({ role: 'system', content: substituteParams(ch.data.personality) });
-  if (ch?.data?.scenario) msgs.push({ role: 'system', content: substituteParams(ch.data.scenario) });
-  if (wi.enabled) {
-    const w = await buildWI(wiChat.excluded_entries, wi.redlight_mode, wi.ejs_compat);
-    if (w.before) msgs.push({ role: 'system', content: w.before });
-    if (w.after) msgs.push({ role: 'system', content: w.after });
-  }
-  for (const m of buildChatHistory(contextRounds)) msgs.push(m);
-  msgs.push({ role: 'user', content: userInstruction });
-  return msgs;
-};
-
-/** 思维链引导：在生成选项前，提示模型逐条检查场景与规则，提高输出质量。 */
-const THINKING_PROMPT = `【输出前思考】
-在生成选项之前，请按以下顺序逐条检查：
-1. 场景核查：当前场景有哪些角色在场？哪些已离开？可用道具是什么？
-2. 状态锚点：正文末尾各角色的情绪、动作、对白分别是什么？
-3. 类型分配：本次选项类型是否互不重复？是否涵盖了不同的应对策略？
-4. 差异性检查：每个选项的切入点和情绪态度是否有明显差异？
-5. 规范审查：是否有"完成态""越权代演""结果性词汇""概括性说话动词"？
-6. 收尾审查：每个选项的收尾是否留白，未预判对方反应？`;
-
-/** 预填充文本：思维链引导，强制模型先输出 <thinking> 分析再输出 <options>。
- *  与柏宝书（ST-BaiBai-Book）的 THINKING_PREFILL 设计理念一致：
- *  开关（send_prefill）只控制是否发送，内容本身由开发者写死，与解析逻辑强绑定。 */
-const OPTIONS_PREFILL = `收到。我将根据当前场景与角色状态，先梳理检查点，然后生成行动选项。
-
-<thinking>
-`;
-
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
  *  与行动选项生成提示词刻意分离：条目池只要简短"行动方向"，
  *  不要求标题/对白/格式标签，输出契约不同，故不复用 parseOptions。
@@ -293,6 +318,21 @@ const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为
 5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
 6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
 
+/** 合并相邻同 role 消息，避免连续多个 system/user/assistant 消息。
+ *  相邻同 role 消息用 '\n\n' 拼接内容，保持消息数组简洁。 */
+const mergeAdjacentMessages = (messages: ChatMsg[]): ChatMsg[] => {
+  const result: ChatMsg[] = [];
+  for (const msg of messages) {
+    const last = result[result.length - 1];
+    if (last && last.role === msg.role) {
+      last.content = last.content + '\n\n' + msg.content;
+    } else {
+      result.push({ ...msg });
+    }
+  }
+  return result;
+};
+
 export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
     toastr.info(t`选项生成中,请稍候`);
@@ -308,15 +348,14 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const cwi = cs.settings.world_info;
   const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
   try {
-    const count = resolveCount(gs.settings.generation.count_mode);
+    const gen = ps.effectiveConfig?.generation ?? GenerationSettings.prefault({});
+    const count = resolveCount(gen.count_mode);
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,
-      categoriesEnabled: gs.settings.generation.categories_enabled,
-      shuffleFinal: gs.settings.generation.shuffle_final,
-      pinnedFollowsCondition: gs.settings.generation.pinned_follows_condition,
-      pinnedOverflow: gs.settings.generation.pinned_overflow,
-      conditionMet: e => evaluateCondition(e.condition),
+      categoriesEnabled: gen.categories_enabled,
+      shuffleFinal: gen.shuffle_final,
+      pinnedOverflow: gen.pinned_overflow,
     });
     console.log('[Choice] 池抽取结果', {
       生效池条目数: ps.effectivePool.length,
@@ -329,39 +368,30 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     const c: Ctx = {
       count,
       pinned: pool.pinned.map(e => e.text).join('\n'),
-      poolSelected: pool.drawn.map(e => e.text).join('\n'),
+      poolSelected: pool.drawn.map(e => e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text).join('\n'),
     };
     const rules = gs.settings.prompt_rules;
 
-    const systemPrompt = rules.system_prompt ? substituteParams(sub(rules.system_prompt, c)) : '';
-
-    const userInstruction = sub(buildUserInstr(c), c);
-    console.log('[Choice] 发送给AI的指令', userInstruction.slice(0, 1000));
-    const messages = await buildMessages(systemPrompt, userInstruction, gwi, cwi, rules.context_rounds);
-
-    if (rules.core_rules) {
-      messages.push({ role: 'system', content: substituteParams(sub(rules.core_rules, c)) });
+    let enabledModules = gs.sortedEnabledModules;
+    if (!enabledModules || enabledModules.length === 0) {
+      enabledModules = [...DEFAULT_MODULES].sort((a, b) => a.order - b.order);
     }
+    let messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
 
-    const api = resolveCustomApi(cs.settings.active_api_id, gs.settings.apis);
+    const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
     if (!api) {
       toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
       return null;
     }
 
-    if (api.send_prefill) {
-      // system 消息：输出前思考检查清单，引导模型在生成前逐条自查
-      messages.push({ role: 'system', content: THINKING_PROMPT });
-      // assistant 预填充强制模型以思维链模式开始
-      messages.push({ role: 'assistant', content: OPTIONS_PREFILL });
-    }
+    // 合并相邻同 role 消息，避免连续多个 system/user/assistant
+    messages = mergeAdjacentMessages(messages);
 
-    let signal: AbortSignal | undefined;
+    genController = new AbortController();
+    const signal = genController.signal;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     if (api.timeout > 0) {
-      const controller = new AbortController();
-      signal = controller.signal;
-      timeoutId = setTimeout(() => controller.abort(), api.timeout * 1000);
+      timeoutId = setTimeout(() => genController.abort(), api.timeout * 1000);
     }
 
     try {
@@ -384,6 +414,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   } finally {
     if (restore) restore.restore();
     cancelled = false;
+    genController = null;
     generatorState.loading = false;
     generatorState.generationId = null;
   }
@@ -391,6 +422,8 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
 
 export function cancelGeneration() {
   cancelled = true;
+  genController?.abort();
+  genController = null;
   generatorState.loading = false;
   generatorState.generationId = null;
 }
@@ -439,7 +472,6 @@ export async function generatePoolEntries(params: {
   count: number;
   requirements: string;
   includeContext: boolean;
-  layer: PoolLayer;
 }): Promise<PoolGenItem[]> {
   if (poolGenState.loading) {
     toastr.info(t`条目生成中,请稍候`);
@@ -447,7 +479,7 @@ export async function generatePoolEntries(params: {
   }
   const gs = useGlobalSettingsStore();
   const cs = useChatSettingsStore();
-  const api = resolveCustomApi(cs.settings.active_api_id, gs.settings.apis);
+  const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
   if (!api) {
     toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
     return [];
@@ -459,8 +491,8 @@ export async function generatePoolEntries(params: {
     timeoutId = setTimeout(() => poolGenController?.abort(), api.timeout * 1000);
   }
   try {
-    // 快照当前层已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
-    const existing = poolOfLayer(params.layer).map(e => ({ id: e.id, text: e.text }));
+    // 快照总条目库已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
+    const existing = gs.settings.master_pool.map(e => ({ id: e.id, text: e.text }));
     const existingList = existing.length ? existing.map((e, i) => `${i + 1}. ${e.text}`).join('\n') : '（无）';
     const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
@@ -473,7 +505,7 @@ export async function generatePoolEntries(params: {
     }
     messages.push({
       role: 'user',
-      content: `请生成 ${params.count} 条行动条目建议。\n当前层已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
+      content: `请生成 ${params.count} 条行动条目建议。\n已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
     });
     const raw = await callSecondaryApi(messages, api, poolGenController.signal);
     const parsed = parsePoolGenItems(raw, params.count);

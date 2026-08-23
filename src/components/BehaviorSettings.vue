@@ -12,14 +12,6 @@
         />
       </label>
       <label class="choice-field">
-        <span>{{ t`选中后` }}</span>
-        <select v-model="chatStore.settings.behavior" class="text_pole">
-          <option value="send">{{ t`发送` }}</option>
-          <option value="fill">{{ t`覆盖` }}</option>
-          <option value="append">{{ t`尾附` }}</option>
-        </select>
-      </label>
-      <label class="choice-field">
         <span>{{ t`固定条目溢出` }}</span>
         <select v-model="generation.pinned_overflow" class="text_pole">
           <option value="send_all">{{ t`全部发出` }}</option>
@@ -31,19 +23,18 @@
     <div class="choice-behavior-grid">
       <label class="choice-check">
         <input v-model="chatStore.settings.auto_generate" type="checkbox" />
+        <span class="choice-check-custom"></span>
         {{ t`自动生成` }}
       </label>
       <label class="choice-check">
         <input v-model="generation.categories_enabled" type="checkbox" />
+        <span class="choice-check-custom"></span>
         {{ t`分类多样性` }}
       </label>
       <label class="choice-check">
         <input v-model="generation.shuffle_final" type="checkbox" />
-        {{ t`最终洗牌` }}
-      </label>
-      <label class="choice-check">
-        <input v-model="generation.pinned_follows_condition" type="checkbox" />
-        {{ t`固定也过滤` }}
+        <span class="choice-check-custom"></span>
+        {{ t`打乱选项顺序` }}
       </label>
     </div>
   </div>
@@ -51,11 +42,12 @@
 
 <script setup lang="ts">
 import { useChatSettingsStore } from '@/store/chat-settings';
-import { useGlobalSettingsStore } from '@/store/global-settings';
+import { usePoolSelectorStore } from '@/store/pool-selector';
+import { GenerationSettings } from '@/type/settings';
 
-const globalStore = useGlobalSettingsStore();
+const poolSelector = usePoolSelectorStore();
 const chatStore = useChatSettingsStore();
-const generation = globalStore.settings.generation;
+const generation = computed(() => poolSelector.effectiveConfig?.generation ?? GenerationSettings.prefault({}));
 </script>
 
 <style scoped>
@@ -80,21 +72,61 @@ const generation = globalStore.settings.generation;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
 .choice-behavior-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px 8px;
+  gap: 6px;
 }
 
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: #dcdcdc;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--choice-text-secondary);
+  background: var(--choice-bg-card);
+  border-radius: var(--choice-radius-md);
+  padding: 10px 12px;
+  cursor: pointer;
   white-space: nowrap;
+  transition: background var(--choice-transition);
+}
+
+.choice-check:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-check input[type='checkbox'] {
+  display: none;
+}
+
+.choice-check-custom {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--choice-border-strong);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--choice-transition), border-color var(--choice-transition);
+  position: relative;
+}
+
+.choice-check input[type='checkbox']:checked + .choice-check-custom {
+  background: var(--choice-primary);
+  border-color: var(--choice-primary);
+}
+
+.choice-check input[type='checkbox']:checked + .choice-check-custom::after {
+  content: '✓';
+  color: #fff;
+  font-size: 11px;
+  font-weight: bold;
+  position: absolute;
+  line-height: 1;
 }
 </style>

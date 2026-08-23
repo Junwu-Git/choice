@@ -1,41 +1,41 @@
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import type { PoolEntry } from '@/type/settings';
-
-export type PoolLayer = 'global' | 'character' | 'chat';
+import type { PoolConfig, PoolEntry } from '@/type/settings';
 
 export const usePoolSelectorStore = defineStore('pool-selector', () => {
   const globalStore = useGlobalSettingsStore();
   const characterStore = useCharacterSettingsStore();
   const chatStore = useChatSettingsStore();
 
-  const effectiveLayer = computed<PoolLayer>(() => {
-    if (chatStore.settings.pool.length > 0) {
-      return 'chat';
+  const effectiveConfig = computed<PoolConfig | null>(() => {
+    const chatConfigId = chatStore.settings.config_id;
+    if (chatConfigId) {
+      return globalStore.settings.configs.find(c => c.id === chatConfigId) ?? null;
     }
-    if (characterStore.settings.pool.length > 0) {
-      return 'character';
+    const charConfigId = characterStore.settings.config_id;
+    if (charConfigId) {
+      return globalStore.settings.configs.find(c => c.id === charConfigId) ?? null;
     }
-    return 'global';
+    return globalStore.settings.configs.find(c => c.is_default) ?? null;
   });
 
   const effectivePool = computed<PoolEntry[]>(() => {
-    switch (effectiveLayer.value) {
-      case 'chat':
-        return chatStore.settings.pool;
-      case 'character':
-        return characterStore.settings.pool;
-      default:
-        return globalStore.settings.pool;
+    const config = effectiveConfig.value;
+    if (!config) {
+      return [...globalStore.settings.master_pool];
     }
+    const entryMap = new Map(config.entries.map(e => [e.entry_id, e]));
+    return globalStore.settings.master_pool
+      .filter(e => entryMap.has(e.id))
+      .map(e => {
+        const cfg = entryMap.get(e.id)!;
+        return { ...e, pinned: cfg.pinned, weight: cfg.weight, condition: cfg.condition };
+      });
   });
 
-  const layerActive = (layer: PoolLayer) => layer === effectiveLayer.value;
-
   return {
-    effectiveLayer,
+    effectiveConfig,
     effectivePool,
-    layerActive,
   };
 });

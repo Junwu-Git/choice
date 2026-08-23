@@ -2,38 +2,33 @@
   <div class="choice-api-editor">
     <label class="choice-field">
       <span>{{ t`生成 API` }}</span>
-      <!-- 下拉只遍历已保存配置；活动选择仍是草稿，随「保存」一起提交，避免未保存草稿污染生成 API 选择 -->
-      <select v-model="draftActiveApiId" class="text_pole">
+      <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
         <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
           {{ api.name || t`<未命名>` }}
         </option>
       </select>
     </label>
 
-    <div class="choice-api-actions">
-      <button class="menu_button" @click="save">{{ t`保存` }}</button>
-      <button class="menu_button" @click="reset">{{ t`取消` }}</button>
-      <button class="menu_button" @click="addApi">{{ t`添加 API` }}</button>
-    </div>
-
-    <div v-for="api in draftApis" :key="api.id" class="choice-api-card">
-      <div class="choice-api-head" @click="toggleCard(api.id)">
-        <i class="fa-solid" :class="expandedCards.has(api.id) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-        <span class="choice-api-card-title">{{ api.name || t`<未命名>` }}</span>
-        <span class="choice-api-card-model">{{ api.model || t`<无模型>` }}</span>
-        <button class="choice-icon-btn" :title="t`删除`" @click.stop="removeApi(api)">
+    <div class="choice-api-form">
+      <div class="choice-api-form-head">
+        <span class="choice-form-title">{{ draftForm.name || t`<未命名>` }}</span>
+        <button
+          v-if="globalStore.settings.apis.length > 0"
+          class="choice-icon-btn"
+          :title="t`删除`"
+          @click="removeApi"
+        >
           <i class="fa-solid fa-trash-can"></i>
         </button>
       </div>
-      <div v-if="expandedCards.has(api.id)" class="choice-api-card-body">
-        <!-- 配置名称置于卡片顶端第一行，便于一眼识别当前编辑的是哪张卡 -->
+      <div class="choice-api-form-body">
         <div class="choice-api-name-row">
-          <input v-model="api.name" class="text_pole" :placeholder="t`配置名称`" />
+          <input v-model="draftForm.name" class="text_pole" :placeholder="t`配置名称`" />
         </div>
         <div class="choice-api-url-row">
-          <input v-model="api.apiurl" class="text_pole" :placeholder="t`API 地址`" />
+          <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
           <input
-            v-model="api.key"
+            v-model="draftForm.key"
             class="text_pole"
             type="password"
             :placeholder="t`API 密钥`"
@@ -41,48 +36,64 @@
           />
         </div>
         <div class="choice-model-row">
-          <input v-model="api.model" class="text_pole" :list="`choice-models-${api.id}`" :placeholder="t`模型名称`" />
+          <input v-model="draftForm.model" class="text_pole" :placeholder="t`模型名称`" />
           <button
             class="menu_button choice-fetch-btn"
-            :disabled="isFetching(api.id)"
+            :disabled="isFetching"
             :title="t`从 API 拉取可用模型列表`"
-            @click="fetchModels(api)"
+            @click="fetchModels"
           >
-            <i v-if="isFetching(api.id)" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-if="isFetching" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-cloud-arrow-down"></i>
-            {{ isFetching(api.id) ? '' : t`拉取` }}
+            {{ isFetching ? '' : t`拉取` }}
+          </button>
+          <button
+            class="menu_button choice-model-dropdown-btn"
+            :disabled="(modelList.length ?? 0) === 0"
+            :title="t`选择模型`"
+            @click="modelDropdownOpen = !modelDropdownOpen"
+          >
+            <i class="fa-solid" :class="modelDropdownOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
           </button>
         </div>
-        <datalist :id="`choice-models-${api.id}`">
-          <option v-for="model in modelLists[api.id] ?? []" :key="model" :value="model"></option>
-        </datalist>
+        <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
+          <div
+            v-for="model in modelList"
+            :key="model"
+            class="choice-model-item"
+            :class="{ 'choice-model-item--active': draftForm.model === model }"
+            @click="draftForm.model = model; modelDropdownOpen = false"
+          >
+            {{ model }}
+          </div>
+        </div>
         <div class="choice-api-row">
           <label class="choice-field">
             <span>{{ t`温度` }}</span>
-            <input v-model.number="api.temperature" type="number" class="text_pole" min="0" max="2" step="0.1" />
+            <input v-model.number="draftForm.temperature" type="number" class="text_pole" min="0" max="2" step="0.1" />
           </label>
           <label class="choice-field">
             <span>{{ t`最大 Token` }}</span>
-            <input v-model.number="api.max_tokens" type="number" class="text_pole" min="1" />
+            <input v-model.number="draftForm.max_tokens" type="number" class="text_pole" min="1" />
           </label>
           <label class="choice-field">
             <span>{{ t`超时(秒)` }}</span>
-            <input v-model.number="api.timeout" type="number" class="text_pole" min="0" placeholder="0" />
+            <input v-model.number="draftForm.timeout" type="number" class="text_pole" min="0" placeholder="0" />
           </label>
         </div>
         <div class="choice-api-bottom-row">
           <div class="choice-api-checks">
             <label class="choice-check">
-              <input v-model="api.stream" type="checkbox" />
+              <input v-model="draftForm.stream" type="checkbox" />
               {{ t`流式` }}
             </label>
             <label class="choice-check">
-              <input v-model="api.send_prefill" type="checkbox" />
+              <input v-model="draftForm.send_prefill" type="checkbox" />
               {{ t`预填充` }}
             </label>
           </div>
           <input
-            v-model="api.exclude_params"
+            v-model="draftForm.exclude_params"
             class="text_pole"
             :placeholder="t`排除参数`"
             style="flex: 1; min-width: 0"
@@ -91,47 +102,69 @@
       </div>
     </div>
 
-    <div v-if="draftApis.length === 0" class="choice-empty-hint">{{ t`暂无 API 配置,点击「添加 API」创建` }}</div>
+    <div class="choice-api-bottom-actions">
+      <button class="menu_button" @click="save">{{ t`保存` }}</button>
+      <button class="menu_button" @click="reset">{{ t`取消` }}</button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
 
 const globalStore = useGlobalSettingsStore();
-const chatStore = useChatSettingsStore();
 
-const draftApis = ref<SecondaryApi[]>(klona(globalStore.settings.apis));
-const draftActiveApiId = ref<string>(chatStore.settings.active_api_id);
+const EMPTY_API = (): SecondaryApi => ({
+  id: uuidv4(),
+  name: '',
+  apiurl: '',
+  key: '',
+  model: '',
+  temperature: 1,
+  max_tokens: 4096,
+  timeout: 0,
+  stream: false,
+  send_prefill: false,
+  exclude_params: '',
+});
 
-const modelLists = ref<Record<string, string[]>>({});
-const fetching = ref<Record<string, boolean>>({});
-const expandedCards = ref<Set<string>>(new Set(draftApis.value.map(a => a.id)));
-
-const isFetching = (id: string) => fetching.value[id] === true;
-
-const toggleCard = (id: string) => {
-  if (expandedCards.value.has(id)) expandedCards.value.delete(id);
-  else expandedCards.value.add(id);
+const initForm = (): SecondaryApi => {
+  const api = globalStore.settings.apis.find(a => a.id === selectedApiId.value);
+  return api ? klona(api) : EMPTY_API();
 };
 
-const fetchModels = async (api: SecondaryApi) => {
+const selectedApiId = ref<string>(globalStore.settings.active_api_id);
+const draftForm = ref<SecondaryApi>(initForm());
+
+const modelList = ref<string[]>([]);
+const fetching = ref(false);
+const modelDropdownOpen = ref(false);
+
+const isFetching = fetching;
+
+const selectApi = (id: string) => {
+  selectedApiId.value = id;
+  const api = globalStore.settings.apis.find(a => a.id === id);
+  draftForm.value = api ? klona(api) : EMPTY_API();
+  modelDropdownOpen.value = false;
+};
+
+const fetchModels = async () => {
   const helper = window.TavernHelper;
   if (!helper) {
     toastr.warning(t`酒馆助手未启用,无法拉取模型列表`);
     return;
   }
-  if (!api.apiurl) {
+  if (!draftForm.value.apiurl) {
     toastr.warning(t`请先填写 API 地址`);
     return;
   }
-  fetching.value[api.id] = true;
+  fetching.value = true;
   try {
-    const models = await helper.getModelList({ apiurl: api.apiurl, key: api.key || undefined });
-    modelLists.value[api.id] = models;
+    const models = await helper.getModelList({ apiurl: draftForm.value.apiurl, key: draftForm.value.key || undefined });
+    modelList.value = models;
     if (models.length === 0) {
       toastr.info(t`模型列表为空`);
     } else {
@@ -140,49 +173,50 @@ const fetchModels = async (api: SecondaryApi) => {
   } catch (error) {
     toastr.error(t`拉取模型列表失败:${error instanceof Error ? error.message : String(error)}`);
   } finally {
-    fetching.value[api.id] = false;
+    fetching.value = false;
   }
 };
 
-const addApi = () => {
-  const api: SecondaryApi = {
-    id: uuidv4(),
-    name: '',
-    apiurl: '',
-    key: '',
-    model: '',
-    temperature: 1,
-    max_tokens: 4096,
-    timeout: 0,
-    stream: false,
-    send_prefill: false,
-    exclude_params: '',
-  };
-  draftApis.value.push(api);
-  expandedCards.value.add(api.id);
-};
-
-const removeApi = (api: SecondaryApi) => {
-  const index = draftApis.value.indexOf(api);
-  if (index !== -1) {
-    draftApis.value.splice(index, 1);
+const removeApi = () => {
+  const id = selectedApiId.value;
+  const newApis = globalStore.settings.apis.filter(a => a.id !== id);
+  globalStore.settings.apis = newApis;
+  if (globalStore.settings.active_api_id === id) {
+    globalStore.settings.active_api_id = newApis[0]?.id ?? '';
   }
-  if (draftActiveApiId.value === api.id) {
-    draftActiveApiId.value = '';
-  }
-  expandedCards.value.delete(api.id);
+  const nextId = newApis[0]?.id ?? '';
+  selectedApiId.value = nextId;
+  const api = newApis.find(a => a.id === nextId);
+  draftForm.value = api ? klona(api) : EMPTY_API();
+  modelList.value = [];
+  modelDropdownOpen.value = false;
+  toastr.success(t`已删除`);
 };
 
 const save = () => {
-  globalStore.settings.apis = klona(draftApis.value);
-  chatStore.settings.active_api_id = draftActiveApiId.value;
+  const original = globalStore.settings.apis.find(a => a.id === selectedApiId.value);
+  if (!original || !_.isEqual(original, draftForm.value)) {
+    const newId = uuidv4();
+    const newApi = { ...draftForm.value, id: newId };
+    const newApis = [...globalStore.settings.apis];
+    if (original) {
+      newApis.push(newApi);
+    } else {
+      newApis.push(newApi);
+    }
+    globalStore.settings.apis = newApis;
+    globalStore.settings.active_api_id = newId;
+    selectedApiId.value = newId;
+    draftForm.value = klona(newApi);
+  }
   toastr.success(t`已保存`);
 };
 
 const reset = () => {
-  draftApis.value = klona(globalStore.settings.apis);
-  draftActiveApiId.value = chatStore.settings.active_api_id;
-  expandedCards.value = new Set(draftApis.value.map(a => a.id));
+  selectedApiId.value = globalStore.settings.active_api_id;
+  draftForm.value = initForm();
+  modelList.value = [];
+  modelDropdownOpen.value = false;
 };
 </script>
 
@@ -198,51 +232,38 @@ const reset = () => {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
-.choice-api-card {
+.choice-api-form {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(128, 128, 128, 0.25);
-  border-radius: 6px;
-  background: rgba(40, 40, 40, 0.35);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
   overflow: hidden;
 }
 
-.choice-api-head {
+.choice-api-form-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   padding: 5px 8px;
-  cursor: pointer;
+  background: linear-gradient(180deg, var(--choice-bg-element), transparent);
+  border-bottom: 1px solid var(--choice-border);
 }
 
-.choice-api-head:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.choice-api-card-title {
+.choice-form-title {
   font-size: 12px;
   font-weight: bold;
-  color: #e0e0e0;
+  color: var(--choice-text);
 }
 
-.choice-api-card-model {
-  font-size: 11px;
-  color: #8a8a8a;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.choice-api-card-body {
+.choice-api-form-body {
   display: flex;
   flex-direction: column;
   gap: 5px;
   padding: 0 8px 8px;
-  border-top: 1px solid rgba(128, 128, 128, 0.12);
   padding-top: 6px;
 }
 
@@ -271,6 +292,17 @@ const reset = () => {
   cursor: pointer;
   font-size: 13px;
   flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--choice-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--choice-transition);
+}
+
+.choice-icon-btn:hover {
+  background: var(--choice-bg-hover);
 }
 
 .choice-model-row {
@@ -289,6 +321,42 @@ const reset = () => {
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
+}
+
+.choice-model-dropdown-btn {
+  flex-shrink: 0;
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.choice-model-list {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+}
+
+.choice-model-item {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--choice-text);
+  cursor: pointer;
+  border-bottom: 1px solid var(--choice-border);
+}
+
+.choice-model-item:last-child {
+  border-bottom: none;
+}
+
+.choice-model-item:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-model-item--active {
+  color: var(--choice-accent);
+  font-weight: bold;
 }
 
 .choice-api-row {
@@ -319,17 +387,14 @@ const reset = () => {
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
-.choice-api-actions {
+.choice-api-bottom-actions {
   display: flex;
   gap: 6px;
-}
-
-.choice-empty-hint {
-  color: #9a9a9a;
-  font-size: 12px;
-  padding: 8px 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--choice-border);
+  margin-top: 4px;
 }
 </style>

@@ -5,14 +5,6 @@
         <input v-model="globalStore.settings.world_info.enabled" type="checkbox" />
         {{ t`启用世界书` }}
       </label>
-      <label class="choice-check">
-        <input v-model="globalStore.settings.world_info.redlight_mode" type="checkbox" />
-        {{ t`绿灯关键词触发` }}
-      </label>
-      <label class="choice-check">
-        <input v-model="globalStore.settings.world_info.ejs_compat" type="checkbox" />
-        {{ t`EJS 兼容` }}
-      </label>
     </div>
 
     <button class="menu_button" @click="refreshAll">{{ t`刷新列表` }}</button>
@@ -21,25 +13,23 @@
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
-          <div class="choice-wi-row" :class="{ excluded: !isBookChecked(book) }" @click="toggleBookExpand(book.name)">
+          <div
+            class="choice-wi-row"
+            :class="{ excluded: !isBookChecked(book) }"
+            @click="toggleBookExpand(book.name)"
+          >
             <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
-            <span
-              class="choice-wi-badge"
-              :class="
-                book.source === 'global'
-                  ? 'badge-global'
-                  : book.source === 'character'
-                    ? 'badge-character'
-                    : 'badge-plugin'
-              "
-            >
+            <span class="choice-wi-badge" :class="book.source === 'global' ? 'badge-global' : book.source === 'character' ? 'badge-character' : 'badge-plugin'">
               {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
             </span>
             <input type="checkbox" :checked="isBookChecked(book)" @click.stop @change="toggleBook(book)" />
           </div>
-          <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
+          <div
+            v-if="bookExpanded.has(book.name) && bookEntries[book.name]"
+            class="choice-wi-entries"
+          >
             <div
               v-for="entry in bookEntries[book.name]"
               :key="entry.uid"
@@ -83,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { characters, this_chid } from '@sillytavern/script';
+import { characters, this_chid, eventSource, event_types } from '@sillytavern/script';
 import { loadWorldInfo, selected_world_info, world_names } from '@sillytavern/scripts/world-info';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -112,12 +102,12 @@ const bookEntries = ref<Record<string, EntryInfo[]>>({});
 const bookExpanded = ref<Set<string>>(new Set());
 const showInactive = ref(false);
 
-const activeBooks = computed(() =>
-  allBooks.value.filter(b => b.active || chatStore.settings.world_info.enabled_books.includes(b.name)),
-);
-const inactiveBooks = computed(() =>
-  allBooks.value.filter(b => !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)),
-);
+const activeBooks = computed(() => allBooks.value.filter(b =>
+  b.active || chatStore.settings.world_info.enabled_books.includes(b.name)
+));
+const inactiveBooks = computed(() => allBooks.value.filter(b =>
+  !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)
+));
 
 const isBookExcluded = (name: string) => chatStore.settings.world_info.excluded_books.includes(name);
 const isEntryExcluded = (bookName: string, uid: string | number) =>
@@ -126,27 +116,55 @@ const isEntryExcluded = (bookName: string, uid: string | number) =>
 const isExtEnabled = (name: string) => chatStore.settings.world_info.enabled_books.includes(name);
 
 const isBookChecked = (book: BookInfo) => {
-  if (book.active) return !chatStore.settings.world_info.excluded_books.includes(book.name);
+  if (chatStore.settings.world_info.excluded_books.includes(book.name)) return false;
+  if (book.active) return true;
   return chatStore.settings.world_info.enabled_books.includes(book.name);
 };
 
 const toggleBook = (book: BookInfo) => {
-  if (book.active) {
-    const excluded = chatStore.settings.world_info.excluded_books;
-    const idx = excluded.indexOf(book.name);
-    if (idx !== -1) excluded.splice(idx, 1);
-    else excluded.push(book.name);
+  const enabled = chatStore.settings.world_info.enabled_books;
+  const excluded = chatStore.settings.world_info.excluded_books;
+  const wasChecked = isBookChecked(book);
+
+  const removeFrom = (arr: string[], name: string) => {
+    const i = arr.indexOf(name);
+    if (i !== -1) arr.splice(i, 1);
+  };
+
+  if (wasChecked) {
+    removeFrom(enabled, book.name);
+    if (book.active && !excluded.includes(book.name)) excluded.push(book.name);
   } else {
-    const enabled = chatStore.settings.world_info.enabled_books;
-    const idx = enabled.indexOf(book.name);
-    if (idx !== -1) enabled.splice(idx, 1);
-    else enabled.push(book.name);
+    removeFrom(excluded, book.name);
+    if (!book.active && !enabled.includes(book.name)) enabled.push(book.name);
   }
 };
 
-const enableBook = (name: string) => {
+const enableBook = async (name: string) => {
   const enabled = chatStore.settings.world_info.enabled_books;
+  const excluded = chatStore.settings.world_info.excluded_books;
   if (!enabled.includes(name)) enabled.push(name);
+  const xi = excluded.indexOf(name);
+  if (xi !== -1) excluded.splice(xi, 1);
+  try {
+    const data = await loadWorldInfo(name);
+    if (data?.entries) {
+      bookEntries.value = {
+        ...bookEntries.value,
+        [name]: Object.values(data.entries).map((e: any) => ({
+          uid: e.uid,
+          comment: e.comment ?? '',
+          key: e.key ?? [],
+          content: e.content ?? '',
+          constant: e.constant ?? false,
+          disable: e.disable ?? false,
+          vectorized: e.vectorized ?? false,
+        })),
+      };
+    }
+  } catch {
+    // ignore load errors
+  }
 };
 
 const toggleBookExpand = (name: string) => {
@@ -175,11 +193,12 @@ const entryStateIcon = (entry: EntryInfo) => {
 
 const refreshAll = async () => {
   const global = [...(selected_world_info ?? [])];
+  const enabledSet = new Set(chatStore.settings.world_info.enabled_books);
   const chid = this_chid;
   const charWorld = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
   const result: BookInfo[] = [];
   for (const name of world_names ?? []) {
-    const isGlobal = global.includes(name);
+    const isGlobal = global.includes(name) && !enabledSet.has(name);
     const isCharacter = charWorld === name;
     result.push({
       name,
@@ -225,8 +244,15 @@ const refreshAll = async () => {
   }
 };
 
-onMounted(refreshAll);
+onMounted(() => {
+  refreshAll();
+  if (this_chid === undefined) setTimeout(refreshAll, 500);
+  eventSource.on(event_types.CHAT_CHANGED, refreshAll);
+});
 onActivated(refreshAll);
+onUnmounted(() => {
+  eventSource.removeListener(event_types.CHAT_CHANGED, refreshAll);
+});
 </script>
 
 <style scoped>
@@ -247,16 +273,16 @@ onActivated(refreshAll);
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
 .choice-wi-section-title {
   font-size: 12px;
   font-weight: bold;
-  color: #b0b0b0;
+  color: var(--choice-text-muted);
   margin-top: 4px;
   padding-bottom: 2px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-wi-collapsible {
@@ -265,15 +291,16 @@ onActivated(refreshAll);
   align-items: center;
   gap: 4px;
   user-select: none;
+  transition: color var(--choice-transition);
 }
 
 .choice-wi-collapsible:hover {
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
 }
 
 .choice-wi-count {
   font-size: 10px;
-  color: #888;
+  color: var(--choice-text-muted);
   font-weight: normal;
 }
 
@@ -288,14 +315,15 @@ onActivated(refreshAll);
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  border-radius: 6px;
-  background: rgba(40, 40, 40, 0.3);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
   cursor: pointer;
+  transition: background var(--choice-transition);
 }
 
 .choice-wi-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--choice-bg-hover);
 }
 
 .choice-wi-row.excluded {
@@ -307,8 +335,8 @@ onActivated(refreshAll);
 }
 
 .choice-wi-light {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #555;
   flex-shrink: 0;
@@ -316,13 +344,13 @@ onActivated(refreshAll);
 
 .choice-wi-light.active {
   background: #4caf50;
-  box-shadow: 0 0 4px #4caf50;
+  box-shadow: 0 0 6px #4caf50;
 }
 
 .choice-wi-name {
   flex: 1;
   font-size: 12px;
-  color: #dcdcdc;
+  color: var(--choice-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -331,7 +359,7 @@ onActivated(refreshAll);
 .choice-wi-badge {
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 8px;
+  border-radius: var(--choice-radius-full);
   color: #fff;
   flex-shrink: 0;
 }
@@ -347,11 +375,12 @@ onActivated(refreshAll);
 }
 
 .choice-wi-entries {
-  margin-left: 22px;
+  margin-left: 24px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 0 4px;
+  padding: 2px 0 4px 12px;
+  border-left: 1px solid var(--choice-border);
 }
 
 .choice-wi-entry {
@@ -381,7 +410,7 @@ onActivated(refreshAll);
 
 .choice-wi-entry-name {
   flex: 1;
-  color: #b0b0b0;
+  color: var(--choice-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -390,12 +419,13 @@ onActivated(refreshAll);
 .choice-wi-enable-btn {
   font-size: 10px;
   padding: 1px 8px;
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  border-radius: 4px;
-  background: rgba(60, 60, 60, 0.5);
-  color: #b0b0b0;
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-element);
+  color: var(--choice-text-muted);
   cursor: pointer;
   flex-shrink: 0;
+  transition: background var(--choice-transition), border-color var(--choice-transition), color var(--choice-transition);
 }
 .choice-wi-enable-btn:hover {
   background: rgba(76, 175, 80, 0.2);
@@ -404,13 +434,13 @@ onActivated(refreshAll);
 }
 
 .choice-empty-hint {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 12px;
   padding: 8px 0;
 }
 
 .choice-hint {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 11px;
 }
 </style>

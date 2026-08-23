@@ -1,0 +1,46 @@
+:root {
+  --choice-primary: #4a90d9;
+  --choice-primary-hover: #5da8f0;
+  --choice-primary-light: rgba(74, 144, 217, 0.15);
+  --choice-primary-glow: rgba(74, 144, 217, 0.25);
+  --choice-primary-active: #2f6fb0;
+
+  --choice-bg-panel: rgba(22, 22, 28, 0.88);
+  --choice-bg-card: rgba(35, 35, 42, 0.65);
+  --choice-bg-element: rgba(50, 50, 58, 0.45);
+  --choice-bg-hover: rgba(255, 255, 255, 0.05);
+  --choice-bg-active: rgba(74, 144, 217, 0.12);
+
+  --choice-text: #e8e8ec;
+  --choice-text-secondary: #c0c0c8;
+  --choice-text-muted: #8a8a94;
+  --choice-text-hint: #b8943a;
+
+  --choice-border: rgba(255, 255, 255, 0.08);
+  --choice-border-strong: rgba(255, 255, 255, 0.12);
+  --choice-border-active: rgba(74, 144, 217, 0.4);
+
+  --choice-radius-sm: 6px;
+  --choice-radius-md: 10px;
+  --choice-radius-lg: 14px;
+  --choice-radius-full: 9999px;
+
+  --choice-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.15);
+  --choice-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --choice-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
+
+  --choice-transition: 150ms ease;
+  --choice-transition-slow: 300ms ease-out;
+}
+
+@keyframes choice-bubble-pulse {
+  0%, 100% { box-shadow: 0 0 16px var(--choice-primary-glow); }
+  50% { box-shadow: 0 0 28px rgba(74, 144, 217, 0.45); }
+}
+
+@keyframes choice-skeleton {
+  0% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+  100% { opacity: 0.3; }
+}

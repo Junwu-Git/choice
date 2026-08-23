@@ -1,3 +1,4 @@
+import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
 import { initWandMenu } from '@/core/wand-menu';

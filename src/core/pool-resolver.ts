@@ -5,9 +5,7 @@ export type ResolvePoolInput = {
   count: number;
   categoriesEnabled: boolean;
   shuffleFinal: boolean;
-  pinnedFollowsCondition: boolean;
   pinnedOverflow: 'send_all' | 'trim';
-  conditionMet: (entry: PoolEntry) => boolean;
 };
 
 export type ResolvePoolResult = {
@@ -78,14 +76,8 @@ const drawByCategories = (pool: PoolEntry[], amount: number): PoolEntry[] => {
 };
 
 export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
-  const candidates = input.effectivePool.filter(entry => {
-    if (entry.pinned && !input.pinnedFollowsCondition) {
-      return true;
-    }
-    return input.conditionMet(entry);
-  });
-  const pinned = candidates.filter(entry => entry.pinned);
-  const pool = candidates.filter(entry => !entry.pinned);
+  const pinned = input.effectivePool.filter(entry => entry.pinned);
+  const pool = input.effectivePool.filter(entry => !entry.pinned);
 
   let pinnedUsed = pinned;
   let remaining = 0;

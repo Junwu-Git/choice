@@ -4,3 +4,27 @@
   width: auto;
   white-space: nowrap;
 }
+
+/* 自定义滚动条 */
+.choice-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.choice-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.choice-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 140, 0.3);
+  border-radius: 3px;
+}
+
+.choice-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 140, 0.5);
+}
+
+/* 键盘焦点指示 */
+*:focus-visible {
+  outline: 1px solid var(--choice-primary);
+  outline-offset: 2px;
+}

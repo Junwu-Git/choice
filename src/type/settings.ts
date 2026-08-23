@@ -17,12 +17,32 @@ export const GenerationSettings = z
     count_mode: z.string().default('4'),
     categories_enabled: z.boolean().default(true),
     shuffle_final: z.boolean().default(true),
-    pinned_follows_condition: z.boolean().default(true),
     pinned_overflow: z.enum(['send_all', 'trim']).default('send_all'),
     cross_layer_fallback: z.boolean().default(false),
   })
   .prefault({});
 export type GenerationSettings = z.infer<typeof GenerationSettings>;
+
+export const PoolConfigEntry = z
+  .object({
+    entry_id: z.string(),
+    pinned: z.boolean().default(false),
+    weight: z.number().min(0).default(1),
+    condition: z.string().default(''),
+  })
+  .prefault({});
+export type PoolConfigEntry = z.infer<typeof PoolConfigEntry>;
+
+export const PoolConfig = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    entries: z.array(PoolConfigEntry),
+    is_default: z.boolean().default(false),
+    generation: GenerationSettings.prefault({}),
+  })
+  .prefault({});
+export type PoolConfig = z.infer<typeof PoolConfig>;
 
 export const DEFAULT_AI_PERSONA =
   '你是「行动选项生成器」，负责为角色扮演对话生成行动选项。遵循以下规则：\n\n' +
@@ -76,17 +96,18 @@ export const DEFAULT_CORE_RULES = `【核心规则 - 生成选项时严格遵守
 1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判其他角色反应（如"对方笑了""他松了口气"）。
 2. 直接引语：含言语交流的选项，必须以『……』给出完整对白；纯动作/观察选项不强制。
 3. 输出纯净度：除 <thinking> 和 <options> 标签及其内容外，不输出任何文字。
-4. 防极端化：行为强度与剧情张力匹配，不无故升级为极端行为。
-5. 防阴暗基调：一次输出中至少保留部分中性/建设性选项，避免集体滑向阴暗。
-6. 防老套化：禁止反复使用"平静""低笑""玩味""意味深长"等词，同一次输出中同一情绪词不重复。
-7. 句式多变：禁止"动作+说话+等待"公式，可先声夺人、只行动不说话、说话中途戛然而止。
-8. 对白真实感：对白须有明确情感，不得出现空对白『……』；动作描写作为对白的伴随状态。
-9. 场景逻辑：严禁与已离开/不存在的角色互动，严禁凭空变出道具。
-10. 留白收尾：动作须是未完成态，收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文。
-11. 禁止概括性说话动词：讨论/谈论/询问/告诉/回应/暗示/提议/劝说/解释/商量 → 必须展开为具体对白。
-12. 禁止裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了。
-13. 禁止越权代演：对方笑了/他答应了/她感到很生气/他惊讶地看着。
-14. 禁止完成态：...好/...完/...毕/已... → 改为试图.../准备.../指尖刚触碰到...
+4. 条件过滤：可选条目中带 [条件: xxx] 标记的，仅在当前聊天上下文符合条件描述时使用；不符合则跳过。
+5. 防极端化：行为强度与剧情张力匹配，不无故升级为极端行为。
+6. 防阴暗基调：一次输出中至少保留部分中性/建设性选项，避免集体滑向阴暗。
+7. 防老套化：禁止反复使用"平静""低笑""玩味""意味深长"等词，同一次输出中同一情绪词不重复。
+8. 句式多变：禁止"动作+说话+等待"公式，可先声夺人、只行动不说话、说话中途戛然而止。
+9. 对白真实感：对白须有明确情感，不得出现空对白；动作描写作为对白的伴随状态。
+10. 场景逻辑：严禁与已离开/不存在的角色互动，严禁凭空变出道具。
+11. 留白收尾：动作须是未完成态，收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文。
+12. 禁止概括性说话动词：讨论/谈论/询问/告诉/回应/暗示/提议/劝说/解释/商量 → 必须展开为具体对白。
+13. 禁止裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了。
+14. 禁止越权代演：对方笑了/他答应了/她感到很生气/他惊讶地看着。
+15. 禁止完成态：...好/...完/...毕/已... → 改为试图.../准备.../指尖刚触碰到...
 
 【叙述风格】
 选项内容以第三人称 {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互（如：靠在门框上、把玩手中的杯子），避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。
@@ -106,11 +127,187 @@ export const DEFAULT_CORE_RULES = `【核心规则 - 生成选项时严格遵守
 正确：强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。
 正确：递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』`;
 
+export const PromptModule = z.object({
+  id: z.string(),
+  name: z.string(),
+  role: z.enum(['system', 'user', 'assistant']),
+  content: z.string().default(''),
+  marker: z.boolean(),
+  system: z.boolean(),
+  enabled: z.boolean().default(true),
+  order: z.number().min(0),
+});
+export type PromptModule = z.infer<typeof PromptModule>;
+
+export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 {{count}} 条行动选项。
+
+固定条目（必须使用，不受条件限制）：
+{{pinned}}
+
+可选条目（根据 [条件] 标记判断是否适用当前上下文）：
+{{pool_selected}}
+
+生成规则：
+1. 其中 1 个固定为"跳过场景"类型
+2. 其余 {{count_minus_1}} 个从以下类型中随机且互不重复地抽取，确保类型、切入点、情绪态度均有明显差异：理性分析、强势试探、温和安抚、幽默化解、纯物理行动、静观其变、视角切换、与此同时
+3. 若当前候选类型总数不足以支撑本次抽取数量，允许类型重复，但重复类型生成的选项须在切入点与情绪态度上明显不同
+4. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
+5. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目；若不符合，跳过该条目不生成对应选项
+6. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项`;
+
+/** 思维链引导：在生成选项前，提示模型逐条检查场景与规则，提高输出质量。 */
+export const THINKING_PROMPT_CONTENT = `【输出前思考】
+在生成选项之前，请按以下顺序逐条检查：
+1. 场景核查：当前场景有哪些角色在场？哪些已离开？可用道具是什么？
+2. 状态锚点：正文末尾各角色的情绪、动作、对白分别是什么？
+3. 条件评估：逐条检查可选条目中的 [条件: xxx] 标记，判断当前上下文是否满足条件，决定哪些条目可用、哪些应跳过
+4. 类型分配：本次选项类型是否互不重复？是否涵盖了不同的应对策略？
+5. 差异性检查：每个选项的切入点和情绪态度是否有明显差异？
+6. 规范审查：是否有"完成态""越权代演""结果性词汇""概括性说话动词"？
+7. 收尾审查：每个选项的收尾是否留白，未预判对方反应？`;
+
+/** AI 应答开头，夹在 system_prompt 与 user_instruction 之间 */
+export const ASSISTANT_ACK_CONTENT = '收到。我将根据当前场景与角色状态，先梳理检查点，然后生成行动选项。';
+
+/** 思维链预填充结尾，强制模型进入 <thinking> 模式 */
+export const ASSISTANT_THINKING_CONTENT = '好的，开始生成选项，先逐条梳理检查点。\n\n<thinking>\n';
+
+export const DEFAULT_MODULES: PromptModule[] = [
+  {
+    id: 'system_prompt',
+    name: '破限',
+    role: 'system',
+    content: DEFAULT_SYSTEM_PROMPT,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 0,
+  },
+  {
+    id: 'assistant_ack',
+    name: 'AI 应答',
+    role: 'assistant',
+    content: ASSISTANT_ACK_CONTENT,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 1,
+  },
+  {
+    id: 'user_instruction',
+    name: '生成指令',
+    role: 'user',
+    content: USER_INSTRUCTION_DEFAULT,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 2,
+  },
+  {
+    id: 'world_info_before',
+    name: 'World Info (before)',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 3,
+  },
+  {
+    id: 'persona_description',
+    name: 'Persona Description',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 4,
+  },
+  {
+    id: 'world_info_after',
+    name: 'World Info (after)',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 5,
+  },
+  {
+    id: 'chat_history',
+    name: 'Chat History',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 6,
+  },
+  {
+    id: 'core_rules',
+    name: '规则',
+    role: 'system',
+    content: DEFAULT_CORE_RULES,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 7,
+  },
+  {
+    id: 'thinking_prompt',
+    name: '思考检查',
+    role: 'system',
+    content: THINKING_PROMPT_CONTENT,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 8,
+  },
+  {
+    id: 'assistant_thinking',
+    name: '思维链开头',
+    role: 'assistant',
+    content: ASSISTANT_THINKING_CONTENT,
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 9,
+  },
+];
+
+// 聊天记录过滤规则：标签匹配（字面量头/尾）或正则匹配，二者可混用
+export const ChatFilterRule = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('tag'),
+    start: z.string().default(''),
+    end: z.string().default(''),
+  }),
+  z.object({
+    type: z.literal('regex'),
+    pattern: z.string().default(''),
+  }),
+]);
+export type ChatFilterRule = z.infer<typeof ChatFilterRule>;
+
+// 过滤规则分组：按用途（不同卡/预设的正则）组织规则，每组可独立启用/禁用
+export const ChatFilterGroup = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean().default(true),
+  rules: z.array(ChatFilterRule).default([]),
+});
+export type ChatFilterGroup = z.infer<typeof ChatFilterGroup>;
+
 export const PromptRules = z
   .object({
     system_prompt: z.string().default(''),
     core_rules: z.string().default(''),
     context_rounds: z.number().min(0).default(10),
+    /** @deprecated 已迁移到 chat_filter_groups，保留用于向后兼容 */
+    chat_filter_rules: z.array(ChatFilterRule).default([]),
+    chat_filter_groups: z.array(ChatFilterGroup).default([]),
+    modules: z.array(PromptModule).prefault([]),
+    schema_version: z.number().default(0),
   })
   .prefault({});
 export type PromptRules = z.infer<typeof PromptRules>;
@@ -132,12 +329,14 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 export const WorldInfoGlobalSettings = z
   .object({
     enabled: z.boolean().default(true),
+    /** @deprecated 已改用 ST 原生 getWorldInfoPrompt，不再区分 redlight 模式 */
     redlight_mode: z.boolean().default(true),
+    /** @deprecated 已改用 ST 原生 getWorldInfoPrompt，不再支持 EJS 模板 */
     ejs_compat: z.boolean().default(false),
   })
   .prefault({});
@@ -155,10 +354,12 @@ export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
 export const GlobalSettings = z
   .object({
     schema_version: z.number().default(0),
-    generation: GenerationSettings.prefault({}),
+    master_pool: z.array(PoolEntry).prefault([]),
+    configs: z.array(PoolConfig).prefault([]),
+    group_order: z.array(z.string()).prefault([]),
     prompt_rules: PromptRules.prefault({}),
     apis: z.array(SecondaryApi).prefault([]),
-    pool: z.array(PoolEntry).prefault([]),
+    active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
   })
   .prefault({});
@@ -166,15 +367,14 @@ export type GlobalSettings = z.infer<typeof GlobalSettings>;
 
 export const CharacterSettings = z
   .object({
-    pool: z.array(PoolEntry).prefault([]),
+    config_id: z.string().nullable().default(null),
   })
   .prefault({});
 export type CharacterSettings = z.infer<typeof CharacterSettings>;
 
 export const ChatSettings = z
   .object({
-    pool: z.array(PoolEntry).prefault([]),
-    active_api_id: z.string().default(''),
+    config_id: z.string().nullable().default(null),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append']).default('send'),
     world_info: WorldInfoChatSettings.prefault({}),

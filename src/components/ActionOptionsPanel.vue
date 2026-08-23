@@ -32,9 +32,10 @@
     </div>
 
     <div v-if="!collapsed" class="choice-panel-body">
-      <div v-if="isGenerating" class="choice-panel-loading">
-        <span class="fa-solid fa-spinner fa-spin"></span>
-        {{ t`正在生成选项...` }}
+      <div v-if="isGenerating" class="choice-panel-skeleton">
+        <div class="choice-skeleton-item" style="width: 92%"></div>
+        <div class="choice-skeleton-item" style="width: 78%"></div>
+        <div class="choice-skeleton-item" style="width: 85%"></div>
       </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
@@ -54,6 +55,7 @@
           class="choice-option-btn"
           @click="onSelect(option)"
         >
+          <span class="choice-option-index">{{ index + 1 }}</span>
           {{ formatOptionDisplay(option.text) }}
         </button>
         <div v-if="underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
@@ -143,9 +145,11 @@ const onSelect = async (option: ChoiceOption) => {
   display: flex;
   flex-direction: column;
   margin: 8px 12px;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 10px;
-  background: rgba(30, 30, 30, 0.55);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-md);
+  background: var(--choice-bg-panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   overflow: hidden;
 }
 
@@ -154,13 +158,14 @@ const onSelect = async (option: ChoiceOption) => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--choice-border-strong);
 }
 
 .choice-panel-title {
   font-size: 14px;
   font-weight: bold;
-  color: #e8e8e8;
+  color: var(--choice-text);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -173,20 +178,21 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel-btn {
-  background: rgba(70, 70, 70, 0.5);
-  color: #e8e8e8;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 6px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text);
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-sm);
   padding: 3px 8px;
   font-size: 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  transition: background var(--choice-transition);
 }
 
 .choice-panel-btn:hover:not(:disabled) {
-  background: rgba(100, 100, 100, 0.6);
+  background: var(--choice-bg-hover);
 }
 
 .choice-panel-btn:disabled {
@@ -195,14 +201,19 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel-main {
-  background: linear-gradient(180deg, #4a90d9, #2f6fb0);
-  border-color: #5aa0e8;
+  background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
+  border-color: var(--choice-primary);
   font-weight: bold;
+  box-shadow: 0 0 12px var(--choice-primary-glow);
+}
+
+.choice-panel-main:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--choice-primary-hover), var(--choice-primary));
 }
 
 .choice-panel-pager {
   font-size: 12px;
-  color: #c8c8c8;
+  color: var(--choice-text-secondary);
   margin: 0 2px;
 }
 
@@ -213,23 +224,28 @@ const onSelect = async (option: ChoiceOption) => {
   padding: 6px 10px 10px;
 }
 
-.choice-panel-loading {
-  display: inline-flex;
-  align-items: center;
+.choice-panel-skeleton {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  color: #c8c8c8;
-  font-size: 13px;
   padding: 4px 0;
 }
 
+.choice-skeleton-item {
+  height: 38px;
+  background: var(--choice-bg-element);
+  border-radius: var(--choice-radius-sm);
+  animation: choice-skeleton 1.5s ease-in-out infinite;
+}
+
 .choice-panel-empty {
-  color: #9a9a9a;
+  color: var(--choice-text-muted);
   font-size: 12px;
   padding: 4px 0;
 }
 
 .choice-panel-hint {
-  color: #b8943a;
+  color: var(--choice-text-hint);
   font-size: 11px;
   padding-top: 2px;
 }
@@ -237,52 +253,70 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-behavior-bar {
   display: inline-flex;
   gap: 2px;
-  background: rgba(50, 50, 50, 0.5);
-  border-radius: 6px;
-  padding: 2px;
+  background: var(--choice-bg-element);
+  border-radius: var(--choice-radius-full);
+  padding: 3px;
 }
 
 .choice-behavior-btn {
   background: transparent;
-  color: #a0a0a0;
+  color: var(--choice-text-muted);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--choice-radius-full);
   padding: 2px 10px;
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background var(--choice-transition), color var(--choice-transition), box-shadow var(--choice-transition);
 }
 
 .choice-behavior-btn:hover {
-  color: #d0d0d0;
+  color: var(--choice-text-secondary);
 }
 
 .choice-behavior-btn.active {
-  background: rgba(74, 144, 217, 0.5);
-  color: #e8e8e8;
+  background: var(--choice-primary);
+  color: #fff;
+  box-shadow: 0 0 8px var(--choice-primary-glow);
 }
 
 .choice-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   text-align: left;
-  background: linear-gradient(180deg, rgba(58, 58, 58, 0.7), rgba(40, 40, 40, 0.7));
-  color: #f0f0f0;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 8px;
+  background: var(--choice-bg-card);
+  color: var(--choice-text);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
   padding: 8px 10px;
   font-size: 13px;
   cursor: pointer;
   line-height: 1.4;
-  transition:
-    transform 0.05s ease,
-    border-color 0.1s ease;
+  transition: transform var(--choice-transition), border-color var(--choice-transition), box-shadow var(--choice-transition);
 }
 
 .choice-option-btn:hover {
-  border-color: #6ab0f5;
-  background: linear-gradient(180deg, rgba(70, 70, 70, 0.75), rgba(50, 50, 50, 0.75));
+  border-color: var(--choice-border-active);
+  transform: translateY(-1px);
+  box-shadow: var(--choice-shadow-md);
 }
 
 .choice-option-btn:active {
-  transform: scale(0.99);
+  transform: scale(0.985);
+}
+
+.choice-option-index {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 </style>

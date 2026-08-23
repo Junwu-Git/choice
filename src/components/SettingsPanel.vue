@@ -14,6 +14,7 @@
             :class="{ active: activeTab === tab.id }"
             @click="activeTab = tab.id"
           >
+            <i :class="tab.icon"></i>
             {{ tab.label }}
           </button>
         </div>
@@ -40,11 +41,11 @@ import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo'>('pool');
 
 const tabs = [
-  { id: 'pool', label: t`条目池` },
-  { id: 'prompt', label: t`提示词` },
-  { id: 'api', label: t`API` },
-  { id: 'behavior', label: t`行为` },
-  { id: 'worldinfo', label: t`世界书` },
+  { id: 'pool', label: t`条目池`, icon: 'fa-solid fa-layer-group' },
+  { id: 'prompt', label: t`提示词`, icon: 'fa-solid fa-align-left' },
+  { id: 'api', label: t`API`, icon: 'fa-solid fa-plug' },
+  { id: 'behavior', label: t`行为`, icon: 'fa-solid fa-sliders' },
+  { id: 'worldinfo', label: t`世界书`, icon: 'fa-solid fa-book' },
 ] as const;
 </script>
 
@@ -56,18 +57,29 @@ const tabs = [
 }
 
 .choice-tab {
-  background: rgba(60, 60, 60, 0.4);
-  color: #dcdcdc;
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  border-radius: 6px;
-  padding: 4px 12px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-secondary);
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-full);
+  padding: 6px 14px;
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background var(--choice-transition), color var(--choice-transition), box-shadow var(--choice-transition);
+}
+
+.choice-tab:hover {
+  color: var(--choice-text);
+  background: var(--choice-bg-hover);
 }
 
 .choice-tab.active {
-  background: #4a90d9;
-  border-color: #4a90d9;
+  background: var(--choice-primary);
+  border-color: var(--choice-primary);
   color: #fff;
+  box-shadow: 0 0 10px var(--choice-primary-glow);
 }
 </style>
