@@ -67,7 +67,7 @@ const tabs = [
   { id: 'pool', label: t`条目池`, icon: 'fa-solid fa-layer-group' },
   { id: 'prompt', label: t`提示词`, icon: 'fa-solid fa-align-left' },
   { id: 'api', label: t`API`, icon: 'fa-solid fa-plug' },
-  { id: 'behavior', label: t`行为`, icon: 'fa-solid fa-sliders' },
+  { id: 'behavior', label: t`选项规则`, icon: 'fa-solid fa-sliders' },
   { id: 'worldinfo', label: t`世界书`, icon: 'fa-solid fa-book' },
   { id: 'appearance', label: t`外观`, icon: 'fa-solid fa-palette' },
 ] as const;

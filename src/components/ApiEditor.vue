@@ -1,5 +1,13 @@
 <template>
   <div class="choice-api-editor">
+    <PageGuide page-id="api-editor" icon="fa-solid fa-circle-info">
+      <template #title>🔌 API 配置</template>
+      <p><strong>用途</strong>：配置生成行动选项所用的 AI 接口。支持多个 API 配置，通过下拉框切换。</p>
+      <p><strong>字段说明</strong>：API 地址填 OpenAI 兼容接口（如 <code>https://api.openai.com/v1/chat/completions</code>），密钥为 API Key，模型名称需与接口支持的模型名一致。</p>
+      <p><strong>拉取模型</strong>：填写 API 地址后点击"拉取"按钮，自动从接口获取可用模型列表，点击即可选中。</p>
+      <p style="color: #e07070"><strong>⚠️ 修改后必须点击保存按钮才会持久化</strong>，切换页面或关闭窗口不会自动保存。</p>
+    </PageGuide>
+
     <label class="choice-field">
       <span>{{ t`生成 API` }}</span>
       <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
@@ -101,6 +109,7 @@
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
+import PageGuide from '@/components/PageGuide.vue';
 
 const globalStore = useGlobalSettingsStore();
 
@@ -114,7 +123,6 @@ const EMPTY_API = (): SecondaryApi => ({
   max_tokens: 4096,
   timeout: 0,
   stream: false,
-  send_prefill: false,
   exclude_params: '',
 });
 

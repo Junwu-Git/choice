@@ -25,12 +25,12 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
   },
   "include": [
     "*.d.ts",
     "src/**/*.ts",
-    "../../../../**/*.js", // for intelligence
     "@types/**/*.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]

@@ -11,6 +11,13 @@
         </div>
 
         <div class="choice-importdlg-body">
+          <PageGuide page-id="import-dialog" icon="fa-solid fa-circle-info">
+            <template #title>📋 粘贴导入</template>
+            <p><strong>作用</strong>：从剪贴板批量导入条目，每行一条。支持 <code>1. / - / •</code> 等列表标记，自动去除标记符号和空行。</p>
+            <p><strong>示例</strong>：粘贴以下内容即可导入 3 条条目：<br><code>1. 拔出武器准备战斗<br>- 转身逃跑<br>• 试图谈判</code></p>
+            <p><strong>导入到分组</strong>：选择目标分组，未选则放入"未分组"。</p>
+          </PageGuide>
+
           <textarea
             v-model="rawText"
             class="text_pole choice-importdlg-textarea"
@@ -53,6 +60,8 @@
 </template>
 
 <script setup lang="ts">
+import PageGuide from '@/components/PageGuide.vue';
+
 const props = defineProps<{
   open: boolean;
   categories: string[];

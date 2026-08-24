@@ -30,6 +30,13 @@
         </div>
 
         <div class="choice-epool-body choice-scrollbar">
+          <PageGuide page-id="entrypool-dialog" icon="fa-solid fa-circle-info">
+            <template #title>📦 条目库是什么</template>
+            <p><strong>条目库</strong> 是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。</p>
+            <p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
+            <p><strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、粘贴导入、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>
+          </PageGuide>
+
           <div v-if="groupedEntries.length > 0" ref="groupList" class="choice-epool-list">
             <div
               v-for="group in groupedEntries"
@@ -191,6 +198,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportEntriesDialog from '@/components/ImportEntriesDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import PageGuide from '@/components/PageGuide.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
 import Sortable from 'sortablejs';

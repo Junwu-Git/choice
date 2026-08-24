@@ -14,6 +14,8 @@ import {
   DEFAULT_MODULES,
   BAIBAI_MODULE_IDS,
   GenerationSettings,
+  DEFAULT_PERSON_STYLE,
+  DEFAULT_OPTION_RULES,
 } from '@/type/settings';
 import type {
   GlobalSettings as GlobalSettingsType,
@@ -143,7 +145,44 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
-  validated.prompt_rules.schema_version = 8;
+  if (version < 9) {
+    // v9: 润色提示词模块化（enrich_prompt 从固定卡片转为模块），user_instruction 标记 option_only
+    const defaults = klona(DEFAULT_MODULES);
+    const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
+
+    // 给 user_instruction 设置 option_only
+    const ui = validated.prompt_rules.modules.find(m => m.id === 'user_instruction');
+    if (ui) ui.option_only = true;
+
+    // 创建 enrich_prompt 模块，内容取旧字段（为空则用默认值）
+    if (!existingIds.has('enrich_prompt')) {
+      const defaultEnrich = defaults.find(m => m.id === 'enrich_prompt');
+      const enrichContent = validated.prompt_rules.enrich_prompt || defaultEnrich?.content || '';
+      validated.prompt_rules.modules.push({
+        id: 'enrich_prompt',
+        name: '润色提示词',
+        role: 'system',
+        content: enrichContent,
+        marker: false,
+        system: false,
+        enabled: true,
+        order: 3,
+        enrich_only: true,
+        option_only: false,
+      });
+    }
+
+    // 将 order >= 3 的现有模块（除 enrich_prompt 外）order +1
+    for (const m of validated.prompt_rules.modules) {
+      if (m.id !== 'enrich_prompt' && m.order >= 3) {
+        m.order += 1;
+      }
+    }
+
+    resetOrderFromDefaults(validated);
+  }
+
+  validated.prompt_rules.schema_version = 9;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
@@ -361,7 +400,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 8;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 9;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -458,6 +497,21 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     });
   }
 
+  function resetModuleContent(id: string) {
+    const modules = settings.value.prompt_rules.modules;
+    const mod = modules.find(m => m.id === id);
+    if (!mod || mod.marker) return;
+    const defaults = klona(DEFAULT_MODULES);
+    const defaultMod = defaults.find(m => m.id === id);
+    if (!defaultMod) return;
+    mod.content = defaultMod.content;
+    // core_rules 模块内容恢复时，同步重置新手字段，保持一致性
+    if (id === 'core_rules') {
+      settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
+      settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+    }
+  }
+
   watchEffect(() => {
     const ui = settings.value.ui;
     document.documentElement.setAttribute('data-choice-theme', ui.theme);
@@ -478,5 +532,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     removeModule,
     reorderModules,
     resetModuleOrder,
+    resetModuleContent,
   };
 });

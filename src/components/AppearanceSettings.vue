@@ -1,5 +1,13 @@
 <template>
   <div class="choice-appearance-editor">
+    <PageGuide page-id="appearance-editor" icon="fa-solid fa-circle-info">
+      <template #title>🎨 外观</template>
+      <p><strong>悬浮窗</strong>：在屏幕右下角显示一个快捷按钮，点击打开设置面板，拖动可改变位置。关闭后从设置面板入口进入。</p>
+      <p><strong>主题</strong>：暗色/亮色切换，影响设置面板、选项面板等所有扩展 UI。</p>
+      <p><strong>透明度</strong>：调整面板背景透明度，数值越低越透明。</p>
+      <p><strong>字体大小</strong>：小/中/大三档，影响选项按钮和面板内的文字大小。</p>
+    </PageGuide>
+
     <div class="choice-behavior-grid">
       <label class="choice-check">
         <input v-model="ui.floating_enabled" type="checkbox" />
@@ -48,6 +56,7 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import PageGuide from '@/components/PageGuide.vue';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);

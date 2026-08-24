@@ -90,7 +90,7 @@ export const DEFAULT_PROMPT_EXTRA =
   '  正确格式（基于对方状态的温和互动）: 递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』';
 
 export const DEFAULT_SYSTEM_PROMPT =
-  '你是「行动选项生成器」，负责为角色扮演对话生成行动选项。根据当前对话上下文和场景，为 {{user}} 生成多样化的可选行动方案，供玩家选择后续剧情走向。';
+  '你是角色扮演对话的辅助工具，根据当前对话上下文和场景，为 {{user}} 提供多样化的可选行动方案或对用户输入进行润色扩展。';
 
 export const DEFAULT_CORE_RULES = `【核心规则 - 生成选项时严格遵守】
 1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判其他角色反应（如"对方笑了""他松了口气"）。
@@ -127,6 +127,43 @@ export const DEFAULT_CORE_RULES = `【核心规则 - 生成选项时严格遵守
 正确：强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。
 正确：递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』`;
 
+/** core_rules 模块中不受新手字段影响的静态部分（输出格式、内容要求、正误示例）。
+ *  当 person_style 和 option_rules 都非空时，与它们动态拼接为完整的 core_rules 内容。 */
+export const CORE_RULES_STATIC = `【输出格式】
+必须在回复末尾将选项包裹在 <options> 标签内输出。所有选项严格遵循"标题: 内容"格式。标题必须是2-5个纯汉字（如：强势追问/递出纸巾/战术后撤），标题内部严禁标点符号、特殊字符或格式标签，严禁将直接对白用作标题。标题后仅允许一个半角冒号（:）作为分隔符，严禁将冒号用作对话引导符（错误：{{user}}说：『……』；正确：{{user}}轻声说『……』）。每个选项字数控制在 30-80 个中文字符。选项之间必须在切入点和情绪态度上截然不同，涵盖不同应对策略，严禁同质化。
+
+【内容要求】
+包含言语的选项必须包含引号标注的可朗读对白，对白需带有情绪。纯行动选项需包含与环境或物品的物理交互细节。观察选项描述视线焦点与内心揣测，不断言客观事实。所有选项只写行为过程、动机和期待，把最终反应权留给正文。
+
+【正误示例】
+错误：『净界粉？我知道了。』: 走向石像基座...（标题含符号）
+错误：『你为什么在这？』: {{user}}感到很疑惑。（对白当标题+越权裁定）
+错误：追问: {{user}}问他：『为什么？』他听后低下了头。（对话引导冒号+越权代演）
+错误：递出水杯: {{user}}递出水杯说『喝水。』静静等待他接过去。（句式机械+完成态收尾）
+正确：寻找铁罐: {{user}}向她微微点头，随后径直走向基座，蹲下身在积满灰尘的杂物中仔细翻找，试图找出那个生锈的铁罐。
+正确：强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。
+正确：递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』`;
+
+/** 新手字段默认值：叙述风格（人称/视角），自由文本 */
+export const DEFAULT_PERSON_STYLE = `选项内容以第三人称 {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互（如：靠在门框上、把玩手中的杯子），避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
+
+/** 新手字段默认值：15条核心选项生成规则 */
+export const DEFAULT_OPTION_RULES = `1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判其他角色反应（如"对方笑了""他松了口气"）。
+2. 直接引语：含言语交流的选项，必须以『……』给出完整对白；纯动作/观察选项不强制。
+3. 输出纯净度：除 <thinking> 和 <options> 标签及其内容外，不输出任何文字。
+4. 条件过滤：可选条目中带 [条件: xxx] 标记的，仅在当前聊天上下文符合条件描述时使用；不符合则跳过。
+5. 防极端化：行为强度与剧情张力匹配，不无故升级为极端行为。
+6. 防阴暗基调：一次输出中至少保留部分中性/建设性选项，避免集体滑向阴暗。
+7. 防老套化：禁止反复使用"平静""低笑""玩味""意味深长"等词，同一次输出中同一情绪词不重复。
+8. 句式多变：禁止"动作+说话+等待"公式，可先声夺人、只行动不说话、说话中途戛然而止。
+9. 对白真实感：对白须有明确情感，不得出现空对白；动作描写作为对白的伴随状态。
+10. 场景逻辑：严禁与已离开/不存在的角色互动，严禁凭空变出道具。
+11. 留白收尾：动作须是未完成态，收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文。
+12. 禁止概括性说话动词：讨论/谈论/询问/告诉/回应/暗示/提议/劝说/解释/商量 → 必须展开为具体对白。
+13. 禁止裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了。
+14. 禁止越权代演：对方笑了/他答应了/她感到很生气/他惊讶地看着。
+15. 禁止完成态：...好/...完/...毕/已... → 改为试图.../准备.../指尖刚触碰到...`;
+
 export const PromptModule = z.object({
   id: z.string(),
   name: z.string(),
@@ -137,6 +174,7 @@ export const PromptModule = z.object({
   enabled: z.boolean().default(true),
   order: z.number().min(0),
   enrich_only: z.boolean().default(false),
+  option_only: z.boolean().default(false),
 });
 export type PromptModule = z.infer<typeof PromptModule>;
 
@@ -156,23 +194,20 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 恰�
 5. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目；若不符合，跳过该条目不生成对应选项
 6. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
 
-/** 思维链引导：在生成选项前，提示模型逐条检查场景与规则，提高输出质量。
+/** 思维链引导：提示模型逐条检查场景与规则，提高输出质量。
  *  当预填充关闭时，模型不会从 <thinking> 开始，因此必须在此处显式要求输出 <thinking> 标签。 */
 export const THINKING_PROMPT_CONTENT = `【输出前思考 - 必须将分析过程包裹在 <thinking> 和 </thinking> 标签内】
-在生成选项之前，请按以下顺序逐条检查，并以 <thinking> 标签包裹全部检查内容：
+在生成内容之前，请按以下顺序逐条检查，并以 <thinking> 标签包裹全部检查内容：
 1. 场景核查：当前场景有哪些角色在场？哪些已离开？可用道具是什么？
 2. 状态锚点：正文末尾各角色的情绪、动作、对白分别是什么？
-3. 条件评估：逐条检查可选条目中的 [条件: xxx] 标记，判断当前上下文是否满足条件，决定哪些条目可用、哪些应跳过
-4. 类型分配：本次选项类型是否互不重复？是否涵盖了不同的应对策略？
-5. 差异性检查：每个选项的切入点和情绪态度是否有明显差异？
-6. 规范审查：是否有"完成态""越权代演""结果性词汇""概括性说话动词"？
-7. 收尾审查：每个选项的收尾是否留白，未预判对方反应？`;
+3. 任务确认：当前任务是生成行动选项还是润色用户输入？根据任务类型调整输出内容与格式。
+4. 规范审查：是否有"完成态""越权代演""结果性词汇""概括性说话动词"？`;
 
 /** AI 应答开头，夹在 system_prompt 与 user_instruction 之间 */
-export const ASSISTANT_ACK_CONTENT = '收到。我将根据当前场景与角色状态，先梳理检查点，然后生成行动选项。';
+export const ASSISTANT_ACK_CONTENT = '收到。我将根据当前场景与角色状态，先梳理检查点，然后处理任务。';
 
 /** 思维链预填充结尾，强制模型进入 <thinking> 模式 */
-export const ASSISTANT_THINKING_CONTENT = '好的，开始生成选项，先逐条梳理检查点。\n\n<thinking>\n';
+export const ASSISTANT_THINKING_CONTENT = '好的，开始处理任务，先逐条梳理检查点。\n\n<thinking>\n';
 
 export const DEFAULT_MODULES: PromptModule[] = [
   {
@@ -204,6 +239,18 @@ export const DEFAULT_MODULES: PromptModule[] = [
     system: false,
     enabled: true,
     order: 2,
+    option_only: true,
+  },
+  {
+    id: 'enrich_prompt',
+    name: '润色提示词',
+    role: 'user',
+    content: '请将用户输入润色扩展为 {{count}} 个更自然、更丰富的版本，保留原意和语气。\n\n用户输入：\n{{input}}\n\n输出格式：每行一个版本，格式为 "1. 润色后的文本"',
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 3,
+    enrich_only: true,
   },
   {
     id: 'reference_open',
@@ -213,7 +260,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 3,
+    order: 4,
   },
   {
     id: 'world_info_before',
@@ -223,7 +270,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 4,
+    order: 5,
   },
   {
     id: 'persona_description',
@@ -233,7 +280,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 5,
+    order: 6,
   },
   {
     id: 'world_info_after',
@@ -243,7 +290,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 6,
+    order: 7,
   },
   {
     id: 'baibai_summary',
@@ -253,7 +300,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: false,
-    order: 7,
+    order: 8,
   },
   {
     id: 'baibai_state',
@@ -263,7 +310,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: false,
-    order: 8,
+    order: 9,
   },
   {
     id: 'reference_close',
@@ -273,7 +320,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 9,
+    order: 10,
   },
   {
     id: 'history_open',
@@ -283,7 +330,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 10,
+    order: 11,
   },
   {
     id: 'chat_history',
@@ -293,7 +340,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 11,
+    order: 12,
   },
   {
     id: 'history_close',
@@ -303,7 +350,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 12,
+    order: 13,
   },
   {
     id: 'core_rules',
@@ -313,7 +360,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 13,
+    order: 14,
   },
   {
     id: 'thinking_prompt',
@@ -323,7 +370,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 14,
+    order: 15,
   },
   {
     id: 'assistant_thinking',
@@ -333,7 +380,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 15,
+    order: 16,
   },
 ];
 
@@ -377,6 +424,10 @@ export const PromptRules = z
     context_mode: z.enum(['rounds', 'visible_only']).default('rounds'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
     baibai_enabled: z.boolean().default(false),
+    /** 叙述风格（人称/视角），自由文本；非空时替换 core_rules 模块中的【叙述风格】段落 */
+    person_style: z.string().default(DEFAULT_PERSON_STYLE),
+    /** 核心选项生成规则，自由文本；非空时替换 core_rules 模块中的【核心规则】段落 */
+    option_rules: z.string().default(DEFAULT_OPTION_RULES),
     /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
     enrich_prompt: z.string().default(''),
     schema_version: z.number().default(0),
@@ -395,13 +446,12 @@ export const SecondaryApi = z
     max_tokens: z.number().min(1).default(4096),
     timeout: z.number().min(0).default(0),
     stream: z.boolean().default(false),
-    send_prefill: z.boolean().default(false),
     exclude_params: z.string().default(''),
   })
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -427,6 +477,7 @@ export const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
     enrich_enabled: z.boolean().default(true),
+    enrich_count: z.number().min(1).max(20).default(10),
     theme: z.enum(['dark', 'light']).default('dark'),
     opacity: z.number().min(0.3).max(1).default(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),

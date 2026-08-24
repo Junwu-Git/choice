@@ -24,6 +24,9 @@
           <i class="fa-solid fa-stop"></i>
           {{ t`取消` }}
         </button>
+        <button v-if="enrichMode && !enrichLoading" class="choice-panel-btn" title="返回选项" @click="panelStore.exitEnrichMode()">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
         <button v-if="!enrichMode" class="choice-panel-btn choice-panel-main" @click="onToggle">
           <i v-if="isGenerating" class="fa-solid fa-stop"></i>
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
@@ -56,6 +59,7 @@
             {{ t`尾附` }}
           </button>
         </div>
+        <div class="choice-panel-hint">{{ t`选项行为说明` }}</div>
         <button
           v-for="(option, index) in visibleOptions"
           :key="index"
@@ -69,7 +73,10 @@
         <div v-if="!enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
       </template>
       <div v-else class="choice-panel-empty">
-        {{ enrichMode ? t`暂无润色选项` : t`暂无选项,点击"生成"获取行动选项` }}
+        {{ enrichMode ? t`暂无润色选项` : t`点击生成按钮获取选项` }}
+      </div>
+      <div v-if="!enrichMode && !isGenerating && visibleOptions.length === 0" class="choice-panel-hint">
+        {{ t`生成前请确保已在设置中配置条目池和 API` }}
       </div>
     </div>
   </div>

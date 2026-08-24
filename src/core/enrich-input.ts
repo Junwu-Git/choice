@@ -5,7 +5,11 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
 import { DEFAULT_MODULES } from '@/type/settings';
 
-const DEFAULT_ENRICH_PROMPT = `请将以下用户输入润色扩展为多个更自然、更丰富的版本，保留原意和语气。
+const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个更自然、更丰富的版本，保留原意和语气。
+
+用户输入：
+{{input}}
+
 输出格式：每行一个版本，格式为 "1. 润色后的文本"`;
 
 let enrichController: AbortController | null = null;
@@ -15,11 +19,12 @@ export function cancelEnrich() {
   enrichController = null;
 }
 
-/** 行动选项专用模块 ID：润色流程应过滤掉 */
-const ENRICH_SKIP_IDS = new Set(['assistant_ack', 'assistant_thinking', 'thinking_prompt', 'core_rules']);
+/** 润色时无需跳过的模块（所有通用模块均参与润色管线） */
+const ENRICH_SKIP_IDS = new Set<string>();
 
 /** 调用副 API 润色用户输入，返回解析后的选项文本数组。
- *  复用 buildMessages 模块管线，包含聊天历史、世界书、角色描述等上下文。 */
+ *  复用 buildMessages 模块管线，包含聊天历史、世界书、角色描述等上下文。
+ *  用户输入通过 {{input}} 变量在 enrich_prompt 模块中占位，由 buildMessages 自动替换。 */
 export async function enrichUserInput(input: string): Promise<string[]> {
   const gs = useGlobalSettingsStore(pinia);
   const cs = useChatSettingsStore(pinia);
@@ -28,26 +33,26 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     throw new Error('未配置生成 API');
   }
 
-  const enrichPrompt = gs.settings.prompt_rules.enrich_prompt || DEFAULT_ENRICH_PROMPT;
-
-  // 获取用户启用的模块，过滤掉行动选项专用模块，替换 user_instruction 为润色指令
   const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
-  let modules = sourceModules
-    .filter(m => !ENRICH_SKIP_IDS.has(m.id))
-    .map(m =>
-      m.id === 'user_instruction'
-        ? { ...m, content: `${enrichPrompt}\n\n<!-- 用户最新输入 -->\n<user_input>\n${input}\n</user_input>` }
-        : { ...m },
-    );
+  let modules = sourceModules.filter(m => !ENRICH_SKIP_IDS.has(m.id));
 
-  const enrichCtx = { count: 10, pinned: '', poolSelected: '', input };
+  // 若 enrich_prompt 模块被禁用或不存在，用默认内容临时注入
+  if (!modules.some(m => m.id === 'enrich_prompt')) {
+    const defaultEnrich = DEFAULT_MODULES.find(m => m.id === 'enrich_prompt');
+    if (defaultEnrich) {
+      modules = [...modules, { ...defaultEnrich, content: DEFAULT_ENRICH_PROMPT }];
+    }
+  }
+
+  const enrichCount = gs.settings.ui.enrich_count;
+  const enrichCtx = { count: enrichCount, pinned: '', poolSelected: '', input };
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
   const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
 
   try {
-    const messages = await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds);
+    const messages = await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
 
     enrichController = new AbortController();
     const signal = enrichController.signal;
@@ -58,7 +63,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
 
     try {
       const raw = await callSecondaryApi(messages, api, signal);
-      return parseOptions(raw, 10);
+      return parseOptions(raw, enrichCount);
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }

@@ -9,7 +9,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
 import type { PoolEntry, PromptModule, PromptRules, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
-import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings, CORE_RULES_STATIC } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -63,6 +63,7 @@ export const buildMessages = async (
   ctx: Ctx,
   wi: WorldInfoGlobalSettings,
   contextRounds: number,
+  isEnrich = false,
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
   const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
@@ -74,6 +75,7 @@ export const buildMessages = async (
   for (const mod of sorted) {
     if (!mod.enabled) continue;
     if (!prefillEnabled && mod.role === 'assistant') continue;
+    if (isEnrich && mod.option_only) continue;
 
     switch (mod.id) {
       case 'system_prompt': {
@@ -127,7 +129,23 @@ export const buildMessages = async (
         break;
       }
       case 'core_rules': {
-        const content = substituteParams(sub(mod.content, ctx));
+        const pr = gs.settings.prompt_rules;
+        const personStyle = pr.person_style || '';
+        const optionRules = pr.option_rules || '';
+        // 两个新手字段都非空时，动态组装 core_rules 内容；否则用模块原有 content（向后兼容旧用户）
+        let content: string;
+        if (personStyle && optionRules) {
+          content = `【核心规则 - 生成选项时严格遵守】
+${optionRules}
+
+【叙述风格】
+${personStyle}
+
+${CORE_RULES_STATIC}`;
+        } else {
+          content = mod.content;
+        }
+        content = substituteParams(sub(content, ctx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -146,14 +164,17 @@ export const buildMessages = async (
     }
   }
 
-  console.log('[Choice] 消息数组', {
-    总数: msgs.length,
-    聊天历史条数: msgs.filter(m => m.role === 'user' || m.role === 'assistant').length,
-    system条数: msgs.filter(m => m.role === 'system').length,
-    模块顺序: sorted.map(m => m.id),
-  });
-
-  return msgs;
+  // 合并相邻同 role 消息，避免连续多个 system/user/assistant
+  const merged: ChatMsg[] = [];
+  for (const msg of msgs) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role) {
+      last.content = last.content + '\n\n' + msg.content;
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+  return merged;
 };
 
 const buildChatHistory = (contextRounds: number): ChatMsg[] => {
@@ -355,21 +376,6 @@ const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为
 5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
 6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
 
-/** 合并相邻同 role 消息，避免连续多个 system/user/assistant 消息。
- *  相邻同 role 消息用 '\n\n' 拼接内容，保持消息数组简洁。 */
-const mergeAdjacentMessages = (messages: ChatMsg[]): ChatMsg[] => {
-  const result: ChatMsg[] = [];
-  for (const msg of messages) {
-    const last = result[result.length - 1];
-    if (last && last.role === msg.role) {
-      last.content = last.content + '\n\n' + msg.content;
-    } else {
-      result.push({ ...msg });
-    }
-  }
-  return result;
-};
-
 export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
     toastr.info(t`选项生成中,请稍候`);
@@ -423,9 +429,6 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
       toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
       return null;
     }
-
-    // 合并相邻同 role 消息，避免连续多个 system/user/assistant
-    messages = mergeAdjacentMessages(messages);
 
     genController = new AbortController();
     const signal = genController.signal;

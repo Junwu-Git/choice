@@ -1,5 +1,13 @@
 <template>
   <div class="choice-prompt-editor">
+    <PageGuide page-id="prompt-editor" icon="fa-solid fa-circle-info">
+      <template #title>📝 提示词编辑器</template>
+      <p><strong>模块化设计</strong>：提示词由多个模块组成，每个模块对应一个角色（system=系统指令、user=用户输入、assistant=AI 预设回复）。模块可拖拽排序、双击重命名、复制、编辑。</p>
+      <p><strong>上下文轮数</strong>：控制发送给 AI 的历史消息数量。"轮数模式"取最后 N 轮，"仅可见消息"排除隐藏消息。预填充可在 AI 回复前插入引导语。</p>
+      <p><strong>聊天记录过滤</strong>：在发送前自动移除思维链、小剧场标签等冗余内容，提升生成质量。支持标签匹配和正则表达式两种规则。</p>
+      <p><strong>不可编辑模块</strong>（🔒标记）是系统自动管理的，如世界书条目、角色描述等，无法修改或删除。</p>
+    </PageGuide>
+
     <div class="choice-prompt-toolbar">
       <div class="choice-prompt-toolbar-left">
         <button class="menu_button" @click="addModule">{{ t`新增模块` }}</button>
@@ -131,6 +139,7 @@
               />
               <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
               <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
+              <span v-if="mod.option_only" class="choice-option-badge-sm">{{ t`选项` }}</span>
               <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
             </div>
             <div class="choice-module-preview">
@@ -142,6 +151,14 @@
             <label class="choice-module-toggle" :title="mod.enabled ? t`启用` : t`禁用`">
               <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
             </label>
+            <button
+              v-if="!mod.marker"
+              class="menu_button choice-module-btn"
+              :title="t`恢复默认`"
+              @click="restoreTarget = mod.id"
+            >
+              🔄
+            </button>
             <button
               v-if="!READONLY_MODULE_IDS.has(mod.id)"
               class="menu_button choice-module-btn"
@@ -181,22 +198,6 @@
           <textarea v-if="editingModule" v-model="editingModule.content" class="text_pole" rows="8"></textarea>
         </div>
       </template>
-
-      <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-module-card choice-enrich-card">
-        <span class="choice-module-drag" style="visibility: hidden">☰</span>
-        <div class="choice-module-body">
-          <div class="choice-module-header">
-            <span class="choice-module-name">{{ t`润色提示词` }}</span>
-            <span class="choice-enrich-badge">{{ t`润色模式` }}</span>
-          </div>
-          <textarea
-            v-model="rules.enrich_prompt"
-            class="text_pole choice-enrich-textarea"
-            rows="3"
-            :placeholder="enrichPlaceholder"
-          ></textarea>
-        </div>
-      </div>
     </div>
 
     <ConfirmDialog
@@ -219,6 +220,16 @@
       @cancel="deleteGroupTarget = null"
     />
 
+    <ConfirmDialog
+      :open="restoreTarget !== null"
+      :title="t`恢复默认`"
+      :message="t`确定要将该模块恢复为默认内容吗？当前修改将丢失。`"
+      :confirm-text="t`恢复`"
+      :cancel-text="t`取消`"
+      @confirm="onRestoreConfirm"
+      @cancel="restoreTarget = null"
+    />
+
     <div v-if="showPreview" class="choice-preview-box">
       <div v-if="previewMessages.length === 0" class="choice-preview-empty">
         {{ t`暂无聊天历史` }}
@@ -239,6 +250,7 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import PageGuide from '@/components/PageGuide.vue';
 import type { PromptModule, ChatFilterGroup } from '@/type/settings';
 import { BAIBAI_MODULE_IDS } from '@/type/settings';
 import { chat, characters, this_chid } from '@sillytavern/script';
@@ -258,20 +270,24 @@ const READONLY_MODULE_IDS = new Set([
 ]);
 
 const allModules = computed(() => {
-  const modules = globalStore.allModules;
-  if (rules.baibai_enabled) return modules;
-  return modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
+  let modules = globalStore.allModules;
+  if (!rules.baibai_enabled) {
+    modules = modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
+  }
+  if (!globalStore.settings.ui.enrich_enabled) {
+    modules = modules.filter(m => !m.enrich_only);
+  }
+  return modules;
 });
 
 const showPreview = ref(false);
 const showFilter = ref(true);
-
-const enrichPlaceholder = t`请将以下用户输入润色扩展为多个更自然、更丰富的版本，保留原意和语气。\n输出格式：每行一个版本，格式为 "1. 润色后的文本"`;
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const deleteTarget = ref<string | null>(null);
 const deleteGroupTarget = ref<string | null>(null);
+const restoreTarget = ref<string | null>(null);
 const groupExpanded = ref<Record<string, boolean>>({});
 const groupRenameId = ref<string | null>(null);
 const groupRenameText = ref('');
@@ -367,6 +383,13 @@ const onDeleteConfirm = () => {
   }
 };
 
+const onRestoreConfirm = () => {
+  if (restoreTarget.value) {
+    globalStore.resetModuleContent(restoreTarget.value);
+    restoreTarget.value = null;
+  }
+};
+
 const toggleEdit = (id: string) => {
   editingId.value = editingId.value === id ? null : id;
 };
@@ -456,7 +479,7 @@ type PreviewMsg = { role: string; content: string };
 const previewMessages = computed<PreviewMsg[]>(() => {
   if (!showPreview.value) return [];
   const msgs: PreviewMsg[] = [];
-  const sorted = [...rules.modules].filter(m => m.enabled).sort((a, b) => a.order - b.order);
+  const sorted = [...rules.modules].filter(m => m.enabled && !m.enrich_only).sort((a, b) => a.order - b.order);
 
   for (const mod of sorted) {
     // 预填充关闭时跳过 assistant 角色模块，与 generator.ts 保持一致
@@ -877,22 +900,6 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   border-top: 1px solid var(--choice-border);
 }
 
-.choice-enrich-card {
-  border-color: rgba(100, 140, 200, 0.4);
-  background: rgba(100, 140, 200, 0.05);
-  cursor: default;
-}
-
-.choice-enrich-badge {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: var(--choice-radius-full);
-  background: rgba(74, 144, 217, 0.2);
-  color: #6aabe0;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
 .choice-enrich-badge-sm {
   font-size: 9px;
   padding: 1px 6px;
@@ -903,11 +910,13 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   flex-shrink: 0;
 }
 
-.choice-enrich-textarea {
-  width: 100%;
-  resize: vertical;
-  font-size: 11px;
-  min-height: 48px;
-  margin-top: 4px;
+.choice-option-badge-sm {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-full);
+  background: rgba(217, 144, 74, 0.18);
+  color: #e0a06a;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 </style>

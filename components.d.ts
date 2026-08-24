@@ -22,6 +22,7 @@ declare module 'vue' {
     FloatingRoot: typeof import('./src/components/FloatingRoot.vue')['default']
     FloatingSettings: typeof import('./src/components/FloatingSettings.vue')['default']
     ImportEntriesDialog: typeof import('./src/components/ImportEntriesDialog.vue')['default']
+    PageGuide: typeof import('./src/components/PageGuide.vue')['default']
     PoolEditor: typeof import('./src/components/PoolEditor.vue')['default']
     PoolGenDialog: typeof import('./src/components/PoolGenDialog.vue')['default']
     PromptEditor: typeof import('./src/components/PromptEditor.vue')['default']
