@@ -2,9 +2,19 @@
   <div class="choice-prompt-editor">
     <PageGuide page-id="prompt-editor" icon="fa-solid fa-circle-info">
       <template #title>📝 提示词编辑器</template>
-      <p><strong>模块化设计</strong>：提示词由多个模块组成，每个模块对应一个角色（system=系统指令、user=用户输入、assistant=AI 预设回复）。模块可拖拽排序、双击重命名、复制、编辑。</p>
-      <p><strong>上下文轮数</strong>：控制发送给 AI 的历史消息数量。"轮数模式"取最后 N 轮，"仅可见消息"排除隐藏消息。预填充可在 AI 回复前插入引导语。</p>
-      <p><strong>聊天记录过滤</strong>：在发送前自动移除思维链、小剧场标签等冗余内容，提升生成质量。支持标签匹配和正则表达式两种规则。</p>
+      <p>
+        <strong>模块化设计</strong
+        >：提示词由多个模块组成，每个模块对应一个角色（system=系统指令、user=用户输入、assistant=AI
+        预设回复）。模块可拖拽排序、双击重命名、复制、编辑。
+      </p>
+      <p>
+        <strong>上下文轮数</strong>：控制发送给 AI 的历史消息数量。"轮数模式"取最后 N
+        轮，"仅可见消息"排除隐藏消息。预填充可在 AI 回复前插入引导语。
+      </p>
+      <p>
+        <strong>聊天记录过滤</strong
+        >：在发送前自动移除思维链、小剧场标签等冗余内容，提升生成质量。支持标签匹配和正则表达式两种规则。
+      </p>
       <p><strong>不可编辑模块</strong>（🔒标记）是系统自动管理的，如世界书条目、角色描述等，无法修改或删除。</p>
     </PageGuide>
 

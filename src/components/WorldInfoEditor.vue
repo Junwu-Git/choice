@@ -2,8 +2,14 @@
   <div class="choice-wi-editor">
     <PageGuide page-id="worldinfo-editor" icon="fa-solid fa-circle-info">
       <template #title>📚 世界书</template>
-      <p><strong>用途</strong>：控制世界书（World Info）条目是否注入到选项生成提示词中。启用后，AI 生成选项时能感知世界观设定。</p>
-      <p><strong>默认行为</strong>：自动包含角色世界书和全局世界书。取消勾选某本书，该书的所有条目都不参与生成；展开某本书后，可以单独排除特定条目。</p>
+      <p>
+        <strong>用途</strong>：控制世界书（World Info）条目是否注入到选项生成提示词中。启用后，AI
+        生成选项时能感知世界观设定。
+      </p>
+      <p>
+        <strong>默认行为</strong
+        >：自动包含角色世界书和全局世界书。取消勾选某本书，该书的所有条目都不参与生成；展开某本书后，可以单独排除特定条目。
+      </p>
       <p><strong>红绿灯规则</strong>：开启后按世界书的常量/关键词/禁用规则过滤条目，关闭则全量发送。</p>
     </PageGuide>
 

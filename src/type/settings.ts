@@ -245,7 +245,8 @@ export const DEFAULT_MODULES: PromptModule[] = [
     id: 'enrich_prompt',
     name: '润色提示词',
     role: 'user',
-    content: '请将用户输入润色扩展为 {{count}} 个更自然、更丰富的版本，保留原意和语气。\n\n用户输入：\n{{input}}\n\n输出格式：每行一个版本，格式为 "1. 润色后的文本"',
+    content:
+      '请将用户输入润色扩展为 {{count}} 个更自然、更丰富的版本，保留原意和语气。\n\n用户输入：\n{{input}}\n\n输出格式：每行一个版本，格式为 "1. 润色后的文本"',
     marker: false,
     system: false,
     enabled: true,

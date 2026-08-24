@@ -24,7 +24,12 @@
           <i class="fa-solid fa-stop"></i>
           {{ t`取消` }}
         </button>
-        <button v-if="enrichMode && !enrichLoading" class="choice-panel-btn" title="返回选项" @click="panelStore.exitEnrichMode()">
+        <button
+          v-if="enrichMode && !enrichLoading"
+          class="choice-panel-btn"
+          title="返回选项"
+          @click="panelStore.exitEnrichMode()"
+        >
           <i class="fa-solid fa-xmark"></i>
         </button>
         <button v-if="!enrichMode" class="choice-panel-btn choice-panel-main" @click="onToggle">

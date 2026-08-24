@@ -1,5 +1,8 @@
 <template>
-  <div class="choice-page-guide" :class="{ 'choice-page-guide--guide': type === 'guide', 'choice-page-guide--collapsed': !expanded }">
+  <div
+    class="choice-page-guide"
+    :class="{ 'choice-page-guide--guide': type === 'guide', 'choice-page-guide--collapsed': !expanded }"
+  >
     <div class="choice-page-guide-header" @click="expanded = !expanded">
       <i :class="icon"></i>
       <span class="choice-page-guide-title">
@@ -14,18 +17,21 @@
 </template>
 
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  pageId: string
-  icon?: string
-  title?: string
-  type?: 'desc' | 'guide'
-  defaultCollapsed?: boolean
-}>(), {
-  icon: 'fa-solid fa-circle-info',
-  title: '',
-  type: 'desc',
-  defaultCollapsed: false,
-});
+const props = withDefaults(
+  defineProps<{
+    pageId: string;
+    icon?: string;
+    title?: string;
+    type?: 'desc' | 'guide';
+    defaultCollapsed?: boolean;
+  }>(),
+  {
+    icon: 'fa-solid fa-circle-info',
+    title: '',
+    type: 'desc',
+    defaultCollapsed: false,
+  },
+);
 
 const expanded = useStorage(`choice_pg_${props.pageId}`, !props.defaultCollapsed);
 </script>

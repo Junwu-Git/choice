@@ -3,9 +3,14 @@
     <PageGuide page-id="behavior-editor" icon="fa-solid fa-circle-info">
       <template #title>⚙️ 选项规则</template>
       <p><strong>自动生成</strong>：开启后，每次 AI 回复完成时自动触发选项生成，无需手动点击"生成"按钮。</p>
-      <p><strong>输入润色</strong>：在发送消息前，用 AI 将你的输入改写成多个润色版本供选择。右侧数字控制生成几个版本。</p>
+      <p>
+        <strong>输入润色</strong>：在发送消息前，用 AI 将你的输入改写成多个润色版本供选择。右侧数字控制生成几个版本。
+      </p>
       <p><strong>叙述风格</strong>：告诉 AI 以什么视角/人称生成选项（如"第三人称"、"第一人称女主视角"）。</p>
-      <p><strong>选项规则</strong>：AI 生成选项时必须遵守的核心约束，每行一条。如"每条选项不超过 30 字"、"禁止预判其他角色反应"。</p>
+      <p>
+        <strong>选项规则</strong>：AI 生成选项时必须遵守的核心约束，每行一条。如"每条选项不超过 30
+        字"、"禁止预判其他角色反应"。
+      </p>
     </PageGuide>
 
     <div class="choice-behavior-grid">
@@ -37,11 +42,7 @@
           {{ t`恢复默认` }}
         </button>
       </div>
-      <textarea
-        v-model="globalStore.settings.prompt_rules.person_style"
-        rows="3"
-        class="text_pole"
-      ></textarea>
+      <textarea v-model="globalStore.settings.prompt_rules.person_style" rows="3" class="text_pole"></textarea>
       <small class="choice-field-hint">{{ t`描述选项的叙述视角和人称要求，如"第三人称"、"第一人称女主视角"等` }}</small>
     </div>
 
@@ -53,11 +54,7 @@
           {{ t`恢复默认` }}
         </button>
       </div>
-      <textarea
-        v-model="globalStore.settings.prompt_rules.option_rules"
-        rows="10"
-        class="text_pole"
-      ></textarea>
+      <textarea v-model="globalStore.settings.prompt_rules.option_rules" rows="10" class="text_pole"></textarea>
       <small class="choice-field-hint">{{ t`生成选项时 AI 必须遵守的核心规则，每行一条` }}</small>
     </div>
 

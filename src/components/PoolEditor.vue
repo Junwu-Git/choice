@@ -3,16 +3,14 @@
     <PageGuide page-id="pool-editor" icon="fa-solid fa-circle-info" :default-collapsed="false">
       <template #title>📖 条目池怎么用</template>
       <p><strong>核心概念</strong>：条目池 = 条目库（存所有条目） + 配置（从条目库勾选哪些条目参与生成）。</p>
-      <p><strong>配置</strong> 是一组条目的"快照"，可以绑定到角色或聊天。生成选项时，AI 从当前生效的配置中抽取条目作为素材。</p>
+      <p>
+        <strong>配置</strong> 是一组条目的"快照"，可以绑定到角色或聊天。生成选项时，AI
+        从当前生效的配置中抽取条目作为素材。
+      </p>
       <p><strong>绑定优先级</strong>：聊天绑定 > 角色绑定 > 默认配置。高优先级的配置有绑定则使用它，否则逐级回退。</p>
       <p><strong>操作流程</strong>：新建配置 → 添加条目 → 绑定到聊天/角色 → 生成选项时自动生效。</p>
     </PageGuide>
-    <PageGuide
-      page-id="pool-editor-guide"
-      icon="fa-solid fa-compass"
-      type="guide"
-      :default-collapsed="false"
-    >
+    <PageGuide page-id="pool-editor-guide" icon="fa-solid fa-compass" type="guide" :default-collapsed="false">
       <template #title>🚀 新手快速入门</template>
       <ol style="margin: 0; padding-left: 18px; line-height: 1.8">
         <li><strong>打开条目库</strong>：点击下方"条目库"按钮，手动添加或 AI 生成一批行动选项条目</li>

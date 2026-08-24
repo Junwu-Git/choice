@@ -14,7 +14,10 @@
           <PageGuide page-id="poolgen-dialog" icon="fa-solid fa-circle-info">
             <template #title>🤖 AI 生成条目</template>
             <p><strong>作用</strong>：让 AI 根据你的要求自动生成一批条目，省去手动输入的麻烦。</p>
-            <p><strong>参数</strong>：条目数控制生成数量，生成要求描述你想要什么类型的条目（如"战斗中的行动选项，每个选项 15 字以内"），目标分组决定生成后放到哪个分组。</p>
+            <p>
+              <strong>参数</strong>：条目数控制生成数量，生成要求描述你想要什么类型的条目（如"战斗中的行动选项，每个选项
+              15 字以内"），目标分组决定生成后放到哪个分组。
+            </p>
             <p><strong>结合近期对话</strong>：勾选后 AI 会参考最近的聊天内容生成更贴合场景的条目。</p>
             <p><strong>生成后</strong>：勾选需要的条目，点击"注入"将它们加入条目库。未勾选的条目会被丢弃。</p>
           </PageGuide>
