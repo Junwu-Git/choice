@@ -1,13 +1,25 @@
 :root {
+  --choice-bg-panel-rgb: 22, 22, 28;
+  --choice-bg-card-rgb: 35, 35, 42;
+  --choice-bg-element-rgb: 50, 50, 58;
+  --choice-text-rgb: 232, 232, 236;
+  --choice-primary-rgb: 74, 144, 217;
+
+  --choice-opacity: 0.88;
+  --choice-card-opacity: 0.65;
+  --choice-element-opacity: 0.45;
+
+  --choice-font-scale: 1;
+
   --choice-primary: #4a90d9;
   --choice-primary-hover: #5da8f0;
   --choice-primary-light: rgba(74, 144, 217, 0.15);
   --choice-primary-glow: rgba(74, 144, 217, 0.25);
   --choice-primary-active: #2f6fb0;
 
-  --choice-bg-panel: rgba(22, 22, 28, 0.88);
-  --choice-bg-card: rgba(35, 35, 42, 0.65);
-  --choice-bg-element: rgba(50, 50, 58, 0.45);
+  --choice-bg-panel: rgba(var(--choice-bg-panel-rgb), var(--choice-opacity));
+  --choice-bg-card: rgba(var(--choice-bg-card-rgb), var(--choice-card-opacity));
+  --choice-bg-element: rgba(var(--choice-bg-element-rgb), var(--choice-element-opacity));
   --choice-bg-hover: rgba(255, 255, 255, 0.05);
   --choice-bg-active: rgba(74, 144, 217, 0.12);
 
@@ -32,6 +44,44 @@
 
   --choice-transition: 150ms ease;
   --choice-transition-slow: 300ms ease-out;
+}
+
+:root[data-choice-theme="light"] {
+  --choice-bg-panel-rgb: 255, 255, 255;
+  --choice-bg-card-rgb: 240, 240, 245;
+  --choice-bg-element-rgb: 220, 220, 228;
+  --choice-text-rgb: 26, 26, 30;
+  --choice-primary-rgb: 56, 114, 180;
+
+  --choice-primary: #3872b4;
+  --choice-primary-hover: #4a8ad0;
+  --choice-primary-light: rgba(56, 114, 180, 0.12);
+  --choice-primary-glow: rgba(56, 114, 180, 0.2);
+  --choice-primary-active: #255a94;
+
+  --choice-bg-panel: rgba(var(--choice-bg-panel-rgb), var(--choice-opacity));
+  --choice-bg-card: rgba(var(--choice-bg-card-rgb), var(--choice-card-opacity));
+  --choice-bg-element: rgba(var(--choice-bg-element-rgb), var(--choice-element-opacity));
+  --choice-bg-hover: rgba(0, 0, 0, 0.04);
+  --choice-bg-active: rgba(56, 114, 180, 0.1);
+
+  --choice-text: #1a1a1e;
+  --choice-text-secondary: #4a4a54;
+  --choice-text-muted: #7a7a84;
+  --choice-text-hint: #8a6d20;
+
+  --choice-border: rgba(0, 0, 0, 0.08);
+  --choice-border-strong: rgba(0, 0, 0, 0.12);
+  --choice-border-active: rgba(56, 114, 180, 0.4);
+
+  --choice-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --choice-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --choice-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.2);
+  --choice-shadow-glow: 0 0 20px rgba(56, 114, 180, 0.2);
+
+  --choice-opacity: 0.92;
+  --choice-card-opacity: 0.7;
+  --choice-element-opacity: 0.5;
 }
 
 @keyframes choice-bubble-pulse {

@@ -1,12 +1,12 @@
 <template>
   <div v-show="visible" class="choice-panel">
-    <div class="choice-panel-header">
+    <div class="choice-panel-header" @click="collapsed = !collapsed">
       <span class="choice-panel-title">
-        <i class="fa-solid fa-chess"></i>
-        {{ t`行动选项` }}
+        <i :class="enrichMode ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
+        {{ enrichMode ? t`输入润色` : t`行动选项` }}
       </span>
-      <div class="choice-panel-tools">
-        <template v-if="hasHistory">
+      <div class="choice-panel-tools" @click.stop>
+        <template v-if="!enrichMode && hasHistory">
           <button class="choice-panel-btn" :disabled="currentIndex <= 0" title="上一组" @click="onPrev">
             <i class="fa-solid fa-chevron-left"></i>
           </button>
@@ -20,7 +20,11 @@
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </template>
-        <button class="choice-panel-btn choice-panel-main" @click="onToggle">
+        <button v-if="enrichLoading" class="choice-panel-btn choice-panel-main" @click="onCancelEnrich">
+          <i class="fa-solid fa-stop"></i>
+          {{ t`取消` }}
+        </button>
+        <button v-if="!enrichMode" class="choice-panel-btn choice-panel-main" @click="onToggle">
           <i v-if="isGenerating" class="fa-solid fa-stop"></i>
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
@@ -32,11 +36,14 @@
     </div>
 
     <div v-if="!collapsed" class="choice-panel-body">
-      <div v-if="isGenerating" class="choice-panel-skeleton">
-        <div class="choice-skeleton-item" style="width: 92%"></div>
-        <div class="choice-skeleton-item" style="width: 78%"></div>
-        <div class="choice-skeleton-item" style="width: 85%"></div>
-      </div>
+      <div v-if="enrichLoading" class="choice-panel-loading">
+          <span class="choice-loading-text">{{ t`正在润色…` }}</span>
+          <div class="choice-loading-bar"></div>
+        </div>
+      <div v-else-if="isGenerating" class="choice-panel-loading">
+          <span class="choice-loading-text">{{ t`正在生成选项…` }}</span>
+          <div class="choice-loading-bar"></div>
+        </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
           <button class="choice-behavior-btn" :class="{ active: behavior === 'send' }" @click="behavior = 'send'">
@@ -55,18 +62,20 @@
           class="choice-option-btn"
           @click="onSelect(option)"
         >
-          <span class="choice-option-index">{{ index + 1 }}</span>
-          {{ formatOptionDisplay(option.text) }}
+          <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
+          <span class="choice-option-divider"></span>
+          <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
         </button>
-        <div v-if="underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
+        <div v-if="!enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
       </template>
-      <div v-else class="choice-panel-empty">{{ t`暂无选项,点击"生成"获取行动选项` }}</div>
+      <div v-else class="choice-panel-empty">{{ enrichMode ? t`暂无润色选项` : t`暂无选项,点击"生成"获取行动选项` }}</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { cancelGeneration, generateOptions, generatorState } from '@/core/generator';
+import { cancelEnrich } from '@/core/enrich-input';
 import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useChatSettingsStore } from '@/store/chat-settings';
@@ -74,7 +83,7 @@ import { usePanelStateStore } from '@/store/panel-state';
 import { sendTextareaMessage } from '@sillytavern/script';
 
 const panelStore = usePanelStateStore();
-const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory } = storeToRefs(panelStore);
+const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory, enrichMode, enrichLoading } = storeToRefs(panelStore);
 
 const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
@@ -85,6 +94,9 @@ watch(behavior, v => {
 });
 
 const visible = computed(() => {
+  if (enrichMode.value) {
+    return true;
+  }
   if (isGenerating.value) {
     return true;
   }
@@ -114,6 +126,11 @@ const onToggle = async () => {
   collapsed.value = false;
 };
 
+const onCancelEnrich = () => {
+  cancelEnrich();
+  panelStore.exitEnrichMode();
+};
+
 const onPrev = () => {
   panelStore.goTo(panelStore.currentIndex - 1);
 };
@@ -122,8 +139,14 @@ const onNext = () => {
   panelStore.goTo(panelStore.currentIndex + 1);
 };
 
-const formatOptionDisplay = (text: string): string => {
-  return text.replace(/"/g, '').replace(/: /, ' | ');
+const parseOptionType = (text: string): string => {
+  const idx = text.indexOf(': ');
+  return idx !== -1 ? text.slice(0, idx).replace(/"/g, '') : text.replace(/"/g, '');
+};
+
+const parseOptionContent = (text: string): string => {
+  const idx = text.indexOf(': ');
+  return idx !== -1 ? text.slice(idx + 2) : text;
 };
 
 const onSelect = async (option: ChoiceOption) => {
@@ -131,9 +154,12 @@ const onSelect = async (option: ChoiceOption) => {
   const $textarea = $('#send_textarea');
   if (behavior.value === 'append') {
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
-    return;
+  } else {
+    $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
   }
-  $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+  if (enrichMode.value) {
+    panelStore.exitEnrichMode();
+  }
   if (behavior.value === 'send') {
     await sendTextareaMessage();
   }
@@ -160,10 +186,11 @@ const onSelect = async (option: ChoiceOption) => {
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--choice-border-strong);
+  cursor: pointer;
 }
 
 .choice-panel-title {
-  font-size: 14px;
+  font-size: calc(15px * var(--choice-font-scale));
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
@@ -183,7 +210,7 @@ const onSelect = async (option: ChoiceOption) => {
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-sm);
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: calc(13px * var(--choice-font-scale));
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -212,7 +239,7 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel-pager {
-  font-size: 12px;
+  font-size: calc(13px * var(--choice-font-scale));
   color: var(--choice-text-secondary);
   margin: 0 2px;
 }
@@ -224,29 +251,42 @@ const onSelect = async (option: ChoiceOption) => {
   padding: 6px 10px 10px;
 }
 
-.choice-panel-skeleton {
+.choice-panel-loading {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 0;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
 }
 
-.choice-skeleton-item {
-  height: 38px;
-  background: var(--choice-bg-element);
-  border-radius: var(--choice-radius-sm);
-  animation: choice-skeleton 1.5s ease-in-out infinite;
+.choice-loading-text {
+  font-size: calc(13px * var(--choice-font-scale));
+  color: var(--choice-text-muted);
+}
+
+.choice-loading-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--choice-bg-element) 0%,
+    var(--choice-primary) 50%,
+    var(--choice-bg-element) 100%
+  );
+  background-size: 200% 100%;
+  animation: choice-shimmer 3s ease-in-out infinite;
 }
 
 .choice-panel-empty {
   color: var(--choice-text-muted);
-  font-size: 12px;
+  font-size: calc(13px * var(--choice-font-scale));
   padding: 4px 0;
 }
 
 .choice-panel-hint {
   color: var(--choice-text-hint);
-  font-size: 11px;
+  font-size: calc(12px * var(--choice-font-scale));
   padding-top: 2px;
 }
 
@@ -264,7 +304,7 @@ const onSelect = async (option: ChoiceOption) => {
   border: none;
   border-radius: var(--choice-radius-full);
   padding: 2px 10px;
-  font-size: 11px;
+  font-size: calc(12px * var(--choice-font-scale));
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -286,14 +326,14 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-option-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   text-align: left;
   background: var(--choice-bg-card);
   color: var(--choice-text);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: calc(15px * var(--choice-font-scale));
   cursor: pointer;
   line-height: 1.4;
   transition:
@@ -312,17 +352,40 @@ const onSelect = async (option: ChoiceOption) => {
   transform: scale(0.985);
 }
 
-.choice-option-index {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
-  color: #fff;
-  font-size: 12px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.choice-option-type {
+  width: calc(88px * var(--choice-font-scale));
   flex-shrink: 0;
+  font-weight: 700;
+  font-size: calc(16px * var(--choice-font-scale));
+  color: var(--choice-primary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.choice-option-divider {
+  width: 1px;
+  align-self: stretch;
+  border-left: 1px dashed var(--choice-border-strong);
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+.choice-option-content {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+  font-size: calc(15px * var(--choice-font-scale));
+}
+
+@keyframes choice-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

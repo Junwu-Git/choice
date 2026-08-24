@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     ActionOptionsPanel: typeof import('./src/components/ActionOptionsPanel.vue')['default']
     ApiEditor: typeof import('./src/components/ApiEditor.vue')['default']
+    AppearanceSettings: typeof import('./src/components/AppearanceSettings.vue')['default']
     BehaviorSettings: typeof import('./src/components/BehaviorSettings.vue')['default']
     ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
     CreateConfigDialog: typeof import('./src/components/CreateConfigDialog.vue')['default']
@@ -20,6 +21,7 @@ declare module 'vue' {
     FloatingBubble: typeof import('./src/components/FloatingBubble.vue')['default']
     FloatingRoot: typeof import('./src/components/FloatingRoot.vue')['default']
     FloatingSettings: typeof import('./src/components/FloatingSettings.vue')['default']
+    ImportEntriesDialog: typeof import('./src/components/ImportEntriesDialog.vue')['default']
     PoolEditor: typeof import('./src/components/PoolEditor.vue')['default']
     PoolGenDialog: typeof import('./src/components/PoolGenDialog.vue')['default']
     PromptEditor: typeof import('./src/components/PromptEditor.vue')['default']

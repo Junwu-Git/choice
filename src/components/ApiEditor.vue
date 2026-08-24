@@ -22,16 +22,23 @@
         </div>
         <div class="choice-api-url-row">
           <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
+        </div>
+        <div class="choice-api-key-row">
           <input
             v-model="draftForm.key"
             class="text_pole"
             type="password"
             :placeholder="t`API 密钥`"
-            style="width: 140px; flex-shrink: 0"
           />
         </div>
         <div class="choice-model-row">
-          <input v-model="draftForm.model" class="text_pole" :placeholder="t`模型名称`" />
+          <input
+            v-model="draftForm.model"
+            class="text_pole"
+            :placeholder="t`模型名称`"
+            @focus="modelDropdownOpen = true"
+            @blur="onModelBlur"
+          />
           <button
             class="menu_button choice-fetch-btn"
             :disabled="isFetching"
@@ -41,14 +48,6 @@
             <i v-if="isFetching" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-cloud-arrow-down"></i>
             {{ isFetching ? '' : t`拉取` }}
-          </button>
-          <button
-            class="menu_button choice-model-dropdown-btn"
-            :disabled="(modelList.length ?? 0) === 0"
-            :title="t`选择模型`"
-            @click="modelDropdownOpen = !modelDropdownOpen"
-          >
-            <i class="fa-solid" :class="modelDropdownOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
           </button>
         </div>
         <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
@@ -84,10 +83,6 @@
             <label class="choice-check">
               <input v-model="draftForm.stream" type="checkbox" />
               {{ t`流式` }}
-            </label>
-            <label class="choice-check">
-              <input v-model="draftForm.send_prefill" type="checkbox" />
-              {{ t`预填充` }}
             </label>
           </div>
           <input
@@ -141,6 +136,12 @@ const fetching = ref(false);
 const modelDropdownOpen = ref(false);
 
 const isFetching = fetching;
+
+const onModelBlur = () => {
+  setTimeout(() => {
+    modelDropdownOpen.value = false;
+  }, 150);
+};
 
 const selectApi = (id: string) => {
   selectedApiId.value = id;
@@ -275,12 +276,14 @@ const reset = () => {
 
 .choice-api-url-row {
   display: flex;
-  gap: 6px;
 }
 
-.choice-api-url-row .text_pole:first-child {
+.choice-api-key-row {
+  display: flex;
+}
+
+.choice-api-key-row .text_pole {
   flex: 1;
-  min-width: 0;
 }
 
 .choice-icon-btn {
@@ -319,13 +322,6 @@ const reset = () => {
   align-items: center;
   gap: 3px;
   flex-shrink: 0;
-}
-
-.choice-model-dropdown-btn {
-  flex-shrink: 0;
-  width: 28px;
-  padding: 0;
-  justify-content: center;
 }
 
 .choice-model-list {

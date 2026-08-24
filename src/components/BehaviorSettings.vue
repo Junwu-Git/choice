@@ -1,25 +1,5 @@
 <template>
   <div class="choice-behavior-editor">
-    <div class="choice-behavior-row">
-      <label class="choice-field">
-        <span>{{ t`选项数量` }}</span>
-        <input
-          v-model="generation.count_mode"
-          type="text"
-          class="text_pole"
-          placeholder="例: 4 或 4-8"
-          style="width: 100%"
-        />
-      </label>
-      <label class="choice-field">
-        <span>{{ t`固定条目溢出` }}</span>
-        <select v-model="generation.pinned_overflow" class="text_pole">
-          <option value="send_all">{{ t`全部发出` }}</option>
-          <option value="trim">{{ t`截断到上限` }}</option>
-        </select>
-      </label>
-    </div>
-
     <div class="choice-behavior-grid">
       <label class="choice-check">
         <input v-model="chatStore.settings.auto_generate" type="checkbox" />
@@ -27,14 +7,9 @@
         {{ t`自动生成` }}
       </label>
       <label class="choice-check">
-        <input v-model="generation.categories_enabled" type="checkbox" />
+        <input v-model="globalStore.settings.ui.enrich_enabled" type="checkbox" />
         <span class="choice-check-custom"></span>
-        {{ t`分类多样性` }}
-      </label>
-      <label class="choice-check">
-        <input v-model="generation.shuffle_final" type="checkbox" />
-        <span class="choice-check-custom"></span>
-        {{ t`打乱选项顺序` }}
+        {{ t`输入润色` }}
       </label>
     </div>
   </div>
@@ -42,12 +17,10 @@
 
 <script setup lang="ts">
 import { useChatSettingsStore } from '@/store/chat-settings';
-import { usePoolSelectorStore } from '@/store/pool-selector';
-import { GenerationSettings } from '@/type/settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 
-const poolSelector = usePoolSelectorStore();
 const chatStore = useChatSettingsStore();
-const generation = computed(() => poolSelector.effectiveConfig?.generation ?? GenerationSettings.prefault({}));
+const globalStore = useGlobalSettingsStore();
 </script>
 
 <style scoped>

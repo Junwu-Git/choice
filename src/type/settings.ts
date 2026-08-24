@@ -136,10 +136,11 @@ export const PromptModule = z.object({
   system: z.boolean(),
   enabled: z.boolean().default(true),
   order: z.number().min(0),
+  enrich_only: z.boolean().default(false),
 });
 export type PromptModule = z.infer<typeof PromptModule>;
 
-export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 {{count}} 条行动选项。
+export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 恰好 {{count}} 条行动选项，不得少于 {{count}} 条。
 
 固定条目（必须使用，不受条件限制）：
 {{pinned}}
@@ -153,11 +154,12 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 {{cou
 3. 若当前候选类型总数不足以支撑本次抽取数量，允许类型重复，但重复类型生成的选项须在切入点与情绪态度上明显不同
 4. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
 5. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目；若不符合，跳过该条目不生成对应选项
-6. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项`;
+6. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
 
-/** 思维链引导：在生成选项前，提示模型逐条检查场景与规则，提高输出质量。 */
-export const THINKING_PROMPT_CONTENT = `【输出前思考】
-在生成选项之前，请按以下顺序逐条检查：
+/** 思维链引导：在生成选项前，提示模型逐条检查场景与规则，提高输出质量。
+ *  当预填充关闭时，模型不会从 <thinking> 开始，因此必须在此处显式要求输出 <thinking> 标签。 */
+export const THINKING_PROMPT_CONTENT = `【输出前思考 - 必须将分析过程包裹在 <thinking> 和 </thinking> 标签内】
+在生成选项之前，请按以下顺序逐条检查，并以 <thinking> 标签包裹全部检查内容：
 1. 场景核查：当前场景有哪些角色在场？哪些已离开？可用道具是什么？
 2. 状态锚点：正文末尾各角色的情绪、动作、对白分别是什么？
 3. 条件评估：逐条检查可选条目中的 [条件: xxx] 标记，判断当前上下文是否满足条件，决定哪些条目可用、哪些应跳过
@@ -204,6 +206,16 @@ export const DEFAULT_MODULES: PromptModule[] = [
     order: 2,
   },
   {
+    id: 'reference_open',
+    name: '参考开始',
+    role: 'system',
+    content: '<!-- 角色扮演参考资料 -->\n<reference>',
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 3,
+  },
+  {
     id: 'world_info_before',
     name: 'World Info (before)',
     role: 'system',
@@ -211,7 +223,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 3,
+    order: 4,
   },
   {
     id: 'persona_description',
@@ -221,7 +233,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 4,
+    order: 5,
   },
   {
     id: 'world_info_after',
@@ -231,7 +243,47 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 5,
+    order: 6,
+  },
+  {
+    id: 'baibai_summary',
+    name: '柏宝书摘要',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: false,
+    order: 7,
+  },
+  {
+    id: 'baibai_state',
+    name: '柏宝书状态',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: false,
+    order: 8,
+  },
+  {
+    id: 'reference_close',
+    name: '参考结束',
+    role: 'system',
+    content: '</reference>',
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 9,
+  },
+  {
+    id: 'history_open',
+    name: '历史开始',
+    role: 'system',
+    content: '<!-- 角色扮演交互历史 -->\n<history>',
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 10,
   },
   {
     id: 'chat_history',
@@ -241,7 +293,17 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 6,
+    order: 11,
+  },
+  {
+    id: 'history_close',
+    name: '历史结束',
+    role: 'system',
+    content: '</history>',
+    marker: false,
+    system: false,
+    enabled: true,
+    order: 12,
   },
   {
     id: 'core_rules',
@@ -251,7 +313,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 7,
+    order: 13,
   },
   {
     id: 'thinking_prompt',
@@ -261,7 +323,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 8,
+    order: 14,
   },
   {
     id: 'assistant_thinking',
@@ -271,9 +333,12 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 9,
+    order: 15,
   },
 ];
+
+/** 柏宝书模块 ID 集合，供 PromptEditor 按总开关过滤显示 */
+export const BAIBAI_MODULE_IDS = new Set(['baibai_summary', 'baibai_state']);
 
 // 聊天记录过滤规则：标签匹配（字面量头/尾）或正则匹配，二者可混用
 export const ChatFilterRule = z.discriminatedUnion('type', [
@@ -307,6 +372,13 @@ export const PromptRules = z
     chat_filter_rules: z.array(ChatFilterRule).default([]),
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
     modules: z.array(PromptModule).prefault([]),
+    prefill_enabled: z.boolean().default(true),
+    /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
+    context_mode: z.enum(['rounds', 'visible_only']).default('rounds'),
+    /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
+    baibai_enabled: z.boolean().default(false),
+    /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
+    enrich_prompt: z.string().default(''),
     schema_version: z.number().default(0),
   })
   .prefault({});
@@ -329,7 +401,7 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -351,6 +423,19 @@ export const WorldInfoChatSettings = z
   .prefault({});
 export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
 
+export const UISettings = z
+  .object({
+    floating_enabled: z.boolean().default(true),
+    enrich_enabled: z.boolean().default(true),
+    theme: z.enum(['dark', 'light']).default('dark'),
+    opacity: z.number().min(0.3).max(1).default(0.88),
+    font_size: z.enum(['small', 'medium', 'large']).default('medium'),
+    /** 行内设置面板内容区高度（px），拖拽手柄可调整 */
+    panel_height: z.number().min(300).max(800).default(500),
+  })
+  .prefault({});
+export type UISettings = z.infer<typeof UISettings>;
+
 export const GlobalSettings = z
   .object({
     schema_version: z.number().default(0),
@@ -361,6 +446,7 @@ export const GlobalSettings = z
     apis: z.array(SecondaryApi).prefault([]),
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
+    ui: UISettings.prefault({}),
   })
   .prefault({});
 export type GlobalSettings = z.infer<typeof GlobalSettings>;

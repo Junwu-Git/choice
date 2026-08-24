@@ -19,11 +19,18 @@
           </button>
         </div>
 
-        <PoolEditor v-if="activeTab === 'pool'" />
-        <PromptEditor v-else-if="activeTab === 'prompt'" />
-        <ApiEditor v-else-if="activeTab === 'api'" />
-        <BehaviorSettings v-else-if="activeTab === 'behavior'" />
-        <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
+        <div class="choice-panel-body" :style="{ height: panelHeight + 'px' }">
+          <PoolEditor v-if="activeTab === 'pool'" />
+          <PromptEditor v-else-if="activeTab === 'prompt'" />
+          <ApiEditor v-else-if="activeTab === 'api'" />
+          <BehaviorSettings v-else-if="activeTab === 'behavior'" />
+          <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
+          <AppearanceSettings v-else-if="activeTab === 'appearance'" />
+        </div>
+
+        <div class="choice-panel-resize" @mousedown="onResizeStart">
+          <div class="choice-panel-resize-grip"></div>
+        </div>
 
         <hr class="sysHR" />
       </div>
@@ -32,13 +39,16 @@
 </template>
 
 <script setup lang="ts">
+import { useGlobalSettingsStore } from '@/store/global-settings';
 import ApiEditor from '@/components/ApiEditor.vue';
+import AppearanceSettings from '@/components/AppearanceSettings.vue';
 import BehaviorSettings from '@/components/BehaviorSettings.vue';
 import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 
-const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo'>('pool');
+const gs = useGlobalSettingsStore();
+const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo' | 'appearance'>('pool');
 
 const tabs = [
   { id: 'pool', label: t`条目池`, icon: 'fa-solid fa-layer-group' },
@@ -46,7 +56,35 @@ const tabs = [
   { id: 'api', label: t`API`, icon: 'fa-solid fa-plug' },
   { id: 'behavior', label: t`行为`, icon: 'fa-solid fa-sliders' },
   { id: 'worldinfo', label: t`世界书`, icon: 'fa-solid fa-book' },
+  { id: 'appearance', label: t`外观`, icon: 'fa-solid fa-palette' },
 ] as const;
+
+const panelHeight = computed({
+  get: () => gs.settings.ui.panel_height,
+  set: (v: number) => { gs.settings.ui.panel_height = v; },
+});
+
+let resizeStartY = 0;
+let resizeStartH = 0;
+
+const onResizeStart = (e: MouseEvent) => {
+  e.preventDefault();
+  resizeStartY = e.clientY;
+  resizeStartH = panelHeight.value;
+  document.addEventListener('mousemove', onResizeMove);
+  document.addEventListener('mouseup', onResizeEnd);
+};
+
+const onResizeMove = (e: MouseEvent) => {
+  const dy = e.clientY - resizeStartY;
+  const h = Math.max(300, Math.min(800, resizeStartH + dy));
+  panelHeight.value = h;
+};
+
+const onResizeEnd = () => {
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+};
 </script>
 
 <style scoped>
@@ -84,5 +122,31 @@ const tabs = [
   border-color: var(--choice-primary);
   color: #fff;
   box-shadow: 0 0 10px var(--choice-primary-glow);
+}
+
+.choice-panel-body {
+  overflow-y: auto;
+}
+
+.choice-panel-resize {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 8px;
+  cursor: ns-resize;
+  margin: 4px 0;
+  user-select: none;
+}
+
+.choice-panel-resize:hover .choice-panel-resize-grip {
+  background: var(--choice-primary);
+}
+
+.choice-panel-resize-grip {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--choice-border-strong);
+  transition: background var(--choice-transition);
 }
 </style>

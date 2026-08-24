@@ -170,20 +170,24 @@ const onCancel = () => {
 <style scoped>
 .choice-sedlg-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 10003;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
   justify-content: center;
+  overflow-y: auto;
 }
 
 .choice-sedlg-dialog {
   width: 520px;
   max-width: 92vw;
   max-height: 80vh;
+  margin: auto;
   background: var(--choice-bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -271,6 +275,7 @@ const onCancel = () => {
   border: 1px solid var(--choice-border);
   font-size: 12px;
   color: var(--choice-text);
+  flex-wrap: wrap;
 }
 
 .choice-sedlg-group-head:hover {
@@ -280,6 +285,10 @@ const onCancel = () => {
 .choice-sedlg-group-name {
   font-weight: bold;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .choice-sedlg-group-count {

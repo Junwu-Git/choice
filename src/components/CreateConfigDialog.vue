@@ -73,7 +73,10 @@ const onCreate = () => {
 <style scoped>
 .choice-ccdlg-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 10003;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);

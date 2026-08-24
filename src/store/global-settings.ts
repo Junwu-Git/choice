@@ -7,7 +7,7 @@ import {
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
+import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS, GenerationSettings } from '@/type/settings';
 import type {
   GlobalSettings as GlobalSettingsType,
   PoolConfig,
@@ -69,7 +69,7 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     // 4 个只读模块（world_info_before / persona_description / world_info_after / chat_history）
     // 保持 marker:true + system:true，仅允许移动和开关
     // 其余所有模块开放编辑、删除、复制
-    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history']);
+    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
     for (const m of validated.prompt_rules.modules) {
       if (READONLY_IDS.has(m.id)) {
         m.marker = true;
@@ -96,7 +96,40 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     validated.prompt_rules.chat_filter_rules = [];
   }
 
-  validated.prompt_rules.schema_version = 6;
+  if (version < 7) {
+    // v7: 追加柏宝书记忆源模块（baibai_summary、baibai_state）
+    const defaults = klona(DEFAULT_MODULES);
+    const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
+    for (const d of defaults) {
+      if (BAIBAI_MODULE_IDS.has(d.id) && !existingIds.has(d.id)) {
+        validated.prompt_rules.modules.push(d);
+      }
+    }
+    resetOrderFromDefaults(validated);
+
+    // 旧字段 exclude_hidden_messages → context_mode 迁移
+    const oldExclude = (validated.prompt_rules as any).exclude_hidden_messages;
+    if (oldExclude !== undefined) {
+      (validated.prompt_rules as any).context_mode = oldExclude ? 'visible_only' : 'rounds';
+      delete (validated.prompt_rules as any).exclude_hidden_messages;
+    }
+  }
+
+  if (version < 8) {
+    // v8: 添加 XML 分段包装模块（reference_open/close、history_open/close）
+    // chat_history 默认 order 从 7 调整为 11，使 reference 块连续
+    const defaults = klona(DEFAULT_MODULES);
+    const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
+    const WRAPPER_IDS = new Set(['reference_open', 'reference_close', 'history_open', 'history_close']);
+    for (const d of defaults) {
+      if (WRAPPER_IDS.has(d.id) && !existingIds.has(d.id)) {
+        validated.prompt_rules.modules.push(d);
+      }
+    }
+    resetOrderFromDefaults(validated);
+  }
+
+  validated.prompt_rules.schema_version = 8;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
@@ -314,7 +347,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 6;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 8;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -342,25 +375,26 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     (settings.value.prompt_rules.chat_filter_groups ?? []).filter(g => g.enabled).flatMap(g => g.rules),
   );
 
-  function addModule(afterId?: string) {
+  function addModule(afterId?: string, enrichOnly = false) {
     const modules = settings.value.prompt_rules.modules;
     const maxOrder = modules.length ? Math.max(...modules.map(m => m.order)) : -1;
     const newModule: PromptModuleType = {
       id: uuidv4(),
-      name: '新模块',
+      name: enrichOnly ? '润色模块' : '新模块',
       role: 'system',
       content: '',
       marker: false,
       system: false,
       enabled: true,
       order: maxOrder + 1,
+      enrich_only: enrichOnly,
     };
     modules.push(newModule);
     return newModule;
   }
 
   function duplicateModule(id: string) {
-    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history']);
+    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
     if (READONLY_IDS.has(id)) return;
     const modules = settings.value.prompt_rules.modules;
     const src = modules.find(m => m.id === id);
@@ -402,6 +436,16 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       if (d) m.order = d.order;
     });
   }
+
+  watchEffect(() => {
+    const ui = settings.value.ui;
+    document.documentElement.setAttribute('data-choice-theme', ui.theme);
+    document.documentElement.style.setProperty('--choice-opacity', String(ui.opacity));
+    document.documentElement.style.setProperty('--choice-card-opacity', String(ui.opacity * 0.74));
+    document.documentElement.style.setProperty('--choice-element-opacity', String(ui.opacity * 0.51));
+    const scaleMap = { small: 0.85, medium: 1, large: 1.2 };
+    document.documentElement.style.setProperty('--choice-font-scale', String(scaleMap[ui.font_size]));
+  });
 
   return {
     settings,

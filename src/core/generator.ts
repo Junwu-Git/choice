@@ -3,6 +3,7 @@ import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/wo
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApi, type ChatMsg } from '@/core/api-client';
+import { getBaiBaiSummary, getBaiBaiState } from '@/core/baibai-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
@@ -45,23 +46,26 @@ const resolveCount = (cm: string): number => {
   return Number.isFinite(n) && n > 0 ? n : 4;
 };
 
-const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
+export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
-type Ctx = { count: number; pinned: string; poolSelected: string };
+type Ctx = { count: number; pinned: string; poolSelected: string; input: string };
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
     .replaceAll('{{count_minus_1}}', String(Math.max(0, c.count - 1)))
     .replaceAll('{{pinned}}', c.pinned)
-    .replaceAll('{{pool_selected}}', c.poolSelected);
+    .replaceAll('{{pool_selected}}', c.poolSelected)
+    .replaceAll('{{input}}', c.input);
 
-const buildMessages = async (
+export const buildMessages = async (
   modules: PromptModule[],
   ctx: Ctx,
   wi: WorldInfoGlobalSettings,
   contextRounds: number,
 ): Promise<ChatMsg[]> => {
+  const gs = useGlobalSettingsStore();
+  const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
   const msgs: ChatMsg[] = [];
   const wiBuckets = wi.enabled ? await buildWI() : null;
 
@@ -69,6 +73,7 @@ const buildMessages = async (
 
   for (const mod of sorted) {
     if (!mod.enabled) continue;
+    if (!prefillEnabled && mod.role === 'assistant') continue;
 
     switch (mod.id) {
       case 'system_prompt': {
@@ -99,7 +104,21 @@ const buildMessages = async (
       }
       case 'chat_history': {
         const history = buildChatHistory(contextRounds);
-        for (const m of history) msgs.push(m);
+        for (const m of history) {
+          msgs.push(prefillEnabled ? m : { ...m, role: 'system' });
+        }
+        break;
+      }
+      case 'baibai_summary': {
+        if (!gs.settings.prompt_rules.baibai_enabled) break;
+        const text = getBaiBaiSummary();
+        if (text) msgs.push({ role: 'system', content: text });
+        break;
+      }
+      case 'baibai_state': {
+        if (!gs.settings.prompt_rules.baibai_enabled) break;
+        const text = getBaiBaiState();
+        if (text) msgs.push({ role: 'system', content: text });
         break;
       }
       case 'user_instruction': {
@@ -115,13 +134,11 @@ const buildMessages = async (
       case 'assistant_ack':
       case 'thinking_prompt':
       case 'assistant_thinking': {
-        // 预填充模块：直接输出内容，不做变量替换
         const content = mod.content;
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
       default: {
-        // 用户自定义模块
         const content = substituteParams(sub(mod.content, ctx));
         if (content) msgs.push({ role: mod.role, content });
         break;
@@ -142,9 +159,11 @@ const buildMessages = async (
 const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
-  let msgs = chatArr.filter(m => !m.is_hidden);
-  if (contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
   const gs = useGlobalSettingsStore();
+  const mode = gs.settings.prompt_rules.context_mode;
+  // rounds：取最后 N 轮，含隐藏消息；visible_only：仅未隐藏消息，不限轮数
+  let msgs = mode === 'visible_only' ? chatArr.filter(m => !m.is_hidden) : [...chatArr];
+  if (mode === 'rounds' && contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   for (const m of msgs) {
@@ -233,7 +252,7 @@ const buildWI = async (): Promise<WIBuckets> => {
 };
 
 type Restore = { restore: () => void } | null;
-const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
+export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
   const saved = [...(selected_world_info ?? [])];
   const hasExcl = excl.length > 0;
   const hasEnabled = enabled.length > 0;
@@ -293,11 +312,31 @@ export function parseOptions(text: string, count: number): string[] {
     }
 
   // 按行解析，兼容 "标题: 内容" 格式和纯文本格式
-  return c
+  // 先按换行分割，再在每行内按 "标题: 内容" 模式拆分，处理模型将多个选项写在同一行的情况
+  const lines = c
     .split(/\r?\n/)
     .map(l => l.trim())
-    .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l))
-    .slice(0, count);
+    .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l));
+  // 标题格式：2-5 个汉字后跟 ": " 或 "："
+  const titleRe = /([\u4e00-\u9fff]{2,5})[:：] /g;
+  const result: string[] = [];
+  for (const line of lines) {
+    let lastIdx = 0;
+    let match;
+    let found = false;
+    titleRe.lastIndex = 0;
+    while ((match = titleRe.exec(line)) !== null) {
+      found = true;
+      if (lastIdx > 0) result.push(line.slice(lastIdx, match.index).trim());
+      lastIdx = match.index;
+    }
+    if (found) {
+      result.push(line.slice(lastIdx).trim());
+    } else {
+      result.push(line);
+    }
+  }
+  return result.slice(0, count);
 }
 
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
@@ -369,12 +408,13 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
       poolSelected: pool.drawn
         .map(e => (e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text))
         .join('\n'),
+      input: '',
     };
     const rules = gs.settings.prompt_rules;
 
-    let enabledModules = gs.sortedEnabledModules;
+    let enabledModules = gs.sortedEnabledModules.filter(m => !m.enrich_only);
     if (!enabledModules || enabledModules.length === 0) {
-      enabledModules = [...DEFAULT_MODULES].sort((a, b) => a.order - b.order);
+      enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
     let messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
 

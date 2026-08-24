@@ -3,12 +3,31 @@
     <div class="choice-prompt-toolbar">
       <div class="choice-prompt-toolbar-left">
         <button class="menu_button" @click="addModule">{{ t`新增模块` }}</button>
+        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" @click="addEnrichModule">{{ t`新增润色模块` }}</button>
         <button class="menu_button" @click="resetOrder">{{ t`重置顺序` }}</button>
       </div>
       <div class="choice-prompt-toolbar-right">
-        <label class="choice-context-rounds">
-          <span>{{ t`上下文轮数` }}</span>
-          <input v-model.number="rules.context_rounds" class="text_pole" type="number" min="0" style="width: 60px" />
+        <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
+          <select v-model="rules.context_mode" class="text_pole" style="width: auto">
+            <option value="rounds">{{ t`轮数模式` }}</option>
+            <option value="visible_only">{{ t`仅可见消息` }}</option>
+          </select>
+          <input
+            v-if="rules.context_mode === 'rounds'"
+            v-model.number="rules.context_rounds"
+            class="text_pole"
+            type="number"
+            min="0"
+            style="width: 60px"
+          />
+        </label>
+        <label class="choice-context-rounds" :title="t`关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型`">
+          <input v-model="rules.prefill_enabled" type="checkbox" />
+          {{ t`预填充` }}
+        </label>
+        <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
+          <input v-model="rules.baibai_enabled" type="checkbox" />
+          {{ t`柏宝书` }}
         </label>
         <button class="menu_button" @click="togglePreview">
           <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
@@ -109,6 +128,7 @@
                 @keydown.escape="cancelRename"
               />
               <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
+              <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
               <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
             </div>
             <div class="choice-module-preview">
@@ -159,6 +179,22 @@
           <textarea v-if="editingModule" v-model="editingModule.content" class="text_pole" rows="8"></textarea>
         </div>
       </template>
+
+      <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-module-card choice-enrich-card">
+        <span class="choice-module-drag" style="visibility: hidden">☰</span>
+        <div class="choice-module-body">
+          <div class="choice-module-header">
+            <span class="choice-module-name">{{ t`润色提示词` }}</span>
+            <span class="choice-enrich-badge">{{ t`润色模式` }}</span>
+          </div>
+          <textarea
+            v-model="rules.enrich_prompt"
+            class="text_pole choice-enrich-textarea"
+            rows="3"
+            :placeholder="enrichPlaceholder"
+          ></textarea>
+        </div>
+      </div>
     </div>
 
     <ConfirmDialog
@@ -202,6 +238,7 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { PromptModule, ChatFilterGroup } from '@/type/settings';
+import { BAIBAI_MODULE_IDS } from '@/type/settings';
 import { chat, characters, this_chid } from '@sillytavern/script';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 
@@ -209,12 +246,18 @@ const globalStore = useGlobalSettingsStore();
 const rules = globalStore.settings.prompt_rules;
 
 /** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
-const READONLY_MODULE_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history']);
+const READONLY_MODULE_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
 
-const allModules = computed(() => globalStore.allModules);
+const allModules = computed(() => {
+  const modules = globalStore.allModules;
+  if (rules.baibai_enabled) return modules;
+  return modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
+});
 
 const showPreview = ref(false);
 const showFilter = ref(true);
+
+const enrichPlaceholder = t`请将以下用户输入润色扩展为多个更自然、更丰富的版本，保留原意和语气。\n输出格式：每行一个版本，格式为 "1. 润色后的文本"`;
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
@@ -234,6 +277,10 @@ const dragOverIndex = ref<number | null>(null);
 
 const addModule = () => {
   globalStore.addModule();
+};
+
+const addEnrichModule = () => {
+  globalStore.addModule(undefined, true);
 };
 
 const resetOrder = () => {
@@ -403,6 +450,8 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   const sorted = [...rules.modules].filter(m => m.enabled).sort((a, b) => a.order - b.order);
 
   for (const mod of sorted) {
+    // 预填充关闭时跳过 assistant 角色模块，与 generator.ts 保持一致
+    if (!rules.prefill_enabled && mod.role === 'assistant') continue;
     switch (mod.id) {
       case 'system_prompt':
         if (mod.content) msgs.push({ role: mod.role, content: mod.content.slice(0, 200) + '...' });
@@ -423,8 +472,10 @@ const previewMessages = computed<PreviewMsg[]>(() => {
           if (m.is_system) continue;
           const c = m.mes ?? '';
           if (!c) continue;
+          // 预填充关闭时，聊天历史转为 system 角色，与 generator.ts 保持一致
+          const role = rules.prefill_enabled ? (m.is_user ? 'user' : 'assistant') : 'system';
           msgs.push({
-            role: m.is_user ? 'user' : 'assistant',
+            role,
             content: c.slice(0, 200) + (c.length > 200 ? '...' : ''),
           });
         }
@@ -815,5 +866,39 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   flex-direction: column;
   gap: 4px;
   border-top: 1px solid var(--choice-border);
+}
+
+.choice-enrich-card {
+  border-color: rgba(100, 140, 200, 0.4);
+  background: rgba(100, 140, 200, 0.05);
+  cursor: default;
+}
+
+.choice-enrich-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: var(--choice-radius-full);
+  background: rgba(74, 144, 217, 0.2);
+  color: #6aabe0;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.choice-enrich-badge-sm {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-full);
+  background: rgba(74, 144, 217, 0.18);
+  color: #6aabe0;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.choice-enrich-textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 11px;
+  min-height: 48px;
+  margin-top: 4px;
 }
 </style>

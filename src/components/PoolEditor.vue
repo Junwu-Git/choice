@@ -614,7 +614,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   padding: 5px 8px 5px 0;
-  flex-shrink: 0;
   flex-wrap: nowrap;
   border-left: 1px solid var(--choice-border);
 }
@@ -644,6 +643,8 @@ onUnmounted(() => {
 
 .choice-cond-input {
   width: 100px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .choice-small-input {

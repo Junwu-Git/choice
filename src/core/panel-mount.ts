@@ -2,8 +2,10 @@ import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
+import { enrichUserInput, cancelEnrich } from '@/core/enrich-input';
 import { pinia } from '@/pinia';
 import { useChatSettingsStore } from '@/store/chat-settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 
@@ -114,4 +116,71 @@ export function initPanelMount() {
       clearInterval(pollInterval);
     }
   }, 2000);
+
+  // 输入润色按钮：注入到输入框右侧，单按钮切换空闲/取消状态
+  const $enrichBtn = $(
+    '<div id="choice_enrich_btn" class="fa-solid fa-pen-to-square interactable" title="润色输入" style="display:none; margin-right:6px; font-size:16px; cursor:pointer; opacity:0.7"></div>',
+  );
+
+  const gs = useGlobalSettingsStore(pinia);
+
+  const tryInjectEnrichBtn = () => {
+    if ($('#choice_enrich_btn').length) return;
+    const $target = $('#rightSendForm');
+    if ($target.length) {
+      $enrichBtn.insertBefore('#send_but');
+      // 只有输入框有内容且开关开启时显示按钮
+      $('#send_textarea').on('input', () => {
+        const val = ($('#send_textarea').val() as string).trim();
+        $enrichBtn.toggle(gs.settings.ui.enrich_enabled && val.length > 0);
+      });
+    }
+  };
+
+  tryInjectEnrichBtn();
+  setTimeout(tryInjectEnrichBtn, 1000);
+  setTimeout(tryInjectEnrichBtn, 3000);
+
+  // 监听 enrich_enabled 开关变化，同步更新按钮显隐
+  const updateEnrichBtn = () => {
+    const val = ($('#send_textarea').val() as string).trim();
+    $enrichBtn.toggle(gs.settings.ui.enrich_enabled && val.length > 0);
+  };
+  gs.$subscribe(() => updateEnrichBtn());
+
+  $enrichBtn.on('click', async () => {
+    if (!gs.settings.ui.enrich_enabled) return;
+    const store = usePanelStateStore(pinia);
+
+    // 正在润色中 → 取消
+    if (store.enrichLoading) {
+      cancelEnrich();
+      store.exitEnrichMode();
+      $enrichBtn.removeClass('fa-stop').addClass('fa-pen-to-square').attr('title', '润色输入');
+      return;
+    }
+
+    const input = ($('#send_textarea').val() as string).trim();
+    if (!input) return;
+
+    // 直接设置状态，不调用 enterEnrichMode([]) 避免覆盖 enrichLoading
+    store.enrichMode = true;
+    store.enrichLoading = true;
+    store.enrichOptions = [];
+    // 清空输入框并触发 input 事件以同步按钮状态
+    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
+    $enrichBtn.removeClass('fa-pen-to-square').addClass('fa-stop').attr('title', '取消润色');
+    try {
+      const options = await enrichUserInput(input);
+      store.enterEnrichMode(
+        options.map((text, i) => ({ text, sourceEntryId: null })),
+      );
+    } catch (e) {
+      console.error('[Choice] 润色失败', e);
+      toastr.error(`润色失败: ${e instanceof Error ? e.message : '未知错误'}`);
+      store.exitEnrichMode();
+    } finally {
+      $enrichBtn.removeClass('fa-stop').addClass('fa-pen-to-square').attr('title', '润色输入');
+    }
+  });
 }

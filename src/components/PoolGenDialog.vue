@@ -182,20 +182,24 @@ const onInject = () => {
 <style scoped>
 .choice-poolgen-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 10002;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
   justify-content: center;
+  overflow-y: auto;
 }
 
 .choice-poolgen-dialog {
   width: 520px;
   max-width: 92vw;
   max-height: 85vh;
+  margin: auto;
   background: var(--choice-bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);

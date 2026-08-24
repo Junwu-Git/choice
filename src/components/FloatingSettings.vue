@@ -8,6 +8,8 @@
         :style="{
           '--choice-x': x + 'px',
           '--choice-y': y + 'px',
+          width: dialogWidth + 'px',
+          height: dialogHeight + 'px',
           transition: isDragging ? 'none' : 'transform 0.3s ease-out',
         }"
       >
@@ -39,6 +41,11 @@
           <ApiEditor v-else-if="activeTab === 'api'" />
           <BehaviorSettings v-else-if="activeTab === 'behavior'" />
           <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
+          <AppearanceSettings v-else-if="activeTab === 'appearance'" />
+        </div>
+
+        <div class="choice-floating-resize" @mousedown="onResizeStart">
+          <div class="choice-floating-resize-grip"></div>
         </div>
       </div>
     </div>
@@ -47,13 +54,14 @@
 
 <script setup lang="ts">
 import ApiEditor from '@/components/ApiEditor.vue';
+import AppearanceSettings from '@/components/AppearanceSettings.vue';
 import BehaviorSettings from '@/components/BehaviorSettings.vue';
 import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import { isSettingsOpen, closeSettings } from '@/core/floating-state';
 
-const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo'>('pool');
+const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo' | 'appearance'>('pool');
 
 const tabs = [
   { id: 'pool', label: t`条目池`, icon: 'fa-solid fa-layer-group' },
@@ -61,10 +69,13 @@ const tabs = [
   { id: 'api', label: t`API`, icon: 'fa-solid fa-plug' },
   { id: 'behavior', label: t`行为`, icon: 'fa-solid fa-sliders' },
   { id: 'worldinfo', label: t`世界书`, icon: 'fa-solid fa-book' },
+  { id: 'appearance', label: t`外观`, icon: 'fa-solid fa-palette' },
 ] as const;
 
 const posX = useStorage('choice_floating_settings_x', (window.innerWidth - 680) / 2);
 const posY = useStorage('choice_floating_settings_y', (window.innerHeight - 500) / 2);
+const dialogWidth = useStorage('choice_floating_settings_w', 680);
+const dialogHeight = useStorage('choice_floating_settings_h', 500);
 
 const dialogEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
@@ -78,6 +89,34 @@ const { x, y, isDragging } = useDraggable(dialogEl, {
   },
 });
 
+let resizeStartX = 0;
+let resizeStartY = 0;
+let resizeStartW = 0;
+let resizeStartH = 0;
+
+const onResizeStart = (e: MouseEvent) => {
+  e.preventDefault();
+  e.stopPropagation();
+  resizeStartX = e.clientX;
+  resizeStartY = e.clientY;
+  resizeStartW = dialogWidth.value;
+  resizeStartH = dialogHeight.value;
+  document.addEventListener('mousemove', onResizeMove);
+  document.addEventListener('mouseup', onResizeEnd);
+};
+
+const onResizeMove = (e: MouseEvent) => {
+  const dx = e.clientX - resizeStartX;
+  const dy = e.clientY - resizeStartY;
+  dialogWidth.value = Math.max(400, Math.min(window.innerWidth - 20, resizeStartW + dx));
+  dialogHeight.value = Math.max(300, Math.min(window.innerHeight - 20, resizeStartH + dy));
+};
+
+const onResizeEnd = () => {
+  document.removeEventListener('mousemove', onResizeMove);
+  document.removeEventListener('mouseup', onResizeEnd);
+};
+
 useEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape' && isSettingsOpen.value) {
     closeSettings();
@@ -88,7 +127,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 <style scoped>
 .choice-floating-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 10000;
   background: rgba(0, 0, 0, 0.35);
   display: flex;
@@ -101,9 +143,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   left: 0;
   top: 0;
   z-index: 10001;
-  width: 680px;
-  max-width: 92vw;
-  max-height: 85vh;
+  min-width: 400px;
+  min-height: 300px;
+  max-width: calc(100vw - 20px);
+  max-height: calc(100vh - 20px);
   background: var(--choice-bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -216,5 +259,32 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   border-color: var(--choice-primary);
   color: #fff;
   box-shadow: 0 0 10px var(--choice-primary-glow);
+}
+
+.choice-floating-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 5px 5px 0;
+  user-select: none;
+  z-index: 1;
+}
+
+.choice-floating-resize:hover .choice-floating-resize-grip {
+  border-bottom-color: var(--choice-primary);
+}
+
+.choice-floating-resize-grip {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-bottom: 8px solid var(--choice-border-strong);
+  transition: border-bottom-color var(--choice-transition);
 }
 </style>

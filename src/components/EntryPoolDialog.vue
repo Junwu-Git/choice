@@ -16,10 +16,13 @@
             >
               <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
-              <i class="fa-solid fa-folder-plus"></i>
-            </button>
-            <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
+<button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
+                <i class="fa-solid fa-folder-plus"></i>
+              </button>
+              <button class="choice-icon-btn" :title="t`粘贴导入`" @click="showImport = true">
+                <i class="fa-solid fa-paste"></i>
+              </button>
+              <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
             </button>
             <button class="choice-epool-close" :title="t`关闭`" @click="emit('close')">&times;</button>
@@ -162,6 +165,13 @@
 
         <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
 
+        <ImportEntriesDialog
+          :open="showImport"
+          :categories="categoryNames"
+          @close="showImport = false"
+          @confirm="onImportConfirm"
+        />
+
         <ConfirmDialog
           :open="deleteTarget !== null"
           :title="deleteDialogTitle"
@@ -179,6 +189,7 @@
 <script setup lang="ts">
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import PoolGenDialog from '@/components/PoolGenDialog.vue';
+import ImportEntriesDialog from '@/components/ImportEntriesDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
@@ -195,6 +206,7 @@ const expanded = ref<Set<string>>(new Set());
 const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
 const showGen = ref(false);
+const showImport = ref(false);
 const deleteTarget = ref<
   | { type: 'entry'; id: string; summary: string }
   | { type: 'group'; key: string; count: number }
@@ -488,6 +500,22 @@ const onGenConfirm = ({
   showGen.value = false;
 };
 
+const onImportConfirm = (payload: { category: string; entries: { text: string }[] }) => {
+  for (const e of payload.entries) {
+    masterPool.value.push({
+      id: uuidv4(),
+      text: e.text,
+      pinned: false,
+      weight: 1,
+      category: payload.category,
+      condition: '',
+    });
+  }
+  if (payload.category) expandedGroups.value.add(payload.category);
+  showImport.value = false;
+  toastr.success(t`已导入 ${payload.entries.length} 条条目`);
+};
+
 const deleteDialogTitle = computed(() => {
   if (!deleteTarget.value) return '';
   switch (deleteTarget.value.type) {
@@ -633,20 +661,24 @@ onUnmounted(() => {
 <style scoped>
 .choice-epool-overlay {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
   z-index: 10002;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
   justify-content: center;
+  overflow-y: auto;
 }
 
 .choice-epool-dialog {
   width: 600px;
   max-width: 92vw;
   max-height: 85vh;
+  margin: auto;
   background: var(--choice-bg-panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -741,6 +773,7 @@ onUnmounted(() => {
   border: 1px solid var(--choice-border);
   font-size: 13px;
   color: var(--choice-text);
+  flex-wrap: wrap;
 }
 
 .choice-epool-group-head:hover {
@@ -750,6 +783,10 @@ onUnmounted(() => {
 .choice-epool-group-name {
   font-weight: bold;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .choice-epool-group-count {
@@ -789,6 +826,7 @@ onUnmounted(() => {
   gap: 6px;
   padding: 5px 8px;
   min-height: 0;
+  flex-wrap: wrap;
 }
 
 .choice-epool-entry-head:hover {
@@ -815,9 +853,9 @@ onUnmounted(() => {
   font-size: 10px;
   padding: 1px 4px;
   width: auto;
-  min-width: 60px;
+  min-width: 0;
   max-width: 90px;
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 
 .choice-epool-entry-body {

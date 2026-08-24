@@ -5,6 +5,13 @@
   white-space: nowrap;
 }
 
+/* 移动端布局（≤1000px）下 #chat 设了 align-items: start，
+   导致面板作为 flex 子元素按内容宽度收缩，空状态时过窄。
+   强制填满宽度以匹配下方输入栏 */
+#choice-panel-mount {
+  width: 100%;
+}
+
 /* 自定义滚动条 */
 .choice-scrollbar::-webkit-scrollbar {
   width: 6px;

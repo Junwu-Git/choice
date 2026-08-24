@@ -1,5 +1,5 @@
 import { getMessageChoiceData, setMessageChoiceData } from '@/core/options-store';
-import type { ChoiceGeneration } from '@/core/options-store';
+import type { ChoiceGeneration, ChoiceOption } from '@/core/options-store';
 
 export const usePanelStateStore = defineStore('panel-state', () => {
   const messageId = ref<number | null>(null);
@@ -7,8 +7,16 @@ export const usePanelStateStore = defineStore('panel-state', () => {
   const generations = ref<ChoiceGeneration[]>([]);
   const currentIndex = ref(0);
 
+  /** 润色模式：用户输入润色选项 */
+  const enrichMode = ref(false);
+  const enrichOptions = ref<ChoiceOption[]>([]);
+  const enrichLoading = ref(false);
+
   const currentGeneration = computed<ChoiceGeneration | null>(() => generations.value[currentIndex.value] ?? null);
-  const visibleOptions = computed(() => currentGeneration.value?.options ?? []);
+  const visibleOptions = computed(() => {
+    if (enrichMode.value) return enrichOptions.value;
+    return currentGeneration.value?.options ?? [];
+  });
   const hasHistory = computed(() => generations.value.length > 0);
 
   const load = (message_id: number, swipe_id: number) => {
@@ -37,6 +45,18 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     });
   };
 
+  function enterEnrichMode(options: ChoiceOption[]) {
+    enrichOptions.value = options;
+    enrichMode.value = true;
+    enrichLoading.value = false;
+  }
+
+  function exitEnrichMode() {
+    enrichMode.value = false;
+    enrichOptions.value = [];
+    enrichLoading.value = false;
+  }
+
   return {
     messageId,
     swipeId,
@@ -48,5 +68,10 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     load,
     clear,
     goTo,
+    enrichMode,
+    enrichOptions,
+    enrichLoading,
+    enterEnrichMode,
+    exitEnrichMode,
   };
 });
