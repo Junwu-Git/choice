@@ -37,13 +37,13 @@
 
     <div v-if="!collapsed" class="choice-panel-body">
       <div v-if="enrichLoading" class="choice-panel-loading">
-          <span class="choice-loading-text">{{ t`正在润色…` }}</span>
-          <div class="choice-loading-bar"></div>
-        </div>
+        <span class="choice-loading-text">{{ t`正在润色…` }}</span>
+        <div class="choice-loading-bar"></div>
+      </div>
       <div v-else-if="isGenerating" class="choice-panel-loading">
-          <span class="choice-loading-text">{{ t`正在生成选项…` }}</span>
-          <div class="choice-loading-bar"></div>
-        </div>
+        <span class="choice-loading-text">{{ t`正在生成选项…` }}</span>
+        <div class="choice-loading-bar"></div>
+      </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
           <button class="choice-behavior-btn" :class="{ active: behavior === 'send' }" @click="behavior = 'send'">
@@ -68,7 +68,9 @@
         </button>
         <div v-if="!enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
       </template>
-      <div v-else class="choice-panel-empty">{{ enrichMode ? t`暂无润色选项` : t`暂无选项,点击"生成"获取行动选项` }}</div>
+      <div v-else class="choice-panel-empty">
+        {{ enrichMode ? t`暂无润色选项` : t`暂无选项,点击"生成"获取行动选项` }}
+      </div>
     </div>
   </div>
 </template>
@@ -83,7 +85,8 @@ import { usePanelStateStore } from '@/store/panel-state';
 import { sendTextareaMessage } from '@sillytavern/script';
 
 const panelStore = usePanelStateStore();
-const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory, enrichMode, enrichLoading } = storeToRefs(panelStore);
+const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory, enrichMode, enrichLoading } =
+  storeToRefs(panelStore);
 
 const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);

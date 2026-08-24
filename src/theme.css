@@ -46,7 +46,7 @@
   --choice-transition-slow: 300ms ease-out;
 }
 
-:root[data-choice-theme="light"] {
+:root[data-choice-theme='light'] {
   --choice-bg-panel-rgb: 255, 255, 255;
   --choice-bg-card-rgb: 240, 240, 245;
   --choice-bg-element-rgb: 220, 220, 228;

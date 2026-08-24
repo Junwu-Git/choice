@@ -3,7 +3,9 @@
     <div class="choice-prompt-toolbar">
       <div class="choice-prompt-toolbar-left">
         <button class="menu_button" @click="addModule">{{ t`新增模块` }}</button>
-        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" @click="addEnrichModule">{{ t`新增润色模块` }}</button>
+        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" @click="addEnrichModule">
+          {{ t`新增润色模块` }}
+        </button>
         <button class="menu_button" @click="resetOrder">{{ t`重置顺序` }}</button>
       </div>
       <div class="choice-prompt-toolbar-right">
@@ -246,7 +248,14 @@ const globalStore = useGlobalSettingsStore();
 const rules = globalStore.settings.prompt_rules;
 
 /** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
-const READONLY_MODULE_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
+const READONLY_MODULE_IDS = new Set([
+  'world_info_before',
+  'persona_description',
+  'world_info_after',
+  'chat_history',
+  'baibai_summary',
+  'baibai_state',
+]);
 
 const allModules = computed(() => {
   const modules = globalStore.allModules;

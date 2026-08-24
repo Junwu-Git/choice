@@ -27,7 +27,9 @@
           </label>
 
           <div class="choice-importdlg-preview">
-            <span class="choice-importdlg-preview-count">{{ t`解析结果` }}: {{ parsedEntries.length }} {{ t`条` }}</span>
+            <span class="choice-importdlg-preview-count"
+              >{{ t`解析结果` }}: {{ parsedEntries.length }} {{ t`条` }}</span
+            >
             <div v-if="parsedEntries.length > 0" class="choice-importdlg-preview-list">
               <div v-for="(line, i) in parsedEntries.slice(0, 5)" :key="i" class="choice-importdlg-preview-item">
                 {{ i + 1 }}. {{ line }}
@@ -41,11 +43,7 @@
 
         <div class="choice-importdlg-footer">
           <button class="menu_button" @click="emit('close')">{{ t`取消` }}</button>
-          <button
-            class="menu_button menu_button_default"
-            :disabled="parsedEntries.length === 0"
-            @click="onConfirm"
-          >
+          <button class="menu_button menu_button_default" :disabled="parsedEntries.length === 0" @click="onConfirm">
             {{ t`确认导入` }}
           </button>
         </div>
@@ -72,10 +70,7 @@ const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*
 
 const parsedEntries = computed(() => {
   if (!rawText.value.trim()) return [];
-  return rawText.value
-    .split(/\r?\n/)
-    .map(stripMarker)
-    .filter(Boolean);
+  return rawText.value.split(/\r?\n/).map(stripMarker).filter(Boolean);
 });
 
 const onConfirm = () => {
@@ -85,12 +80,15 @@ const onConfirm = () => {
   targetCategory.value = '';
 };
 
-watch(() => props.open, (v) => {
-  if (!v) {
-    rawText.value = '';
-    targetCategory.value = '';
-  }
-});
+watch(
+  () => props.open,
+  v => {
+    if (!v) {
+      rawText.value = '';
+      targetCategory.value = '';
+    }
+  },
+);
 </script>
 
 <style scoped>

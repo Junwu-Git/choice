@@ -168,13 +168,13 @@ export function initPanelMount() {
     store.enrichLoading = true;
     store.enrichOptions = [];
     // 清空输入框并触发 input 事件以同步按钮状态
-    $('#send_textarea').val('')[0].dispatchEvent(new Event('input', { bubbles: true }));
+    $('#send_textarea')
+      .val('')[0]
+      .dispatchEvent(new Event('input', { bubbles: true }));
     $enrichBtn.removeClass('fa-pen-to-square').addClass('fa-stop').attr('title', '取消润色');
     try {
       const options = await enrichUserInput(input);
-      store.enterEnrichMode(
-        options.map((text, i) => ({ text, sourceEntryId: null })),
-      );
+      store.enterEnrichMode(options.map((text, i) => ({ text, sourceEntryId: null })));
     } catch (e) {
       console.error('[Choice] 润色失败', e);
       toastr.error(`润色失败: ${e instanceof Error ? e.message : '未知错误'}`);

@@ -24,12 +24,7 @@
           <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
         </div>
         <div class="choice-api-key-row">
-          <input
-            v-model="draftForm.key"
-            class="text_pole"
-            type="password"
-            :placeholder="t`API 密钥`"
-          />
+          <input v-model="draftForm.key" class="text_pole" type="password" :placeholder="t`API 密钥`" />
         </div>
         <div class="choice-model-row">
           <input

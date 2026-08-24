@@ -6,25 +6,16 @@
         <span class="choice-check-custom"></span>
         {{ t`悬浮窗` }}
       </label>
-      
     </div>
 
     <div class="choice-appearance-section">
       <span class="choice-appearance-label">{{ t`主题` }}</span>
       <div class="choice-theme-switch">
-        <button
-          class="choice-theme-btn"
-          :class="{ active: ui.theme === 'dark' }"
-          @click="ui.theme = 'dark'"
-        >
+        <button class="choice-theme-btn" :class="{ active: ui.theme === 'dark' }" @click="ui.theme = 'dark'">
           <i class="fa-solid fa-moon"></i>
           {{ t`暗色` }}
         </button>
-        <button
-          class="choice-theme-btn"
-          :class="{ active: ui.theme === 'light' }"
-          @click="ui.theme = 'light'"
-        >
+        <button class="choice-theme-btn" :class="{ active: ui.theme === 'light' }" @click="ui.theme = 'light'">
           <i class="fa-solid fa-sun"></i>
           {{ t`亮色` }}
         </button>
@@ -32,15 +23,10 @@
     </div>
 
     <div class="choice-appearance-section">
-      <span class="choice-appearance-label">{{ t`透明度` }} <span class="choice-appearance-value">{{ Math.round(ui.opacity * 100) }}%</span></span>
-      <input
-        v-model.number="ui.opacity"
-        type="range"
-        min="0.3"
-        max="1"
-        step="0.05"
-        class="choice-opacity-slider"
-      />
+      <span class="choice-appearance-label"
+        >{{ t`透明度` }} <span class="choice-appearance-value">{{ Math.round(ui.opacity * 100) }}%</span></span
+      >
+      <input v-model.number="ui.opacity" type="range" min="0.3" max="1" step="0.05" class="choice-opacity-slider" />
     </div>
 
     <div class="choice-appearance-section">

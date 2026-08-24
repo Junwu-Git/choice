@@ -16,13 +16,13 @@
             >
               <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
             </button>
-<button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
-                <i class="fa-solid fa-folder-plus"></i>
-              </button>
-              <button class="choice-icon-btn" :title="t`粘贴导入`" @click="showImport = true">
-                <i class="fa-solid fa-paste"></i>
-              </button>
-              <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
+            <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
+              <i class="fa-solid fa-folder-plus"></i>
+            </button>
+            <button class="choice-icon-btn" :title="t`粘贴导入`" @click="showImport = true">
+              <i class="fa-solid fa-paste"></i>
+            </button>
+            <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
             </button>
             <button class="choice-epool-close" :title="t`关闭`" @click="emit('close')">&times;</button>

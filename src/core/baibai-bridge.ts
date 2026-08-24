@@ -87,7 +87,9 @@ export function getBaiBaiState(): string | null {
     const st = snap.state;
     if (st?.time || st?.location) {
       const loc = st.locationPath?.length ? st.locationPath.join(' > ') : st.location;
-      parts.push(`【当前状态】${st.time ? `时间: ${st.time}` : ''}${st.time && loc ? ' / ' : ''}${loc ? `地点: ${loc}` : ''}`);
+      parts.push(
+        `【当前状态】${st.time ? `时间: ${st.time}` : ''}${st.time && loc ? ' / ' : ''}${loc ? `地点: ${loc}` : ''}`,
+      );
     }
 
     const p = snap.protagonist;

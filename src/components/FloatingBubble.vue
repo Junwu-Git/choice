@@ -10,7 +10,7 @@
       :style="{
         '--choice-x': x + 'px',
         '--choice-y': y + 'px',
-        transition: (isDragging || isResizing) ? 'none' : 'transform 0.3s ease-out',
+        transition: isDragging || isResizing ? 'none' : 'transform 0.3s ease-out',
       }"
       title="行动选项设置"
     >

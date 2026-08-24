@@ -61,7 +61,9 @@ const tabs = [
 
 const panelHeight = computed({
   get: () => gs.settings.ui.panel_height,
-  set: (v: number) => { gs.settings.ui.panel_height = v; },
+  set: (v: number) => {
+    gs.settings.ui.panel_height = v;
+  },
 });
 
 let resizeStartY = 0;

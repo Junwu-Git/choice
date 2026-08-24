@@ -7,7 +7,14 @@ import {
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS, GenerationSettings } from '@/type/settings';
+import {
+  GlobalSettings,
+  SCHEMA_VERSION,
+  setting_field,
+  DEFAULT_MODULES,
+  BAIBAI_MODULE_IDS,
+  GenerationSettings,
+} from '@/type/settings';
 import type {
   GlobalSettings as GlobalSettingsType,
   PoolConfig,
@@ -69,7 +76,14 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     // 4 个只读模块（world_info_before / persona_description / world_info_after / chat_history）
     // 保持 marker:true + system:true，仅允许移动和开关
     // 其余所有模块开放编辑、删除、复制
-    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
+    const READONLY_IDS = new Set([
+      'world_info_before',
+      'persona_description',
+      'world_info_after',
+      'chat_history',
+      'baibai_summary',
+      'baibai_state',
+    ]);
     for (const m of validated.prompt_rules.modules) {
       if (READONLY_IDS.has(m.id)) {
         m.marker = true;
@@ -394,7 +408,14 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   function duplicateModule(id: string) {
-    const READONLY_IDS = new Set(['world_info_before', 'persona_description', 'world_info_after', 'chat_history', 'baibai_summary', 'baibai_state']);
+    const READONLY_IDS = new Set([
+      'world_info_before',
+      'persona_description',
+      'world_info_after',
+      'chat_history',
+      'baibai_summary',
+      'baibai_state',
+    ]);
     if (READONLY_IDS.has(id)) return;
     const modules = settings.value.prompt_rules.modules;
     const src = modules.find(m => m.id === id);
