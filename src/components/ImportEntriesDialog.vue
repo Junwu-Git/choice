@@ -7,24 +7,15 @@
             <i class="fa-solid fa-paste"></i>
             {{ t`粘贴导入` }}
           </span>
-          <button class="choice-importdlg-close" :title="t`取消`" @click="emit('close')">&times;</button>
+          <div style="display:inline-flex;gap:3px;align-items:center">
+            <button ref="guideBtn" class="choice-importdlg-close" :title="t`页面指引`" @click="showGuide = !showGuide" style="font-size:14px">
+              <i class="fa-solid fa-circle-question"></i>
+            </button>
+            <button class="choice-importdlg-close" :title="t`取消`" @click="emit('close')">&times;</button>
+          </div>
         </div>
 
         <div class="choice-importdlg-body">
-          <PageGuide page-id="import-dialog" icon="fa-solid fa-circle-info">
-            <template #title>📋 粘贴导入</template>
-            <p>
-              <strong>作用</strong>：从剪贴板批量导入条目，每行一条。支持
-              <code>1. / - / •</code> 等列表标记，自动去除标记符号和空行。
-            </p>
-            <p>
-              <strong>示例</strong>：粘贴以下内容即可导入 3 条条目：<br /><code
-                >1. 拔出武器准备战斗<br />- 转身逃跑<br />• 试图谈判</code
-              >
-            </p>
-            <p><strong>导入到分组</strong>：选择目标分组，未选则放入"未分组"。</p>
-          </PageGuide>
-
           <textarea
             v-model="rawText"
             class="text_pole choice-importdlg-textarea"
@@ -61,13 +52,23 @@
             {{ t`确认导入` }}
           </button>
         </div>
+
+        <GuidePopover
+          :visible="showGuide"
+          :anchor-el="guideBtn"
+          icon="fa-solid fa-paste"
+          title="粘贴导入"
+          @close="showGuide = false"
+        >
+          <div v-html="guideHtml"></div>
+        </GuidePopover>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import PageGuide from '@/components/PageGuide.vue';
+import GuidePopover from '@/components/GuidePopover.vue';
 
 const props = defineProps<{
   open: boolean;
@@ -81,6 +82,12 @@ const emit = defineEmits<{
 
 const rawText = ref('');
 const targetCategory = ref('');
+const showGuide = ref(false);
+const guideBtn = ref<HTMLElement | null>(null);
+
+const guideHtml = `<p><strong>作用</strong>：从剪贴板批量导入条目，每行一条。支持 <code>1. / - / •</code> 等列表标记，自动去除标记符号和空行。</p>
+<p><strong>示例</strong>：粘贴以下内容即可导入 3 条条目：<br><code>1. 拔出武器准备战斗<br>- 转身逃跑<br>• 试图谈判</code></p>
+<p><strong>导入到分组</strong>：选择目标分组，未选则放入"未分组"。</p>`;
 
 const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
 

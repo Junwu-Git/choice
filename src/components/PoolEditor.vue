@@ -1,28 +1,5 @@
 <template>
-  <div class="choice-pool-editor">
-    <PageGuide page-id="pool-editor" icon="fa-solid fa-circle-info" :default-collapsed="false">
-      <template #title>📖 条目池怎么用</template>
-      <p><strong>核心概念</strong>：条目池 = 条目库（存所有条目） + 配置（从条目库勾选哪些条目参与生成）。</p>
-      <p>
-        <strong>配置</strong> 是一组条目的"快照"，可以绑定到角色或聊天。生成选项时，AI
-        从当前生效的配置中抽取条目作为素材。
-      </p>
-      <p><strong>绑定优先级</strong>：聊天绑定 > 角色绑定 > 默认配置。高优先级的配置有绑定则使用它，否则逐级回退。</p>
-      <p><strong>操作流程</strong>：新建配置 → 添加条目 → 绑定到聊天/角色 → 生成选项时自动生效。</p>
-    </PageGuide>
-    <PageGuide page-id="pool-editor-guide" icon="fa-solid fa-compass" type="guide" :default-collapsed="false">
-      <template #title>🚀 新手快速入门</template>
-      <ol style="margin: 0; padding-left: 18px; line-height: 1.8">
-        <li><strong>打开条目库</strong>：点击下方"条目库"按钮，手动添加或 AI 生成一批行动选项条目</li>
-        <li><strong>新建配置</strong>：点击"新建"按钮，起个名字（如"战斗场景"、"日常对话"）</li>
-        <li><strong>勾选条目</strong>：在配置中点击"添加条目"，从条目库勾选你需要的条目</li>
-        <li><strong>绑定配置</strong>：点击 💬 绑定聊天或 👤 绑定角色，下次生成时自动生效</li>
-      </ol>
-      <p style="margin-top: 8px; color: var(--choice-primary); font-size: 11px">
-        💡 小贴士：如果只在配置中选了 5 条战斗相关的条目，AI 就会从这 5 条中抽取生成选项，不会出现无关内容。
-      </p>
-    </PageGuide>
-
+<div class="choice-pool-editor">
     <!-- 配置工具栏 -->
     <div class="choice-config-bar">
       <div class="choice-config-row">
@@ -37,7 +14,7 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedConfigId === chatStore.settings.config_id }"
-            :title="t`绑定聊天`"
+            :title="selectedConfigId === chatStore.settings.config_id ? t`当前聊天已绑定（点击取消）` : t`绑定到当前聊天`"
             @click="bindChat"
           >
             <i class="fa-solid fa-comment"></i>
@@ -45,7 +22,7 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedConfigId === characterStore.settings.config_id }"
-            :title="t`绑定角色`"
+            :title="selectedConfigId === characterStore.settings.config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`"
             @click="bindCharacter"
           >
             <i class="fa-solid fa-user"></i>
@@ -110,7 +87,7 @@
       <div class="choice-inline-field">
         <div class="choice-inline-field-head">
           <label class="choice-inline-label">{{ t`已选条目` }} ({{ selectedCount }})</label>
-          <button class="choice-btn-sm choice-btn-new" @click="showSelectDialog = true">
+          <button class="choice-btn-sm choice-btn-new" :title="t`从条目库勾选条目添加到当前配置`" @click="showSelectDialog = true">
             <i class="fa-solid fa-plus"></i> {{ t`添加条目` }}
           </button>
         </div>
@@ -166,7 +143,7 @@
     <hr class="sysHR" />
 
     <!-- 条目库入口 -->
-    <button class="choice-entrypool-btn" @click="showEntryPool = true">
+    <button class="choice-entrypool-btn" :title="t`打开条目库管理弹窗`" @click="showEntryPool = true">
       <i class="fa-solid fa-database"></i>
       {{ t`条目库` }} ({{ masterPool.length }})
     </button>
@@ -189,7 +166,6 @@
 import EntryPoolDialog from '@/components/EntryPoolDialog.vue';
 import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import SelectEntriesDialog from '@/components/SelectEntriesDialog.vue';
-import PageGuide from '@/components/PageGuide.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';

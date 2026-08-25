@@ -45,7 +45,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   }
 
   const enrichCount = gs.settings.ui.enrich_count;
-  const enrichCtx = { count: enrichCount, pinned: '', poolSelected: '', input };
+  const enrichCtx = { count: enrichCount, pinnedCount: 0, pinned: '', poolSelected: '', input };
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;

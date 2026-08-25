@@ -8,7 +8,7 @@
       <div class="inline-drawer-content">
         <div class="choice-tabs">
           <button
-            v-for="tab in tabs"
+            v-for="tab in INLINE_TABS"
             :key="tab.id"
             class="choice-tab"
             :class="{ active: activeTab === tab.id }"
@@ -17,18 +17,32 @@
             <i :class="tab.icon"></i>
             {{ tab.label }}
           </button>
+          <button ref="guideBtn" class="choice-tab choice-guide-btn" :title="t`页面指引`" @click="showGuide = !showGuide">
+            <i class="fa-solid fa-circle-question"></i>
+          </button>
         </div>
+
+        <GuidePopover
+          :visible="showGuide"
+          :anchor-el="guideBtn"
+          :icon="currentGuide.icon"
+          :title="currentGuide.title"
+          @close="showGuide = false"
+        >
+          <div v-html="currentGuide.html"></div>
+        </GuidePopover>
 
         <div class="choice-panel-body" :style="{ height: panelHeight + 'px' }">
           <PoolEditor v-if="activeTab === 'pool'" />
+          <GenerationSettings v-else-if="activeTab === 'generation'" />
           <PromptEditor v-else-if="activeTab === 'prompt'" />
           <ApiEditor v-else-if="activeTab === 'api'" />
-          <BehaviorSettings v-else-if="activeTab === 'behavior'" />
           <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
           <AppearanceSettings v-else-if="activeTab === 'appearance'" />
+          <DebugSettings v-else-if="activeTab === 'debug'" />
         </div>
 
-        <div class="choice-panel-resize" @mousedown="onResizeStart">
+        <div class="choice-panel-resize" title="拖拽调整高度" @mousedown="onResizeStart">
           <div class="choice-panel-resize-grip"></div>
         </div>
 
@@ -42,22 +56,20 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ApiEditor from '@/components/ApiEditor.vue';
 import AppearanceSettings from '@/components/AppearanceSettings.vue';
-import BehaviorSettings from '@/components/BehaviorSettings.vue';
+import GenerationSettings from '@/components/GenerationSettings.vue';
 import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
+import DebugSettings from '@/components/DebugSettings.vue';
+import GuidePopover from '@/components/GuidePopover.vue';
+import { INLINE_TABS, GUIDE_CONTENTS, type TabId } from '@/components/shared/tab-definitions';
 
 const gs = useGlobalSettingsStore();
-const activeTab = ref<'pool' | 'prompt' | 'api' | 'behavior' | 'worldinfo' | 'appearance'>('pool');
+const activeTab = ref<TabId>('pool');
+const showGuide = ref(false);
+const guideBtn = ref<HTMLElement | null>(null);
 
-const tabs = [
-  { id: 'pool', label: t`条目池`, icon: 'fa-solid fa-layer-group' },
-  { id: 'prompt', label: t`提示词`, icon: 'fa-solid fa-align-left' },
-  { id: 'api', label: t`API`, icon: 'fa-solid fa-plug' },
-  { id: 'behavior', label: t`选项规则`, icon: 'fa-solid fa-sliders' },
-  { id: 'worldinfo', label: t`世界书`, icon: 'fa-solid fa-book' },
-  { id: 'appearance', label: t`外观`, icon: 'fa-solid fa-palette' },
-] as const;
+const currentGuide = computed(() => GUIDE_CONTENTS[activeTab.value]);
 
 const panelHeight = computed({
   get: () => gs.settings.ui.panel_height,
@@ -124,6 +136,13 @@ const onResizeEnd = () => {
   border-color: var(--choice-primary);
   color: #fff;
   box-shadow: 0 0 10px var(--choice-primary-glow);
+}
+
+.choice-guide-btn {
+  width: 32px;
+  justify-content: center;
+  padding: 6px 0;
+  font-size: 14px;
 }
 
 .choice-panel-body {

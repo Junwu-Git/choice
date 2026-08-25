@@ -16,6 +16,7 @@ import {
   GenerationSettings,
   DEFAULT_PERSON_STYLE,
   DEFAULT_OPTION_RULES,
+  USER_INSTRUCTION_DEFAULT,
 } from '@/type/settings';
 import type {
   GlobalSettings as GlobalSettingsType,
@@ -182,7 +183,56 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
-  validated.prompt_rules.schema_version = 9;
+  if (version < 10) {
+    // v10: 更新 user_instruction 模板（去掉过时的"跳过场景"规则，改用 {{pinned_count}}）
+    const ui = validated.prompt_rules.modules.find(m => m.id === 'user_instruction');
+    if (ui && ui.content.includes('其中 1 个固定为"跳过场景"类型')) {
+      ui.content = USER_INSTRUCTION_DEFAULT;
+    }
+  }
+
+  if (version < 11) {
+    // v11: 柏宝书模块默认启用，调整顺序（摘要→历史开始下，状态→历史结束下）
+    const baibaiSummary = validated.prompt_rules.modules.find(m => m.id === 'baibai_summary');
+    const baibaiState = validated.prompt_rules.modules.find(m => m.id === 'baibai_state');
+    if (baibaiSummary) baibaiSummary.enabled = true;
+    if (baibaiState) baibaiState.enabled = true;
+    resetOrderFromDefaults(validated);
+  }
+
+  if (version < 12) {
+    // v12: 新增角色卡上下文模块（描述/性格/场景），让行动选项生成时也能看到角色卡核心设定
+    // 此前这些字段只在 generatePoolEntries 中注入，generateOptions 缺失
+    const defaults = klona(DEFAULT_MODULES);
+    const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
+    const CHAR_IDS = new Set(['char_description', 'char_personality', 'char_scenario']);
+    for (const d of defaults) {
+      if (CHAR_IDS.has(d.id) && !existingIds.has(d.id)) {
+        validated.prompt_rules.modules.push(d);
+      }
+    }
+    // 重置只读/系统标志位，确保新增模块也被正确标记
+    const READONLY_IDS = new Set([
+      'world_info_before',
+      'persona_description',
+      'char_description',
+      'char_personality',
+      'char_scenario',
+      'world_info_after',
+      'chat_history',
+      'baibai_summary',
+      'baibai_state',
+    ]);
+    for (const m of validated.prompt_rules.modules) {
+      if (READONLY_IDS.has(m.id)) {
+        m.marker = true;
+        m.system = true;
+      }
+    }
+    resetOrderFromDefaults(validated);
+  }
+
+  validated.prompt_rules.schema_version = 12;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
@@ -246,7 +296,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '全局默认',
         entries: makeEntries(oldGlobalPool),
         is_default: true,
-        generation: (oldGlobalGen as any) ?? GenerationSettings.prefault({}),
+        generation: (oldGlobalGen as any) ?? { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
       });
     }
 
@@ -257,7 +307,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: charName ? `角色 ${charName}` : '角色默认',
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
-        generation: GenerationSettings.prefault({}),
+        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
       });
       try {
         const chid = this_chid;
@@ -278,7 +328,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '聊天默认',
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
-        generation: GenerationSettings.prefault({}),
+        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
       });
       try {
         const cMeta = chat_metadata?.[setting_field];
@@ -295,10 +345,10 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     // 如果没有任何配置，创建默认配置（含 4 条预设条目）
     if (configs.length === 0) {
       const defaultEntries: PoolEntry[] = [
-        { id: uuidv4(), text: '继续推进对话', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '主动询问对方的想法', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '采取一个出人意料的行动', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '静观其变,暂不行动', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
       ];
       validated.master_pool = [...defaultEntries];
       configs.push({
@@ -311,7 +361,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           condition: e.condition,
         })),
         is_default: true,
-        generation: GenerationSettings.prefault({}),
+        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
       });
     }
 
@@ -348,6 +398,31 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         if (e.category.trim()) cats.add(e.category.trim());
       }
       validated.group_order = [...cats].sort();
+    }
+  }
+
+  if ((validated.schema_version ?? 0) < 13) {
+    // v13: 对已迁移但池为空的用户，补建默认条目和配置
+    if (validated.master_pool.length === 0 && validated.configs.length === 0) {
+      const defaultEntries: PoolEntry[] = [
+        { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
+        { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
+      ];
+      validated.master_pool = [...defaultEntries];
+      validated.configs = [{
+        id: uuidv4(),
+        name: '默认配置',
+        entries: defaultEntries.map(e => ({
+          entry_id: e.id,
+          pinned: e.pinned,
+          weight: e.weight,
+          condition: e.condition,
+        })),
+        is_default: true,
+        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+      }];
     }
   }
 
@@ -400,7 +475,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 9;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 12;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -450,6 +525,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     const READONLY_IDS = new Set([
       'world_info_before',
       'persona_description',
+      'char_description',
+      'char_personality',
+      'char_scenario',
       'world_info_after',
       'chat_history',
       'baibai_summary',
@@ -512,6 +590,49 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     }
   }
 
+  function resetAllPromptContents() {
+    const modules = settings.value.prompt_rules.modules;
+    const defaults = klona(DEFAULT_MODULES);
+    const defaultMap = new Map(defaults.map(m => [m.id, m]));
+    for (const mod of modules) {
+      if (mod.marker) continue;
+      const d = defaultMap.get(mod.id);
+      if (d) mod.content = d.content;
+    }
+    settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
+    settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+  }
+
+  function factoryReset() {
+    const fresh = validateInplace(GlobalSettings, {});
+    fresh.schema_version = SCHEMA_VERSION;
+    fresh.prompt_rules.schema_version = 11;
+    fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
+
+    const defaultEntries: PoolEntry[] = [
+      { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
+      { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
+      { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
+      { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
+    ];
+    fresh.master_pool = [...defaultEntries];
+    fresh.configs = [{
+      id: uuidv4(),
+      name: '默认配置',
+      entries: defaultEntries.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight, condition: e.condition })),
+      is_default: true,
+      generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+    }];
+
+    settings.value = fresh;
+  }
+
+  function resetPromptToDefaults() {
+    settings.value.prompt_rules.modules = klona(DEFAULT_MODULES);
+    settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
+    settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+  }
+
   watchEffect(() => {
     const ui = settings.value.ui;
     document.documentElement.setAttribute('data-choice-theme', ui.theme);
@@ -533,5 +654,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     reorderModules,
     resetModuleOrder,
     resetModuleContent,
+    resetAllPromptContents,
+    resetPromptToDefaults,
+    factoryReset,
   };
 });

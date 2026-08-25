@@ -1,30 +1,17 @@
 <template>
   <div class="choice-prompt-editor">
-    <PageGuide page-id="prompt-editor" icon="fa-solid fa-circle-info">
-      <template #title>📝 提示词编辑器</template>
-      <p>
-        <strong>模块化设计</strong
-        >：提示词由多个模块组成，每个模块对应一个角色（system=系统指令、user=用户输入、assistant=AI
-        预设回复）。模块可拖拽排序、双击重命名、复制、编辑。
-      </p>
-      <p>
-        <strong>上下文轮数</strong>：控制发送给 AI 的历史消息数量。"轮数模式"取最后 N
-        轮，"仅可见消息"排除隐藏消息。预填充可在 AI 回复前插入引导语。
-      </p>
-      <p>
-        <strong>聊天记录过滤</strong
-        >：在发送前自动移除思维链、小剧场标签等冗余内容，提升生成质量。支持标签匹配和正则表达式两种规则。
-      </p>
-      <p><strong>不可编辑模块</strong>（🔒标记）是系统自动管理的，如世界书条目、角色描述等，无法修改或删除。</p>
-    </PageGuide>
-
     <div class="choice-prompt-toolbar">
       <div class="choice-prompt-toolbar-left">
-        <button class="menu_button" @click="addModule">{{ t`新增模块` }}</button>
-        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" @click="addEnrichModule">
+        <button class="menu_button" :title="t`添加新的提示词模块`" @click="addModule">{{ t`新增模块` }}</button>
+        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" :title="t`添加润色专用的提示词模块`" @click="addEnrichModule">
           {{ t`新增润色模块` }}
         </button>
-        <button class="menu_button" @click="resetOrder">{{ t`重置顺序` }}</button>
+        <button class="menu_button" :title="t`将所有提示词模块导出为 JSON 文件`" @click="exportPrompts">
+          {{ t`导出` }}
+        </button>
+        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块（将替换当前所有模块）`" @click="importPrompts">
+          {{ t`导入` }}
+        </button>
       </div>
       <div class="choice-prompt-toolbar-right">
         <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
@@ -49,10 +36,43 @@
           <input v-model="rules.baibai_enabled" type="checkbox" />
           {{ t`柏宝书` }}
         </label>
-        <button class="menu_button" @click="togglePreview">
+        <button class="menu_button" :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`" @click="togglePreview">
           <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
           {{ showPreview ? t`隐藏预览` : t`预览` }}
         </button>
+        <button class="menu_button" :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`" @click="resetPromptToDefaults">
+          {{ t`恢复默认` }}
+        </button>
+      </div>
+    </div>
+
+    <div class="choice-beginner-section">
+      <div class="choice-filter-header" @click="showBeginner = !showBeginner">
+        <i class="fa-solid" :class="showBeginner ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+        <span>{{ t`新手快捷编辑` }}</span>
+        <span class="choice-field-module">{{ t`对应模块: core_rules` }}</span>
+      </div>
+      <div v-if="showBeginner" class="choice-beginner-body">
+        <div class="choice-field">
+          <div class="choice-field-label">
+            <label>{{ t`叙述风格` }}</label>
+            <button class="menu_button choice-restore-btn" @click="resetPersonStyleTarget = true">
+              {{ t`恢复默认` }}
+            </button>
+          </div>
+          <textarea v-model="globalStore.settings.prompt_rules.person_style" rows="3" class="text_pole"></textarea>
+          <small class="choice-field-hint">{{ t`描述选项的叙述视角和人称要求，如"第三人称"、"第一人称女主视角"等` }}</small>
+        </div>
+        <div class="choice-field">
+          <div class="choice-field-label">
+            <label>{{ t`选项规则` }}</label>
+            <button class="menu_button choice-restore-btn" @click="resetOptionRulesTarget = true">
+              {{ t`恢复默认` }}
+            </button>
+          </div>
+          <textarea v-model="globalStore.settings.prompt_rules.option_rules" rows="10" class="text_pole"></textarea>
+          <small class="choice-field-hint">{{ t`生成选项时 AI 必须遵守的核心规则，每行一条` }}</small>
+        </div>
       </div>
     </div>
 
@@ -240,6 +260,25 @@
       @cancel="restoreTarget = null"
     />
 
+    <ConfirmDialog
+      :open="resetPersonStyleTarget"
+      :title="t`恢复默认`"
+      :message="resetPersonStyleMsg"
+      :confirm-text="t`恢复`"
+      :cancel-text="t`取消`"
+      @confirm="onResetPersonStyleConfirm"
+      @cancel="resetPersonStyleTarget = false"
+    />
+    <ConfirmDialog
+      :open="resetOptionRulesTarget"
+      :title="t`恢复默认`"
+      :message="resetOptionRulesMsg"
+      :confirm-text="t`恢复`"
+      :cancel-text="t`取消`"
+      @confirm="onResetOptionRulesConfirm"
+      @cancel="resetOptionRulesTarget = false"
+    />
+
     <div v-if="showPreview" class="choice-preview-box">
       <div v-if="previewMessages.length === 0" class="choice-preview-empty">
         {{ t`暂无聊天历史` }}
@@ -260,9 +299,10 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import PageGuide from '@/components/PageGuide.vue';
 import type { PromptModule, ChatFilterGroup } from '@/type/settings';
-import { BAIBAI_MODULE_IDS } from '@/type/settings';
+import { BAIBAI_MODULE_IDS, DEFAULT_PERSON_STYLE, DEFAULT_OPTION_RULES } from '@/type/settings';
+import { PromptModule as PromptModuleSchema } from '@/type/settings';
+import { z } from 'zod';
 import { chat, characters, this_chid } from '@sillytavern/script';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 
@@ -273,6 +313,9 @@ const rules = globalStore.settings.prompt_rules;
 const READONLY_MODULE_IDS = new Set([
   'world_info_before',
   'persona_description',
+  'char_description',
+  'char_personality',
+  'char_scenario',
   'world_info_after',
   'chat_history',
   'baibai_summary',
@@ -292,12 +335,15 @@ const allModules = computed(() => {
 
 const showPreview = ref(false);
 const showFilter = ref(true);
+const showBeginner = ref(false);
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const deleteTarget = ref<string | null>(null);
 const deleteGroupTarget = ref<string | null>(null);
 const restoreTarget = ref<string | null>(null);
+const resetPersonStyleTarget = ref(false);
+const resetOptionRulesTarget = ref(false);
 const groupExpanded = ref<Record<string, boolean>>({});
 const groupRenameId = ref<string | null>(null);
 const groupRenameText = ref('');
@@ -318,9 +364,55 @@ const addEnrichModule = () => {
   globalStore.addModule(undefined, true);
 };
 
-const resetOrder = () => {
-  globalStore.resetModuleOrder();
+const resetPromptToDefaults = () => {
+  if (!confirm(t`确定要将所有提示词模块完全恢复为默认值吗？\n\n这将重置模块顺序、启用状态和内容。此操作不可撤销。`)) return;
+  globalStore.resetPromptToDefaults();
+  toastr.success(t`提示词已恢复为默认值`);
 };
+
+function exportPrompts() {
+  const modules = globalStore.settings.prompt_rules.modules;
+  const json = JSON.stringify({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    modules,
+  }, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `choice-prompts-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importPrompts() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.modules || !Array.isArray(data.modules)) {
+        throw new Error('JSON 文件格式不正确：缺少 modules 数组');
+      }
+      const modules = z.array(PromptModuleSchema).parse(data.modules);
+      const ids = modules.map(m => m.id);
+      if (new Set(ids).size !== ids.length) {
+        throw new Error('导入的模块中存在重复 ID');
+      }
+      if (!confirm(t`确定要导入 ${modules.length} 个提示词模块吗？这将替换当前所有模块。`)) return;
+      globalStore.settings.prompt_rules.modules = modules;
+      toastr.success(t`已导入 ${modules.length} 个提示词模块`);
+    } catch (err) {
+      toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效的 JSON 文件'}`);
+    }
+  };
+  input.click();
+}
 
 const addFilterGroup = () => {
   const group: ChatFilterGroup = {
@@ -546,6 +638,17 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   }
   return merged;
 });
+
+const onResetPersonStyleConfirm = () => {
+  globalStore.settings.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
+  resetPersonStyleTarget.value = false;
+};
+const onResetOptionRulesConfirm = () => {
+  globalStore.settings.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+  resetOptionRulesTarget.value = false;
+};
+const resetPersonStyleMsg = computed(() => t`确定要将"叙述风格"恢复为默认值吗？当前修改将丢失。`);
+const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为默认值吗？当前修改将丢失。`);
 </script>
 
 <style scoped>
@@ -794,6 +897,58 @@ const previewMessages = computed<PreviewMsg[]>(() => {
   margin: 0;
   font-family: inherit;
   line-height: 1.4;
+}
+
+.choice-beginner-section {
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  overflow: hidden;
+}
+
+.choice-beginner-body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--choice-border);
+}
+
+.choice-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--choice-text-secondary);
+}
+
+.choice-field-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.choice-field-label label {
+  font-weight: 600;
+}
+
+.choice-field-module {
+  font-size: 10px;
+  color: var(--choice-text-muted);
+  background: var(--choice-bg-card);
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-full);
+}
+
+.choice-field-hint {
+  color: var(--choice-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.choice-restore-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: auto;
 }
 
 .choice-filter-section {

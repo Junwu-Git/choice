@@ -1,32 +1,53 @@
 <template>
   <div class="choice-appearance-editor">
-    <PageGuide page-id="appearance-editor" icon="fa-solid fa-circle-info">
-      <template #title>🎨 外观</template>
-      <p>
-        <strong>悬浮窗</strong
-        >：在屏幕右下角显示一个快捷按钮，点击打开设置面板，拖动可改变位置。关闭后从设置面板入口进入。
-      </p>
-      <p><strong>主题</strong>：暗色/亮色切换，影响设置面板、选项面板等所有扩展 UI。</p>
-      <p><strong>透明度</strong>：调整面板背景透明度，数值越低越透明。</p>
-      <p><strong>字体大小</strong>：小/中/大三档，影响选项按钮和面板内的文字大小。</p>
-    </PageGuide>
-
-    <div class="choice-behavior-grid">
-      <label class="choice-check">
-        <input v-model="ui.floating_enabled" type="checkbox" />
-        <span class="choice-check-custom"></span>
-        {{ t`悬浮窗` }}
-      </label>
+    <div class="choice-appearance-section">
+      <span class="choice-appearance-section-title">{{ t`面板` }}</span>
+      <div class="choice-behavior-grid">
+        <label class="choice-check">
+          <input v-model="ui.floating_enabled" type="checkbox" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`悬浮窗` }}</strong>
+            <small>{{ t`在屏幕右下角显示快捷按钮` }}</small>
+          </span>
+        </label>
+      </div>
     </div>
 
     <div class="choice-appearance-section">
-      <span class="choice-appearance-label">{{ t`主题` }}</span>
+      <span class="choice-appearance-section-title">{{ t`输入润色` }}</span>
+      <div class="choice-behavior-grid">
+        <label class="choice-check">
+          <input v-model="ui.enrich_enabled" type="checkbox" :title="t`在发送消息前用 AI 改写为多个润色版本`" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`启用输入润色` }}</strong>
+            <small>{{ t`发送消息前用 AI 改写为多个润色版本` }}</small>
+          </span>
+        </label>
+      </div>
+      <div v-if="ui.enrich_enabled" class="choice-enrich-count">
+        <span class="choice-appearance-label">{{ t`润色版本数` }}</span>
+        <input
+          v-model.number="ui.enrich_count"
+          type="number"
+          min="1"
+          max="20"
+          class="text_pole"
+          style="width: 60px"
+        />
+        <span class="choice-field-hint">{{ t`（1-20）` }}</span>
+      </div>
+    </div>
+
+    <div class="choice-appearance-section">
+      <span class="choice-appearance-section-title">{{ t`主题` }}</span>
       <div class="choice-theme-switch">
-        <button class="choice-theme-btn" :class="{ active: ui.theme === 'dark' }" @click="ui.theme = 'dark'">
+        <button class="choice-theme-btn" :class="{ active: ui.theme === 'dark' }" :title="t`切换到暗色主题`" @click="ui.theme = 'dark'">
           <i class="fa-solid fa-moon"></i>
           {{ t`暗色` }}
         </button>
-        <button class="choice-theme-btn" :class="{ active: ui.theme === 'light' }" @click="ui.theme = 'light'">
+        <button class="choice-theme-btn" :class="{ active: ui.theme === 'light' }" :title="t`切换到亮色主题`" @click="ui.theme = 'light'">
           <i class="fa-solid fa-sun"></i>
           {{ t`亮色` }}
         </button>
@@ -48,6 +69,7 @@
           :key="size.value"
           class="choice-theme-btn"
           :class="{ active: ui.font_size === size.value }"
+          :title="size.tip"
           @click="ui.font_size = size.value"
         >
           {{ size.label }}
@@ -59,15 +81,14 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import PageGuide from '@/components/PageGuide.vue';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);
 
 const fontSizes = [
-  { value: 'small' as const, label: t`小` },
-  { value: 'medium' as const, label: t`中` },
-  { value: 'large' as const, label: t`大` },
+  { value: 'small' as const, label: t`小`, tip: t`小号字体，适合紧凑布局` },
+  { value: 'medium' as const, label: t`中`, tip: t`默认字体大小` },
+  { value: 'large' as const, label: t`大`, tip: t`大号字体，方便阅读` },
 ];
 </script>
 
@@ -75,7 +96,21 @@ const fontSizes = [
 .choice-appearance-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+}
+
+.choice-appearance-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.choice-appearance-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--choice-text);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-behavior-grid {
@@ -85,16 +120,15 @@ const fontSizes = [
 }
 
 .choice-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   font-size: 12px;
   color: var(--choice-text-secondary);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
   padding: 10px 12px;
   cursor: pointer;
-  white-space: nowrap;
   transition: background var(--choice-transition);
 }
 
@@ -115,6 +149,7 @@ const fontSizes = [
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  margin-top: 1px;
   transition:
     background var(--choice-transition),
     border-color var(--choice-transition);
@@ -135,10 +170,29 @@ const fontSizes = [
   line-height: 1;
 }
 
-.choice-appearance-section {
+.choice-check-label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
+  color: var(--choice-text-secondary);
+}
+
+.choice-check-label strong {
+  color: var(--choice-text);
+}
+
+.choice-check-label small {
+  font-size: 11px;
+  color: var(--choice-text-muted);
+}
+
+.choice-enrich-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--choice-bg-card);
+  border-radius: var(--choice-radius-md);
 }
 
 .choice-appearance-label {
@@ -149,6 +203,11 @@ const fontSizes = [
 .choice-appearance-value {
   color: var(--choice-primary);
   font-weight: bold;
+}
+
+.choice-field-hint {
+  color: var(--choice-text-muted);
+  font-size: 11px;
 }
 
 .choice-theme-switch {

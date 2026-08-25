@@ -1,5 +1,5 @@
 <template>
-  <div
+<div
     class="choice-page-guide"
     :class="{ 'choice-page-guide--guide': type === 'guide', 'choice-page-guide--collapsed': !expanded }"
   >

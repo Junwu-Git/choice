@@ -83,7 +83,8 @@ export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
   let remaining = 0;
   if (pinnedUsed.length > input.count) {
     if (input.pinnedOverflow === 'trim') {
-      pinnedUsed = pinnedUsed.slice(0, input.count);
+      // 随机截断：先打乱再取前 count 条，避免总是截掉末尾的条目
+      pinnedUsed = shuffled(pinnedUsed).slice(0, input.count);
       remaining = 0;
     } else {
       remaining = 0;
@@ -100,8 +101,9 @@ export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
   }
 
   return {
-    pinned: pinnedUsed,
-    drawn,
+    // 打乱最终结果时也打乱 pinned 和 drawn，确保发给 AI 的提示词顺序随机
+    pinned: input.shuffleFinal ? shuffled(pinnedUsed) : pinnedUsed,
+    drawn: input.shuffleFinal ? shuffled(drawn) : drawn,
     selected,
     underflow: selected.length < input.count,
   };

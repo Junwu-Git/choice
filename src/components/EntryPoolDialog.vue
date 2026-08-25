@@ -25,28 +25,14 @@
             <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
             </button>
+            <button ref="guideBtn" class="choice-icon-btn" :title="t`页面指引`" @click="showGuide = !showGuide">
+              <i class="fa-solid fa-circle-question"></i>
+            </button>
             <button class="choice-epool-close" :title="t`关闭`" @click="emit('close')">&times;</button>
           </div>
         </div>
 
         <div class="choice-epool-body choice-scrollbar">
-          <PageGuide page-id="entrypool-dialog" icon="fa-solid fa-circle-info">
-            <template #title>📦 条目库是什么</template>
-            <p>
-              <strong>条目库</strong>
-              是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。
-            </p>
-            <p>
-              <strong>分组</strong
-              >：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋
-              复制整组。
-            </p>
-            <p>
-              <strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、粘贴导入、AI
-              批量生成。拖拽 ☰ 可调整条目顺序。
-            </p>
-          </PageGuide>
-
           <div v-if="groupedEntries.length > 0" ref="groupList" class="choice-epool-list">
             <div
               v-for="group in groupedEntries"
@@ -155,7 +141,7 @@
 
         <div v-if="selected.size > 0" class="choice-epool-batch-bar">
           <span class="choice-epool-batch-count">{{ t`已选 ${selected.size} 条` }}</span>
-          <button class="choice-btn-sm" @click="copySelected"><i class="fa-solid fa-copy"></i> {{ t`复制` }}</button>
+          <button class="choice-btn-sm" :title="t`复制选中的条目`" @click="copySelected"><i class="fa-solid fa-copy"></i> {{ t`复制` }}</button>
           <button class="choice-btn-sm" :title="t`移动到分组`" @click="moveSelected = !moveSelected">
             <i class="fa-solid fa-arrow-right"></i> {{ t`移动` }}
           </button>
@@ -163,14 +149,15 @@
             <option value="">{{ t`未分组` }}</option>
             <option v-for="cat in categoryNames" :key="cat" :value="cat">{{ cat }}</option>
           </select>
-          <button v-if="moveSelected" class="choice-btn-sm" @click="moveSelectedEntries">
+          <button v-if="moveSelected" class="choice-btn-sm" :title="t`确认移动到目标分组`" @click="moveSelectedEntries">
             {{ t`确认移动` }}
           </button>
-          <button class="choice-btn-sm choice-btn-del" @click="deleteTarget = { type: 'batch', count: selected.size }">
+          <button class="choice-btn-sm choice-btn-del" :title="t`删除选中的条目`" @click="deleteTarget = { type: 'batch', count: selected.size }">
             <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
           </button>
           <button
             class="choice-btn-sm"
+            :title="t`取消选择`"
             @click="
               selected.clear();
               deleteTarget = null;
@@ -198,6 +185,16 @@
           @confirm="onDeleteConfirm"
           @cancel="deleteTarget = null"
         />
+
+        <GuidePopover
+          :visible="showGuide"
+          :anchor-el="guideBtn"
+          icon="fa-solid fa-database"
+          title="条目库是什么"
+          @close="showGuide = false"
+        >
+          <div v-html="guideHtml"></div>
+        </GuidePopover>
       </div>
     </div>
   </Teleport>
@@ -208,7 +205,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportEntriesDialog from '@/components/ImportEntriesDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import PageGuide from '@/components/PageGuide.vue';
+import GuidePopover from '@/components/GuidePopover.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
 import Sortable from 'sortablejs';
@@ -225,6 +222,12 @@ const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
 const showGen = ref(false);
 const showImport = ref(false);
+const showGuide = ref(false);
+const guideBtn = ref<HTMLElement | null>(null);
+
+const guideHtml = `<p><strong>条目库</strong> 是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。</p>
+<p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
+<p><strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、粘贴导入、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
 const deleteTarget = ref<
   | { type: 'entry'; id: string; summary: string }
   | { type: 'group'; key: string; count: number }

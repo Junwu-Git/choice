@@ -1,6 +1,7 @@
 import { characters, substituteParams, this_chid } from '@sillytavern/script';
 import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApi, type ChatMsg } from '@/core/api-client';
 import { getBaiBaiSummary, getBaiBaiState } from '@/core/baibai-bridge';
@@ -49,10 +50,11 @@ const resolveCount = (cm: string): number => {
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
-type Ctx = { count: number; pinned: string; poolSelected: string; input: string };
+type Ctx = { count: number; pinnedCount: number; pinned: string; poolSelected: string; input: string };
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
+    .replaceAll('{{pinned_count}}', String(c.pinnedCount))
     .replaceAll('{{count_minus_1}}', String(Math.max(0, c.count - 1)))
     .replaceAll('{{pinned}}', c.pinned)
     .replaceAll('{{pool_selected}}', c.poolSelected)
@@ -91,10 +93,28 @@ export const buildMessages = async (
         break;
       }
       case 'persona_description': {
-        const personaDesc = (window as any).power_user?.persona_description;
+        const personaDesc = power_user?.persona_description;
         if (personaDesc) {
           msgs.push({ role: 'system', content: substituteParams(personaDesc) });
         }
+        break;
+      }
+      case 'char_description': {
+        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const desc = ch?.data?.description;
+        if (desc) msgs.push({ role: 'system', content: substituteParams(desc) });
+        break;
+      }
+      case 'char_personality': {
+        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const personality = ch?.data?.personality;
+        if (personality) msgs.push({ role: 'system', content: substituteParams(personality) });
+        break;
+      }
+      case 'char_scenario': {
+        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const scenario = ch?.data?.scenario;
+        if (scenario) msgs.push({ role: 'system', content: substituteParams(scenario) });
         break;
       }
       case 'world_info_after': {
@@ -233,7 +253,10 @@ const buildWI = async (): Promise<WIBuckets> => {
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const chatArr: any[] = ctx?.chat ?? [];
-    const chatStrings = chatArr.map((m: any) => m?.mes ?? '');
+    // getWorldInfoPrompt 要求 chat 为倒序（最新消息在前），与 ST 主生成 script.js
+    // 中 .reverse() 保持一致。不倒序会导致 WorldInfoBuffer 把最旧消息当作最新层扫描，
+    // 绿灯关键词匹配的是旧上下文而非当前层。
+    const chatStrings = chatArr.map((m: any) => m?.mes ?? '').reverse();
     const ch = this_chid !== undefined ? characters[this_chid] : undefined;
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
@@ -244,12 +267,12 @@ const buildWI = async (): Promise<WIBuckets> => {
 
     const result = await getWorldInfoPrompt(chatStrings, maxCtx, false, {
       trigger: 'normal',
-      personaDescription: (window as any).power_user?.persona_description ?? '',
+      personaDescription: power_user?.persona_description ?? '',
       characterDescription: ch?.data?.description ?? '',
       characterPersonality: ch?.data?.personality ?? '',
-      characterDepthPrompt: '',
+      characterDepthPrompt: ch?.data?.extensions?.depth_prompt?.prompt ?? '',
       scenario: ch?.data?.scenario ?? '',
-      creatorNotes: '',
+      creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
     return {
@@ -408,12 +431,15 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
       固定文本: pool.pinned.map(e => e.text),
       抽取文本: pool.drawn.map(e => e.text),
     });
+    const pinnedCount = pool.pinned.length;
+    const poolSelectedText = pool.drawn
+      .map(e => (e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text))
+      .join('\n');
     const c: Ctx = {
       count,
+      pinnedCount,
       pinned: pool.pinned.map(e => e.text).join('\n'),
-      poolSelected: pool.drawn
-        .map(e => (e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text))
-        .join('\n'),
+      poolSelected: poolSelectedText || '无',
       input: '',
     };
     const rules = gs.settings.prompt_rules;

@@ -166,7 +166,6 @@
   "粘贴导入说明": "Paste text from clipboard, one entry per line. Supports 1. / - / • list markers. Parsed results are deduplicated and empty lines are removed. Import into a specific group or uncategorized.",
   "点击生成按钮获取选项": "Click the \"Generate\" button to have the AI create action options based on the current config.",
   "生成前请确保已在设置中配置条目池和 API": "Before generating, make sure you have configured the entry pool and API in Settings.",
-  "选项行为说明": "Send: sends the selected option directly. Overwrite: replaces the input box. Append: adds to the end of the input box.",
   "选择条目": "Select Entries",
   "确认导入": "Confirm Import",
   "创建": "Create",

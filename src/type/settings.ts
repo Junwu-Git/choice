@@ -178,21 +178,19 @@ export const PromptModule = z.object({
 });
 export type PromptModule = z.infer<typeof PromptModule>;
 
-export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成 恰好 {{count}} 条行动选项，不得少于 {{count}} 条。
+export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好 {{count}} 条行动选项。
 
-固定条目（必须使用，不受条件限制）：
+固定条目（共 {{pinned_count}} 条）：
 {{pinned}}
 
 可选条目（根据 [条件] 标记判断是否适用当前上下文）：
 {{pool_selected}}
 
 生成规则：
-1. 其中 1 个固定为"跳过场景"类型
-2. 其余 {{count_minus_1}} 个从以下类型中随机且互不重复地抽取，确保类型、切入点、情绪态度均有明显差异：理性分析、强势试探、温和安抚、幽默化解、纯物理行动、静观其变、视角切换、与此同时
-3. 若当前候选类型总数不足以支撑本次抽取数量，允许类型重复，但重复类型生成的选项须在切入点与情绪态度上明显不同
-4. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
-5. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目；若不符合，跳过该条目不生成对应选项
-6. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
+1. 生成选项的类型、切入点、情绪态度均应有明显差异
+2. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
+3. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目
+4. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
 
 /** 思维链引导：提示模型逐条检查场景与规则，提高输出质量。
  *  当预填充关闭时，模型不会从 <thinking> 开始，因此必须在此处显式要求输出 <thinking> 标签。 */
@@ -284,8 +282,8 @@ export const DEFAULT_MODULES: PromptModule[] = [
     order: 6,
   },
   {
-    id: 'world_info_after',
-    name: 'World Info (after)',
+    id: 'char_description',
+    name: 'Character Description',
     role: 'system',
     content: '',
     marker: true,
@@ -294,14 +292,44 @@ export const DEFAULT_MODULES: PromptModule[] = [
     order: 7,
   },
   {
+    id: 'char_personality',
+    name: 'Character Personality',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 8,
+  },
+  {
+    id: 'char_scenario',
+    name: 'Character Scenario',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 9,
+  },
+  {
+    id: 'world_info_after',
+    name: 'World Info (after)',
+    role: 'system',
+    content: '',
+    marker: true,
+    system: true,
+    enabled: true,
+    order: 10,
+  },
+  {
     id: 'baibai_summary',
     name: '柏宝书摘要',
     role: 'system',
     content: '',
     marker: true,
     system: true,
-    enabled: false,
-    order: 8,
+    enabled: true,
+    order: 13,
   },
   {
     id: 'baibai_state',
@@ -310,8 +338,8 @@ export const DEFAULT_MODULES: PromptModule[] = [
     content: '',
     marker: true,
     system: true,
-    enabled: false,
-    order: 9,
+    enabled: true,
+    order: 16,
   },
   {
     id: 'reference_close',
@@ -321,7 +349,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 10,
+    order: 11,
   },
   {
     id: 'history_open',
@@ -331,7 +359,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 11,
+    order: 12,
   },
   {
     id: 'chat_history',
@@ -341,7 +369,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: true,
     system: true,
     enabled: true,
-    order: 12,
+    order: 14,
   },
   {
     id: 'history_close',
@@ -351,7 +379,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 13,
+    order: 15,
   },
   {
     id: 'core_rules',
@@ -361,7 +389,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 14,
+    order: 17,
   },
   {
     id: 'thinking_prompt',
@@ -371,7 +399,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 15,
+    order: 18,
   },
   {
     id: 'assistant_thinking',
@@ -381,7 +409,7 @@ export const DEFAULT_MODULES: PromptModule[] = [
     marker: false,
     system: false,
     enabled: true,
-    order: 16,
+    order: 19,
   },
 ];
 
@@ -422,7 +450,7 @@ export const PromptRules = z
     modules: z.array(PromptModule).prefault([]),
     prefill_enabled: z.boolean().default(true),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
-    context_mode: z.enum(['rounds', 'visible_only']).default('rounds'),
+    context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
     baibai_enabled: z.boolean().default(false),
     /** 叙述风格（人称/视角），自由文本；非空时替换 core_rules 模块中的【叙述风格】段落 */
@@ -445,14 +473,14 @@ export const SecondaryApi = z
     model: z.string(),
     temperature: z.number().min(0).max(2).default(1),
     max_tokens: z.number().min(1).default(4096),
-    timeout: z.number().min(0).default(0),
+    timeout: z.number().min(0).default(180),
     stream: z.boolean().default(false),
     exclude_params: z.string().default(''),
   })
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -478,7 +506,7 @@ export const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
     enrich_enabled: z.boolean().default(true),
-    enrich_count: z.number().min(1).max(20).default(10),
+    enrich_count: z.number().min(1).max(20).default(4),
     theme: z.enum(['dark', 'light']).default('dark'),
     opacity: z.number().min(0.3).max(1).default(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
