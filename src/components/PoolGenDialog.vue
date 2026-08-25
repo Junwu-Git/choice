@@ -215,7 +215,7 @@ const onInject = () => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10002;
+  z-index: var(--choice-z-dialog);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -244,28 +244,28 @@ const onInject = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-poolgen-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-poolgen-close {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -285,8 +285,8 @@ const onInject = () => {
 .choice-poolgen-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: var(--choice-space-3);
+  padding: var(--choice-space-4);
   overflow-y: auto;
   flex: 1;
 }
@@ -294,14 +294,14 @@ const onInject = () => {
 .choice-poolgen-form {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-poolgen-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
@@ -312,68 +312,68 @@ const onInject = () => {
 .choice-poolgen-options {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: var(--choice-space-3);
   flex-wrap: wrap;
 }
 
 .choice-poolgen-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   white-space: nowrap;
-  margin-bottom: 4px;
+  margin-bottom: var(--choice-space-1);
 }
 
 .choice-poolgen-hint {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   line-height: 1.4;
 }
 
 .choice-poolgen-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-poolgen-results {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--choice-space-1);
 }
 
 .choice-poolgen-results-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-poolgen-selall {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
 }
 
 .choice-poolgen-results-count {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
 
 .choice-poolgen-result-row {
   display: flex;
-  gap: 6px;
+  gap: var(--choice-space-2);
   align-items: flex-start;
-  border-radius: 4px;
-  padding: 4px;
+  border-radius: var(--choice-space-1);
+  padding: var(--choice-space-1);
 }
 
 .choice-poolgen-result-row.is-replace {
-  border-left: 3px solid var(--choice-text-hint);
+  border-left: var(--choice-space-1) solid var(--choice-text-hint);
   background: rgba(184, 148, 58, 0.06);
 }
 
 .choice-poolgen-result-row > input[type='checkbox'] {
   flex-shrink: 0;
-  margin-top: 6px;
+  margin-top: var(--choice-space-2);
 }
 
 .choice-poolgen-index {
@@ -382,7 +382,7 @@ const onInject = () => {
   border-radius: 50%;
   background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
   color: #fff;
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   font-weight: bold;
   display: flex;
   align-items: center;
@@ -394,7 +394,7 @@ const onInject = () => {
 .choice-poolgen-result-main {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+gap: var(--choice-space-1);
   flex: 1;
   min-width: 0;
 }
@@ -408,23 +408,23 @@ const onInject = () => {
 .choice-poolgen-replace-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
   flex-wrap: wrap;
 }
 
 .choice-poolgen-replace-badge {
   color: var(--choice-text-hint);
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   font-weight: bold;
   border: 1px solid var(--choice-text-hint);
-  border-radius: 4px;
-  padding: 0 4px;
+  border-radius: var(--choice-space-1);
+  padding: 0 var(--choice-space-1);
   white-space: nowrap;
 }
 
 .choice-poolgen-orig {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -433,16 +433,16 @@ const onInject = () => {
 
 .choice-poolgen-empty {
   color: var(--choice-text-muted);
-  font-size: 12px;
-  padding: 8px 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-2) 0;
 }
 
 .choice-poolgen-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
-  padding-top: 10px;
+  padding-top: var(--choice-space-3);
 }
 
 .choice-icon-btn {
@@ -450,7 +450,7 @@ const onInject = () => {
   color: #c86a6a;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 28px;
   height: 28px;

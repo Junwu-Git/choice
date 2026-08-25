@@ -68,23 +68,23 @@ const chatStore = useChatSettingsStore();
 .choice-generation-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--choice-space-3);
 }
 
 .choice-generation-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-generation-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
 }
 
 .choice-config-status-label {
@@ -96,12 +96,12 @@ const chatStore = useChatSettingsStore();
 .choice-check {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--choice-space-3);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
-  padding: 12px;
+  padding: var(--choice-space-3);
   cursor: pointer;
   transition: background var(--choice-transition);
 }
@@ -138,7 +138,7 @@ const chatStore = useChatSettingsStore();
 .choice-check input[type='checkbox']:checked + .choice-check-custom::after {
   content: '✓';
   color: #fff;
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   font-weight: bold;
   position: absolute;
   line-height: 1;
@@ -156,7 +156,7 @@ const chatStore = useChatSettingsStore();
 }
 
 .choice-check-label small {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
 
@@ -164,14 +164,14 @@ const chatStore = useChatSettingsStore();
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
 .choice-field-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-field-label label {
@@ -180,7 +180,7 @@ const chatStore = useChatSettingsStore();
 
 .choice-field-hint {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   line-height: 1.4;
 }
 
@@ -189,7 +189,7 @@ const chatStore = useChatSettingsStore();
   gap: 2px;
   background: var(--choice-bg-element);
   border-radius: var(--choice-radius-full);
-  padding: 3px;
+  padding: var(--choice-space-1);
   width: fit-content;
 }
 
@@ -198,13 +198,13 @@ const chatStore = useChatSettingsStore();
   color: var(--choice-text-muted);
   border: none;
   border-radius: var(--choice-radius-full);
-  padding: 6px 16px;
-  font-size: 12px;
+  padding: var(--choice-space-2) var(--choice-space-4);
+  font-size: var(--choice-text-sm);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
   transition:
     background var(--choice-transition),
     color var(--choice-transition),

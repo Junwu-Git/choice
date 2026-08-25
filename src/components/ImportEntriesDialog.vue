@@ -127,7 +127,7 @@ watch(
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10005;
+  z-index: var(--choice-z-dialog);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -156,28 +156,28 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
   background: linear-gradient(180deg, rgba(220, 140, 80, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-importdlg-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-importdlg-close {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -196,44 +196,44 @@ watch(
 
 .choice-importdlg-body {
   overflow-y: auto;
-  padding: 14px;
+  padding: var(--choice-space-4);
   flex: 1;
 }
 
 .choice-importdlg-textarea {
   width: 100%;
   resize: vertical;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   line-height: 1.5;
 }
 
 .choice-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
 .choice-importdlg-preview {
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: var(--choice-space-3);
+  padding: var(--choice-space-3);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
   border: 1px solid var(--choice-border);
 }
 
 .choice-importdlg-preview-count {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
 .choice-importdlg-preview-list {
-  margin-top: 6px;
+  margin-top: var(--choice-space-2);
 }
 
 .choice-importdlg-preview-item {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text);
   line-height: 1.6;
   overflow: hidden;
@@ -242,7 +242,7 @@ watch(
 }
 
 .choice-importdlg-preview-more {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   margin-top: 2px;
 }
@@ -250,8 +250,8 @@ watch(
 .choice-importdlg-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
 }
 </style>

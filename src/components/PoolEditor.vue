@@ -359,23 +359,23 @@ onUnmounted(() => {
 .choice-pool-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-config-bar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-config-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-config-label {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
@@ -388,14 +388,14 @@ onUnmounted(() => {
 
 .choice-config-actions {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--choice-space-1);
   align-items: center;
   flex-shrink: 0;
 }
 
 .choice-btn-sm {
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--choice-text-xs);
+  padding: var(--choice-space-1) var(--choice-space-2);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-full);
   background: var(--choice-bg-element);
@@ -404,7 +404,7 @@ onUnmounted(() => {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--choice-space-1);
   transition:
     background var(--choice-transition),
     color var(--choice-transition);
@@ -448,8 +448,8 @@ onUnmounted(() => {
 .choice-config-status {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-xs);
 }
 
 .choice-config-status-label {
@@ -462,8 +462,8 @@ onUnmounted(() => {
 }
 
 .choice-bound-badge {
-  font-size: 10px;
-  padding: 1px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   background: rgba(90, 138, 90, 0.15);
   border: 1px solid rgba(90, 138, 90, 0.2);
@@ -485,17 +485,17 @@ onUnmounted(() => {
 
 .choice-entrypool-btn {
   width: 100%;
-  padding: 10px;
+  padding: var(--choice-space-3);
   border: 1px dashed var(--choice-border-strong);
   border-radius: var(--choice-radius-md);
   background: var(--choice-bg-card);
   color: var(--choice-text-secondary);
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
   transition:
     background var(--choice-transition),
     border-color var(--choice-transition);
@@ -511,17 +511,17 @@ onUnmounted(() => {
 .choice-inline-edit {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--choice-space-3);
 }
 
 .choice-inline-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--choice-space-1);
 }
 
 .choice-inline-label {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   font-weight: bold;
 }
@@ -529,21 +529,21 @@ onUnmounted(() => {
 .choice-inline-gen {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
   flex-wrap: wrap;
 }
 
 .choice-inline-gen-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
 }
 
 .choice-inline-gen-item .text_pole {
-  font-size: 11px;
-  padding: 2px 4px;
+  font-size: var(--choice-text-xs);
+  padding: 2px var(--choice-space-1);
 }
 
 .choice-inline-gen-item select.text_pole {
@@ -554,7 +554,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-inline-field-head .choice-inline-label {
@@ -564,12 +564,12 @@ onUnmounted(() => {
 .choice-inline-entries {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
   max-height: 360px;
   overflow-y: auto;
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
-  padding: 6px;
+  padding: var(--choice-space-2);
 }
 
 .choice-inline-entry {
@@ -592,17 +592,17 @@ onUnmounted(() => {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: var(--choice-space-2) var(--choice-space-2);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-inline-cat-badge {
-  font-size: 10px;
-  padding: 1px 5px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   background: rgba(74, 144, 217, 0.12);
   border: 1px solid rgba(74, 144, 217, 0.2);
@@ -620,22 +620,22 @@ onUnmounted(() => {
 .choice-inline-entry-fields {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px 5px 0;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-2) var(--choice-space-2) 0;
   flex-wrap: nowrap;
   border-left: 1px solid var(--choice-border);
 }
 
 .choice-inline-entry-fields .text_pole {
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 2px var(--choice-space-2);
 }
 
 .choice-inline-field-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
 
@@ -645,8 +645,8 @@ onUnmounted(() => {
 }
 
 .choice-inline-field-item .text_pole {
-  font-size: 11px;
-  padding: 2px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 2px var(--choice-space-2);
 }
 
 .choice-cond-input {
@@ -662,8 +662,8 @@ onUnmounted(() => {
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   white-space: nowrap;
 }
@@ -673,7 +673,7 @@ onUnmounted(() => {
   color: var(--choice-text-muted);
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 24px;
   height: 24px;
@@ -701,8 +701,8 @@ onUnmounted(() => {
 
 .choice-empty-hint {
   color: var(--choice-text-muted);
-  font-size: 12px;
-  padding: 12px;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-3);
   text-align: center;
 }
 </style>

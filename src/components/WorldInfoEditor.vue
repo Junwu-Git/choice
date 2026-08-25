@@ -263,25 +263,25 @@ onUnmounted(() => {
 .choice-wi-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-wi-checks {
   display: flex;
-  gap: 16px;
+  gap: var(--choice-space-4);
   flex-wrap: wrap;
 }
 
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
 }
 
 .choice-wi-section-title {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: bold;
   color: var(--choice-text-muted);
   margin-top: 4px;
@@ -293,7 +293,7 @@ onUnmounted(() => {
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--choice-space-1);
   user-select: none;
   transition: color var(--choice-transition);
 }
@@ -303,7 +303,7 @@ onUnmounted(() => {
 }
 
 .choice-wi-count {
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   font-weight: normal;
 }
@@ -311,14 +311,14 @@ onUnmounted(() => {
 .choice-wi-list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--choice-space-1);
 }
 
 .choice-wi-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-1) var(--choice-space-2);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
@@ -353,7 +353,7 @@ onUnmounted(() => {
 
 .choice-wi-name {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -361,8 +361,8 @@ onUnmounted(() => {
 }
 
 .choice-wi-badge {
-  font-size: 10px;
-  padding: 1px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   color: #fff;
   flex-shrink: 0;
@@ -383,16 +383,16 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 2px 0 4px 12px;
+  padding: 2px 0 var(--choice-space-1) var(--choice-space-3);
   border-left: 1px solid var(--choice-border);
 }
 
 .choice-wi-entry {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 6px;
-  font-size: 11px;
+  gap: var(--choice-space-2);
+  padding: 2px var(--choice-space-2);
+  font-size: var(--choice-text-xs);
 }
 
 .choice-wi-entry.excluded {
@@ -401,7 +401,7 @@ onUnmounted(() => {
 }
 
 .choice-wi-entry-state {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 16px;
   text-align: center;
@@ -421,8 +421,8 @@ onUnmounted(() => {
 }
 
 .choice-wi-enable-btn {
-  font-size: 10px;
-  padding: 1px 8px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-element);
@@ -442,12 +442,12 @@ onUnmounted(() => {
 
 .choice-empty-hint {
   color: var(--choice-text-muted);
-  font-size: 12px;
-  padding: 8px 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-2) 0;
 }
 
 .choice-hint {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
 }
 </style>

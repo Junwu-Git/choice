@@ -71,12 +71,12 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10009;
+  z-index: var(--choice-z-popover);
 }
 
 .choice-guide-popover {
   position: fixed;
-  z-index: 10010;
+  z-index: var(--choice-z-popover);
   width: 360px;
   background: var(--choice-bg-panel);
   backdrop-filter: blur(16px);
@@ -92,8 +92,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 .choice-guide-popover-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
   user-select: none;
@@ -101,7 +101,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-guide-popover-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   font-weight: bold;
   color: var(--choice-text);
 }
@@ -110,10 +110,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 18px;
+  font-size: var(--choice-text-lg);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 24px;
   height: 24px;
@@ -132,8 +132,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-guide-popover-body {
   overflow-y: auto;
-  padding: 10px 14px 12px;
-  font-size: 12px;
+  padding: var(--choice-space-3) var(--choice-space-4) var(--choice-space-3);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   line-height: 1.7;
 }
@@ -144,7 +144,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-guide-popover-body :deep(ol) {
   margin: 0;
-  padding-left: 18px;
+  padding-left: var(--choice-space-4);
   line-height: 1.8;
 }
 
@@ -154,8 +154,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-guide-popover-body :deep(code) {
   background: var(--choice-bg-element);
-  padding: 1px 4px;
+  padding: 1px var(--choice-space-1);
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
 }
 </style>

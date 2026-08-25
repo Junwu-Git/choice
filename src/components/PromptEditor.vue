@@ -675,14 +675,14 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-prompt-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-prompt-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--choice-space-2);
   flex-wrap: wrap;
 }
 
@@ -690,29 +690,29 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-prompt-toolbar-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-context-rounds {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
 .choice-module-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--choice-space-1);
   min-height: 40px;
 }
 
 .choice-module-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
@@ -747,7 +747,7 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-module-drag {
   cursor: grab;
   color: var(--choice-text-muted);
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   padding: 0 2px;
   flex-shrink: 0;
 }
@@ -767,11 +767,11 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-module-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-module-name {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text-secondary);
   cursor: text;
@@ -779,8 +779,8 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-module-role {
-  font-size: 10px;
-  padding: 2px 8px;
+  font-size: var(--choice-text-xs);
+  padding: 2px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   font-weight: 500;
   text-transform: uppercase;
@@ -803,12 +803,12 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-module-lock {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   flex-shrink: 0;
 }
 
 .choice-module-preview {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -829,7 +829,7 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
 }
 
 .choice-module-toggle {
@@ -839,27 +839,27 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-rename-input {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   width: 120px;
-  padding: 2px 4px;
+  padding: 2px var(--choice-space-1);
 }
 
 .choice-module-edit {
-  margin-top: 4px;
-  padding: 8px;
+  margin-top: var(--choice-space-1);
+  padding: var(--choice-space-2);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-module-edit-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
@@ -868,24 +868,24 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
   overflow-y: auto;
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
-  padding: 8px;
+  padding: var(--choice-space-2);
   background: var(--choice-bg-card);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-preview-empty {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   text-align: center;
-  padding: 12px 0;
+  padding: var(--choice-space-3) 0;
 }
 
 .choice-preview-msg {
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 11px;
+  border-radius: var(--choice-space-1);
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-xs);
 }
 
 .choice-preview-system {
@@ -905,7 +905,7 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 
 .choice-preview-role {
   font-weight: bold;
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   margin-bottom: 2px;
 }
@@ -926,25 +926,25 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-beginner-body {
-  padding: 8px 10px;
+  padding: var(--choice-space-2) var(--choice-space-3);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
 }
 
 .choice-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
 .choice-field-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-field-label label {
@@ -952,22 +952,22 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-field-module {
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   background: var(--choice-bg-card);
-  padding: 1px 6px;
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
 }
 
 .choice-field-hint {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   line-height: 1.4;
 }
 
 .choice-restore-btn {
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: var(--choice-text-xs);
+  padding: 2px var(--choice-space-2);
   margin-left: auto;
 }
 
@@ -980,10 +980,10 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-filter-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text-secondary);
   background: var(--choice-bg-card);
@@ -995,21 +995,21 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-filter-header i {
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   width: 12px;
   text-align: center;
 }
 
 .choice-filter-body {
-  padding: 8px 10px;
+  padding: var(--choice-space-2) var(--choice-space-3);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
 }
 
 .choice-filter-desc {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   margin: 0;
   line-height: 1.4;
@@ -1017,20 +1017,20 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 
 .choice-filter-row {
   display: flex;
-  gap: 4px;
+  gap: var(--choice-space-1);
   align-items: center;
 }
 
 .choice-filter-row input {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
 }
 
 .choice-filter-type {
   flex-shrink: 0;
   width: 96px;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
 }
 
 .choice-filter-del {
@@ -1040,7 +1040,7 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
 }
 
@@ -1053,13 +1053,13 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 .choice-filter-group-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-1) var(--choice-space-2);
   background: var(--choice-bg-card);
 }
 
 .choice-filter-group-caret {
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   width: 12px;
   text-align: center;
   cursor: pointer;
@@ -1068,7 +1068,7 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-filter-group-name {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text-secondary);
   cursor: text;
@@ -1078,16 +1078,16 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-filter-group-body {
-  padding: 6px 8px;
+  padding: var(--choice-space-2);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--choice-space-1);
   border-top: 1px solid var(--choice-border);
 }
 
 .choice-enrich-badge-sm {
-  font-size: 9px;
-  padding: 1px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   background: rgba(74, 144, 217, 0.18);
   color: #6aabe0;
@@ -1096,8 +1096,8 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
 }
 
 .choice-option-badge-sm {
-  font-size: 9px;
-  padding: 1px 6px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
   background: rgba(217, 144, 74, 0.18);
   color: #e0a06a;

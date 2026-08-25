@@ -53,12 +53,12 @@ const expanded = useStorage(`choice_pg_${props.pageId}`, !props.defaultCollapsed
 .choice-page-guide-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   cursor: pointer;
   user-select: none;
   color: var(--choice-text-secondary);
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   transition: color var(--choice-transition);
 }
 
@@ -76,8 +76,8 @@ const expanded = useStorage(`choice_pg_${props.pageId}`, !props.defaultCollapsed
 }
 
 .choice-page-guide-body {
-  padding: 0 12px 10px;
-  font-size: 11px;
+  padding: 0 var(--choice-space-3) var(--choice-space-3);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   line-height: 1.6;
 }

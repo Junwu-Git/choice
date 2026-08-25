@@ -77,7 +77,7 @@ const onCreate = () => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10003;
+  z-index: var(--choice-z-dialog);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -104,28 +104,28 @@ const onCreate = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-ccdlg-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-ccdlg-close {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -145,33 +145,33 @@ const onCreate = () => {
 .choice-ccdlg-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px;
+  gap: var(--choice-space-4);
+  padding: var(--choice-space-4);
 }
 
 .choice-ccdlg-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--choice-space-1);
 }
 
 .choice-ccdlg-label {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   font-weight: bold;
 }
 
 .choice-ccdlg-checks {
   display: flex;
-  gap: 16px;
+  gap: var(--choice-space-4);
   flex-wrap: wrap;
 }
 
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   cursor: pointer;
 }
@@ -179,8 +179,8 @@ const onCreate = () => {
 .choice-ccdlg-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
 }
 </style>

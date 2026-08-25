@@ -99,17 +99,17 @@ const fontSizes = [
 .choice-appearance-editor {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--choice-space-4);
 }
 
 .choice-appearance-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-appearance-section-title {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text);
   padding-bottom: 2px;
@@ -119,18 +119,18 @@ const fontSizes = [
 .choice-behavior-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-check {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--choice-space-3);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
-  padding: 10px 12px;
+  padding: var(--choice-space-3) var(--choice-space-3);
   cursor: pointer;
   transition: background var(--choice-transition);
 }
@@ -167,7 +167,7 @@ const fontSizes = [
 .choice-check input[type='checkbox']:checked + .choice-check-custom::after {
   content: '✓';
   color: #fff;
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   font-weight: bold;
   position: absolute;
   line-height: 1;
@@ -185,21 +185,21 @@ const fontSizes = [
 }
 
 .choice-check-label small {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
 
 .choice-enrich-count {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   background: var(--choice-bg-card);
   border-radius: var(--choice-radius-md);
 }
 
 .choice-appearance-label {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
@@ -210,7 +210,7 @@ const fontSizes = [
 
 .choice-field-hint {
   color: var(--choice-text-muted);
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
 }
 
 .choice-theme-switch {
@@ -218,7 +218,7 @@ const fontSizes = [
   gap: 2px;
   background: var(--choice-bg-element);
   border-radius: var(--choice-radius-full);
-  padding: 3px;
+  padding: var(--choice-space-1);
 }
 
 .choice-theme-btn {
@@ -226,13 +226,13 @@ const fontSizes = [
   color: var(--choice-text-muted);
   border: none;
   border-radius: var(--choice-radius-full);
-  padding: 4px 12px;
-  font-size: 12px;
+  padding: var(--choice-space-1) var(--choice-space-3);
+  font-size: var(--choice-text-sm);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--choice-space-2);
   transition:
     background var(--choice-transition),
     color var(--choice-transition),

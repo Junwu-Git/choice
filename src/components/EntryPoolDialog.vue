@@ -692,7 +692,7 @@ onUnmounted(() => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10002;
+  z-index: var(--choice-z-dialog);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -721,29 +721,29 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-3);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-epool-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-epool-count {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   font-weight: normal;
 }
 
 .choice-epool-header-actions {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--choice-space-1);
   align-items: center;
 }
 
@@ -751,10 +751,10 @@ onUnmounted(() => {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -773,14 +773,14 @@ onUnmounted(() => {
 
 .choice-epool-body {
   overflow-y: auto;
-  padding: 14px;
+  padding: var(--choice-space-3);
   flex: 1;
 }
 
 .choice-epool-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--choice-space-3);
 }
 
 /* 分组 */
@@ -792,13 +792,13 @@ onUnmounted(() => {
 .choice-epool-group-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   cursor: pointer;
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
   border: 1px solid var(--choice-border);
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text);
   flex-wrap: wrap;
 }
@@ -817,7 +817,7 @@ onUnmounted(() => {
 }
 
 .choice-epool-group-count {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   cursor: pointer;
 }
@@ -825,16 +825,19 @@ onUnmounted(() => {
 .choice-epool-group-body {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 4px 0 4px 16px;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
+  max-height: 2000px;
+  overflow: hidden;
+  transition: max-height var(--choice-transition-slow), opacity var(--choice-transition-slow), padding var(--choice-transition-slow);
+  opacity: 1;
 }
 
 .choice-epool-group-body.is-collapsed {
-  max-height: 4px;
+  max-height: 0;
   padding: 0;
-  gap: 0;
-  overflow: hidden;
   opacity: 0;
+  pointer-events: none;
 }
 
 /* 条目 */
@@ -850,8 +853,8 @@ onUnmounted(() => {
 .choice-epool-entry-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-1) var(--choice-space-2);
   min-height: 0;
   flex-wrap: wrap;
 }
@@ -862,7 +865,7 @@ onUnmounted(() => {
 
 .choice-epool-entry-summary {
   flex: 1;
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -872,13 +875,13 @@ onUnmounted(() => {
 }
 
 .choice-pin-badge {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   flex-shrink: 0;
 }
 
 .choice-cat-select {
-  font-size: 10px;
-  padding: 1px 4px;
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-1);
   width: auto;
   min-width: 0;
   max-width: 90px;
@@ -888,16 +891,16 @@ onUnmounted(() => {
 .choice-epool-entry-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 8px 8px;
+  gap: var(--choice-space-2);
+  padding: 0 var(--choice-space-2) var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
-  padding-top: 6px;
+  padding-top: var(--choice-space-2);
 }
 
 .choice-epool-entry-fields {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
   flex-wrap: nowrap;
 }
 
@@ -910,7 +913,7 @@ onUnmounted(() => {
   color: var(--choice-text-muted);
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 28px;
   height: 28px;
@@ -948,47 +951,47 @@ onUnmounted(() => {
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   white-space: nowrap;
 }
 
 .choice-empty-hint {
   color: var(--choice-text-muted);
-  font-size: 12px;
-  padding: 24px 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-5) 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-empty-hint i {
-  font-size: 32px;
+  font-size: var(--choice-text-xl);
 }
 
 /* 批量操作栏 */
 .choice-epool-batch-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   border-top: 1px solid var(--choice-border);
   background: rgba(74, 144, 217, 0.06);
   flex-shrink: 0;
 }
 
 .choice-epool-batch-count {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text);
   font-weight: bold;
-  margin-right: 8px;
+  margin-right: var(--choice-space-2);
 }
 
 .choice-btn-sm {
-  font-size: 11px;
-  padding: 3px 8px;
+  font-size: var(--choice-text-xs);
+  padding: var(--choice-space-1) var(--choice-space-2);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-full);
   background: var(--choice-bg-element);
@@ -997,7 +1000,7 @@ onUnmounted(() => {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--choice-space-1);
   transition:
     background var(--choice-transition),
     color var(--choice-transition);

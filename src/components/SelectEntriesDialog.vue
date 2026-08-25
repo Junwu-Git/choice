@@ -174,7 +174,7 @@ const onCancel = () => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10003;
+  z-index: var(--choice-z-dialog);
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
@@ -203,23 +203,23 @@ const onCancel = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-sedlg-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-sedlg-header-actions {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--choice-space-1);
   align-items: center;
 }
 
@@ -227,10 +227,10 @@ const onCancel = () => {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -249,14 +249,14 @@ const onCancel = () => {
 
 .choice-sedlg-body {
   overflow-y: auto;
-  padding: 14px;
+  padding: var(--choice-space-4);
   flex: 1;
 }
 
 .choice-sedlg-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-sedlg-group {
@@ -267,13 +267,13 @@ const onCancel = () => {
 .choice-sedlg-group-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-2);
   cursor: pointer;
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
   border: 1px solid var(--choice-border);
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text);
   flex-wrap: wrap;
 }
@@ -292,7 +292,7 @@ const onCancel = () => {
 }
 
 .choice-sedlg-group-count {
-  font-size: 11px;
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
 
@@ -300,11 +300,11 @@ const onCancel = () => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 4px 0 4px 16px;
+  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
 }
 
 .choice-sedlg-entry {
-  padding: 5px 8px;
+  padding: var(--choice-space-1) var(--choice-space-2);
   border-radius: var(--choice-radius-sm);
 }
 
@@ -313,7 +313,7 @@ const onCancel = () => {
 }
 
 .choice-sedlg-entry-text {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -324,13 +324,13 @@ const onCancel = () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
 }
 
 .choice-sedlg-count {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   color: var(--choice-text);
   font-weight: bold;
   margin-right: auto;
@@ -341,7 +341,7 @@ const onCancel = () => {
   color: var(--choice-text-muted);
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 28px;
   height: 28px;
@@ -362,8 +362,8 @@ const onCancel = () => {
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   cursor: pointer;
   flex: 1;
@@ -372,8 +372,8 @@ const onCancel = () => {
 
 .choice-empty-hint {
   color: var(--choice-text-muted);
-  font-size: 12px;
-  padding: 24px 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-5) 0;
   text-align: center;
 }
 </style>

@@ -44,6 +44,28 @@
 
   --choice-transition: 150ms ease;
   --choice-transition-slow: 300ms ease-out;
+
+  /* 间距体系：4px 基准网格 */
+  --choice-space-1: 4px;
+  --choice-space-2: 8px;
+  --choice-space-3: 12px;
+  --choice-space-4: 16px;
+  --choice-space-5: 24px;
+  --choice-space-6: 32px;
+
+  /* 字号体系：语义化档位 */
+  --choice-text-xs: calc(11px * var(--choice-font-scale));
+  --choice-text-sm: calc(13px * var(--choice-font-scale));
+  --choice-text-base: calc(15px * var(--choice-font-scale));
+  --choice-text-lg: calc(17px * var(--choice-font-scale));
+  --choice-text-xl: calc(20px * var(--choice-font-scale));
+
+  /* z-index 分层 */
+  --choice-z-panel: 10;
+  --choice-z-dropdown: 100;
+  --choice-z-dialog: 1000;
+  --choice-z-floating: 9000;
+  --choice-z-popover: 9500;
 }
 
 :root[data-choice-theme='light'] {
@@ -82,6 +104,25 @@
   --choice-opacity: 0.92;
   --choice-card-opacity: 0.7;
   --choice-element-opacity: 0.5;
+
+  --choice-space-1: 4px;
+  --choice-space-2: 8px;
+  --choice-space-3: 12px;
+  --choice-space-4: 16px;
+  --choice-space-5: 24px;
+  --choice-space-6: 32px;
+
+  --choice-text-xs: calc(11px * var(--choice-font-scale));
+  --choice-text-sm: calc(13px * var(--choice-font-scale));
+  --choice-text-base: calc(15px * var(--choice-font-scale));
+  --choice-text-lg: calc(17px * var(--choice-font-scale));
+  --choice-text-xl: calc(20px * var(--choice-font-scale));
+
+  --choice-z-panel: 10;
+  --choice-z-dropdown: 100;
+  --choice-z-dialog: 1000;
+  --choice-z-floating: 9000;
+  --choice-z-popover: 9500;
 }
 
 @keyframes choice-bubble-pulse {

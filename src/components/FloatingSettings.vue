@@ -148,7 +148,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   left: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 10000;
+  z-index: var(--choice-z-floating);
   background: rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: flex-start;
@@ -159,7 +159,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 10001;
+  z-index: calc(var(--choice-z-floating) + 1);
   min-width: 400px;
   min-height: 300px;
   max-width: calc(100vw - 20px);
@@ -190,7 +190,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: var(--choice-space-3) var(--choice-space-4);
   background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
   cursor: move;
@@ -199,27 +199,27 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-grip-icon {
   color: var(--choice-text-muted);
-  font-size: 12px;
+  font-size: var(--choice-text-xs);
   margin-right: 2px;
 }
 
 .choice-floating-title {
-  font-size: 14px;
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-floating-close {
   background: none;
   border: none;
   color: var(--choice-text-muted);
-  font-size: 20px;
+  font-size: var(--choice-text-xl);
   cursor: pointer;
   line-height: 1;
-  padding: 0 4px;
+  padding: 0 var(--choice-space-1);
   border-radius: 50%;
   width: 28px;
   height: 28px;
@@ -238,14 +238,14 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-floating-body {
   overflow-y: auto;
-  padding: 14px;
+  padding: var(--choice-space-4);
   flex: 1;
 }
 
 .choice-tabs {
   display: inline-flex;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: var(--choice-space-1);
+  margin-bottom: var(--choice-space-3);
 }
 
 .choice-tab {
@@ -253,13 +253,13 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   color: var(--choice-text-secondary);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-full);
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: var(--choice-space-2) var(--choice-space-4);
+  font-size: var(--choice-text-xs);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--choice-space-1);
   transition:
     background var(--choice-transition),
     color var(--choice-transition),
@@ -281,8 +281,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 .choice-guide-btn {
   width: 32px;
   justify-content: center;
-  padding: 6px 0;
-  font-size: 14px;
+  padding: var(--choice-space-2) 0;
+  font-size: var(--choice-text-base);
 }
 
 .choice-floating-resize {

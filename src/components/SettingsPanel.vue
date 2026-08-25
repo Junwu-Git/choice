@@ -109,8 +109,14 @@ const onResizeEnd = () => {
 <style scoped>
 .choice-tabs {
   display: inline-flex;
-  gap: 4px;
+  gap: var(--choice-space-1);
   margin-bottom: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.choice-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .choice-tab {
@@ -118,13 +124,13 @@ const onResizeEnd = () => {
   color: var(--choice-text-secondary);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-full);
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: var(--choice-space-2) var(--choice-space-4);
+  font-size: var(--choice-text-sm);
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--choice-space-2);
   transition:
     background var(--choice-transition),
     color var(--choice-transition),
@@ -146,8 +152,8 @@ const onResizeEnd = () => {
 .choice-guide-btn {
   width: 32px;
   justify-content: center;
-  padding: 6px 0;
-  font-size: 14px;
+  padding: var(--choice-space-2) 0;
+  font-size: var(--choice-text-base);
 }
 
 .choice-panel-body {

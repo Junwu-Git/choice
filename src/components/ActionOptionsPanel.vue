@@ -46,11 +46,15 @@
     <div v-if="!collapsed" class="choice-panel-body">
       <div v-if="enrichLoading" class="choice-panel-loading">
         <span class="choice-loading-text">{{ t`正在润色…` }}</span>
-        <div class="choice-loading-bar"></div>
+        <div class="choice-skeleton-card"></div>
+        <div class="choice-skeleton-card choice-skeleton-card--short"></div>
+        <div class="choice-skeleton-card choice-skeleton-card--medium"></div>
       </div>
       <div v-else-if="isGenerating" class="choice-panel-loading">
         <span class="choice-loading-text">{{ t`正在生成选项…` }}</span>
-        <div class="choice-loading-bar"></div>
+        <div class="choice-skeleton-card"></div>
+        <div class="choice-skeleton-card choice-skeleton-card--short"></div>
+        <div class="choice-skeleton-card choice-skeleton-card--medium"></div>
       </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
@@ -85,6 +89,7 @@
           class="choice-option-btn"
           @click="onSelect(option)"
         >
+          <span class="choice-option-number">{{ index + 1 }}</span>
           <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
           <span class="choice-option-divider"></span>
           <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
@@ -201,7 +206,7 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-panel {
   display: flex;
   flex-direction: column;
-  margin: 8px 12px;
+  margin: var(--choice-space-2) var(--choice-space-3);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-md);
   background: var(--choice-bg-panel);
@@ -214,25 +219,25 @@ const onSelect = async (option: ChoiceOption) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   border-bottom: 1px solid var(--choice-border-strong);
   cursor: pointer;
 }
 
 .choice-panel-title {
-  font-size: calc(15px * var(--choice-font-scale));
+  font-size: var(--choice-text-base);
   font-weight: bold;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-panel-tools {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--choice-space-1);
 }
 
 .choice-panel-btn {
@@ -240,12 +245,12 @@ const onSelect = async (option: ChoiceOption) => {
   color: var(--choice-text);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-sm);
-  padding: 3px 8px;
-  font-size: calc(13px * var(--choice-font-scale));
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-sm);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--choice-space-1);
   transition: background var(--choice-transition);
 }
 
@@ -270,7 +275,7 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel-pager {
-  font-size: calc(13px * var(--choice-font-scale));
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   margin: 0 2px;
 }
@@ -278,46 +283,48 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-panel-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 10px 10px;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3) var(--choice-space-3);
 }
 
 .choice-panel-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 12px 0;
+  gap: var(--choice-space-2);
+  padding: var(--choice-space-3) 0;
 }
 
 .choice-loading-text {
-  font-size: calc(13px * var(--choice-font-scale));
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-muted);
 }
 
-.choice-loading-bar {
+.choice-skeleton-card {
   width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(
-    90deg,
-    var(--choice-bg-element) 0%,
-    var(--choice-primary) 50%,
-    var(--choice-bg-element) 100%
-  );
-  background-size: 200% 100%;
-  animation: choice-shimmer 3s ease-in-out infinite;
+  height: 44px;
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+  animation: choice-skeleton 2s ease-in-out infinite;
+}
+
+.choice-skeleton-card--short {
+  width: 70%;
+}
+
+.choice-skeleton-card--medium {
+  width: 85%;
 }
 
 .choice-panel-empty {
   color: var(--choice-text-muted);
-  font-size: calc(13px * var(--choice-font-scale));
-  padding: 4px 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-1) 0;
 }
 
 .choice-panel-hint {
   color: var(--choice-text-hint);
-  font-size: calc(12px * var(--choice-font-scale));
+  font-size: var(--choice-text-xs);
   padding-top: 2px;
 }
 
@@ -326,7 +333,7 @@ const onSelect = async (option: ChoiceOption) => {
   gap: 2px;
   background: var(--choice-bg-element);
   border-radius: var(--choice-radius-full);
-  padding: 3px;
+  padding: var(--choice-space-1);
 }
 
 .choice-behavior-btn {
@@ -334,8 +341,8 @@ const onSelect = async (option: ChoiceOption) => {
   color: var(--choice-text-muted);
   border: none;
   border-radius: var(--choice-radius-full);
-  padding: 2px 10px;
-  font-size: calc(12px * var(--choice-font-scale));
+  padding: 2px var(--choice-space-3);
+  font-size: var(--choice-text-xs);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -363,8 +370,8 @@ const onSelect = async (option: ChoiceOption) => {
   color: var(--choice-text);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
-  padding: 8px 10px;
-  font-size: calc(15px * var(--choice-font-scale));
+  padding: var(--choice-space-2) var(--choice-space-3);
+  font-size: var(--choice-text-base);
   cursor: pointer;
   line-height: 1.4;
   transition:
@@ -381,6 +388,16 @@ const onSelect = async (option: ChoiceOption) => {
 
 .choice-option-btn:active {
   transform: scale(0.985);
+}
+
+.choice-option-number {
+  width: calc(24px * var(--choice-font-scale));
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  text-align: center;
+  margin-right: var(--choice-space-1);
 }
 
 .choice-option-type {
@@ -401,14 +418,14 @@ const onSelect = async (option: ChoiceOption) => {
   align-self: stretch;
   border-left: 1px dashed var(--choice-border-strong);
   flex-shrink: 0;
-  margin-right: 10px;
+  margin-right: var(--choice-space-3);
 }
 
 .choice-option-content {
   flex: 1;
   min-width: 0;
   line-height: 1.4;
-  font-size: calc(15px * var(--choice-font-scale));
+  font-size: var(--choice-text-base);
 }
 
 @keyframes choice-shimmer {

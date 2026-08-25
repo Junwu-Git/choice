@@ -217,14 +217,14 @@ const reset = () => {
 .choice-api-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
 
@@ -241,13 +241,13 @@ const reset = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 8px;
+  padding: var(--choice-space-2) var(--choice-space-2);
   background: linear-gradient(180deg, var(--choice-bg-element), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
 .choice-form-title {
-  font-size: 12px;
+  font-size: var(--choice-text-sm);
   font-weight: bold;
   color: var(--choice-text);
 }
@@ -255,9 +255,9 @@ const reset = () => {
 .choice-api-form-body {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 0 8px 8px;
-  padding-top: 6px;
+  gap: var(--choice-space-2);
+  padding: 0 var(--choice-space-2) var(--choice-space-2);
+  padding-top: var(--choice-space-2);
 }
 
 .choice-api-name-row {
@@ -285,7 +285,7 @@ const reset = () => {
   color: #c86a6a;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--choice-text-sm);
   flex-shrink: 0;
   width: 28px;
   height: 28px;
@@ -303,7 +303,7 @@ const reset = () => {
 .choice-model-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--choice-space-2);
 }
 
 .choice-model-row .text_pole {
@@ -314,7 +314,7 @@ const reset = () => {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--choice-space-1);
   flex-shrink: 0;
 }
 
@@ -327,8 +327,8 @@ const reset = () => {
 }
 
 .choice-model-item {
-  padding: 4px 8px;
-  font-size: 11px;
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text);
   cursor: pointer;
   border-bottom: 1px solid var(--choice-border);
@@ -349,7 +349,7 @@ const reset = () => {
 
 .choice-api-row {
   display: flex;
-  gap: 8px;
+  gap: var(--choice-space-2);
   flex-wrap: nowrap;
 }
 
@@ -361,27 +361,27 @@ const reset = () => {
 .choice-api-bottom-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--choice-space-2);
 }
 
 .choice-api-checks {
   display: flex;
-  gap: 10px;
+  gap: var(--choice-space-3);
   flex-shrink: 0;
 }
 
 .choice-check {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 11px;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
 }
 
 .choice-api-bottom-actions {
   display: flex;
-  gap: 6px;
-  padding-top: 8px;
+  gap: var(--choice-space-2);
+  padding-top: var(--choice-space-2);
   border-top: 1px solid var(--choice-border);
   margin-top: 4px;
 }
