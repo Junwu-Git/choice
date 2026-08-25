@@ -91,10 +91,6 @@ export const DEFAULT_PROMPT_EXTRA =
   '  正确格式: ["强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。"]（先声夺人+微表情收尾）\n' +
   '  正确格式: ["递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』"]（基于对方状态的温和互动）';
 
-
-
-
-
 /** core_rules 模块中不受新手字段影响的静态部分（输出格式、内容要求、正误示例）。
  *  当 person_style 和 option_rules 都非空时，与它们动态拼接为完整的 core_rules 内容。 */
 export const CORE_RULES_STATIC = `【输出格式】
@@ -157,12 +153,6 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好
 2. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
 3. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目
 4. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
-
-
-
-
-
-
 
 export const DEFAULT_MODULES: PromptModule[] = defaultModulesJson.modules;
 

@@ -331,7 +331,8 @@ export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
 /** 思维链标签块剥离正则：parseOptions 与 parsePoolGenItems 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步两处解析，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-const STRIP_REASONING_TAGS_RE = /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
+const STRIP_REASONING_TAGS_RE =
+  /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 export function parseOptions(text: string, count: number): string[] {
   console.log('[Choice] parseOptions 原始输入', { text: text.slice(0, 2000), count });
@@ -364,10 +365,12 @@ export function parseOptions(text: string, count: number): string[] {
         const i = p
           .map(x => {
             if (typeof x === 'string') return x.trim();
-            return x?.text?.trim()
-              ?? x?.option?.trim()
-              ?? (x?.t && x?.c ? `${x.t}: ${x.c}` : '')
-              ?? (x?.type && x?.content ? `${x.type}: ${x.content}` : '');
+            return (
+              x?.text?.trim() ??
+              x?.option?.trim() ??
+              (x?.t && x?.c ? `${x.t}: ${x.c}` : '') ??
+              (x?.type && x?.content ? `${x.type}: ${x.content}` : '')
+            );
           })
           .filter(Boolean);
         if (i.length) return i.slice(0, count);

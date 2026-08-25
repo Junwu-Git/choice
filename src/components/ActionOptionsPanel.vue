@@ -464,6 +464,4 @@ const onSelect = async (option: ChoiceOption) => {
   line-height: 1.4;
   font-size: var(--choice-text-base);
 }
-
-
 </style>

@@ -35,12 +35,7 @@ import { resolveCustomApi } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { generatorState } from '@/core/generator';
-import {
-  openSettings,
-  isBubbleContextMenuOpen,
-  bubbleX,
-  bubbleY,
-} from '@/core/floating-state';
+import { openSettings, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 
 const BUBBLE_SIZE = 60;
@@ -163,7 +158,8 @@ watch(
     const centerX = val + BUBBLE_SIZE / 2;
     isSnappedLeft.value = centerX < window.innerWidth / 2 && (val === -SNAP_OFFSET || val <= 0);
     isSnappedRight.value =
-      centerX >= window.innerWidth / 2 && (val === window.innerWidth - BUBBLE_SIZE + SNAP_OFFSET || val >= window.innerWidth - BUBBLE_SIZE);
+      centerX >= window.innerWidth / 2 &&
+      (val === window.innerWidth - BUBBLE_SIZE + SNAP_OFFSET || val >= window.innerWidth - BUBBLE_SIZE);
     bubbleX.value = val;
     bubbleY.value = posY.value;
   },
