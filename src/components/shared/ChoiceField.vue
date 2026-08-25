@@ -11,9 +11,12 @@
 import { ref } from 'vue';
 import { useCompactLayout } from './useCompactLayout';
 
-withDefaults(defineProps<{
-  label?: string;
-}>(), {});
+withDefaults(
+  defineProps<{
+    label?: string;
+  }>(),
+  {},
+);
 
 const fieldEl = ref<HTMLElement | null>(null);
 const { isCompact } = useCompactLayout(fieldEl);

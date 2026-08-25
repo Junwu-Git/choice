@@ -829,7 +829,10 @@ onUnmounted(() => {
   padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
   max-height: 2000px;
   overflow: hidden;
-  transition: max-height var(--choice-transition-slow), opacity var(--choice-transition-slow), padding var(--choice-transition-slow);
+  transition:
+    max-height var(--choice-transition-slow),
+    opacity var(--choice-transition-slow),
+    padding var(--choice-transition-slow);
   opacity: 1;
 }
 

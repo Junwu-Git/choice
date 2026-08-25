@@ -8,7 +8,11 @@
     >
       <i v-if="icon" :class="icon" class="choice-section-icon"></i>
       <span class="choice-section-title">{{ title }}</span>
-      <i v-if="collapsible" class="choice-section-chevron fa-solid" :class="collapsed ? 'fa-chevron-right' : 'fa-chevron-down'"></i>
+      <i
+        v-if="collapsible"
+        class="choice-section-chevron fa-solid"
+        :class="collapsed ? 'fa-chevron-right' : 'fa-chevron-down'"
+      ></i>
     </div>
     <div v-show="!collapsed" class="choice-section-body">
       <slot></slot>
@@ -19,14 +23,17 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 
-const props = withDefaults(defineProps<{
-  title?: string;
-  icon?: string;
-  collapsible?: boolean;
-  defaultOpen?: boolean;
-}>(), {
-  defaultOpen: true,
-});
+const props = withDefaults(
+  defineProps<{
+    title?: string;
+    icon?: string;
+    collapsible?: boolean;
+    defaultOpen?: boolean;
+  }>(),
+  {
+    defaultOpen: true,
+  },
+);
 
 const collapsed = ref(!props.defaultOpen);
 

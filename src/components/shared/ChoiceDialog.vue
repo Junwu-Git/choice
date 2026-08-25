@@ -26,16 +26,19 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{
-  open: boolean;
-  title: string;
-  icon?: string;
-  width?: string;
-  maxHeight?: string;
-}>(), {
-  width: '560px',
-  maxHeight: '85vh',
-});
+withDefaults(
+  defineProps<{
+    open: boolean;
+    title: string;
+    icon?: string;
+    width?: string;
+    maxHeight?: string;
+  }>(),
+  {
+    width: '560px',
+    maxHeight: '85vh',
+  },
+);
 
 defineEmits<{
   close: [];
