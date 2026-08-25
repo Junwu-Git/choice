@@ -1,12 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="visible" class="choice-guide-popover-backdrop" @click.self="emit('close')"></div>
-    <div
-      v-if="visible"
-      ref="popoverEl"
-      class="choice-guide-popover"
-      :style="popoverStyle"
-    >
+    <div v-if="visible" ref="popoverEl" class="choice-guide-popover" :style="popoverStyle">
       <div class="choice-guide-popover-header">
         <i :class="icon"></i>
         <span class="choice-guide-popover-title">{{ title }}</span>

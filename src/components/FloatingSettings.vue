@@ -34,7 +34,12 @@
               <i :class="tab.icon"></i>
               {{ tab.label }}
             </button>
-            <button ref="guideBtn" class="choice-tab choice-guide-btn" :title="t`页面指引`" @click="showGuide = !showGuide">
+            <button
+              ref="guideBtn"
+              class="choice-tab choice-guide-btn"
+              :title="t`页面指引`"
+              @click="showGuide = !showGuide"
+            >
               <i class="fa-solid fa-circle-question"></i>
             </button>
           </div>

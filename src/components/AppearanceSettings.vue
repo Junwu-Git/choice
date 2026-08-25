@@ -28,14 +28,7 @@
       </div>
       <div v-if="ui.enrich_enabled" class="choice-enrich-count">
         <span class="choice-appearance-label">{{ t`润色版本数` }}</span>
-        <input
-          v-model.number="ui.enrich_count"
-          type="number"
-          min="1"
-          max="20"
-          class="text_pole"
-          style="width: 60px"
-        />
+        <input v-model.number="ui.enrich_count" type="number" min="1" max="20" class="text_pole" style="width: 60px" />
         <span class="choice-field-hint">{{ t`（1-20）` }}</span>
       </div>
     </div>
@@ -43,11 +36,21 @@
     <div class="choice-appearance-section">
       <span class="choice-appearance-section-title">{{ t`主题` }}</span>
       <div class="choice-theme-switch">
-        <button class="choice-theme-btn" :class="{ active: ui.theme === 'dark' }" :title="t`切换到暗色主题`" @click="ui.theme = 'dark'">
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.theme === 'dark' }"
+          :title="t`切换到暗色主题`"
+          @click="ui.theme = 'dark'"
+        >
           <i class="fa-solid fa-moon"></i>
           {{ t`暗色` }}
         </button>
-        <button class="choice-theme-btn" :class="{ active: ui.theme === 'light' }" :title="t`切换到亮色主题`" @click="ui.theme = 'light'">
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.theme === 'light' }"
+          :title="t`切换到亮色主题`"
+          @click="ui.theme = 'light'"
+        >
           <i class="fa-solid fa-sun"></i>
           {{ t`亮色` }}
         </button>

@@ -1,5 +1,5 @@
 <template>
-<div class="choice-wi-editor">
+  <div class="choice-wi-editor">
     <div class="choice-wi-checks">
       <label class="choice-check">
         <input v-model="globalStore.settings.world_info.enabled" type="checkbox" />
@@ -7,7 +7,9 @@
       </label>
     </div>
 
-    <button class="menu_button" :title="t`从酒馆重新加载世界书列表和条目`" @click="refreshAll">{{ t`刷新列表` }}</button>
+    <button class="menu_button" :title="t`从酒馆重新加载世界书列表和条目`" @click="refreshAll">
+      {{ t`刷新列表` }}
+    </button>
 
     <div v-if="activeBooks.length > 0">
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>

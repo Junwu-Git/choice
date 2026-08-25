@@ -141,7 +141,9 @@
 
         <div v-if="selected.size > 0" class="choice-epool-batch-bar">
           <span class="choice-epool-batch-count">{{ t`已选 ${selected.size} 条` }}</span>
-          <button class="choice-btn-sm" :title="t`复制选中的条目`" @click="copySelected"><i class="fa-solid fa-copy"></i> {{ t`复制` }}</button>
+          <button class="choice-btn-sm" :title="t`复制选中的条目`" @click="copySelected">
+            <i class="fa-solid fa-copy"></i> {{ t`复制` }}
+          </button>
           <button class="choice-btn-sm" :title="t`移动到分组`" @click="moveSelected = !moveSelected">
             <i class="fa-solid fa-arrow-right"></i> {{ t`移动` }}
           </button>
@@ -152,7 +154,11 @@
           <button v-if="moveSelected" class="choice-btn-sm" :title="t`确认移动到目标分组`" @click="moveSelectedEntries">
             {{ t`确认移动` }}
           </button>
-          <button class="choice-btn-sm choice-btn-del" :title="t`删除选中的条目`" @click="deleteTarget = { type: 'batch', count: selected.size }">
+          <button
+            class="choice-btn-sm choice-btn-del"
+            :title="t`删除选中的条目`"
+            @click="deleteTarget = { type: 'batch', count: selected.size }"
+          >
             <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
           </button>
           <button

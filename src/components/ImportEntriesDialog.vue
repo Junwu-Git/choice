@@ -7,8 +7,14 @@
             <i class="fa-solid fa-paste"></i>
             {{ t`粘贴导入` }}
           </span>
-          <div style="display:inline-flex;gap:3px;align-items:center">
-            <button ref="guideBtn" class="choice-importdlg-close" :title="t`页面指引`" @click="showGuide = !showGuide" style="font-size:14px">
+          <div style="display: inline-flex; gap: 3px; align-items: center">
+            <button
+              ref="guideBtn"
+              class="choice-importdlg-close"
+              :title="t`页面指引`"
+              @click="showGuide = !showGuide"
+              style="font-size: 14px"
+            >
               <i class="fa-solid fa-circle-question"></i>
             </button>
             <button class="choice-importdlg-close" :title="t`取消`" @click="emit('close')">&times;</button>

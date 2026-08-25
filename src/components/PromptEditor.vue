@@ -3,7 +3,12 @@
     <div class="choice-prompt-toolbar">
       <div class="choice-prompt-toolbar-left">
         <button class="menu_button" :title="t`添加新的提示词模块`" @click="addModule">{{ t`新增模块` }}</button>
-        <button v-if="globalStore.settings.ui.enrich_enabled" class="menu_button" :title="t`添加润色专用的提示词模块`" @click="addEnrichModule">
+        <button
+          v-if="globalStore.settings.ui.enrich_enabled"
+          class="menu_button"
+          :title="t`添加润色专用的提示词模块`"
+          @click="addEnrichModule"
+        >
           {{ t`新增润色模块` }}
         </button>
         <button class="menu_button" :title="t`将所有提示词模块导出为 JSON 文件`" @click="exportPrompts">
@@ -36,11 +41,19 @@
           <input v-model="rules.baibai_enabled" type="checkbox" />
           {{ t`柏宝书` }}
         </label>
-        <button class="menu_button" :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`" @click="togglePreview">
+        <button
+          class="menu_button"
+          :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`"
+          @click="togglePreview"
+        >
           <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
           {{ showPreview ? t`隐藏预览` : t`预览` }}
         </button>
-        <button class="menu_button" :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`" @click="resetPromptToDefaults">
+        <button
+          class="menu_button"
+          :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`"
+          @click="resetPromptToDefaults"
+        >
           {{ t`恢复默认` }}
         </button>
       </div>
@@ -61,7 +74,9 @@
             </button>
           </div>
           <textarea v-model="globalStore.settings.prompt_rules.person_style" rows="3" class="text_pole"></textarea>
-          <small class="choice-field-hint">{{ t`描述选项的叙述视角和人称要求，如"第三人称"、"第一人称女主视角"等` }}</small>
+          <small class="choice-field-hint">{{
+            t`描述选项的叙述视角和人称要求，如"第三人称"、"第一人称女主视角"等`
+          }}</small>
         </div>
         <div class="choice-field">
           <div class="choice-field-label">
@@ -365,18 +380,23 @@ const addEnrichModule = () => {
 };
 
 const resetPromptToDefaults = () => {
-  if (!confirm(t`确定要将所有提示词模块完全恢复为默认值吗？\n\n这将重置模块顺序、启用状态和内容。此操作不可撤销。`)) return;
+  if (!confirm(t`确定要将所有提示词模块完全恢复为默认值吗？\n\n这将重置模块顺序、启用状态和内容。此操作不可撤销。`))
+    return;
   globalStore.resetPromptToDefaults();
   toastr.success(t`提示词已恢复为默认值`);
 };
 
 function exportPrompts() {
   const modules = globalStore.settings.prompt_rules.modules;
-  const json = JSON.stringify({
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    modules,
-  }, null, 2);
+  const json = JSON.stringify(
+    {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      modules,
+    },
+    null,
+    2,
+  );
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -390,7 +410,7 @@ function importPrompts() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.json';
-  input.onchange = async (e) => {
+  input.onchange = async e => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
     try {

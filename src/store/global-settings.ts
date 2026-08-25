@@ -296,7 +296,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '全局默认',
         entries: makeEntries(oldGlobalPool),
         is_default: true,
-        generation: (oldGlobalGen as any) ?? { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+        generation: (oldGlobalGen as any) ?? {
+          count_mode: '4',
+          categories_enabled: true,
+          shuffle_final: true,
+          pinned_overflow: 'send_all',
+          cross_layer_fallback: false,
+        },
       });
     }
 
@@ -307,7 +313,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: charName ? `角色 ${charName}` : '角色默认',
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
-        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+        generation: {
+          count_mode: '4',
+          categories_enabled: true,
+          shuffle_final: true,
+          pinned_overflow: 'send_all',
+          cross_layer_fallback: false,
+        },
       });
       try {
         const chid = this_chid;
@@ -328,7 +340,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '聊天默认',
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
-        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+        generation: {
+          count_mode: '4',
+          categories_enabled: true,
+          shuffle_final: true,
+          pinned_overflow: 'send_all',
+          cross_layer_fallback: false,
+        },
       });
       try {
         const cMeta = chat_metadata?.[setting_field];
@@ -361,7 +379,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           condition: e.condition,
         })),
         is_default: true,
-        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
+        generation: {
+          count_mode: '4',
+          categories_enabled: true,
+          shuffle_final: true,
+          pinned_overflow: 'send_all',
+          cross_layer_fallback: false,
+        },
       });
     }
 
@@ -411,18 +435,26 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
       ];
       validated.master_pool = [...defaultEntries];
-      validated.configs = [{
-        id: uuidv4(),
-        name: '默认配置',
-        entries: defaultEntries.map(e => ({
-          entry_id: e.id,
-          pinned: e.pinned,
-          weight: e.weight,
-          condition: e.condition,
-        })),
-        is_default: true,
-        generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
-      }];
+      validated.configs = [
+        {
+          id: uuidv4(),
+          name: '默认配置',
+          entries: defaultEntries.map(e => ({
+            entry_id: e.id,
+            pinned: e.pinned,
+            weight: e.weight,
+            condition: e.condition,
+          })),
+          is_default: true,
+          generation: {
+            count_mode: '4',
+            categories_enabled: true,
+            shuffle_final: true,
+            pinned_overflow: 'send_all',
+            cross_layer_fallback: false,
+          },
+        },
+      ];
     }
   }
 
@@ -616,13 +648,26 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
     ];
     fresh.master_pool = [...defaultEntries];
-    fresh.configs = [{
-      id: uuidv4(),
-      name: '默认配置',
-      entries: defaultEntries.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight, condition: e.condition })),
-      is_default: true,
-      generation: { count_mode: '4', categories_enabled: true, shuffle_final: true, pinned_overflow: 'send_all', cross_layer_fallback: false },
-    }];
+    fresh.configs = [
+      {
+        id: uuidv4(),
+        name: '默认配置',
+        entries: defaultEntries.map(e => ({
+          entry_id: e.id,
+          pinned: e.pinned,
+          weight: e.weight,
+          condition: e.condition,
+        })),
+        is_default: true,
+        generation: {
+          count_mode: '4',
+          categories_enabled: true,
+          shuffle_final: true,
+          pinned_overflow: 'send_all',
+          cross_layer_fallback: false,
+        },
+      },
+    ];
 
     settings.value = fresh;
   }

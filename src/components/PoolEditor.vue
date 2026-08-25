@@ -1,5 +1,5 @@
 <template>
-<div class="choice-pool-editor">
+  <div class="choice-pool-editor">
     <!-- 配置工具栏 -->
     <div class="choice-config-bar">
       <div class="choice-config-row">
@@ -14,7 +14,9 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedConfigId === chatStore.settings.config_id }"
-            :title="selectedConfigId === chatStore.settings.config_id ? t`当前聊天已绑定（点击取消）` : t`绑定到当前聊天`"
+            :title="
+              selectedConfigId === chatStore.settings.config_id ? t`当前聊天已绑定（点击取消）` : t`绑定到当前聊天`
+            "
             @click="bindChat"
           >
             <i class="fa-solid fa-comment"></i>
@@ -22,7 +24,9 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedConfigId === characterStore.settings.config_id }"
-            :title="selectedConfigId === characterStore.settings.config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`"
+            :title="
+              selectedConfigId === characterStore.settings.config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`
+            "
             @click="bindCharacter"
           >
             <i class="fa-solid fa-user"></i>
@@ -87,7 +91,11 @@
       <div class="choice-inline-field">
         <div class="choice-inline-field-head">
           <label class="choice-inline-label">{{ t`已选条目` }} ({{ selectedCount }})</label>
-          <button class="choice-btn-sm choice-btn-new" :title="t`从条目库勾选条目添加到当前配置`" @click="showSelectDialog = true">
+          <button
+            class="choice-btn-sm choice-btn-new"
+            :title="t`从条目库勾选条目添加到当前配置`"
+            @click="showSelectDialog = true"
+          >
             <i class="fa-solid fa-plus"></i> {{ t`添加条目` }}
           </button>
         </div>

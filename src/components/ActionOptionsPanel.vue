@@ -54,13 +54,28 @@
       </div>
       <template v-else-if="visibleOptions.length > 0">
         <div class="choice-behavior-bar">
-          <button class="choice-behavior-btn" :class="{ active: behavior === 'send' }" @click="behavior = 'send'" :title="t`点击选项后发送消息`">
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'send' }"
+            @click="behavior = 'send'"
+            :title="t`点击选项后发送消息`"
+          >
             {{ t`发送` }}
           </button>
-          <button class="choice-behavior-btn" :class="{ active: behavior === 'fill' }" @click="behavior = 'fill'" :title="t`点击选项后填入输入框`">
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'fill' }"
+            @click="behavior = 'fill'"
+            :title="t`点击选项后填入输入框`"
+          >
             {{ t`覆盖` }}
           </button>
-          <button class="choice-behavior-btn" :class="{ active: behavior === 'append' }" @click="behavior = 'append'" :title="t`点击选项后追加到输入框末尾`">
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'append' }"
+            @click="behavior = 'append'"
+            :title="t`点击选项后追加到输入框末尾`"
+          >
             {{ t`尾附` }}
           </button>
         </div>
@@ -104,7 +119,9 @@ const isGenerating = computed(() => generatorState.loading);
 const chatStore = useChatSettingsStore();
 const behavior = computed({
   get: () => chatStore.settings.behavior,
-  set: (v) => { chatStore.settings.behavior = v; },
+  set: v => {
+    chatStore.settings.behavior = v;
+  },
 });
 
 const visible = computed(() => {
