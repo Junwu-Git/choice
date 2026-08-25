@@ -30,7 +30,7 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
       .filter(e => entryMap.has(e.id))
       .map(e => {
         const cfg = entryMap.get(e.id)!;
-        return { ...e, pinned: cfg.pinned, weight: cfg.weight, condition: cfg.condition };
+        return { ...e, pinned: cfg.pinned, weight: cfg.weight, condition: cfg.condition ?? '' };
       });
   });
 

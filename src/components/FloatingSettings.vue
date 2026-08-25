@@ -153,6 +153,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
+  transition: opacity 0.25s ease-out;
 }
 
 .choice-floating-dialog {

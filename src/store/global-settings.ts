@@ -232,7 +232,22 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
-  validated.prompt_rules.schema_version = 12;
+  if (version < 14) {
+    // v13: 新增输出规格模块（output_spec），强化格式约束；更新 thinking_prompt 格式检查项
+    const defaults = klona(DEFAULT_MODULES);
+    const spec = defaults.find(m => m.id === 'output_spec');
+    if (spec && !validated.prompt_rules.modules.some(m => m.id === 'output_spec')) {
+      validated.prompt_rules.modules.push(spec);
+    }
+    const newTP = defaults.find(m => m.id === 'thinking_prompt');
+    const oldTP = validated.prompt_rules.modules.find(m => m.id === 'thinking_prompt');
+    if (newTP && oldTP) {
+      oldTP.content = newTP.content;
+    }
+    resetOrderFromDefaults(validated);
+  }
+
+  validated.prompt_rules.schema_version = 14;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
@@ -507,7 +522,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 12;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 14;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -638,7 +653,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
-    fresh.prompt_rules.schema_version = 11;
+    fresh.prompt_rules.schema_version = 14;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
 
     const defaultEntries: PoolEntry[] = [

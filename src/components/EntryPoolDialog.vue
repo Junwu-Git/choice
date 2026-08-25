@@ -300,8 +300,9 @@ const groupedEntries = computed<EntryGroup[]>(() => {
 const entrySummary = (entry: PoolEntry): string => {
   const text = entry.text.trim();
   if (!text) return t`<空条目>`;
-  if (text.includes(': ')) {
-    const parts = text.split(': ');
+  const entrySepRe = /[:：][ 　]/;
+  if (entrySepRe.test(text)) {
+    const parts = text.split(entrySepRe);
     return parts[0].replace(/"/g, '') + ' | ' + parts.slice(1).join(': ').replace(/"/g, '').slice(0, 40);
   }
   return text.replace(/"/g, '').slice(0, 50);

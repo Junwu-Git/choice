@@ -1,6 +1,6 @@
 <template>
-  <div v-show="visible" class="choice-panel">
-    <div class="choice-panel-header" @click="collapsed = !collapsed">
+  <div v-show="visible" class="choice-panel" :class="{ 'choice-panel--compact': compact }">
+    <div v-if="!compact" class="choice-panel-header" @click="collapsed = !collapsed">
       <span class="choice-panel-title">
         <i :class="enrichMode ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
         {{ enrichMode ? t`输入润色` : t`行动选项` }}
@@ -43,21 +43,15 @@
       </div>
     </div>
 
-    <div v-if="!collapsed" class="choice-panel-body">
+    <div v-if="compact || !collapsed" class="choice-panel-body">
       <div v-if="enrichLoading" class="choice-panel-loading">
-        <span class="choice-loading-text">{{ t`正在润色…` }}</span>
-        <div class="choice-skeleton-card"></div>
-        <div class="choice-skeleton-card choice-skeleton-card--short"></div>
-        <div class="choice-skeleton-card choice-skeleton-card--medium"></div>
+        <div class="choice-loading-bar"></div>
       </div>
       <div v-else-if="isGenerating" class="choice-panel-loading">
-        <span class="choice-loading-text">{{ t`正在生成选项…` }}</span>
-        <div class="choice-skeleton-card"></div>
-        <div class="choice-skeleton-card choice-skeleton-card--short"></div>
-        <div class="choice-skeleton-card choice-skeleton-card--medium"></div>
+        <div class="choice-loading-bar"></div>
       </div>
       <template v-else-if="visibleOptions.length > 0">
-        <div class="choice-behavior-bar">
+        <div v-if="!compact" class="choice-behavior-bar">
           <button
             class="choice-behavior-btn"
             :class="{ active: behavior === 'send' }"
@@ -94,12 +88,12 @@
           <span class="choice-option-divider"></span>
           <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
         </button>
-        <div v-if="!enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
+        <div v-if="!compact && !enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
       </template>
       <div v-else class="choice-panel-empty">
         {{ enrichMode ? t`暂无润色选项` : t`点击生成按钮获取选项` }}
       </div>
-      <div v-if="!enrichMode && !isGenerating && visibleOptions.length === 0" class="choice-panel-hint">
+      <div v-if="!compact && !enrichMode && !isGenerating && visibleOptions.length === 0" class="choice-panel-hint">
         {{ t`生成前请确保已在设置中配置条目池和 API` }}
       </div>
     </div>
@@ -114,6 +108,8 @@ import type { ChoiceOption } from '@/core/options-store';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { sendTextareaMessage } from '@sillytavern/script';
+
+const props = defineProps<{ compact?: boolean }>();
 
 const panelStore = usePanelStateStore();
 const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory, enrichMode, enrichLoading } =
@@ -130,6 +126,9 @@ const behavior = computed({
 });
 
 const visible = computed(() => {
+  if (props.compact) {
+    return true;
+  }
   if (enrichMode.value) {
     return true;
   }
@@ -175,18 +174,27 @@ const onNext = () => {
   panelStore.goTo(panelStore.currentIndex + 1);
 };
 
+// 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
+const OPTION_SEP_RE = /[:：]\s/;
+
+const findOptionSep = (text: string): { idx: number; len: number } | null => {
+  const m = text.match(OPTION_SEP_RE);
+  return m ? { idx: m.index!, len: m[0].length } : null;
+};
+
 const parseOptionType = (text: string): string => {
-  const idx = text.indexOf(': ');
-  return idx !== -1 ? text.slice(0, idx).replace(/"/g, '') : text.replace(/"/g, '');
+  const sep = findOptionSep(text);
+  return sep ? text.slice(0, sep.idx).replace(/"/g, '') : text.replace(/"/g, '');
 };
 
 const parseOptionContent = (text: string): string => {
-  const idx = text.indexOf(': ');
-  return idx !== -1 ? text.slice(idx + 2) : text;
+  const sep = findOptionSep(text);
+  return sep ? text.slice(sep.idx + sep.len) : text;
 };
 
 const onSelect = async (option: ChoiceOption) => {
-  const content = option.text.includes(': ') ? option.text.slice(option.text.indexOf(': ') + 2) : option.text;
+  const sep = findOptionSep(option.text);
+  const content = sep ? option.text.slice(sep.idx + sep.len) : option.text;
   const $textarea = $('#send_textarea');
   if (behavior.value === 'append') {
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
@@ -213,6 +221,33 @@ const onSelect = async (option: ChoiceOption) => {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   overflow: hidden;
+}
+
+.choice-panel--compact {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.choice-panel--compact .choice-option-btn {
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-1) var(--choice-space-2);
+}
+
+.choice-panel--compact .choice-option-type {
+  font-size: calc(14px * var(--choice-font-scale));
+  width: calc(72px * var(--choice-font-scale));
+}
+
+.choice-panel--compact .choice-option-number {
+  width: calc(18px * var(--choice-font-scale));
+}
+
+.choice-panel--compact .choice-option-content {
+  line-height: 1.3;
 }
 
 .choice-panel-header {
@@ -288,32 +323,34 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel-loading {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-3) 0;
+  align-items: flex-end;
 }
 
-.choice-loading-text {
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-muted);
-}
-
-.choice-skeleton-card {
+.choice-loading-bar {
   width: 100%;
-  height: 44px;
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
-  animation: choice-skeleton 2s ease-in-out infinite;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--choice-bg-card) 0%,
+    var(--choice-bg-card) 40%,
+    rgba(74, 144, 217, 0.2) 50%,
+    var(--choice-bg-card) 60%,
+    var(--choice-bg-card) 100%
+  );
+  background-size: 200% 100%;
+  animation: choice-loading-shimmer 5s ease-in-out infinite;
 }
 
-.choice-skeleton-card--short {
-  width: 70%;
-}
-
-.choice-skeleton-card--medium {
-  width: 85%;
+@keyframes choice-loading-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .choice-panel-empty {
@@ -428,12 +465,5 @@ const onSelect = async (option: ChoiceOption) => {
   font-size: var(--choice-text-base);
 }
 
-@keyframes choice-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
+
 </style>

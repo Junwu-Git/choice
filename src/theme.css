@@ -62,10 +62,10 @@
 
   /* z-index 分层 */
   --choice-z-panel: 10;
-  --choice-z-dropdown: 100;
-  --choice-z-dialog: 1000;
-  --choice-z-floating: 9000;
-  --choice-z-popover: 9500;
+  --choice-z-dropdown: 30200;
+  --choice-z-dialog: 30100;
+  --choice-z-floating: 30000;
+  --choice-z-popover: 30300;
 }
 
 :root[data-choice-theme='light'] {
@@ -119,10 +119,10 @@
   --choice-text-xl: calc(20px * var(--choice-font-scale));
 
   --choice-z-panel: 10;
-  --choice-z-dropdown: 100;
-  --choice-z-dialog: 1000;
-  --choice-z-floating: 9000;
-  --choice-z-popover: 9500;
+  --choice-z-dropdown: 30200;
+  --choice-z-dialog: 30100;
+  --choice-z-floating: 30000;
+  --choice-z-popover: 30300;
 }
 
 @keyframes choice-bubble-pulse {
@@ -135,14 +135,29 @@
   }
 }
 
-@keyframes choice-skeleton {
-  0% {
-    opacity: 0.3;
+@keyframes choice-bubble-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 12px var(--choice-primary-glow);
   }
   50% {
-    opacity: 0.6;
+    box-shadow: 0 0 22px var(--choice-primary-glow);
+  }
+}
+
+@keyframes choice-badge-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
   }
   100% {
-    opacity: 0.3;
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes choice-bubble-ring-spin {
+  to {
+    transform: rotate(360deg);
   }
 }

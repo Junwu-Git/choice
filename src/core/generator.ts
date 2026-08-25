@@ -169,8 +169,12 @@ ${CORE_RULES_STATIC}`;
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
+      case 'thinking_prompt': {
+        const content = substituteParams(sub(mod.content, ctx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
       case 'assistant_ack':
-      case 'thinking_prompt':
       case 'assistant_thinking': {
         const content = mod.content;
         if (content) msgs.push({ role: mod.role, content });
@@ -327,27 +331,44 @@ export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
 /** 思维链标签块剥离正则：parseOptions 与 parsePoolGenItems 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步两处解析，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-const STRIP_REASONING_TAGS_RE = /<(?:think|reasoning|thought)>[\s\S]*?<\/(?:think|reasoning|thought)>/gi;
+const STRIP_REASONING_TAGS_RE = /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 export function parseOptions(text: string, count: number): string[] {
+  console.log('[Choice] parseOptions 原始输入', { text: text.slice(0, 2000), count });
   // 先去除 thinking/reasoning/thought 标签块（包括预填充产生的 <thinking> 块）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
 
   const m = c.match(/<options>([\s\S]*?)<\/options>/i);
-  if (m) c = m[1].trim();
-  else
-    c = c
-      .replace(/^```[a-zA-Z]*\s*/i, '')
-      .replace(/\s*```$/, '')
-      .trim();
+  if (m) {
+    c = m[1].trim();
+  } else {
+    // 处理模型输出被截断、缺少 </options> 的情况：从 <options> 后截取到文本末尾
+    const openTagIdx = c.search(/<options>/i);
+    if (openTagIdx !== -1) {
+      c = c.slice(openTagIdx + '<options>'.length).trim();
+    }
+  }
+  // 剥离 markdown 代码块（LLM 可能输出 ```json...```）
+  c = c
+    .replace(/^```[a-zA-Z]*\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
 
   // 尝试 JSON 解析
   if (c.startsWith('['))
     try {
-      const p = JSON.parse(c);
+      // 处理 JSON 尾随逗号（LLM 常见错误）
+      const fc = c.replace(/,(\s*[\]}])/g, '$1');
+      const p = JSON.parse(fc);
       if (Array.isArray(p)) {
         const i = p
-          .map(x => (typeof x === 'string' ? x.trim() : (x?.text?.trim() ?? x?.option?.trim() ?? '')))
+          .map(x => {
+            if (typeof x === 'string') return x.trim();
+            return x?.text?.trim()
+              ?? x?.option?.trim()
+              ?? (x?.t && x?.c ? `${x.t}: ${x.c}` : '')
+              ?? (x?.type && x?.content ? `${x.type}: ${x.content}` : '');
+          })
           .filter(Boolean);
         if (i.length) return i.slice(0, count);
       }
@@ -361,8 +382,8 @@ export function parseOptions(text: string, count: number): string[] {
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l));
-  // 标题格式：2-5 个汉字后跟 ": " 或 "："
-  const titleRe = /([\u4e00-\u9fff]{2,5})[:：] /g;
+  // 标题格式：2-5 个汉字后跟 ": " 或 "： "（空格兼容半角/全角）
+  const titleRe = /([\u4e00-\u9fff]{2,5})[:：]\s/g;
   const result: string[] = [];
   for (const line of lines) {
     let lastIdx = 0;
@@ -415,7 +436,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
   try {
     const gen = ps.effectiveConfig?.generation ?? GenerationSettings.prefault({});
-    const count = resolveCount(gen.count_mode);
+    const count = resolveCount(gen.count_mode ?? '4');
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,
@@ -433,7 +454,7 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     });
     const pinnedCount = pool.pinned.length;
     const poolSelectedText = pool.drawn
-      .map(e => (e.condition.trim() ? `[条件: ${e.condition.trim()}] ${e.text}` : e.text))
+      .map(e => ((e.condition || '').trim() ? `[条件: ${(e.condition || '').trim()}] ${e.text}` : e.text))
       .join('\n');
     const c: Ctx = {
       count,
@@ -466,12 +487,14 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     try {
       const raw = await callSecondaryApi(messages, api, signal);
       if (cancelled) return null;
+      console.log('[Choice] 原始 API 输出', raw.slice(0, 2000));
       const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
       if (!options.length) {
         toastr.error(t`未能解析出任何选项,请检查模型输出`);
         return null;
       }
-      return { id: gid, timestamp: Date.now(), count, options };
+      const generation = { id: gid, timestamp: Date.now(), count, options };
+      return generation;
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
