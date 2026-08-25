@@ -1,13 +1,23 @@
 {
+<<<<<<< HEAD
   "display_name": "Choice",
+=======
+  "display_name": "<插件名称>",
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
   "loading_order": 120,
   "requires": [],
   "optional": [],
   "js": "dist/index.js",
   "css": "dist/index.css",
+<<<<<<< HEAD
   "author": "哈哈氣💨",
   "version": "1.0.0",
   "homePage": "https://github.com/Junwu-Git/choice",
+=======
+  "author": "<作者名称>",
+  "version": "1.0.0",
+  "homePage": "<仓库URL>",
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
   "auto_update": true,
   "i18n": {
     "en": "i18n/en.json"

@@ -89,7 +89,11 @@ export default defineConfig(({ mode }) => ({
     },
 
     outDir: 'dist',
+<<<<<<< HEAD
     emptyOutDir: true,
+=======
+    emptyOutDir: false,
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
 
     sourcemap: mode === 'production' ? true : 'inline',
 

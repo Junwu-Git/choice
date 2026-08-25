@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
@@ -46,4 +47,11 @@ $(() => {
     console.error('[Choice] init failed', error);
     toastr.error(`Choice 初始化失败: ${error instanceof Error ? error.message : String(error)}`);
   }
+=======
+import '@/global.css';
+import { initPanel } from '@/panel';
+
+$(() => {
+  initPanel();
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
 });

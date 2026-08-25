@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 export const setting_field = 'choice';
 
 export const PoolEntry = z
@@ -519,3 +520,13 @@ export const ChatSettings = z
   })
   .prefault({});
 export type ChatSettings = z.infer<typeof ChatSettings>;
+=======
+export type Settings = z.infer<typeof Settings>;
+export const Settings = z
+  .object({
+    button_selected: z.boolean().default(false),
+  })
+  .prefault({});
+
+export const setting_field = 'tavern_extension_example';
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb

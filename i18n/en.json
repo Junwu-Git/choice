@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "行动选项": "Action Options",
   "条目池": "Pool",
   "提示词": "Prompt",
@@ -259,4 +260,9 @@
   "设为默认提示": "Set \"${0}\" as the default config? When no config is bound to a chat or character, this config will be used.",
   "删除分组提示": "Delete group \"${0}\" and its ${1} entries?",
   "删除条目提示": "Delete entry \"${0}\"?"
+=======
+  "插件示例": "Plugin Example",
+  "示例按钮": "Example Button",
+  "示例开关": "Example Switch"
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
 }

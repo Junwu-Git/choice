@@ -4,10 +4,27 @@
     "module": "ESNext",
     "outDir": "dist",
     "baseUrl": "src",
+<<<<<<< HEAD
     "types": ["jquery", "jqueryui", "lodash", "toastr", "type-fest"],
     "paths": {
       "@sillytavern/*": ["../../../../../*"],
       "@/*": ["./*"]
+=======
+    "types": [
+      "jquery",
+      "jqueryui",
+      "lodash",
+      "toastr",
+      "type-fest",
+    ],
+    "paths": {
+      "@sillytavern/*": [
+        "../../../../../*"
+      ],
+      "@/*": [
+        "./*"
+      ]
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",
@@ -25,13 +42,26 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
+<<<<<<< HEAD
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true
+=======
+    "forceConsistentCasingInFileNames": true
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
   },
   "include": [
     "*.d.ts",
     "src/**/*.ts",
+<<<<<<< HEAD
     "@types/**/*.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]
+=======
+    "../../../../**/*.js" // for intelligence
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+  ]
+>>>>>>> a5b9d5fa09489da971f8abba1664ce02a1e4eabb
 }
