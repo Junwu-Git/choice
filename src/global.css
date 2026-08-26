@@ -30,6 +30,13 @@
   background: rgba(128, 128, 140, 0.5);
 }
 
+/* 根容器继承 ST 全局字体，确保扩展内文字与酒馆一致 */
+#choice-panel-mount,
+#choice-floating-root {
+  font-family: inherit;
+  font-size: inherit;
+}
+
 /* 键盘焦点指示 */
 *:focus-visible {
   outline: 1px solid var(--choice-primary);

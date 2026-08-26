@@ -317,7 +317,7 @@ onUnmounted(() => {
   background: var(--choice-bg-element);
   border: 2px solid var(--choice-bg-panel);
   color: var(--choice-text-muted);
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -63,6 +63,9 @@ export function initPanelMount() {
   const onMessageReceived = async (messageId: number, type: string) => {
     try {
       resync();
+      if (!chat[messageId]?.mes?.trim()) {
+        return;
+      }
       if (type === 'quiet') {
         return;
       }

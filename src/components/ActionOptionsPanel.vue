@@ -363,7 +363,7 @@ const onSelect = async (option: ChoiceOption) => {
   border-radius: 8px;
   background: var(--choice-primary);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--choice-text-xs);
   font-weight: 700;
   line-height: 1;
 }

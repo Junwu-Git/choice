@@ -1,5 +1,20 @@
 <template>
   <div class="choice-api-editor">
+    <div class="choice-retry-section">
+      <label class="choice-field">
+        <span>{{ t`失败重试次数` }}</span>
+        <input
+          v-model.number="globalStore.settings.retry_count"
+          type="number"
+          class="text_pole"
+          min="0"
+          max="10"
+          placeholder="0"
+        />
+      </label>
+      <span class="choice-retry-hint">{{ t`0 = 不重试；网络错误或 5xx 时自动重试，每次间隔 1 秒` }}</span>
+    </div>
+
     <label class="choice-field">
       <span>{{ t`生成 API` }}</span>
       <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
@@ -223,6 +238,21 @@ const reset = () => {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
+}
+
+.choice-retry-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-2);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+}
+
+.choice-retry-hint {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
 }
 
 .choice-field {

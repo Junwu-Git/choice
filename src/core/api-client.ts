@@ -88,3 +88,63 @@ export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, s
   if (data?.error) throw new Error(data.error.message || 'API 返回错误');
   return data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? '';
 }
+
+/** 判断 API 调用错误是否可重试：网络错误（TypeError）和 5xx 服务端错误可重试；
+ *  4xx 客户端错误、AbortError、API 级错误（data.error）不重试。 */
+export function isRetryableError(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === 'AbortError') return false;
+  if (e instanceof TypeError) return true;
+  if (e instanceof Error) {
+    const m = e.message.match(/^API 请求失败 \((\d{3})\)/);
+    if (m) {
+      const status = parseInt(m[1], 10);
+      return status >= 500;
+    }
+  }
+  return false;
+}
+
+/** 带重试的副 API 调用入口：根据 retryCount 自动重试可恢复错误。
+ *  每次尝试独立 AbortController + 超时，外部取消信号联动所有尝试。
+ *  重试间隔固定 1 秒，失败时通过 toastr 提示进度。 */
+export async function callSecondaryApiWithRetry(
+  messages: ChatMsg[],
+  api: SecondaryApi,
+  retryCount: number,
+  externalSignal?: AbortSignal,
+): Promise<string> {
+  const maxAttempts = retryCount + 1;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const attemptController = new AbortController();
+
+    const onExternalAbort = () => attemptController.abort();
+    externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (api.timeout > 0) {
+      timeoutId = setTimeout(() => attemptController.abort(), api.timeout * 1000);
+    }
+
+    try {
+      const result = await callSecondaryApi(messages, api, attemptController.signal);
+      return result;
+    } catch (e) {
+      lastError = e;
+
+      if (externalSignal?.aborted) throw e;
+      if (!isRetryableError(e)) throw e;
+
+      if (attempt < maxAttempts - 1) {
+        toastr.info(`正在重试 (${attempt + 1}/${retryCount})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      externalSignal?.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
+  throw lastError;
+}

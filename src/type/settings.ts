@@ -286,6 +286,7 @@ export const GlobalSettings = z
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
+    retry_count: z.number().min(0).max(10).default(0),
     pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});

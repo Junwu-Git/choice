@@ -13,7 +13,7 @@
               class="choice-importdlg-close"
               :title="t`页面指引`"
               @click="showGuide = !showGuide"
-              style="font-size: 14px"
+              style="font-size: var(--choice-text-sm)"
             >
               <i class="fa-solid fa-circle-question"></i>
             </button>

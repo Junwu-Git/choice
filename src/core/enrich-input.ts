@@ -1,4 +1,4 @@
-import { callSecondaryApi } from './api-client';
+import { callSecondaryApiWithRetry } from './api-client';
 import { buildMessages, resolveCustomApi, applyWIExcl, STRIP_REASONING_TAGS_RE } from './generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
@@ -95,17 +95,9 @@ export async function enrichUserInput(input: string): Promise<string[]> {
 
     enrichController = new AbortController();
     const signal = enrichController.signal;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    if (api.timeout > 0) {
-      timeoutId = setTimeout(() => enrichController?.abort(), api.timeout * 1000);
-    }
 
-    try {
-      const raw = await callSecondaryApi(messages, api, signal);
-      return parseEnrichResult(raw, enrichCount);
-    } finally {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
-    }
+    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, signal);
+    return parseEnrichResult(raw, enrichCount);
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') return [];
     console.error('[Choice] 润色失败', e);

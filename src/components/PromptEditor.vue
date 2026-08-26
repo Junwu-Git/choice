@@ -170,7 +170,7 @@
               ref="groupRenameInput"
               v-model="groupRenameText"
               class="text_pole"
-              style="width: 100px; font-size: 12px"
+              style="width: 100px; font-size: var(--choice-text-xs)"
               @blur="finishGroupRename(group)"
               @keydown.enter="finishGroupRename(group)"
               @keydown.escape="cancelGroupRename"
@@ -423,7 +423,7 @@ watch(
 );
 
 const showPreview = ref(false);
-const showFilter = ref(true);
+const showFilter = ref(false);
 const showBeginner = ref(false);
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);

@@ -3,7 +3,7 @@ import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/wo
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
-import { callSecondaryApi, type ChatMsg } from '@/core/api-client';
+import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
 import { getBaiBaiSummary, getBaiBaiState } from '@/core/baibai-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -469,24 +469,16 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
 
     genController = new AbortController();
     const signal = genController.signal;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    if (api.timeout > 0) {
-      timeoutId = setTimeout(() => genController.abort(), api.timeout * 1000);
-    }
 
-    try {
-      const raw = await callSecondaryApi(messages, api, signal);
-      if (cancelled) return null;
-      const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
-      if (!options.length) {
-        toastr.error(t`未能解析出任何选项,请检查模型输出`);
-        return null;
-      }
-      const generation = { id: gid, timestamp: Date.now(), count, options };
-      return generation;
-    } finally {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, signal);
+    if (cancelled) return null;
+    const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    if (!options.length) {
+      toastr.error(t`未能解析出任何选项,请检查模型输出`);
+      return null;
     }
+    const generation = { id: gid, timestamp: Date.now(), count, options };
+    return generation;
   } catch (e) {
     if (cancelled) return null;
     console.error('Choice generation failed', e);
@@ -583,10 +575,6 @@ export async function generatePoolEntries(params: {
   }
   poolGenState.loading = true;
   poolGenController = new AbortController();
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  if (api.timeout > 0) {
-    timeoutId = setTimeout(() => poolGenController?.abort(), api.timeout * 1000);
-  }
   try {
     // 快照总条目库已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
     const existing = gs.settings.master_pool.map(e => ({ id: e.id, text: e.text }));
@@ -604,7 +592,7 @@ export async function generatePoolEntries(params: {
       role: 'user',
       content: `请生成 ${params.count} 条行动条目建议。\n已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
     });
-    const raw = await callSecondaryApi(messages, api, poolGenController.signal);
+    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, poolGenController.signal);
     const parsed = parsePoolGenItems(raw, params.count);
     // 把 1-based 序号映射为已解析的 replaceTargetId + 原文；越界序号降级为新增条目
     const items: PoolGenItem[] = parsed.map(p => {
@@ -625,7 +613,6 @@ export async function generatePoolEntries(params: {
     toastr.error(t`条目生成失败:${e instanceof Error ? e.message : String(e)}`);
     return [];
   } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
     poolGenController = null;
     poolGenState.loading = false;
   }
