@@ -11,10 +11,16 @@
         >
           {{ t`新增润色模块` }}
         </button>
-        <button class="menu_button" :title="t`将所有提示词模块导出为 JSON 文件`" @click="exportPrompts">
-          {{ t`导出` }}
-        </button>
-        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块（将替换当前所有模块）`" @click="importPrompts">
+        <div class="choice-export-wrap">
+          <button class="menu_button" :title="t`导出全部提示词模块`" @click="exportPrompts('all')">{{ t`导出` }}</button>
+          <button class="menu_button choice-export-arrow" @click.stop="showExportMenu = !showExportMenu">▼</button>
+          <div v-if="showExportMenu" class="choice-export-dropdown">
+            <button @click="exportPrompts('all'); showExportMenu = false">{{ t`导出全部` }}</button>
+            <button @click="exportPrompts('option'); showExportMenu = false">{{ t`导出选项模块` }}</button>
+            <button v-if="globalStore.settings.ui.enrich_enabled" @click="exportPrompts('enrich'); showExportMenu = false">{{ t`导出润色模块` }}</button>
+          </div>
+        </div>
+        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
           {{ t`导入` }}
         </button>
       </div>
@@ -57,6 +63,24 @@
           {{ t`恢复默认` }}
         </button>
       </div>
+    </div>
+
+    <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
+      <button
+        class="choice-mode-btn"
+        :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
+        @click="promptMode = 'all'"
+      >{{ t`全部` }} ({{ totalCount }})</button>
+      <button
+        class="choice-mode-btn"
+        :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
+        @click="promptMode = 'option'"
+      >{{ t`选项生成` }} ({{ optionCount }})</button>
+      <button
+        class="choice-mode-btn"
+        :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
+        @click="promptMode = 'enrich'"
+      >{{ t`润色` }} ({{ enrichCount }})</button>
     </div>
 
     <div class="choice-beginner-section">
@@ -342,10 +366,27 @@ const allModules = computed(() => {
   if (!rules.baibai_enabled) {
     modules = modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
   }
+  // 润色关闭时强制隐藏所有 enrich_only 模块，忽略 promptMode
   if (!globalStore.settings.ui.enrich_enabled) {
     modules = modules.filter(m => !m.enrich_only);
+  } else if (promptMode.value === 'option') {
+    modules = modules.filter(m => !m.enrich_only);
+  } else if (promptMode.value === 'enrich') {
+    modules = modules.filter(m => !m.option_only);
   }
   return modules;
+});
+
+type PromptMode = 'all' | 'option' | 'enrich';
+const promptMode = ref<PromptMode>('all');
+const showExportMenu = ref(false);
+
+const totalCount = computed(() => globalStore.allModules.length);
+const optionCount = computed(() => globalStore.allModules.filter(m => !m.enrich_only).length);
+const enrichCount = computed(() => globalStore.allModules.filter(m => !m.option_only).length);
+
+watch(() => globalStore.settings.ui.enrich_enabled, (enabled) => {
+  if (!enabled) promptMode.value = 'all';
 });
 
 const showPreview = ref(false);
@@ -386,11 +427,17 @@ const resetPromptToDefaults = () => {
   toastr.success(t`提示词已恢复为默认值`);
 };
 
-function exportPrompts() {
-  const modules = globalStore.settings.prompt_rules.modules;
+function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
+  let modules = globalStore.settings.prompt_rules.modules;
+  if (mode === 'option') {
+    modules = modules.filter(m => !m.enrich_only);
+  } else if (mode === 'enrich') {
+    modules = modules.filter(m => !m.option_only);
+  }
   const json = JSON.stringify(
     {
-      version: 1,
+      version: 2,
+      mode,
       exportedAt: new Date().toISOString(),
       modules,
     },
@@ -401,7 +448,8 @@ function exportPrompts() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `choice-prompts-${new Date().toISOString().slice(0, 10)}.json`;
+  const suffix = mode !== 'all' ? `-${mode}` : '';
+  a.download = `choice-prompts${suffix}-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -419,14 +467,29 @@ function importPrompts() {
       if (!data.modules || !Array.isArray(data.modules)) {
         throw new Error('JSON 文件格式不正确：缺少 modules 数组');
       }
-      const modules = z.array(PromptModuleSchema).parse(data.modules);
-      const ids = modules.map(m => m.id);
+      const importedModules = z.array(PromptModuleSchema).parse(data.modules);
+      const ids = importedModules.map(m => m.id);
       if (new Set(ids).size !== ids.length) {
         throw new Error('导入的模块中存在重复 ID');
       }
-      if (!confirm(t`确定要导入 ${modules.length} 个提示词模块吗？这将替换当前所有模块。`)) return;
-      globalStore.settings.prompt_rules.modules = modules;
-      toastr.success(t`已导入 ${modules.length} 个提示词模块`);
+      const mode: string = data.mode || 'all';
+      const existingModules = globalStore.settings.prompt_rules.modules;
+
+      if (mode === 'all') {
+        if (!confirm(t`确定要导入 ${importedModules.length} 个提示词模块吗？这将替换当前所有模块。`)) return;
+        globalStore.settings.prompt_rules.modules = importedModules;
+      } else if (mode === 'option') {
+        const kept = existingModules.filter(m => m.enrich_only);
+        if (!confirm(t`将导入 ${importedModules.length} 个选项模块，保留现有 ${kept.length} 个润色模块。确定继续？`)) return;
+        globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
+      } else if (mode === 'enrich') {
+        const kept = existingModules.filter(m => m.option_only);
+        if (!confirm(t`将导入 ${importedModules.length} 个润色模块，保留现有 ${kept.length} 个选项模块。确定继续？`)) return;
+        globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
+      } else {
+        throw new Error(`未知的导入模式：${mode}`);
+      }
+      toastr.success(t`已导入 ${importedModules.length} 个提示词模块`);
     } catch (err) {
       toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效的 JSON 文件'}`);
     }
@@ -669,6 +732,20 @@ const onResetOptionRulesConfirm = () => {
 };
 const resetPersonStyleMsg = computed(() => t`确定要将"叙述风格"恢复为默认值吗？当前修改将丢失。`);
 const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为默认值吗？当前修改将丢失。`);
+
+function onDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (!target.closest('.choice-export-wrap')) {
+    showExportMenu.value = false;
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick);
+});
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick);
+});
 </script>
 
 <style scoped>
@@ -1103,5 +1180,86 @@ const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为
   color: #e0a06a;
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.choice-mode-switch {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.choice-mode-btn {
+  padding: var(--choice-space-1) var(--choice-space-3);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background var(--choice-transition), color var(--choice-transition);
+}
+
+.choice-mode-btn:not(:last-child) {
+  border-right: 1px solid var(--choice-border);
+}
+
+.choice-mode-btn:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text-secondary);
+}
+
+.choice-mode-btn--active {
+  background: var(--choice-primary);
+  color: #fff;
+}
+
+.choice-mode-btn--active:hover {
+  background: var(--choice-primary-hover);
+  color: #fff;
+}
+
+.choice-export-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.choice-export-arrow {
+  padding: 0 var(--choice-space-1);
+  margin-left: -1px;
+  border-radius: 0 var(--choice-radius-sm) var(--choice-radius-sm) 0;
+}
+
+.choice-export-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--choice-z-dropdown);
+  min-width: 140px;
+  margin-top: 2px;
+  background: var(--choice-bg-panel);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  box-shadow: var(--choice-shadow-md);
+  overflow: hidden;
+}
+
+.choice-export-dropdown button {
+  display: block;
+  width: 100%;
+  padding: var(--choice-space-2) var(--choice-space-3);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--choice-transition);
+}
+
+.choice-export-dropdown button:hover {
+  background: var(--choice-bg-hover);
 }
 </style>

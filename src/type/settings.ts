@@ -25,6 +25,22 @@ export const GenerationSettings = z
   .prefault({});
 export type GenerationSettings = z.infer<typeof GenerationSettings>;
 
+/** AI 条目生成聊天会话：多轮对话记录，聊天内模式存角色卡，全局模式存扩展设置 */
+export const PoolGenMessage = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+});
+export type PoolGenMessage = z.infer<typeof PoolGenMessage>;
+
+export const PoolGenSession = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  messages: z.array(PoolGenMessage).default([]),
+});
+export type PoolGenSession = z.infer<typeof PoolGenSession>;
+
 export const PoolConfigEntry = z
   .object({
     entry_id: z.string(),
@@ -270,6 +286,7 @@ export const GlobalSettings = z
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
+    pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});
 export type GlobalSettings = z.infer<typeof GlobalSettings>;
@@ -277,6 +294,7 @@ export type GlobalSettings = z.infer<typeof GlobalSettings>;
 export const CharacterSettings = z
   .object({
     config_id: z.string().nullable().default(null),
+    pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});
 export type CharacterSettings = z.infer<typeof CharacterSettings>;

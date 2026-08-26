@@ -394,7 +394,7 @@ const onInject = () => {
 .choice-poolgen-result-main {
   display: flex;
   flex-direction: column;
-  gap: var(--choice-space-1);
+gap: var(--choice-space-1);
   flex: 1;
   min-width: 0;
 }

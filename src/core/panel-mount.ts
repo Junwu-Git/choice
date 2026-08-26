@@ -2,7 +2,7 @@ import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
-import { enrichUserInput, cancelEnrich } from '@/core/enrich-input';
+import { cancelEnrich } from '@/core/enrich-input';
 import { pinia } from '@/pinia';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -155,7 +155,8 @@ export function initPanelMount() {
     // 正在润色中 → 取消
     if (store.enrichLoading) {
       cancelEnrich();
-      store.exitEnrichMode();
+      store.enrichLoading = false;
+      store.setActiveView('options');
       $enrichBtn.removeClass('fa-stop').addClass('fa-pen-to-square').attr('title', '润色输入');
       return;
     }
@@ -163,24 +164,34 @@ export function initPanelMount() {
     const input = ($('#send_textarea').val() as string).trim();
     if (!input) return;
 
-    // 直接设置状态，不调用 enterEnrichMode([]) 避免覆盖 enrichLoading
-    store.enrichMode = true;
-    store.enrichLoading = true;
-    store.enrichOptions = [];
     // 清空输入框并触发 input 事件以同步按钮状态
     $('#send_textarea')
       .val('')[0]
       .dispatchEvent(new Event('input', { bubbles: true }));
     $enrichBtn.removeClass('fa-pen-to-square').addClass('fa-stop').attr('title', '取消润色');
     try {
-      const options = await enrichUserInput(input);
-      store.enterEnrichMode(options.map((text, i) => ({ text, sourceEntryId: null })));
-    } catch (e) {
-      console.error('[Choice] 润色失败', e);
-      toastr.error(`润色失败: ${e instanceof Error ? e.message : '未知错误'}`);
-      store.exitEnrichMode();
+      await store.triggerEnrich(input);
     } finally {
       $enrichBtn.removeClass('fa-stop').addClass('fa-pen-to-square').attr('title', '润色输入');
     }
+  });
+
+  // 面板「生成润色」按钮点击时，通过 store 标志位触发润色流程
+  const enrichStore = usePanelStateStore(pinia);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  enrichStore.$subscribe((_mutation: any, state: any) => {
+    if (!state.triggerEnrichRequested) return;
+    const input = ($('#send_textarea').val() as string).trim();
+    if (!input) {
+      toastr.warning(t`输入框为空，无法润色`);
+      state.triggerEnrichRequested = false;
+      return;
+    }
+    // 清空输入框
+    $('#send_textarea')
+      .val('')[0]
+      .dispatchEvent(new Event('input', { bubbles: true }));
+    state.triggerEnrichRequested = false;
+    enrichStore.triggerEnrich(input);
   });
 }

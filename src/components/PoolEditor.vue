@@ -565,7 +565,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
-  max-height: 360px;
+  max-height: 250px;
   overflow-y: auto;
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
@@ -577,13 +577,13 @@ onUnmounted(() => {
   border: 1px solid var(--choice-border);
   background: var(--choice-bg-card);
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .choice-inline-entry-row {
   display: flex;
   align-items: center;
   gap: 0;
-  min-height: 0;
 }
 
 .choice-inline-entry-text {

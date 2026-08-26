@@ -28,8 +28,13 @@
             rows="8"
             :placeholder="t`每行一条，支持 1. / - / • 等列表标记`"
           ></textarea>
+          <div class="choice-importdlg-hint">
+            {{ t`支持 1. / - / • 列表标记，自动去除。使用 ## 分组名 或 [分组名] 作为分组头。` }}
+            <br />
+            {{ t`行内标签（可选）：[固定] [权重:3] [条件:体力>50] 导入时自动剥离。` }}
+          </div>
 
-          <label class="choice-field" style="margin-top: 10px">
+          <label v-if="!hasGroupHeaders" class="choice-field" style="margin-top: 10px">
             <span>{{ t`导入到分组` }}</span>
             <select v-model="targetCategory" class="text_pole">
               <option value="">{{ t`未分类` }}</option>
@@ -39,22 +44,45 @@
 
           <div class="choice-importdlg-preview">
             <span class="choice-importdlg-preview-count"
-              >{{ t`解析结果` }}: {{ parsedEntries.length }} {{ t`条` }}</span
+              >{{ t`解析结果` }}: {{ totalCount }} {{ t`条` }}</span
             >
-            <div v-if="parsedEntries.length > 0" class="choice-importdlg-preview-list">
-              <div v-for="(line, i) in parsedEntries.slice(0, 5)" :key="i" class="choice-importdlg-preview-item">
-                {{ i + 1 }}. {{ line }}
-              </div>
-              <div v-if="parsedEntries.length > 5" class="choice-importdlg-preview-more">
-                ...{{ t`还有 ${parsedEntries.length - 5} 条` }}
-              </div>
+            <div v-if="parsedGroups.length > 0" class="choice-importdlg-preview-list">
+              <template v-for="(group, gi) in parsedGroups" :key="gi">
+                <div class="choice-importdlg-preview-group">
+                  <span class="choice-importdlg-preview-group-name">{{
+                    group.category || t`未分组`
+                  }}</span>
+                  <span class="choice-importdlg-preview-group-count">({{ group.entries.length }} {{ t`条` }})</span>
+                </div>
+                <div
+                  v-for="(entry, ei) in group.entries.slice(0, 3)"
+                  :key="ei"
+                  class="choice-importdlg-preview-item"
+                >
+                  {{ getGlobalIndex(gi, ei) }}. {{ entry.text }}
+                  <span v-if="entry.tags.pinned" class="choice-importdlg-tag">{{ t`固定` }}</span>
+                  <span v-if="entry.tags.weight !== undefined" class="choice-importdlg-tag"
+                    >{{ t`权重` }}:{{ entry.tags.weight }}</span
+                  >
+                  <span v-if="entry.tags.condition" class="choice-importdlg-tag"
+                    >{{ t`条件` }}:{{ entry.tags.condition }}</span
+                  >
+                </div>
+                <div v-if="group.entries.length > 3" class="choice-importdlg-preview-more">
+                  ...{{ t`还有 ${group.entries.length - 3} 条` }}
+                </div>
+              </template>
             </div>
           </div>
         </div>
 
         <div class="choice-importdlg-footer">
           <button class="menu_button" @click="emit('close')">{{ t`取消` }}</button>
-          <button class="menu_button menu_button_default" :disabled="parsedEntries.length === 0" @click="onConfirm">
+          <button
+            class="menu_button menu_button_default"
+            :disabled="totalCount === 0"
+            @click="onConfirm"
+          >
             {{ t`确认导入` }}
           </button>
         </div>
@@ -75,6 +103,8 @@
 
 <script setup lang="ts">
 import GuidePopover from '@/components/GuidePopover.vue';
+import { GROUP_HEADER_RE, parsePoolEntries } from '@/core/pool-gen-parser';
+import type { ParsedGroup } from '@/core/pool-gen-parser';
 
 const props = defineProps<{
   open: boolean;
@@ -83,7 +113,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: [];
-  confirm: [payload: { category: string; entries: { text: string }[] }];
+  confirm: [
+    payload: {
+      entries: { text: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
+    },
+  ];
 }>();
 
 const rawText = ref('');
@@ -92,19 +126,41 @@ const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
 const guideHtml = `<p><strong>作用</strong>：从剪贴板批量导入条目，每行一条。支持 <code>1. / - / •</code> 等列表标记，自动去除标记符号和空行。</p>
-<p><strong>示例</strong>：粘贴以下内容即可导入 3 条条目：<br><code>1. 拔出武器准备战斗<br>- 转身逃跑<br>• 试图谈判</code></p>
-<p><strong>导入到分组</strong>：选择目标分组，未选则放入"未分组"。</p>`;
+<p><strong>分组标记</strong>：使用 <code>## 分组名</code> 或 <code>[分组名]</code> 独占一行作为分组头，后续条目归入该分组，直到下一个分组头。</p>
+<p><strong>行内标签（可选）</strong>：在条目行内添加 <code>[固定]</code>、<code>[权重:N]</code>、<code>[条件:表达式]</code>，导入时自动识别并剥离。</p>
+<p><strong>示例</strong>：<br><code>## 战斗<br>1. 拔出武器准备战斗 [固定] [权重:3]<br>- 防御姿态 [条件:体力>50]<br>[对话]<br>• 打招呼 [固定]<br>• 询问信息</code></p>
+<p>以上将导入 4 条条目，2 条归入"战斗"（含固定/权重/条件），2 条归入"对话"。</p>`;
 
-const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
-
-const parsedEntries = computed(() => {
-  if (!rawText.value.trim()) return [];
-  return rawText.value.split(/\r?\n/).map(stripMarker).filter(Boolean);
+const hasGroupHeaders = computed(() => {
+  if (!rawText.value.trim()) return false;
+  return rawText.value
+    .split(/\r?\n/)
+    .some(line => GROUP_HEADER_RE.test(line.trim()));
 });
 
+const parsedGroups = computed<ParsedGroup[]>(() => {
+  return parsePoolEntries(rawText.value, hasGroupHeaders.value ? '' : targetCategory.value);
+});
+
+const totalCount = computed(() => parsedGroups.value.reduce((sum, g) => sum + g.entries.length, 0));
+
+const getGlobalIndex = (gi: number, ei: number) => {
+  let idx = 1;
+  for (let i = 0; i < gi; i++) idx += parsedGroups.value[i].entries.length;
+  return idx + ei;
+};
+
 const onConfirm = () => {
-  const entries = parsedEntries.value.map(t => ({ text: t }));
-  emit('confirm', { category: targetCategory.value, entries });
+  const entries = parsedGroups.value.flatMap(g =>
+    g.entries.map(e => ({
+      text: e.text,
+      category: g.category,
+      pinned: e.tags.pinned,
+      weight: e.tags.weight,
+      condition: e.tags.condition,
+    })),
+  );
+  emit('confirm', { entries });
   rawText.value = '';
   targetCategory.value = '';
 };
@@ -205,6 +261,49 @@ watch(
   resize: vertical;
   font-size: var(--choice-text-sm);
   line-height: 1.5;
+}
+
+.choice-importdlg-hint {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  margin-top: var(--choice-space-1);
+  line-height: 1.5;
+}
+
+.choice-importdlg-preview-group {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  margin-top: var(--choice-space-2);
+  padding: var(--choice-space-1) 0;
+  border-top: 1px solid var(--choice-border);
+}
+
+.choice-importdlg-preview-group:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+.choice-importdlg-preview-group-name {
+  font-size: var(--choice-text-sm);
+  font-weight: bold;
+  color: var(--choice-accent);
+}
+
+.choice-importdlg-preview-group-count {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-importdlg-tag {
+  display: inline-block;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-accent);
+  background: var(--choice-bg-element);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  line-height: 1.4;
 }
 
 .choice-field {

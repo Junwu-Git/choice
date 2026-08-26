@@ -40,21 +40,16 @@
               class="choice-epool-group"
               :data-group-key="group.key"
             >
-              <div class="choice-epool-group-head" @dragenter="onGroupDragEnter(group.key)">
+              <div class="choice-epool-group-head" @click="toggleGroup(group.key)">
                 <label class="choice-check" @click.stop>
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
                 <i
                   class="fa-solid"
                   :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"
-                  @click="toggleGroup(group.key)"
                 ></i>
-                <span class="choice-epool-group-name" @click="toggleGroup(group.key)">{{
-                  group.key || t`未分组`
-                }}</span>
-                <span class="choice-epool-group-count" @click="toggleGroup(group.key)"
-                  >({{ group.entries.length }})</span
-                >
+                <span class="choice-epool-group-name">{{ group.key || t`未分组` }}</span>
+                <span class="choice-epool-group-count">({{ group.entries.length }})</span>
                 <button class="choice-icon-btn" :title="t`添加条目`" @click.stop="addEntryToGroup(group.key)">
                   <i class="fa-solid fa-plus"></i>
                 </button>
@@ -528,18 +523,20 @@ const onGenConfirm = ({
   showGen.value = false;
 };
 
-const onImportConfirm = (payload: { category: string; entries: { text: string }[] }) => {
+const onImportConfirm = (payload: {
+  entries: { text: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
+}) => {
   for (const e of payload.entries) {
     masterPool.value.push({
       id: uuidv4(),
       text: e.text,
-      pinned: false,
-      weight: 1,
-      category: payload.category,
-      condition: '',
+      pinned: e.pinned ?? false,
+      weight: e.weight ?? 1,
+      category: e.category || '',
+      condition: e.condition || '',
     });
+    if (e.category) expandedGroups.value.add(e.category);
   }
-  if (payload.category) expandedGroups.value.add(payload.category);
   showImport.value = false;
   toastr.success(t`已导入 ${payload.entries.length} 条条目`);
 };
@@ -595,9 +592,9 @@ const initGroupSortable = () => {
   if (!groupList.value) return;
   if (groupSortable) groupSortable.destroy();
   groupSortable = Sortable.create(groupList.value, {
-    handle: '.choice-epool-group-head',
     draggable: '.choice-epool-group',
     animation: 150,
+    delay: 100,
     onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
       const keys = groupedEntries.value.map(g => g.key);
@@ -606,12 +603,6 @@ const initGroupSortable = () => {
       globalStore.settings.group_order = keys;
     },
   });
-};
-
-const onGroupDragEnter = (groupKey: string) => {
-  if (!expandedGroups.value.has(groupKey)) {
-    expandedGroups.value.add(groupKey);
-  }
 };
 
 const initEntrySortables = () => {

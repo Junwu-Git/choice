@@ -101,6 +101,7 @@
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
+import { normalizeApiUrl } from '@/core/api-client';
 
 const globalStore = useGlobalSettingsStore();
 
@@ -156,7 +157,7 @@ const fetchModels = async () => {
   }
   fetching.value = true;
   try {
-    const models = await helper.getModelList({ apiurl: draftForm.value.apiurl, key: draftForm.value.key || undefined });
+    const models = await helper.getModelList({ apiurl: normalizeApiUrl(draftForm.value.apiurl), key: draftForm.value.key || undefined });
     modelList.value = models;
     if (models.length === 0) {
       toastr.info(t`模型列表为空`);
@@ -187,10 +188,11 @@ const removeApi = () => {
 };
 
 const save = () => {
+  const normalized = { ...draftForm.value, apiurl: normalizeApiUrl(draftForm.value.apiurl) };
   const original = globalStore.settings.apis.find(a => a.id === selectedApiId.value);
-  if (!original || !_.isEqual(original, draftForm.value)) {
+  if (!original || !_.isEqual(original, normalized)) {
     const newId = uuidv4();
-    const newApi = { ...draftForm.value, id: newId };
+    const newApi = { ...normalized, id: newId };
     const newApis = [...globalStore.settings.apis];
     if (original) {
       newApis.push(newApi);

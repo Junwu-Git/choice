@@ -1,12 +1,19 @@
 <template>
   <div v-show="visible" class="choice-panel" :class="{ 'choice-panel--compact': compact }">
-    <div v-if="!compact" class="choice-panel-header" @click="collapsed = !collapsed">
-      <span class="choice-panel-title">
-        <i :class="enrichMode ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
-        {{ enrichMode ? t`输入润色` : t`行动选项` }}
+    <div class="choice-panel-header" @click="collapsed = !collapsed">
+      <span
+        class="choice-panel-title"
+        :class="{ 'choice-title--toggleable': hasEnrichHistory }"
+        @click="onTitleClick"
+      >
+        <i :class="activeView === 'enrich' ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
+        {{ activeView === 'enrich' ? t`输入润色` : t`行动选项` }}
+        <i v-if="hasEnrichHistory" class="fa-solid fa-arrow-right-arrow-left choice-view-swap-icon"></i>
+        <span v-if="hasEnrichHistory && activeView === 'options'" class="choice-view-badge">{{ enrichGenerations.length }}</span>
       </span>
       <div class="choice-panel-tools" @click.stop>
-        <template v-if="!enrichMode && hasHistory">
+        <!-- 选项视图分页 -->
+        <template v-if="activeView === 'options' && hasHistory">
           <button class="choice-panel-btn" :disabled="currentIndex <= 0" title="上一组" @click="onPrev">
             <i class="fa-solid fa-chevron-left"></i>
           </button>
@@ -20,19 +27,37 @@
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </template>
-        <button v-if="enrichLoading" class="choice-panel-btn choice-panel-main" @click="onCancelEnrich">
+        <!-- 润色视图分页 -->
+        <template v-if="activeView === 'enrich' && hasEnrichHistory">
+          <button class="choice-panel-btn" :disabled="enrichCurrentIndex <= 0" title="上一组" @click="onEnrichPrev">
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <span class="choice-panel-pager">{{ enrichCurrentIndex + 1 }}/{{ enrichGenerations.length }}</span>
+          <button
+            class="choice-panel-btn"
+            :disabled="enrichCurrentIndex >= enrichGenerations.length - 1"
+            title="下一组"
+            @click="onEnrichNext"
+          >
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </template>
+        <!-- 润色视图：取消（loading）按钮 -->
+        <button v-if="activeView === 'enrich' && enrichLoading" class="choice-panel-btn choice-panel-main" @click="onCancelEnrich">
           <i class="fa-solid fa-stop"></i>
           {{ t`取消` }}
         </button>
+        <!-- 润色视图：生成润色按钮 -->
         <button
-          v-if="enrichMode && !enrichLoading"
-          class="choice-panel-btn"
-          title="返回选项"
-          @click="panelStore.exitEnrichMode()"
+          v-if="activeView === 'enrich' && !enrichLoading"
+          class="choice-panel-btn choice-panel-main"
+          @click="onTriggerEnrich"
         >
-          <i class="fa-solid fa-xmark"></i>
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          {{ t`生成润色` }}
         </button>
-        <button v-if="!enrichMode" class="choice-panel-btn choice-panel-main" @click="onToggle">
+        <!-- 选项视图：生成按钮 -->
+        <button v-if="activeView === 'options'" class="choice-panel-btn choice-panel-main" @click="onToggle">
           <i v-if="isGenerating" class="fa-solid fa-stop"></i>
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
@@ -84,16 +109,31 @@
           @click="onSelect(option)"
         >
           <span class="choice-option-number">{{ index + 1 }}</span>
-          <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
-          <span class="choice-option-divider"></span>
-          <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
+          <template v-if="activeView === 'enrich'">
+            <span class="choice-option-text">{{ option.text }}</span>
+          </template>
+          <template v-else>
+            <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
+            <span class="choice-option-divider"></span>
+            <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
+          </template>
         </button>
-        <div v-if="!compact && !enrichMode && underflow" class="choice-panel-hint">{{ t`本轮选项少于设定数量` }}</div>
+        <div v-if="!compact && activeView === 'options' && underflow" class="choice-panel-hint">
+          {{ t`本轮选项少于设定数量` }}
+        </div>
       </template>
       <div v-else class="choice-panel-empty">
-        {{ enrichMode ? t`暂无润色选项` : t`点击生成按钮获取选项` }}
+        <template v-if="activeView === 'enrich'">
+          {{ t`点击"生成润色"按钮或在输入框中输入文字后点击润色图标` }}
+        </template>
+        <template v-else>
+          {{ t`点击生成按钮获取选项` }}
+        </template>
       </div>
-      <div v-if="!compact && !enrichMode && !isGenerating && visibleOptions.length === 0" class="choice-panel-hint">
+      <div
+        v-if="!compact && activeView === 'options' && !isGenerating && visibleOptions.length === 0"
+        class="choice-panel-hint"
+      >
         {{ t`生成前请确保已在设置中配置条目池和 API` }}
       </div>
     </div>
@@ -112,8 +152,19 @@ import { sendTextareaMessage } from '@sillytavern/script';
 const props = defineProps<{ compact?: boolean }>();
 
 const panelStore = usePanelStateStore();
-const { messageId, swipeId, visibleOptions, currentIndex, generations, hasHistory, enrichMode, enrichLoading } =
-  storeToRefs(panelStore);
+const {
+  messageId,
+  swipeId,
+  visibleOptions,
+  currentIndex,
+  generations,
+  hasHistory,
+  activeView,
+  enrichLoading,
+  enrichGenerations,
+  enrichCurrentIndex,
+  hasEnrichHistory,
+} = storeToRefs(panelStore);
 
 const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
@@ -129,7 +180,7 @@ const visible = computed(() => {
   if (props.compact) {
     return true;
   }
-  if (enrichMode.value) {
+  if (enrichLoading.value) {
     return true;
   }
   if (isGenerating.value) {
@@ -163,7 +214,23 @@ const onToggle = async () => {
 
 const onCancelEnrich = () => {
   cancelEnrich();
-  panelStore.exitEnrichMode();
+  panelStore.enrichLoading = false;
+  panelStore.setActiveView('options');
+};
+
+const onToggleView = () => {
+  panelStore.setActiveView(panelStore.activeView === 'enrich' ? 'options' : 'enrich');
+};
+
+const onTitleClick = (e: MouseEvent) => {
+  if (hasEnrichHistory.value) {
+    e.stopPropagation();
+    onToggleView();
+  }
+};
+
+const onTriggerEnrich = () => {
+  panelStore.triggerEnrichRequested = true;
 };
 
 const onPrev = () => {
@@ -172,6 +239,14 @@ const onPrev = () => {
 
 const onNext = () => {
   panelStore.goTo(panelStore.currentIndex + 1);
+};
+
+const onEnrichPrev = () => {
+  panelStore.enrichGoTo(panelStore.enrichCurrentIndex - 1);
+};
+
+const onEnrichNext = () => {
+  panelStore.enrichGoTo(panelStore.enrichCurrentIndex + 1);
 };
 
 // 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
@@ -200,9 +275,6 @@ const onSelect = async (option: ChoiceOption) => {
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
   } else {
     $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  if (enrichMode.value) {
-    panelStore.exitEnrichMode();
   }
   if (behavior.value === 'send') {
     await sendTextareaMessage();
@@ -248,6 +320,50 @@ const onSelect = async (option: ChoiceOption) => {
 
 .choice-panel--compact .choice-option-content {
   line-height: 1.3;
+}
+
+/* 标题栏可切换状态：有润色结果时标题文字显示背景框+⇄图标，点击切换视图 */
+.choice-title--toggleable {
+  cursor: pointer;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  padding: 2px var(--choice-space-2);
+  transition:
+    border-color var(--choice-transition),
+    background var(--choice-transition);
+}
+
+.choice-title--toggleable:hover {
+  border-color: var(--choice-border-active);
+  background: var(--choice-bg-hover);
+}
+
+.choice-view-swap-icon {
+  margin-left: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  transition: color var(--choice-transition);
+}
+
+.choice-title--toggleable:hover .choice-view-swap-icon {
+  color: var(--choice-primary);
+}
+
+.choice-view-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  margin-left: 2px;
+  border-radius: 8px;
+  background: var(--choice-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .choice-panel-header {

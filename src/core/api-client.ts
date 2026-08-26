@@ -6,13 +6,25 @@ export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
 
 const GENERATE_URL = '/api/backends/chat-completions/generate';
 
+/** 规范化 OpenAI 兼容 API 地址：缺少 /v1 后缀时自动补全。
+ *  已有版本路径（/v1, /v2...）或端点路径（/chat/completions...）时跳过。 */
+export function normalizeApiUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return trimmed;
+  const clean = trimmed.replace(/\/+$/, '');
+  if (/\/v\d+$/i.test(clean) || /\/chat\/completions$/i.test(clean)) {
+    return clean;
+  }
+  return clean + '/v1';
+}
+
 /** 统一副 API 调用入口：行动选项生成与条目池生成共用。
  *  直接 fetch 酒馆 generate 端点，绕开 TavernHelper 预设注入，
  *  保证传入的 messages 即最终入参（exclude_params 在此删除指定字段）。 */
 export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> {
   const body: Record<string, unknown> = {
     chat_completion_source: 'openai',
-    reverse_proxy: api.apiurl,
+    reverse_proxy: normalizeApiUrl(api.apiurl),
     proxy_password: api.key || '',
     model: api.model,
     messages,
@@ -47,11 +59,16 @@ export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, s
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let full = '';
+    let buffer = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
+      buffer += chunk;
+      const lines = buffer.split('\n');
+      // 最后一行可能不完整（跨 chunk 边界），保留到下次再拼接
+      buffer = lines.pop() || '';
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const data = line.slice(6).trim();
         if (data === '[DONE]') continue;

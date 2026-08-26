@@ -247,7 +247,34 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
-  validated.prompt_rules.schema_version = 14;
+  if (version < 15) {
+    // v15: 选项生成专用模块标记 option_only，避免润色模式发送冲突指令
+    const OPTION_ONLY_IDS = new Set(['core_rules', 'output_spec', 'thinking_prompt', 'assistant_thinking']);
+    for (const m of validated.prompt_rules.modules) {
+      if (OPTION_ONLY_IDS.has(m.id)) {
+        m.option_only = true;
+      }
+    }
+  }
+
+  if (version < 16) {
+    // v16: 追加润色专用模块（规则/输出规格/自检/应答），与选项生成模块完全平行
+    const defaults = klona(DEFAULT_MODULES);
+    const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
+    const ENRICH_IDS = new Set(['enrich_core_rules', 'enrich_output_spec', 'enrich_thinking', 'enrich_assistant']);
+    for (const d of defaults) {
+      if (ENRICH_IDS.has(d.id) && !existingIds.has(d.id)) {
+        validated.prompt_rules.modules.push(d);
+      }
+    }
+    // v9 迁移 bug：enrich_prompt role 误写为 'system'，应为 'user'（与 DEFAULT_MODULES 一致）
+    const ep = validated.prompt_rules.modules.find(m => m.id === 'enrich_prompt');
+    if (ep && ep.role === 'system') {
+      ep.role = 'user';
+    }
+  }
+
+  validated.prompt_rules.schema_version = 16;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
@@ -522,7 +549,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 14;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 16;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -653,7 +680,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
-    fresh.prompt_rules.schema_version = 14;
+    fresh.prompt_rules.schema_version = 16;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
 
     const defaultEntries: PoolEntry[] = [

@@ -9,7 +9,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PoolEntry, PromptModule, PromptRules, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
+import type { PoolEntry, PromptModule, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
 import { DEFAULT_MODULES, GenerationSettings, CORE_RULES_STATIC } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -328,34 +328,48 @@ export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
   };
 };
 
-/** 思维链标签块剥离正则：parseOptions 与 parsePoolGenItems 共用。
- *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步两处解析，
+/** 思维链标签块剥离正则：parseOptions 共用。
+ *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-const STRIP_REASONING_TAGS_RE =
+export const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 export function parseOptions(text: string, count: number): string[] {
   console.log('[Choice] parseOptions 原始输入', { text: text.slice(0, 2000), count });
-  // 先去除 thinking/reasoning/thought 标签块（包括预填充产生的 <thinking> 块）
-  let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
 
+  // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
+  // 原因：AI 可能在思维链中以文本形式提到 <options>（如"格式：<options> 标签内..."），
+  // 直接在原始文本中 matchAll <options> 会误匹配到这些文本引用，导致提取错误
+  const closeTagRe = /<\/(?:think(?:ing)?|reasoning|thought)>/gi;
+  const closeMatches = [...text.matchAll(closeTagRe)];
+  let c: string;
+
+  if (closeMatches.length > 0) {
+    const lastClose = closeMatches[closeMatches.length - 1];
+    c = text.slice(lastClose.index! + lastClose[0].length).trim();
+  } else {
+    // 没有思维链闭合标签，剥离配对的思维链标签后使用全文
+    c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
+  }
+
+  // 从剩余文本中提取 <options> 块
   const m = c.match(/<options>([\s\S]*?)<\/options>/i);
   if (m) {
     c = m[1].trim();
   } else {
-    // 处理模型输出被截断、缺少 </options> 的情况：从 <options> 后截取到文本末尾
     const openTagIdx = c.search(/<options>/i);
     if (openTagIdx !== -1) {
       c = c.slice(openTagIdx + '<options>'.length).trim();
     }
   }
+
   // 剥离 markdown 代码块（LLM 可能输出 ```json...```）
   c = c
     .replace(/^```[a-zA-Z]*\s*/i, '')
     .replace(/\s*```$/, '')
     .trim();
 
-  // 尝试 JSON 解析
+  // 尝试 JSON 解析（纯回退路径，prompt 不要求 AI 输出 JSON）
   if (c.startsWith('['))
     try {
       // 处理 JSON 尾随逗号（LLM 常见错误）
@@ -368,8 +382,9 @@ export function parseOptions(text: string, count: number): string[] {
             return (
               x?.text?.trim() ??
               x?.option?.trim() ??
-              (x?.t && x?.c ? `${x.t}: ${x.c}` : '') ??
-              (x?.type && x?.content ? `${x.type}: ${x.content}` : '')
+              // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
+              (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
+              (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
             );
           })
           .filter(Boolean);
@@ -385,43 +400,25 @@ export function parseOptions(text: string, count: number): string[] {
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l));
-  // 标题格式：2-5 个汉字后跟 ": " 或 "： "（空格兼容半角/全角）
-  const titleRe = /([\u4e00-\u9fff]{2,5})[:：]\s/g;
+  // 标题格式：2-5 个汉字后跟 ": " 或 "： "（\s* 兼容零空格/双空格/制表符等容错）
+  const titleRe = /([\u4e00-\u9fff]{2,5})[:：]\s*/g;
   const result: string[] = [];
   for (const line of lines) {
-    let lastIdx = 0;
-    let match;
-    let found = false;
-    titleRe.lastIndex = 0;
-    while ((match = titleRe.exec(line)) !== null) {
-      found = true;
-      if (lastIdx > 0) result.push(line.slice(lastIdx, match.index).trim());
-      lastIdx = match.index;
-    }
-    if (found) {
-      result.push(line.slice(lastIdx).trim());
-    } else {
+    // 用 matchAll 获取所有标题匹配位置，按相邻匹配区间切片
+    // 替换原有的 lastIdx 算法，解决第一个标题在 index 0 时后续选项丢失的 bug
+    const matches = [...line.matchAll(titleRe)];
+    if (matches.length === 0) {
       result.push(line);
+      continue;
+    }
+    for (let i = 0; i < matches.length; i++) {
+      const start = matches[i].index!;
+      const end = i + 1 < matches.length ? matches[i + 1].index! : line.length;
+      result.push(line.slice(start, end).trim());
     }
   }
   return result.slice(0, count);
 }
-
-/** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
- *  与行动选项生成提示词刻意分离：条目池只要简短"行动方向"，
- *  不要求标题/对白/格式标签，输出契约不同，故不复用 parseOptions。
- *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 替换#序号 提替换建议。 */
-const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
-
-用户消息中会给出【当前层已有条目】（带序号 1、2、3…）。
-
-【输出要求】
-1. 共输出 N 条建议，每条文本 5-25 个中文字符，只写行动方向，不写对白原文/越权结果（不预判他人反应）/动作细节描写。
-2. 新增条目不得与已有条目重复或高度雷同。
-3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可用"替换#序号：新文本"提出替换建议，序号对应【当前层已有条目】列表中的序号。
-4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
-5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
-6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
 
 export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
@@ -522,6 +519,22 @@ export function cancelGeneration() {
   generatorState.loading = false;
   generatorState.generationId = null;
 }
+
+/** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
+ *  与行动选项生成提示词刻意分离：条目池只要简短"行动方向"，
+ *  不要求标题/对白/格式标签，输出契约不同，故不复用 parseOptions。
+ *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 替换#序号 提替换建议。 */
+const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
+
+用户消息中会给出【当前层已有条目】（带序号 1、2、3…）。
+
+【输出要求】
+1. 共输出 N 条建议，每条文本 5-25 个中文字符，只写行动方向，不写对白原文/越权结果（不预判他人反应）/动作细节描写。
+2. 新增条目不得与已有条目重复或高度雷同。
+3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可用"替换#序号：新文本"提出替换建议，序号对应【当前层已有条目】列表中的序号。
+4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
+5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
+6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
 
 /** 解析条目池生成输出：宽松按行解析，兼容编号列表/无序列表/纯文本。
  *  与 parseOptions 刻意分离：条目池不依赖 <options> 标签，输出契约不同，勿合并逻辑。
