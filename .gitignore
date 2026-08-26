@@ -17,4 +17,7 @@ components.d.ts
 screenshot_verify.png
 
 .playwright-mcp/
-.kilo/plans/
+.kilo/
+.vscode/
+tailwind.config.js
+postcss.config.js
