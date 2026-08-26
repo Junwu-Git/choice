@@ -30,10 +30,84 @@
   background: rgba(128, 128, 140, 0.5);
 }
 
-/* 根容器继承 ST 全局字体，确保扩展内文字与酒馆一致 */
+/* 根容器使用扩展自有基准字号，不继承 ST 的 var(--mainFontSize)，
+   避免无 scoped 样式的元素（按钮、输入框、纯文本）变大 */
 #choice-panel-mount,
 #choice-floating-root {
   font-family: inherit;
+  font-size: var(--choice-text-base);
+}
+
+/* Teleport 到 body 的组件根元素，不继承 ST 的 var(--mainFontSize) */
+.choice-floating-overlay,
+.choice-floating-bubble,
+.choice-floating-context-menu,
+.choice-importdlg-overlay,
+.choice-poolgen-overlay,
+.choice-epool-overlay,
+.choice-sedlg-overlay,
+.choice-cfdlg-overlay,
+.choice-ccdlg-overlay,
+.choice-guide-popover,
+.choice-dialog-overlay {
+  font-size: var(--choice-text-base);
+}
+
+/* 覆盖 ST 全局规则（style.css:1553/1569）对 input/select/button/textarea 直接设的
+   font-size: var(--mainFontSize)，使扩展内表单元素继承容器字号而非 ST 全局字号。
+   覆盖 #choice-panel-mount、#choice-floating-root 及所有 Teleport 到 body 的弹窗 */
+#choice-panel-mount input,
+#choice-panel-mount select,
+#choice-panel-mount button,
+#choice-panel-mount textarea,
+#choice-floating-root input,
+#choice-floating-root select,
+#choice-floating-root button,
+#choice-floating-root textarea,
+.choice-floating-overlay input,
+.choice-floating-overlay select,
+.choice-floating-overlay button,
+.choice-floating-overlay textarea,
+.choice-floating-bubble input,
+.choice-floating-bubble select,
+.choice-floating-bubble button,
+.choice-floating-bubble textarea,
+.choice-floating-context-menu input,
+.choice-floating-context-menu select,
+.choice-floating-context-menu button,
+.choice-floating-context-menu textarea,
+.choice-importdlg-overlay input,
+.choice-importdlg-overlay select,
+.choice-importdlg-overlay button,
+.choice-importdlg-overlay textarea,
+.choice-poolgen-overlay input,
+.choice-poolgen-overlay select,
+.choice-poolgen-overlay button,
+.choice-poolgen-overlay textarea,
+.choice-epool-overlay input,
+.choice-epool-overlay select,
+.choice-epool-overlay button,
+.choice-epool-overlay textarea,
+.choice-sedlg-overlay input,
+.choice-sedlg-overlay select,
+.choice-sedlg-overlay button,
+.choice-sedlg-overlay textarea,
+.choice-cfdlg-overlay input,
+.choice-cfdlg-overlay select,
+.choice-cfdlg-overlay button,
+.choice-cfdlg-overlay textarea,
+.choice-ccdlg-overlay input,
+.choice-ccdlg-overlay select,
+.choice-ccdlg-overlay button,
+.choice-ccdlg-overlay textarea,
+.choice-guide-popover input,
+.choice-guide-popover select,
+.choice-guide-popover button,
+.choice-guide-popover textarea,
+.choice-dialog-overlay input,
+.choice-dialog-overlay select,
+.choice-dialog-overlay button,
+.choice-dialog-overlay textarea {
   font-size: inherit;
 }
 

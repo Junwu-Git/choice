@@ -5,7 +5,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
 import { DEFAULT_MODULES } from '@/type/settings';
 
-const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个更自然、更丰富的版本，保留原意和语气。
+const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个版本，保留原意和语气，版本间在描写方式、措辞风格上有明显差异。
 
 用户输入：
 {{input}}
