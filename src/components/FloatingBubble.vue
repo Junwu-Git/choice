@@ -214,7 +214,7 @@ onUnmounted(() => {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 9999;
+  z-index: var(--choice-z-floating);
   width: 60px;
   height: 60px;
   border-radius: var(--choice-radius-full);

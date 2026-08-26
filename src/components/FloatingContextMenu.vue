@@ -79,7 +79,7 @@ onUnmounted(() => {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 10000;
+  z-index: var(--choice-z-popover);
   transform: translate3d(var(--choice-menu-x), var(--choice-menu-y), 0);
   background: var(--choice-bg-panel);
   backdrop-filter: blur(8px);

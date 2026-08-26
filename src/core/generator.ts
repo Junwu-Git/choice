@@ -335,8 +335,6 @@ export const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 export function parseOptions(text: string, count: number): string[] {
-  console.log('[Choice] parseOptions 原始输入', { text: text.slice(0, 2000), count });
-
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
   // 原因：AI 可能在思维链中以文本形式提到 <options>（如"格式：<options> 标签内..."），
   // 直接在原始文本中 matchAll <options> 会误匹配到这些文本引用，导致提取错误
@@ -444,14 +442,6 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
       shuffleFinal: gen.shuffle_final,
       pinnedOverflow: gen.pinned_overflow,
     });
-    console.log('[Choice] 池抽取结果', {
-      生效池条目数: ps.effectivePool.length,
-      目标数量: count,
-      固定条目: pool.pinned.length,
-      抽取条目: pool.drawn.length,
-      固定文本: pool.pinned.map(e => e.text),
-      抽取文本: pool.drawn.map(e => e.text),
-    });
     const pinnedCount = pool.pinned.length;
     const poolSelectedText = pool.drawn
       .map(e => ((e.condition || '').trim() ? `[条件: ${(e.condition || '').trim()}] ${e.text}` : e.text))
@@ -487,7 +477,6 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     try {
       const raw = await callSecondaryApi(messages, api, signal);
       if (cancelled) return null;
-      console.log('[Choice] 原始 API 输出', raw.slice(0, 2000));
       const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
       if (!options.length) {
         toastr.error(t`未能解析出任何选项,请检查模型输出`);

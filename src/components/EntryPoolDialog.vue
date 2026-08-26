@@ -614,13 +614,6 @@ const initEntrySortables = () => {
       animation: 150,
       onEnd: evt => {
         const entryId = evt.item.dataset.entryId;
-        console.log('[Choice] 条目拖拽 onEnd', {
-          entryId,
-          fromKey: evt.from.dataset.groupKey,
-          toKey: (evt.to as HTMLElement).dataset.groupKey,
-          oldIndex: evt.oldIndex,
-          newIndex: evt.newIndex,
-        });
         if (!entryId) return;
         const fromKey = evt.from.dataset.groupKey || '';
         const toKey = (evt.to as HTMLElement).dataset.groupKey || '';
