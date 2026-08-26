@@ -66,11 +66,16 @@
       <div class="choice-count-row">
         <label class="choice-count-item">
           <span>{{ t`选项数量` }}</span>
-          <input v-model="gs.settings.global_count_mode" class="text_pole" style="width:80px" :placeholder="t`如 4 或 3-6`" />
+          <input
+            v-model="gs.settings.global_count_mode"
+            class="text_pole"
+            style="width: 80px"
+            :placeholder="t`如 4 或 3-6`"
+          />
         </label>
         <label class="choice-count-item">
           <span>{{ t`润色版本数` }}</span>
-          <input v-model="ui.enrich_count" class="text_pole" style="width:80px" :placeholder="t`如 4 或 3-6`" />
+          <input v-model="ui.enrich_count" class="text_pole" style="width: 80px" :placeholder="t`如 4 或 3-6`" />
         </label>
       </div>
     </div>

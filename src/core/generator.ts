@@ -460,11 +460,13 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     const c: Ctx = {
       count,
       pinnedCount,
-      pinned: pool.pinned.map(e => {
-        let line = e.type;
-        if (e.content.trim()) line += ': ' + e.content.trim();
-        return line;
-      }).join('\n'),
+      pinned: pool.pinned
+        .map(e => {
+          let line = e.type;
+          if (e.content.trim()) line += ': ' + e.content.trim();
+          return line;
+        })
+        .join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
     };
@@ -593,7 +595,9 @@ export async function generatePoolEntries(params: {
   try {
     // 快照总条目库已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
     const existing = gs.settings.master_pool.map(e => ({ id: e.id, type: e.type, content: e.content }));
-    const existingList = existing.length ? existing.map((e, i) => `${i + 1}. ${e.type}: ${e.content}`).join('\n') : '（无）';
+    const existingList = existing.length
+      ? existing.map((e, i) => `${i + 1}. ${e.type}: ${e.content}`).join('\n')
+      : '（无）';
     const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
     const ch = this_chid !== undefined ? characters[this_chid] : undefined;
@@ -614,7 +618,12 @@ export async function generatePoolEntries(params: {
       const idx = p.replaceTarget;
       if (idx !== undefined && idx >= 1 && idx <= existing.length) {
         const tgt = existing[idx - 1];
-        return { type: p.type, content: p.content, replaceTargetId: tgt.id, replaceOriginal: `${tgt.type}: ${tgt.content}` };
+        return {
+          type: p.type,
+          content: p.content,
+          replaceTargetId: tgt.id,
+          replaceOriginal: `${tgt.type}: ${tgt.content}`,
+        };
       }
       return { type: p.type, content: p.content };
     });

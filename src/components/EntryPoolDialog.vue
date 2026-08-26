@@ -106,7 +106,12 @@
                   </div>
                   <div v-if="expanded.has(entry.id)" class="choice-epool-entry-body">
                     <input v-model="entry.type" class="text_pole" :placeholder="t`条目类型(短标签)`" />
-                    <textarea v-model="entry.content" class="text_pole" :placeholder="t`AI 生成指令`" rows="2"></textarea>
+                    <textarea
+                      v-model="entry.content"
+                      class="text_pole"
+                      :placeholder="t`AI 生成指令`"
+                      rows="2"
+                    ></textarea>
                     <input v-model="entry.rule" class="text_pole" :placeholder="t`规则(可选)`" />
                     <div class="choice-epool-entry-fields">
                       <label class="choice-check">
@@ -326,7 +331,7 @@ const toggleExpandAllGroups = () => {
 const copyGroup = (group: EntryGroup) => {
   deleteTarget.value = null;
   const texts = group.entries
-    .map(e => e.content.trim() ? `${e.type}: ${e.content}` : e.type)
+    .map(e => (e.content.trim() ? `${e.type}: ${e.content}` : e.type))
     .filter(t => t.trim())
     .join('\n');
   if (!texts) {
@@ -374,7 +379,7 @@ const toggleSelectGroup = (group: EntryGroup) => {
 const copySelected = () => {
   const texts = masterPool.value
     .filter(e => selected.value.has(e.id))
-    .map(e => e.content.trim() ? `${e.type}: ${e.content}` : e.type)
+    .map(e => (e.content.trim() ? `${e.type}: ${e.content}` : e.type))
     .filter(t => t.trim())
     .join('\n');
   if (!texts) {
@@ -514,7 +519,10 @@ const onGenConfirm = ({
 }) => {
   for (const r of replacements) {
     const target = masterPool.value.find(e => e.id === r.id);
-    if (target) { target.type = r.type; target.content = r.content; }
+    if (target) {
+      target.type = r.type;
+      target.content = r.content;
+    }
   }
   if (additions.length) masterPool.value.push(...additions);
   showGen.value = false;

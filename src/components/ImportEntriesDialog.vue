@@ -103,7 +103,14 @@ const emit = defineEmits<{
   close: [];
   confirm: [
     payload: {
-      entries: { type: string; content: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
+      entries: {
+        type: string;
+        content: string;
+        category: string;
+        pinned?: boolean;
+        weight?: number;
+        condition?: string;
+      }[];
     },
   ];
 }>();
