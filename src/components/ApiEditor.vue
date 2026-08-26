@@ -157,7 +157,10 @@ const fetchModels = async () => {
   }
   fetching.value = true;
   try {
-    const models = await helper.getModelList({ apiurl: normalizeApiUrl(draftForm.value.apiurl), key: draftForm.value.key || undefined });
+    const models = await helper.getModelList({
+      apiurl: normalizeApiUrl(draftForm.value.apiurl),
+      key: draftForm.value.key || undefined,
+    });
     modelList.value = models;
     if (models.length === 0) {
       toastr.info(t`模型列表为空`);

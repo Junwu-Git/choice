@@ -1,15 +1,13 @@
 <template>
   <div v-show="visible" class="choice-panel" :class="{ 'choice-panel--compact': compact }">
     <div class="choice-panel-header" @click="collapsed = !collapsed">
-      <span
-        class="choice-panel-title"
-        :class="{ 'choice-title--toggleable': hasEnrichHistory }"
-        @click="onTitleClick"
-      >
+      <span class="choice-panel-title" :class="{ 'choice-title--toggleable': hasEnrichHistory }" @click="onTitleClick">
         <i :class="activeView === 'enrich' ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
         {{ activeView === 'enrich' ? t`输入润色` : t`行动选项` }}
         <i v-if="hasEnrichHistory" class="fa-solid fa-arrow-right-arrow-left choice-view-swap-icon"></i>
-        <span v-if="hasEnrichHistory && activeView === 'options'" class="choice-view-badge">{{ enrichGenerations.length }}</span>
+        <span v-if="hasEnrichHistory && activeView === 'options'" class="choice-view-badge">{{
+          enrichGenerations.length
+        }}</span>
       </span>
       <div class="choice-panel-tools" @click.stop>
         <!-- 选项视图分页 -->
@@ -43,7 +41,11 @@
           </button>
         </template>
         <!-- 润色视图：取消（loading）按钮 -->
-        <button v-if="activeView === 'enrich' && enrichLoading" class="choice-panel-btn choice-panel-main" @click="onCancelEnrich">
+        <button
+          v-if="activeView === 'enrich' && enrichLoading"
+          class="choice-panel-btn choice-panel-main"
+          @click="onCancelEnrich"
+        >
           <i class="fa-solid fa-stop"></i>
           {{ t`取消` }}
         </button>

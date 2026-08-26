@@ -40,7 +40,10 @@ function parseEnrichResult(text: string, count: number): string[] {
   if (m) c = m[1].trim();
 
   // 3. 剥离代码块包裹
-  c = c.replace(/^```[a-zA-Z]*\s*/i, '').replace(/\s*```$/, '').trim();
+  c = c
+    .replace(/^```[a-zA-Z]*\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
 
   // 4. 按行解析，去掉 "数字. " / "数字) " / "数字、" 前缀
   const result: string[] = [];

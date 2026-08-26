@@ -43,22 +43,14 @@
           </label>
 
           <div class="choice-importdlg-preview">
-            <span class="choice-importdlg-preview-count"
-              >{{ t`解析结果` }}: {{ totalCount }} {{ t`条` }}</span
-            >
+            <span class="choice-importdlg-preview-count">{{ t`解析结果` }}: {{ totalCount }} {{ t`条` }}</span>
             <div v-if="parsedGroups.length > 0" class="choice-importdlg-preview-list">
               <template v-for="(group, gi) in parsedGroups" :key="gi">
                 <div class="choice-importdlg-preview-group">
-                  <span class="choice-importdlg-preview-group-name">{{
-                    group.category || t`未分组`
-                  }}</span>
+                  <span class="choice-importdlg-preview-group-name">{{ group.category || t`未分组` }}</span>
                   <span class="choice-importdlg-preview-group-count">({{ group.entries.length }} {{ t`条` }})</span>
                 </div>
-                <div
-                  v-for="(entry, ei) in group.entries.slice(0, 3)"
-                  :key="ei"
-                  class="choice-importdlg-preview-item"
-                >
+                <div v-for="(entry, ei) in group.entries.slice(0, 3)" :key="ei" class="choice-importdlg-preview-item">
                   {{ getGlobalIndex(gi, ei) }}. {{ entry.text }}
                   <span v-if="entry.tags.pinned" class="choice-importdlg-tag">{{ t`固定` }}</span>
                   <span v-if="entry.tags.weight !== undefined" class="choice-importdlg-tag"
@@ -78,11 +70,7 @@
 
         <div class="choice-importdlg-footer">
           <button class="menu_button" @click="emit('close')">{{ t`取消` }}</button>
-          <button
-            class="menu_button menu_button_default"
-            :disabled="totalCount === 0"
-            @click="onConfirm"
-          >
+          <button class="menu_button menu_button_default" :disabled="totalCount === 0" @click="onConfirm">
             {{ t`确认导入` }}
           </button>
         </div>
@@ -133,9 +121,7 @@ const guideHtml = `<p><strong>作用</strong>：从剪贴板批量导入条目�
 
 const hasGroupHeaders = computed(() => {
   if (!rawText.value.trim()) return false;
-  return rawText.value
-    .split(/\r?\n/)
-    .some(line => GROUP_HEADER_RE.test(line.trim()));
+  return rawText.value.split(/\r?\n/).some(line => GROUP_HEADER_RE.test(line.trim()));
 });
 
 const parsedGroups = computed<ParsedGroup[]>(() => {

@@ -47,14 +47,24 @@ export function setMessageChoiceData(messageId: number, swipeId: number, data: M
 }
 
 export function storeGeneration(messageId: number, swipeId: number, generation: ChoiceGeneration) {
-  const data = getMessageChoiceData(messageId, swipeId) ?? { generations: [], currentIndex: 0, enrichGenerations: [], enrichCurrentIndex: 0 };
+  const data = getMessageChoiceData(messageId, swipeId) ?? {
+    generations: [],
+    currentIndex: 0,
+    enrichGenerations: [],
+    enrichCurrentIndex: 0,
+  };
   data.generations.push(generation);
   data.currentIndex = data.generations.length - 1;
   setMessageChoiceData(messageId, swipeId, data);
 }
 
 export function storeEnrichGeneration(messageId: number, swipeId: number, generation: ChoiceGeneration) {
-  const data = getMessageChoiceData(messageId, swipeId) ?? { generations: [], currentIndex: 0, enrichGenerations: [], enrichCurrentIndex: 0 };
+  const data = getMessageChoiceData(messageId, swipeId) ?? {
+    generations: [],
+    currentIndex: 0,
+    enrichGenerations: [],
+    enrichCurrentIndex: 0,
+  };
   data.enrichGenerations = data.enrichGenerations ?? [];
   data.enrichGenerations.push(generation);
   data.enrichCurrentIndex = data.enrichGenerations.length - 1;

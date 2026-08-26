@@ -44,10 +44,7 @@
                 <label class="choice-check" @click.stop>
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
-                <i
-                  class="fa-solid"
-                  :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"
-                ></i>
+                <i class="fa-solid" :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
                 <span class="choice-epool-group-name">{{ group.key || t`未分组` }}</span>
                 <span class="choice-epool-group-count">({{ group.entries.length }})</span>
                 <button class="choice-icon-btn" :title="t`添加条目`" @click.stop="addEntryToGroup(group.key)">

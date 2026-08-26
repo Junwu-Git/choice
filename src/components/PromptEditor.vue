@@ -12,12 +12,36 @@
           {{ t`新增润色模块` }}
         </button>
         <div class="choice-export-wrap">
-          <button class="menu_button" :title="t`导出全部提示词模块`" @click="exportPrompts('all')">{{ t`导出` }}</button>
+          <button class="menu_button" :title="t`导出全部提示词模块`" @click="exportPrompts('all')">
+            {{ t`导出` }}
+          </button>
           <button class="menu_button choice-export-arrow" @click.stop="showExportMenu = !showExportMenu">▼</button>
           <div v-if="showExportMenu" class="choice-export-dropdown">
-            <button @click="exportPrompts('all'); showExportMenu = false">{{ t`导出全部` }}</button>
-            <button @click="exportPrompts('option'); showExportMenu = false">{{ t`导出选项模块` }}</button>
-            <button v-if="globalStore.settings.ui.enrich_enabled" @click="exportPrompts('enrich'); showExportMenu = false">{{ t`导出润色模块` }}</button>
+            <button
+              @click="
+                exportPrompts('all');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出全部` }}
+            </button>
+            <button
+              @click="
+                exportPrompts('option');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出选项模块` }}
+            </button>
+            <button
+              v-if="globalStore.settings.ui.enrich_enabled"
+              @click="
+                exportPrompts('enrich');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出润色模块` }}
+            </button>
           </div>
         </div>
         <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
@@ -70,17 +94,23 @@
         class="choice-mode-btn"
         :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
         @click="promptMode = 'all'"
-      >{{ t`全部` }} ({{ totalCount }})</button>
+      >
+        {{ t`全部` }} ({{ totalCount }})
+      </button>
       <button
         class="choice-mode-btn"
         :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
         @click="promptMode = 'option'"
-      >{{ t`选项生成` }} ({{ optionCount }})</button>
+      >
+        {{ t`选项生成` }} ({{ optionCount }})
+      </button>
       <button
         class="choice-mode-btn"
         :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
         @click="promptMode = 'enrich'"
-      >{{ t`润色` }} ({{ enrichCount }})</button>
+      >
+        {{ t`润色` }} ({{ enrichCount }})
+      </button>
     </div>
 
     <div class="choice-beginner-section">
@@ -385,9 +415,12 @@ const totalCount = computed(() => globalStore.allModules.length);
 const optionCount = computed(() => globalStore.allModules.filter(m => !m.enrich_only).length);
 const enrichCount = computed(() => globalStore.allModules.filter(m => !m.option_only).length);
 
-watch(() => globalStore.settings.ui.enrich_enabled, (enabled) => {
-  if (!enabled) promptMode.value = 'all';
-});
+watch(
+  () => globalStore.settings.ui.enrich_enabled,
+  enabled => {
+    if (!enabled) promptMode.value = 'all';
+  },
+);
 
 const showPreview = ref(false);
 const showFilter = ref(true);
@@ -480,11 +513,13 @@ function importPrompts() {
         globalStore.settings.prompt_rules.modules = importedModules;
       } else if (mode === 'option') {
         const kept = existingModules.filter(m => m.enrich_only);
-        if (!confirm(t`将导入 ${importedModules.length} 个选项模块，保留现有 ${kept.length} 个润色模块。确定继续？`)) return;
+        if (!confirm(t`将导入 ${importedModules.length} 个选项模块，保留现有 ${kept.length} 个润色模块。确定继续？`))
+          return;
         globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
       } else if (mode === 'enrich') {
         const kept = existingModules.filter(m => m.option_only);
-        if (!confirm(t`将导入 ${importedModules.length} 个润色模块，保留现有 ${kept.length} 个选项模块。确定继续？`)) return;
+        if (!confirm(t`将导入 ${importedModules.length} 个润色模块，保留现有 ${kept.length} 个选项模块。确定继续？`))
+          return;
         globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
       } else {
         throw new Error(`未知的导入模式：${mode}`);
@@ -1198,7 +1233,9 @@ onUnmounted(() => {
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
 }
 
 .choice-mode-btn:not(:last-child) {
