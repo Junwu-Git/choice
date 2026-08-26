@@ -75,7 +75,8 @@
                   <span class="choice-poolgen-replace-badge">{{ t`替换` }}</span>
                   <span class="choice-poolgen-orig">{{ t`原条目` }}：{{ item.replaceOriginal?.slice(0, 24) }}</span>
                 </div>
-                <textarea v-model="item.text" class="text_pole" rows="1"></textarea>
+                <textarea v-model="item.type" class="text_pole" rows="1" :placeholder="t`类型`"></textarea>
+                <textarea v-model="item.content" class="text_pole" rows="1" :placeholder="t`内容`"></textarea>
               </div>
               <button class="choice-icon-btn" :title="t`删除`" @click="removeResult(i)">
                 <i class="fa-solid fa-trash-can"></i>
@@ -114,7 +115,7 @@ import GuidePopover from '@/components/GuidePopover.vue';
 const props = defineProps<{ open: boolean; categories: string[] }>();
 const emit = defineEmits<{
   close: [];
-  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; text: string }[] }];
+  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; type: string; content: string }[] }];
 }>();
 
 const count = ref(6);
@@ -183,18 +184,21 @@ const removeResult = (i: number) => {
 
 const onInject = () => {
   const additions: PoolEntry[] = [];
-  const replacements: { id: string; text: string }[] = [];
+  const replacements: { id: string; type: string; content: string }[] = [];
   for (const i of [...selected.value].sort((a, b) => a - b)) {
     const item = results.value[i];
     if (!item) continue;
-    const text = item.text.trim();
-    if (!text) continue;
+    const type = item.type.trim();
+    const content = item.content.trim();
+    if (!type && !content) continue;
     if (item.replaceTargetId) {
-      replacements.push({ id: item.replaceTargetId, text });
+      replacements.push({ id: item.replaceTargetId, type, content });
     } else {
       additions.push({
         id: uuidv4(),
-        text,
+        type,
+        content,
+        rule: '',
         pinned: false,
         weight: 1,
         category: targetCategory.value,

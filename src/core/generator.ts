@@ -14,10 +14,11 @@ import { DEFAULT_MODULES, GenerationSettings, CORE_RULES_STATIC } from '@/type/s
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
-/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（仅改 text），否则为新增条目。
+/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（仅改 type/content），否则为新增条目。
  *  replaceOriginal 仅用于 UI 预览被替换的原文，不参与注入逻辑。 */
 export type PoolGenItem = {
-  text: string;
+  type: string;
+  content: string;
   replaceTargetId?: string;
   replaceOriginal?: string;
 };
@@ -32,19 +33,16 @@ let genController: AbortController | null = null;
 export const poolGenState = reactive({ loading: false });
 let poolGenController: AbortController | null = null;
 
-const resolveCount = (cm: string): number => {
+export const resolveCount = (cm: string): number => {
   const s = cm.trim();
-  if (!s) return 4;
-  // 范围格式 "4-8"：前端随机，每次生成时在 [min, max] 内取一个整数
   const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
   if (rangeMatch) {
     const min = parseInt(rangeMatch[1], 10);
     const max = parseInt(rangeMatch[2], 10);
-    if (min >= max || min <= 0) return 4;
     return min + Math.floor(Math.random() * (max - min + 1));
   }
   const n = parseInt(s, 10);
-  return Number.isFinite(n) && n > 0 ? n : 4;
+  return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
@@ -236,6 +234,12 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
     if (!content.trim()) continue;
     const role = m.role === 'user' || m.is_user ? 'user' : 'assistant';
     h.push({ role, content });
+  }
+  // 将最后一条消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
+  // 避免在长对话中注意力被稀释到更早的剧情。
+  if (h.length > 0) {
+    const last = h[h.length - 1];
+    last.content = `<current_scene>\n${last.content}\n</current_scene>`;
   }
   return h;
 };
@@ -433,8 +437,9 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const cwi = cs.settings.world_info;
   const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
   try {
-    const gen = ps.effectiveConfig?.generation ?? GenerationSettings.prefault({});
-    const count = resolveCount(gen.count_mode ?? '4');
+    const gen = ps.effectiveConfig?.generation;
+    const countMode = gen?.count_mode || gs.settings.global_count_mode;
+    const count = resolveCount(countMode);
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,
@@ -444,12 +449,22 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
     });
     const pinnedCount = pool.pinned.length;
     const poolSelectedText = pool.drawn
-      .map(e => ((e.condition || '').trim() ? `[条件: ${(e.condition || '').trim()}] ${e.text}` : e.text))
+      .map(e => {
+        let line = e.type;
+        if (e.content.trim()) line += ': ' + e.content.trim();
+        if (e.condition.trim()) line = `[条件: ${e.condition.trim()}] ${line}`;
+        if (e.rule.trim()) line += ` [规则: ${e.rule.trim()}]`;
+        return line;
+      })
       .join('\n');
     const c: Ctx = {
       count,
       pinnedCount,
-      pinned: pool.pinned.map(e => e.text).join('\n'),
+      pinned: pool.pinned.map(e => {
+        let line = e.type;
+        if (e.content.trim()) line += ': ' + e.content.trim();
+        return line;
+      }).join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
     };
@@ -577,8 +592,8 @@ export async function generatePoolEntries(params: {
   poolGenController = new AbortController();
   try {
     // 快照总条目库已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
-    const existing = gs.settings.master_pool.map(e => ({ id: e.id, text: e.text }));
-    const existingList = existing.length ? existing.map((e, i) => `${i + 1}. ${e.text}`).join('\n') : '（无）';
+    const existing = gs.settings.master_pool.map(e => ({ id: e.id, type: e.type, content: e.content }));
+    const existingList = existing.length ? existing.map((e, i) => `${i + 1}. ${e.type}: ${e.content}`).join('\n') : '（无）';
     const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
     const ch = this_chid !== undefined ? characters[this_chid] : undefined;
@@ -599,9 +614,9 @@ export async function generatePoolEntries(params: {
       const idx = p.replaceTarget;
       if (idx !== undefined && idx >= 1 && idx <= existing.length) {
         const tgt = existing[idx - 1];
-        return { text: p.text, replaceTargetId: tgt.id, replaceOriginal: tgt.text };
+        return { type: p.type, content: p.content, replaceTargetId: tgt.id, replaceOriginal: `${tgt.type}: ${tgt.content}` };
       }
-      return { text: p.text };
+      return { type: p.type, content: p.content };
     });
     if (!items.length) {
       toastr.error(t`未解析出条目,请检查模型输出`);

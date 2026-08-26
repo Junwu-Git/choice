@@ -110,15 +110,9 @@
           class="choice-option-btn"
           @click="onSelect(option)"
         >
-          <span class="choice-option-number">{{ index + 1 }}</span>
-          <template v-if="activeView === 'enrich'">
-            <span class="choice-option-text">{{ option.text }}</span>
-          </template>
-          <template v-else>
-            <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
-            <span class="choice-option-divider"></span>
-            <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
-          </template>
+          <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
+          <span class="choice-option-divider"></span>
+          <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
         </button>
         <div v-if="!compact && activeView === 'options' && underflow" class="choice-panel-hint">
           {{ t`本轮选项少于设定数量` }}
@@ -314,10 +308,6 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-panel--compact .choice-option-type {
   font-size: calc(14px * var(--choice-font-scale));
   width: calc(72px * var(--choice-font-scale));
-}
-
-.choice-panel--compact .choice-option-number {
-  width: calc(18px * var(--choice-font-scale));
 }
 
 .choice-panel--compact .choice-option-content {
@@ -543,16 +533,6 @@ const onSelect = async (option: ChoiceOption) => {
 
 .choice-option-btn:active {
   transform: scale(0.985);
-}
-
-.choice-option-number {
-  width: calc(24px * var(--choice-font-scale));
-  flex-shrink: 0;
-  font-weight: 700;
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  text-align: center;
-  margin-right: var(--choice-space-1);
 }
 
 .choice-option-type {

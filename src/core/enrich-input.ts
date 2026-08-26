@@ -1,5 +1,5 @@
 import { callSecondaryApiWithRetry } from './api-client';
-import { buildMessages, resolveCustomApi, applyWIExcl, STRIP_REASONING_TAGS_RE } from './generator';
+import { buildMessages, resolveCustomApi, applyWIExcl, parseOptions, resolveCount } from './generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
@@ -10,52 +10,13 @@ const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个�
 用户输入：
 {{input}}
 
-输出格式：每行一个版本，格式为 "1. 润色后的文本"`;
+输出格式：每行一个版本，格式为 "标题: 内容"`;
 
 let enrichController: AbortController | null = null;
 
 export function cancelEnrich() {
   enrichController?.abort();
   enrichController = null;
-}
-
-/** 润色结果解析：找最后一个 </thinking> 标签取其后内容 → 提取 <options> 块 → 按 "数字. 文本" 格式解析。
- *  与 parseOptions 共享 stripping 逻辑但解析格式不同（"数字. 文本" vs "标题: 内容"）。
- *  必须找最后一个 </thinking> 而非 strip 配对标签：enrich_assistant 预填充文本在 <thinking> 之前，
- *  配对 strip 会残留预填充文本，被误当作第一条结果。 */
-function parseEnrichResult(text: string, count: number): string[] {
-  // 1. 找最后一个思维链闭合标签，丢弃之前的所有内容（含预填充文本）
-  const closeTagRe = /<\/(?:think(?:ing)?|reasoning|thought)>/gi;
-  const closeMatches = [...text.matchAll(closeTagRe)];
-  let c: string;
-  if (closeMatches.length > 0) {
-    const lastClose = closeMatches[closeMatches.length - 1];
-    c = text.slice(lastClose.index! + lastClose[0].length).trim();
-  } else {
-    c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
-  }
-
-  // 2. 提取 <options> 块
-  const m = c.match(/<options>([\s\S]*?)<\/options>/i);
-  if (m) c = m[1].trim();
-
-  // 3. 剥离代码块包裹
-  c = c
-    .replace(/^```[a-zA-Z]*\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
-
-  // 4. 按行解析，去掉 "数字. " / "数字) " / "数字、" 前缀
-  const result: string[] = [];
-  const prefixRe = /^\s*\d+[.)、]\s*/;
-  for (const raw of c.split(/\r?\n/)) {
-    let line = raw.trim();
-    if (!line || /^<\/?\w+>$/i.test(line)) continue;
-    line = line.replace(prefixRe, '').trim();
-    if (line) result.push(line);
-    if (result.length >= count) break;
-  }
-  return result;
 }
 
 /** 润色时无需跳过的模块（所有通用模块均参与润色管线） */
@@ -83,7 +44,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     }
   }
 
-  const enrichCount = gs.settings.ui.enrich_count;
+  const enrichCount = resolveCount(gs.settings.ui.enrich_count);
   const enrichCtx = { count: enrichCount, pinnedCount: 0, pinned: '', poolSelected: '', input };
 
   const gwi = gs.settings.world_info;
@@ -97,7 +58,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     const signal = enrichController.signal;
 
     const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, signal);
-    return parseEnrichResult(raw, enrichCount);
+    return parseOptions(raw, enrichCount);
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') return [];
     console.error('[Choice] 润色失败', e);

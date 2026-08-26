@@ -122,9 +122,9 @@ const groupedEntries = computed<EntryGroup[]>(() => {
 });
 
 const entrySummary = (entry: PoolEntry): string => {
-  const text = entry.text.trim();
-  if (!text) return t`<空条目>`;
-  return text.replace(/"/g, '').slice(0, 50);
+  const type = entry.type.trim();
+  if (!type && !entry.content.trim()) return t`<空条目>`;
+  return type.replace(/"/g, '').slice(0, 50);
 };
 
 const toggleGroup = (key: string) => {

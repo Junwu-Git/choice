@@ -13,11 +13,24 @@ import {
   setting_field,
   DEFAULT_MODULES,
   BAIBAI_MODULE_IDS,
-  GenerationSettings,
-  DEFAULT_PERSON_STYLE,
-  DEFAULT_OPTION_RULES,
-  USER_INSTRUCTION_DEFAULT,
 } from '@/type/settings';
+
+/** 构建 10 条默认条目，基于用户定义的选项类型 */
+function buildDefaultEntries(): PoolEntry[] {
+  return [
+    { id: uuidv4(), type: '普通发展', content: '根据当前处境，合理构思符合角色性格的自然反应，不预设特定策略倾向', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '跳过场景', content: '当剧情适合快速推进时，用一两句精炼的过渡性描述总结时间流逝或空间转移，并直接开启一个新场景', pinned: true, weight: 1, category: '', condition: '', rule: '此项固定生成，不参与随机抽取' },
+    { id: uuidv4(), type: '欧亨利反转', content: '给出一个意料之外情理之中的剧情发展，巧妙地利用当前场景中不起眼的细节引出意外转折', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '罗曼蒂克', content: '根据当前环境和角色关系，给出一个浪漫或暧昧的举动，推进角色之间的情感进程', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '视角切换', content: '以另一个角色的视角接续下文，描述该角色在同时刻的所见所感或正在进行的行动', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '利用场景', content: '结合当前场景的物理特性或氛围，进行具体的环境互动、物品利用或隐蔽行为', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '破局行动', content: '构思一个打破常规思维的高风险行动，旨在突破当前僵局或探索隐藏的可能性', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '沉默观察', content: '刻意不表态，通过视线焦点、细微的肢体反应或内心的揣测来传达态度，全程不主动开口', pinned: false, weight: 1, category: '', condition: '', rule: '此项不涉及对白，纯粹依靠动作与内心活动' },
+    { id: uuidv4(), type: '共情靠近', content: '通过分享感受、复述对方处境或给予实际支持，尝试拉近与对方的距离', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+    { id: uuidv4(), type: '幽默化解', content: '用调侃、自嘲或反差感的言行打破紧张或尴尬的氛围，语气轻松但不失分寸', pinned: false, weight: 1, category: '', condition: '', rule: '' },
+  ];
+}
+
 import type {
   GlobalSettings as GlobalSettingsType,
   PoolConfig,
@@ -315,16 +328,16 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       // 聊天元数据不可用时跳过
     }
 
-    // 按 text 去重合并：相同 text 只保留第一条（优先级：聊天 > 角色 > 全局）
+    // 按 type 去重合并：相同 type 只保留第一条（优先级：聊天 > 角色 > 全局）
     const seen = new Map<string, PoolEntry>();
     for (const e of oldChatPool) {
-      if (!seen.has(e.text)) seen.set(e.text, e);
+      if (!seen.has(e.type)) seen.set(e.type, e);
     }
     for (const e of oldCharPool) {
-      if (!seen.has(e.text)) seen.set(e.text, e);
+      if (!seen.has(e.type)) seen.set(e.type, e);
     }
     for (const e of oldGlobalPool) {
-      if (!seen.has(e.text)) seen.set(e.text, e);
+      if (!seen.has(e.type)) seen.set(e.type, e);
     }
     validated.master_pool = [...seen.values()];
 
@@ -404,12 +417,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     // 如果没有任何配置，创建默认配置（含 4 条预设条目）
     if (configs.length === 0) {
-      const defaultEntries: PoolEntry[] = [
-        { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
-      ];
+      const defaultEntries = buildDefaultEntries();
       validated.master_pool = [...defaultEntries];
       configs.push({
         id: uuidv4(),
@@ -470,12 +478,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   if ((validated.schema_version ?? 0) < 13) {
     // v13: 对已迁移但池为空的用户，补建默认条目和配置
     if (validated.master_pool.length === 0 && validated.configs.length === 0) {
-      const defaultEntries: PoolEntry[] = [
-        { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
-        { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
-      ];
+      const defaultEntries = buildDefaultEntries();
       validated.master_pool = [...defaultEntries];
       validated.configs = [
         {
@@ -537,6 +540,23 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     }
     _.set(extension_settings, [setting_field, 'configs'], rawConfigs);
     saveSettingsDebounced();
+  }
+
+  // v14 迁移（必须在 Zod 验证前执行，因为 schema 已将 text 改为 type）
+  const rawPool = _.get(existing, 'master_pool');
+  if (Array.isArray(rawPool) && rawPool.length > 0 && rawPool[0].text !== undefined) {
+    for (const e of rawPool) {
+      e.type = e.text ?? '';
+      e.content = '';
+      e.rule = '';
+      delete e.text;
+    }
+  }
+
+  // enrich_count 从 number 转 string（预校验迁移，必须在 Zod 验证前执行）
+  const rawUI = _.get(existing, 'ui');
+  if (rawUI && typeof rawUI.enrich_count === 'number') {
+    rawUI.enrich_count = String(rawUI.enrich_count);
   }
 
   const validated = validateInplace(GlobalSettings, existing);
@@ -683,12 +703,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     fresh.prompt_rules.schema_version = 16;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
 
-    const defaultEntries: PoolEntry[] = [
-      { id: uuidv4(), text: '继续推进对话，主动引导话题', pinned: false, weight: 1, category: '', condition: '' },
-      { id: uuidv4(), text: '静观其变，观察对方反应', pinned: false, weight: 1, category: '', condition: '' },
-      { id: uuidv4(), text: '补充角色的内心独白与心理活动', pinned: false, weight: 1, category: '', condition: '' },
-      { id: uuidv4(), text: '深入描写当前场景的环境与氛围', pinned: false, weight: 1, category: '', condition: '' },
-    ];
+    const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
     fresh.configs = [
       {

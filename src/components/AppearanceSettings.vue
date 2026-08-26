@@ -26,11 +26,6 @@
           </span>
         </label>
       </div>
-      <div v-if="ui.enrich_enabled" class="choice-enrich-count">
-        <span class="choice-appearance-label">{{ t`润色版本数` }}</span>
-        <input v-model.number="ui.enrich_count" type="number" min="1" max="20" class="text_pole" style="width: 60px" />
-        <span class="choice-field-hint">{{ t`（1-20）` }}</span>
-      </div>
     </div>
 
     <div class="choice-appearance-section">

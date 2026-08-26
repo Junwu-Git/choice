@@ -55,13 +55,35 @@
         </button>
       </div>
     </div>
+
+    <div class="choice-generation-section">
+      <div class="choice-field">
+        <div class="choice-field-label">
+          <label>{{ t`生成数量` }}</label>
+        </div>
+        <small class="choice-field-hint">{{ t`数字=固定数量，区间=每次随机（如 3-6）` }}</small>
+      </div>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`选项数量` }}</span>
+          <input v-model="gs.settings.global_count_mode" class="text_pole" style="width:80px" :placeholder="t`如 4 或 3-6`" />
+        </label>
+        <label class="choice-count-item">
+          <span>{{ t`润色版本数` }}</span>
+          <input v-model="ui.enrich_count" class="text_pole" style="width:80px" :placeholder="t`如 4 或 3-6`" />
+        </label>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useChatSettingsStore } from '@/store/chat-settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const chatStore = useChatSettingsStore();
+const gs = useGlobalSettingsStore();
+const ui = gs.settings.ui;
 </script>
 
 <style scoped>
@@ -219,5 +241,18 @@ const chatStore = useChatSettingsStore();
   background: var(--choice-primary);
   color: #fff;
   box-shadow: 0 0 8px var(--choice-primary-glow);
+}
+
+.choice-count-row {
+  display: flex;
+  gap: var(--choice-space-4);
+}
+
+.choice-count-item {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
 }
 </style>

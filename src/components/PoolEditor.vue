@@ -62,7 +62,7 @@
         <label class="choice-inline-label">{{ t`抽取参数` }}</label>
         <div class="choice-inline-gen">
           <label class="choice-inline-gen-item">
-            <span>{{ t`数量` }}</span>
+            <span :title="t`覆盖全局默认数量，支持数字或区间如 3-6`">{{ t`数量` }}</span>
             <input
               v-model="selectedConfig.generation.count_mode"
               class="text_pole choice-small-input"
@@ -293,9 +293,9 @@ const getEntryCategory = (entryId: string): string => {
 const getEntryText = (entryId: string): string => {
   const entry = masterPool.value.find(e => e.id === entryId);
   if (!entry) return t`<空条目>`;
-  const text = entry.text.trim();
-  if (!text) return t`<空条目>`;
-  return text.replace(/"/g, '').slice(0, 50);
+  const type = entry.type.trim();
+  if (!type && !entry.content.trim()) return t`<空条目>`;
+  return type.replace(/"/g, '').slice(0, 50);
 };
 
 const removeConfigEntry = (entryId: string) => {

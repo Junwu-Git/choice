@@ -105,7 +105,9 @@
                     </button>
                   </div>
                   <div v-if="expanded.has(entry.id)" class="choice-epool-entry-body">
-                    <textarea v-model="entry.text" class="text_pole" :placeholder="t`条目内容`" rows="2"></textarea>
+                    <input v-model="entry.type" class="text_pole" :placeholder="t`条目类型(短标签)`" />
+                    <textarea v-model="entry.content" class="text_pole" :placeholder="t`AI 生成指令`" rows="2"></textarea>
+                    <input v-model="entry.rule" class="text_pole" :placeholder="t`规则(可选)`" />
                     <div class="choice-epool-entry-fields">
                       <label class="choice-check">
                         <input v-model="entry.pinned" type="checkbox" />
@@ -290,14 +292,10 @@ const groupedEntries = computed<EntryGroup[]>(() => {
 });
 
 const entrySummary = (entry: PoolEntry): string => {
-  const text = entry.text.trim();
-  if (!text) return t`<空条目>`;
-  const entrySepRe = /[:：][ 　]/;
-  if (entrySepRe.test(text)) {
-    const parts = text.split(entrySepRe);
-    return parts[0].replace(/"/g, '') + ' | ' + parts.slice(1).join(': ').replace(/"/g, '').slice(0, 40);
-  }
-  return text.replace(/"/g, '').slice(0, 50);
+  const type = entry.type.trim();
+  if (!type && !entry.content.trim()) return t`<空条目>`;
+  if (!entry.content.trim()) return type.slice(0, 50);
+  return type.replace(/"/g, '') + ' | ' + entry.content.replace(/"/g, '').slice(0, 40);
 };
 
 const toggleEntry = (id: string) => {
@@ -328,7 +326,7 @@ const toggleExpandAllGroups = () => {
 const copyGroup = (group: EntryGroup) => {
   deleteTarget.value = null;
   const texts = group.entries
-    .map(e => e.text)
+    .map(e => e.content.trim() ? `${e.type}: ${e.content}` : e.type)
     .filter(t => t.trim())
     .join('\n');
   if (!texts) {
@@ -376,7 +374,7 @@ const toggleSelectGroup = (group: EntryGroup) => {
 const copySelected = () => {
   const texts = masterPool.value
     .filter(e => selected.value.has(e.id))
-    .map(e => e.text)
+    .map(e => e.content.trim() ? `${e.type}: ${e.content}` : e.type)
     .filter(t => t.trim())
     .join('\n');
   if (!texts) {
@@ -455,7 +453,9 @@ const addEntryToGroup = (groupKey: string) => {
   deleteTarget.value = null;
   const entry: PoolEntry = {
     id: uuidv4(),
-    text: '',
+    type: '',
+    content: '',
+    rule: '',
     pinned: false,
     weight: 1,
     category: groupKey,
@@ -510,23 +510,25 @@ const onGenConfirm = ({
   replacements,
 }: {
   additions: PoolEntry[];
-  replacements: { id: string; text: string }[];
+  replacements: { id: string; type: string; content: string }[];
 }) => {
   for (const r of replacements) {
     const target = masterPool.value.find(e => e.id === r.id);
-    if (target) target.text = r.text;
+    if (target) { target.type = r.type; target.content = r.content; }
   }
   if (additions.length) masterPool.value.push(...additions);
   showGen.value = false;
 };
 
 const onImportConfirm = (payload: {
-  entries: { text: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
+  entries: { type: string; content: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
 }) => {
   for (const e of payload.entries) {
     masterPool.value.push({
       id: uuidv4(),
-      text: e.text,
+      type: e.type,
+      content: e.content || '',
+      rule: '',
       pinned: e.pinned ?? false,
       weight: e.weight ?? 1,
       category: e.category || '',

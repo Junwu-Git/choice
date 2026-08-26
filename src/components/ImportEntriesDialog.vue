@@ -51,7 +51,7 @@
                   <span class="choice-importdlg-preview-group-count">({{ group.entries.length }} {{ t`条` }})</span>
                 </div>
                 <div v-for="(entry, ei) in group.entries.slice(0, 3)" :key="ei" class="choice-importdlg-preview-item">
-                  {{ getGlobalIndex(gi, ei) }}. {{ entry.text }}
+                  {{ getGlobalIndex(gi, ei) }}. {{ entry.type }}: {{ entry.content }}
                   <span v-if="entry.tags.pinned" class="choice-importdlg-tag">{{ t`固定` }}</span>
                   <span v-if="entry.tags.weight !== undefined" class="choice-importdlg-tag"
                     >{{ t`权重` }}:{{ entry.tags.weight }}</span
@@ -103,7 +103,7 @@ const emit = defineEmits<{
   close: [];
   confirm: [
     payload: {
-      entries: { text: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
+      entries: { type: string; content: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
     },
   ];
 }>();
@@ -139,7 +139,8 @@ const getGlobalIndex = (gi: number, ei: number) => {
 const onConfirm = () => {
   const entries = parsedGroups.value.flatMap(g =>
     g.entries.map(e => ({
-      text: e.text,
+      type: e.type,
+      content: e.content,
       category: g.category,
       pinned: e.tags.pinned,
       weight: e.tags.weight,

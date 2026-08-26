@@ -14,7 +14,8 @@ export const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-�
 
 /** 剥离行内标签，返回纯净文本 + 标签值 */
 export function stripEntryTags(raw: string): {
-  text: string;
+  type: string;
+  content: string;
   pinned?: boolean;
   weight?: number;
   condition?: string;
@@ -39,11 +40,15 @@ export function stripEntryTags(raw: string): {
     text = text.replace(CONDITION_RE, '').trim();
   }
   text = stripMarkdown(text);
-  return { text, pinned, weight, condition };
+  const sep = text.match(/[:：]\s/);
+  const type = sep ? text.slice(0, sep.index!).trim() : text.trim();
+  const content = sep ? text.slice(sep.index! + sep[0].length).trim() : '';
+  return { type, content, pinned, weight, condition };
 }
 
 export interface ParsedGroupEntry {
-  text: string;
+  type: string;
+  content: string;
   tags: { pinned?: boolean; weight?: number; condition?: string };
 }
 
@@ -80,8 +85,8 @@ export function parsePoolEntries(rawText: string, defaultCategory: string = ''):
     }
     const stripped = stripMarker(line);
     if (stripped) {
-      const { text, pinned, weight, condition } = stripEntryTags(stripped);
-      curEntries.push({ text, tags: { pinned, weight, condition } });
+      const { type, content, pinned, weight, condition } = stripEntryTags(stripped);
+      curEntries.push({ type, content, tags: { pinned, weight, condition } });
     }
   }
   if (curEntries.length) groups.push({ category: curCategory, entries: curEntries });

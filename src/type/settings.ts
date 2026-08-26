@@ -5,7 +5,9 @@ export const setting_field = 'choice';
 export const PoolEntry = z
   .object({
     id: z.string(),
-    text: z.string(),
+    type: z.string(),
+    content: z.string().default(''),
+    rule: z.string().default(''),
     pinned: z.boolean().default(false),
     weight: z.number().min(0).default(1),
     category: z.string().default(''),
@@ -239,7 +241,7 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 13;
+export const SCHEMA_VERSION = 14;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -265,7 +267,7 @@ export const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
     enrich_enabled: z.boolean().default(true),
-    enrich_count: z.number().min(1).max(20).default(4),
+    enrich_count: z.string().default('4'),
     theme: z.enum(['dark', 'light']).default('dark'),
     opacity: z.number().min(0.3).max(1).default(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
@@ -287,6 +289,7 @@ export const GlobalSettings = z
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
     retry_count: z.number().min(0).max(10).default(0),
+    global_count_mode: z.string().default('4'),
     pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});
