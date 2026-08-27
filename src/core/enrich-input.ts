@@ -63,7 +63,8 @@ export async function enrichUserInput(input: string): Promise<string[]> {
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
+  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const restore = gwi.enabled ? applyWIExcl(allExcl, cwi.enabled_books) : null;
 
   try {
     const messages = await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);

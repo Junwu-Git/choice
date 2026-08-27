@@ -11,6 +11,29 @@
       {{ t`刷新列表` }}
     </button>
 
+    <div class="choice-wi-global-excl">
+      <div class="choice-wi-section-title choice-wi-collapsible" @click="showGlobalExcl = !showGlobalExcl">
+        <i class="fa-solid" :class="showGlobalExcl ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+        {{ t`全局排除` }}
+        <span class="choice-wi-count" v-if="globalExcludedBooks.length > 0">({{ globalExcludedBooks.length }})</span>
+      </div>
+      <div v-if="showGlobalExcl" class="choice-wi-global-excl-body">
+        <div v-if="globalExcludedBooks.length === 0" class="choice-empty-hint">
+          {{ t`未设置全局排除。全局排除的世界书在所有聊天中永久不被选项生成参考。` }}
+        </div>
+        <div class="choice-wi-list">
+          <div v-for="name in globalExcludedBooks" :key="name" class="choice-wi-row excluded-global">
+            <span class="choice-wi-name">{{ name }}</span>
+            <button class="choice-wi-enable-btn" @click.stop="removeGlobalExcl(name)">{{ t`移除` }}</button>
+          </div>
+        </div>
+        <select class="choice-wi-global-excl-select" v-model="selectedGlobalExcl" @change="addGlobalExcl">
+          <option value="">{{ t`-- 添加世界书到全局排除 --` }}</option>
+          <option v-for="name in availableGlobalExclBooks" :key="name" :value="name">{{ name }}</option>
+        </select>
+      </div>
+    </div>
+
     <div v-if="activeBooks.length > 0">
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
@@ -31,7 +54,8 @@
             >
               {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
             </span>
-            <input type="checkbox" :checked="isBookChecked(book)" @click.stop @change="toggleBook(book)" />
+            <input type="checkbox" :checked="isBookChecked(book)" :disabled="isBookGloballyExcluded(book)" @click.stop @change="toggleBook(book)" />
+            <span v-if="isBookGloballyExcluded(book)" class="choice-wi-badge badge-global-excl">{{ t`全局排除` }}</span>
           </div>
           <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
@@ -105,6 +129,8 @@ const allBooks = ref<BookInfo[]>([]);
 const bookEntries = ref<Record<string, EntryInfo[]>>({});
 const bookExpanded = ref<Set<string>>(new Set());
 const showInactive = ref(false);
+const showGlobalExcl = ref(false);
+const selectedGlobalExcl = ref('');
 
 const activeBooks = computed(() =>
   allBooks.value.filter(b => b.active || chatStore.settings.world_info.enabled_books.includes(b.name)),
@@ -119,13 +145,40 @@ const isEntryExcluded = (bookName: string, uid: string | number) =>
 
 const isExtEnabled = (name: string) => chatStore.settings.world_info.enabled_books.includes(name);
 
+const globalExcludedBooks = computed(() => globalStore.settings.world_info.global_excluded_books);
+
+const availableGlobalExclBooks = computed(() => {
+  const excluded = new Set(globalExcludedBooks.value);
+  return (world_names ?? []).filter(name => !excluded.has(name));
+});
+
+const isBookGloballyExcluded = (book: BookInfo) =>
+  globalStore.settings.world_info.global_excluded_books.includes(book.name);
+
+const addGlobalExcl = () => {
+  if (!selectedGlobalExcl.value) return;
+  const list = globalStore.settings.world_info.global_excluded_books;
+  if (!list.includes(selectedGlobalExcl.value)) {
+    list.push(selectedGlobalExcl.value);
+  }
+  selectedGlobalExcl.value = '';
+};
+
+const removeGlobalExcl = (name: string) => {
+  const list = globalStore.settings.world_info.global_excluded_books;
+  const idx = list.indexOf(name);
+  if (idx !== -1) list.splice(idx, 1);
+};
+
 const isBookChecked = (book: BookInfo) => {
+  if (globalStore.settings.world_info.global_excluded_books.includes(book.name)) return false;
   if (chatStore.settings.world_info.excluded_books.includes(book.name)) return false;
   if (book.active) return true;
   return chatStore.settings.world_info.enabled_books.includes(book.name);
 };
 
 const toggleBook = (book: BookInfo) => {
+  if (globalStore.settings.world_info.global_excluded_books.includes(book.name)) return;
   const enabled = chatStore.settings.world_info.enabled_books;
   const excluded = chatStore.settings.world_info.excluded_books;
   const wasChecked = isBookChecked(book);
@@ -449,5 +502,37 @@ onUnmounted(() => {
 .choice-hint {
   color: var(--choice-text-muted);
   font-size: var(--choice-text-xs);
+}
+
+.choice-wi-global-excl {
+  margin-bottom: var(--choice-space-1);
+}
+
+.choice-wi-global-excl-body {
+  padding: var(--choice-space-2) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+}
+
+.choice-wi-row.excluded-global {
+  opacity: 0.6;
+  background: rgba(255, 100, 100, 0.08);
+  border-color: rgba(255, 100, 100, 0.3);
+}
+
+.choice-wi-global-excl-select {
+  width: 100%;
+  padding: var(--choice-space-1) var(--choice-space-2);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+  color: var(--choice-text-secondary);
+  font-size: var(--choice-text-sm);
+}
+
+.badge-global-excl {
+  background: rgba(255, 100, 100, 0.5);
+  color: var(--choice-text-on-primary);
 }
 </style>

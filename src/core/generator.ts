@@ -490,7 +490,8 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   generatorState.generationId = gid;
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
+  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const restore = gwi.enabled ? applyWIExcl(allExcl, cwi.enabled_books) : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
     const gen = ps.effectiveConfig?.generation;
