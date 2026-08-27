@@ -15,22 +15,35 @@
       <span class="choice-retry-hint">{{ t`0 = 不重试；网络错误或 5xx 时自动重试，每次间隔 1 秒` }}</span>
     </div>
 
-    <label class="choice-field">
-      <span>{{ t`生成 API` }}</span>
-      <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
-        <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
-          {{ api.name || t`<未命名>` }}
-        </option>
-      </select>
-    </label>
+    <div class="choice-api-select-row">
+      <label class="choice-field" style="flex:1;min-width:0">
+        <span>{{ t`生成 API` }}</span>
+        <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
+          <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
+            {{ api.name || t`<未命名>` }}
+          </option>
+        </select>
+      </label>
+      <button
+        class="menu_button"
+        style="flex-shrink:0;margin-top:auto"
+        :title="t`新建 API 配置`"
+        @click="createApi"
+      >
+        <i class="fa-solid fa-plus"></i> {{ t`新建` }}
+      </button>
+      <button
+        class="menu_button"
+        style="flex-shrink:0;margin-top:auto;color:#c86a6a"
+        :disabled="!selectedApiId"
+        :title="t`删除当前 API`"
+        @click="removeApi"
+      >
+        <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
+      </button>
+    </div>
 
     <div class="choice-api-form">
-      <div class="choice-api-form-head">
-        <span class="choice-form-title">{{ draftForm.name || t`<未命名>` }}</span>
-        <button v-if="globalStore.settings.apis.length > 0" class="choice-icon-btn" :title="t`删除`" @click="removeApi">
-          <i class="fa-solid fa-trash-can"></i>
-        </button>
-      </div>
       <div class="choice-api-form-body">
         <div class="choice-api-name-row">
           <input v-model="draftForm.name" class="text_pole" :placeholder="t`配置名称`" />
@@ -145,8 +158,6 @@ const modelList = ref<string[]>([]);
 const fetching = ref(false);
 const modelDropdownOpen = ref(false);
 
-const isFetching = fetching;
-
 const onModelBlur = () => {
   setTimeout(() => {
     modelDropdownOpen.value = false;
@@ -157,6 +168,12 @@ const selectApi = (id: string) => {
   selectedApiId.value = id;
   const api = globalStore.settings.apis.find(a => a.id === id);
   draftForm.value = api ? klona(api) : EMPTY_API();
+  modelDropdownOpen.value = false;
+};
+
+const createApi = () => {
+  selectedApiId.value = '';
+  modelList.value = [];
   modelDropdownOpen.value = false;
 };
 
@@ -207,19 +224,26 @@ const removeApi = () => {
 
 const save = () => {
   const normalized = { ...draftForm.value, apiurl: normalizeApiUrl(draftForm.value.apiurl) };
-  const original = globalStore.settings.apis.find(a => a.id === selectedApiId.value);
-  if (!original || !_.isEqual(original, normalized)) {
-    const newId = uuidv4();
-    const newApi = { ...normalized, id: newId };
-    const newApis = [...globalStore.settings.apis];
-    if (original) {
-      newApis.push(newApi);
-    } else {
-      newApis.push(newApi);
+  const dupName = normalized.name.trim();
+  if (dupName) {
+    const duplicate = globalStore.settings.apis.find(
+      a => a.id !== selectedApiId.value && a.name.trim() === dupName,
+    );
+    if (duplicate) {
+      toastr.warning(t`API 名称「${dupName}」已存在`);
+      return;
     }
-    globalStore.settings.apis = newApis;
-    globalStore.settings.active_api_id = newId;
-    selectedApiId.value = newId;
+  }
+  const original = globalStore.settings.apis.find(a => a.id === selectedApiId.value);
+  if (original) {
+    Object.assign(original, normalized);
+    globalStore.settings.apis = [...globalStore.settings.apis];
+    draftForm.value = klona(original);
+  } else {
+    const newApi = { ...normalized, id: uuidv4() };
+    globalStore.settings.apis = [...globalStore.settings.apis, newApi];
+    globalStore.settings.active_api_id = newApi.id;
+    selectedApiId.value = newApi.id;
     draftForm.value = klona(newApi);
   }
   toastr.success(t`已保存`);
@@ -237,6 +261,12 @@ const reset = () => {
 .choice-api-editor {
   display: flex;
   flex-direction: column;
+  gap: var(--choice-space-2);
+}
+
+.choice-api-select-row {
+  display: flex;
+  align-items: flex-end;
   gap: var(--choice-space-2);
 }
 
@@ -272,27 +302,11 @@ const reset = () => {
   overflow: hidden;
 }
 
-.choice-api-form-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--choice-space-2) var(--choice-space-2);
-  background: linear-gradient(180deg, var(--choice-bg-element), transparent);
-  border-bottom: 1px solid var(--choice-border);
-}
-
-.choice-form-title {
-  font-size: var(--choice-text-sm);
-  font-weight: bold;
-  color: var(--choice-text);
-}
-
 .choice-api-form-body {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
-  padding: 0 var(--choice-space-2) var(--choice-space-2);
-  padding-top: var(--choice-space-2);
+  padding: var(--choice-space-2);
 }
 
 .choice-api-name-row {

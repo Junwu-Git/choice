@@ -75,34 +75,24 @@ export function getBaiBaiSummary(): string | null {
 }
 
 /** 获取柏宝书状态快照并格式化为提示词可用的文本。
- *  包含：当前时间/地点、主角信息、场景、NPC、变量。 */
+ *  输出三组：[当前状态]（时间/地点）、[当前互动局势]（场景/NPC/变量）、[主角当前状态]（身份/外貌/衣着/状况）。
+ *  每一组只在有数据时才输出，组间空行分隔。 */
 export function getBaiBaiState(): string | null {
   const api = getApi();
   if (!api) return null;
   try {
     const snap = api.getSnapshot();
     if (!snap) return null;
-    const parts: string[] = [];
+    const groups: string[] = [];
 
     const st = snap.state;
     if (st?.time || st?.location) {
       const loc = st.locationPath?.length ? st.locationPath.join(' > ') : st.location;
-      parts.push(
-        `【当前状态】${st.time ? `时间: ${st.time}` : ''}${st.time && loc ? ' / ' : ''}${loc ? `地点: ${loc}` : ''}`,
-      );
+      const parts = [st.time ? `时间: ${st.time}` : '', loc ? `地点: ${loc}` : ''].filter(Boolean);
+      if (parts.length) groups.push(`[当前状态]\n${parts.join(' / ')}`);
     }
 
-    const p = snap.protagonist;
-    if (p) {
-      const fields = [
-        p.gender ? `性别: ${p.gender}` : '',
-        p.identity ? `身份: ${p.identity}` : '',
-        p.appearance ? `外貌: ${p.appearance}` : '',
-        p.outfit ? `衣着: ${p.outfit}` : '',
-        p.condition ? `状态: ${p.condition}` : '',
-      ].filter(Boolean);
-      if (fields.length) parts.push(`【主角】${fields.join(' / ')}`);
-    }
+    const situationLines: string[] = [];
 
     if (snap.scenes?.length) {
       const sceneText = snap.scenes
@@ -113,7 +103,7 @@ export function getBaiBaiState(): string | null {
         })
         .filter(Boolean)
         .join('；');
-      if (sceneText) parts.push(`【场景】${sceneText}`);
+      if (sceneText) situationLines.push(`场景: ${sceneText}`);
     }
 
     if (snap.npcs?.length) {
@@ -125,15 +115,29 @@ export function getBaiBaiState(): string | null {
         })
         .filter(Boolean)
         .join('；');
-      if (npcText) parts.push(`【NPC】${npcText}`);
+      if (npcText) situationLines.push(`NPC: ${npcText}`);
     }
 
     if (snap.vars && Object.keys(snap.vars).length > 0) {
       const varText = JSON.stringify(snap.vars);
-      if (varText !== '{}') parts.push(`【变量】${varText}`);
+      if (varText !== '{}') situationLines.push(`变量: ${varText}`);
     }
 
-    return parts.length ? parts.join('\n') : null;
+    if (situationLines.length) groups.push(`[当前互动局势]\n${situationLines.join('\n')}`);
+
+    const p = snap.protagonist;
+    if (p) {
+      const fields = [
+        p.gender ? `性别: ${p.gender}` : '',
+        p.identity ? `身份: ${p.identity}` : '',
+        p.appearance ? `外貌: ${p.appearance}` : '',
+        p.outfit ? `衣着: ${p.outfit}` : '',
+        p.condition ? `状况: ${p.condition}` : '',
+      ].filter(Boolean);
+      if (fields.length) groups.push(`[主角当前状态]\n${fields.join(' / ')}`);
+    }
+
+    return groups.length ? groups.join('\n\n') : null;
   } catch (e) {
     console.warn('[Choice][BaiBaiBook] 获取状态失败:', e);
   }

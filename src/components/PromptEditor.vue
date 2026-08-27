@@ -153,16 +153,14 @@
       <div v-if="showFilter" class="choice-filter-body">
         <p class="choice-filter-desc">{{ t`过滤聊天记录中标签包裹或匹配正则的内容（如思维链、小剧场、防截断等）` }}</p>
         <div v-for="group in rules.chat_filter_groups" :key="group.id" class="choice-filter-group">
-          <div class="choice-filter-group-header">
+          <div class="choice-filter-group-header" @click="toggleGroup(group.id)">
             <i
               class="fa-solid choice-filter-group-caret"
               :class="groupExpanded[group.id] ? 'fa-chevron-down' : 'fa-chevron-right'"
-              @click="toggleGroup(group.id)"
             ></i>
             <span
               v-if="groupRenameId !== group.id"
               class="choice-filter-group-name"
-              @dblclick="startGroupRename(group)"
               >{{ group.name }}</span
             >
             <input
@@ -170,18 +168,33 @@
               ref="groupRenameInput"
               v-model="groupRenameText"
               class="text_pole"
-              style="width: 100px; font-size: var(--choice-text-xs)"
-              @blur="finishGroupRename(group)"
+              style="width: 100px; font-size: var(--choice-text-xs); flex-shrink: 0"
               @keydown.enter="finishGroupRename(group)"
               @keydown.escape="cancelGroupRename"
+              @click.stop
             />
-            <label class="choice-module-toggle" :title="group.enabled ? t`启用` : t`禁用`">
+            <button
+              class="menu_button choice-filter-del"
+              :title="groupRenameId === group.id ? t`保存` : t`重命名`"
+              @click.stop="groupRenameId === group.id ? finishGroupRename(group) : startGroupRename(group)"
+            >
+              <i :class="groupRenameId === group.id ? 'fa-solid fa-check' : 'fa-solid fa-pen-to-square'"></i>
+            </button>
+            <button
+              v-if="groupRenameId === group.id"
+              class="menu_button choice-filter-del"
+              :title="t`取消`"
+              @click.stop="cancelGroupRename"
+            >
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+            <label class="choice-module-toggle" :title="group.enabled ? t`启用` : t`禁用`" @click.stop>
               <input type="checkbox" :checked="group.enabled" @change="group.enabled = !group.enabled" />
             </label>
-            <button class="menu_button choice-filter-del" :title="t`新增规则`" @click="addFilterRule(group.id)">
+            <button class="menu_button choice-filter-del" :title="t`新增规则`" @click.stop="addFilterRule(group.id)">
               +
             </button>
-            <button class="menu_button choice-filter-del" :title="t`删除分组`" @click="deleteGroupTarget = group.id">
+            <button class="menu_button choice-filter-del" :title="t`删除分组`" @click.stop="deleteGroupTarget = group.id">
               <i class="fa-solid fa-trash" style="color: #e06666"></i>
             </button>
           </div>
@@ -411,9 +424,16 @@ type PromptMode = 'all' | 'option' | 'enrich';
 const promptMode = ref<PromptMode>('all');
 const showExportMenu = ref(false);
 
-const totalCount = computed(() => globalStore.allModules.length);
-const optionCount = computed(() => globalStore.allModules.filter(m => !m.enrich_only).length);
-const enrichCount = computed(() => globalStore.allModules.filter(m => !m.option_only).length);
+const baibaiFilteredModules = computed(() => {
+  if (!rules.baibai_enabled) {
+    return globalStore.allModules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
+  }
+  return globalStore.allModules;
+});
+
+const totalCount = computed(() => baibaiFilteredModules.value.length);
+const optionCount = computed(() => baibaiFilteredModules.value.filter(m => !m.enrich_only).length);
+const enrichCount = computed(() => baibaiFilteredModules.value.filter(m => !m.option_only).length);
 
 watch(
   () => globalStore.settings.ui.enrich_enabled,
@@ -563,6 +583,7 @@ const addFilterRule = (groupId: string) => {
   const group = rules.chat_filter_groups.find(g => g.id === groupId);
   if (group) {
     group.rules.push({ type: 'tag', start: '', end: '' });
+    groupExpanded.value[groupId] = true;
   }
 };
 
@@ -1166,8 +1187,17 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-  padding: var(--choice-space-1) var(--choice-space-2);
+  padding: var(--choice-space-2) var(--choice-space-3);
   background: var(--choice-bg-card);
+  cursor: pointer;
+  font-size: var(--choice-text-sm);
+  font-weight: 600;
+  color: var(--choice-text-secondary);
+  user-select: none;
+}
+
+.choice-filter-group-header:hover {
+  background: rgba(128, 128, 128, 0.05);
 }
 
 .choice-filter-group-caret {
@@ -1183,10 +1213,17 @@ onUnmounted(() => {
   font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text-secondary);
-  cursor: text;
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.choice-filter-group-header .choice-filter-del {
+  flex-shrink: 0;
+}
+
+.choice-filter-group-header .choice-module-toggle {
+  flex-shrink: 0;
 }
 
 .choice-filter-group-body {

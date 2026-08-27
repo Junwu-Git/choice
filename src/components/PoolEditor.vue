@@ -7,6 +7,14 @@
         <select v-model="selectedConfigId" class="text_pole choice-config-select">
           <option v-for="cfg in configs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
         </select>
+        <button
+          class="choice-btn-sm"
+          :title="t`重命名`"
+          :disabled="!selectedConfig"
+          @click="startRenameConfig"
+        >
+          <i class="fa-solid fa-pen-to-square"></i>
+        </button>
         <div class="choice-config-actions">
           <button class="choice-btn-sm" :title="t`设为默认`" :disabled="selectedConfig?.is_default" @click="setDefault">
             <i class="fa-solid fa-star"></i>
@@ -61,14 +69,6 @@
       <div class="choice-inline-field">
         <label class="choice-inline-label">{{ t`抽取参数` }}</label>
         <div class="choice-inline-gen">
-          <label class="choice-inline-gen-item">
-            <span :title="t`覆盖全局默认数量，支持数字或区间如 3-6`">{{ t`数量` }}</span>
-            <input
-              v-model="selectedConfig.generation.count_mode"
-              class="text_pole choice-small-input"
-              :placeholder="t`如 4 或 3-6`"
-            />
-          </label>
           <label class="choice-check" :title="t`按条目分类分组轮流抽取，避免同组扎堆`">
             <input v-model="selectedConfig.generation.categories_enabled" type="checkbox" />
             {{ t`分组抽取` }}
@@ -227,7 +227,6 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
     generation: {
-      count_mode: '4',
       categories_enabled: true,
       shuffle_final: true,
       pinned_overflow: 'send_all',
@@ -244,6 +243,14 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
   if (payload.bindChat) chatStore.settings.config_id = id;
   if (payload.bindChar) characterStore.settings.config_id = id;
   showCreateDialog.value = false;
+};
+
+const startRenameConfig = () => {
+  if (!selectedConfig.value) return;
+  const name = prompt(t`请输入新名称`, selectedConfig.value.name);
+  if (name && name.trim() && name.trim() !== selectedConfig.value.name) {
+    selectedConfig.value.name = name.trim();
+  }
 };
 
 const setDefault = () => {

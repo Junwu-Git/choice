@@ -1,5 +1,6 @@
 import { callSecondaryApiWithRetry } from './api-client';
 import { buildMessages, resolveCustomApi, applyWIExcl, parseOptions, resolveCount } from './generator';
+import type { Ctx } from './generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
@@ -10,7 +11,7 @@ const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个�
 用户输入：
 {{input}}
 
-输出格式：每行一个版本，格式为 "标题: 内容"`;
+输出格式：每行一个版本，格式为 "【标题】内容"。严禁在版本内容中使用【】符号。`;
 
 let enrichController: AbortController | null = null;
 
@@ -45,7 +46,19 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   }
 
   const enrichCount = resolveCount(gs.settings.ui.enrich_count);
-  const enrichCtx = { count: enrichCount, pinnedCount: 0, pinned: '', poolSelected: '', input };
+  const pr = gs.settings.prompt_rules;
+  const enrichCtx: Ctx = {
+    count: enrichCount,
+    pinnedCount: 0,
+    pinned: '',
+    poolSelected: '',
+    input,
+    minChars: pr.enrich_min_chars,
+    maxChars: pr.enrich_max_chars,
+    enrichPersonStyle: pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
+    optionPerson: pr.option_person || '第三人称',
+    enrichPerson: pr.enrich_person || '第三人称',
+  };
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;

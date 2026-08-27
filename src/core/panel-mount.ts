@@ -4,7 +4,6 @@ import { generateOptions, generatorState } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
 import { pinia } from '@/pinia';
-import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
@@ -72,8 +71,8 @@ export function initPanelMount() {
       if (messageId === 0) {
         return;
       }
-      const chatStore = useChatSettingsStore(pinia);
-      if (!chatStore.settings.auto_generate) {
+      const gs = useGlobalSettingsStore(pinia);
+      if (!gs.settings.auto_generate) {
         return;
       }
       if (generatorState.loading) {

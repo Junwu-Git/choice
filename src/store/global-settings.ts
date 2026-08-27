@@ -7,7 +7,7 @@ import {
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS } from '@/type/settings';
+import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS, DEFAULT_ENRICH_PERSON_STYLE } from '@/type/settings';
 
 /** 构建 10 条默认条目，基于用户定义的选项类型 */
 function buildDefaultEntries(): PoolEntry[] {
@@ -371,7 +371,17 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     }
   }
 
-  validated.prompt_rules.schema_version = 16;
+  if (version < 17) {
+    validated.prompt_rules.option_min_chars ??= 30;
+    validated.prompt_rules.option_max_chars ??= 80;
+    validated.prompt_rules.enrich_min_chars ??= 30;
+    validated.prompt_rules.enrich_max_chars ??= 80;
+    validated.prompt_rules.enrich_person_style ??= DEFAULT_ENRICH_PERSON_STYLE;
+    validated.prompt_rules.option_person ??= '第三人称';
+    validated.prompt_rules.enrich_person ??= '第三人称';
+  }
+
+  validated.prompt_rules.schema_version = 17;
 };
 
 /** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */

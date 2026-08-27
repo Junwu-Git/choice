@@ -141,7 +141,7 @@ import { cancelGeneration, generateOptions, generatorState } from '@/core/genera
 import { cancelEnrich } from '@/core/enrich-input';
 import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
-import { useChatSettingsStore } from '@/store/chat-settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { sendTextareaMessage } from '@sillytavern/script';
 
@@ -164,11 +164,11 @@ const {
 
 const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
-const chatStore = useChatSettingsStore();
+const gs = useGlobalSettingsStore();
 const behavior = computed({
-  get: () => chatStore.settings.behavior,
+  get: () => gs.settings.behavior,
   set: v => {
-    chatStore.settings.behavior = v;
+    gs.settings.behavior = v;
   },
 });
 

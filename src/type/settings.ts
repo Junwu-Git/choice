@@ -90,9 +90,9 @@ export const DEFAULT_PERSON =
 
 export const DEFAULT_PROMPT_OUTPUT_FORMAT =
   '【输出位置】必须在每次回复的绝对末尾，将生成的选项包裹在 <options> 标签内输出。\n\n' +
-  '【格式与结构强制要求】选项必须使用 JSON 数组格式输出，每个元素是字符串，格式为 "标题: 内容"。标题必须是2-5个纯汉字组成的概括性短语（如：强势追问/递出纸巾/战术后撤/拔出武器），标题内部严禁出现任何标点、特殊字符或格式标签，绝对禁止将内容中的直接对白用作标题。标题后仅允许出现唯一的一个半角冒号（:）作为分隔符。标题内部、以及正文内容中，绝对禁止使用冒号（全角"："或半角":"）作为"对话引导符"（错误示例：{{user}}说：『……』；正确示例：{{user}}轻声说『……』）。此禁令仅针对"对话引导"用法，若对白本身合理需要冒号（如引用第三方原话、报数据、列举等），不受此限制。JSON 必须合法，不带尾随逗号，不包裹在 ```json 代码块中。\n\n' +
-  '【字数与信息量】每个单项的字数需控制在 30-80 个中文字符之间，确保有充足的篇幅展现动作细节、对白与情绪。\n\n' +
-  '【类型均衡与差异化】选项之间必须在"切入点"和"情绪态度"上截然不同，涵盖不同的应对策略（如：理性分析、强势试探、温和安抚、幽默化解、纯物理行动或静观其变），严禁生成同质化（只是换种说法）的选项。';
+  '【格式要求】选项使用 JSON 数组格式，每个元素为 "【标题】内容"。标题用【】包裹，简洁概括。严禁在选项内容中使用【】符号。JSON 必须合法，不带尾随逗号。\n\n' +
+  '【字数】每个单项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符之间。\n\n' +
+  '【差异化】选项之间在切入点和情绪态度上截然不同，严禁同质化。';
 
 export const DEFAULT_PROMPT_EXTRA =
   '【内容核心要求】\n' +
@@ -112,37 +112,30 @@ export const DEFAULT_PROMPT_EXTRA =
 /** core_rules 模块中不受新手字段影响的静态部分（输出格式、内容要求、正误示例）。
  *  当 person_style 和 option_rules 都非空时，与它们动态拼接为完整的 core_rules 内容。 */
 export const CORE_RULES_STATIC = `【输出格式】
-必须在回复末尾将选项包裹在 <options> 标签内输出。选项必须使用 JSON 数组格式，每个元素是字符串，格式为 "标题: 内容"。标题必须是2-5个纯汉字（如：强势追问/递出纸巾/战术后撤），标题内部严禁标点符号、特殊字符或格式标签，严禁将直接对白用作标题。标题后仅允许一个半角冒号（:）作为分隔符，严禁将冒号用作对话引导符（错误：{{user}}说：『……』；正确：{{user}}轻声说『……』）。每个选项字数控制在 30-80 个中文字符。选项之间必须在切入点和情绪态度上截然不同，涵盖不同应对策略，严禁同质化。JSON 必须合法，不带尾随逗号，不包裹在代码块中。
+必须在回复末尾将选项包裹在 <options> 标签内输出。每条选项独占一行，格式为 "【标题】内容"，标题用【】包裹。每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。严禁在选项内容中使用【】符号。JSON 必须合法，不带尾随逗号，不包裹在代码块中。
 
 【内容要求】
-包含言语的选项必须包含引号标注的可朗读对白，对白需带有情绪。纯行动选项需包含与环境或物品的物理交互细节。观察选项描述视线焦点与内心揣测，不断言客观事实。所有选项只写行为过程、动机和期待，把最终反应权留给正文。
+含言语的选项须包含『……』标注的可朗读对白。纯行动选项需包含与环境的物理交互细节。选项之间在切入点、行动类型、情绪态度上须有清晰差异，严禁同质化。所有选项只写行为过程、动机和期待，把最终反应权留给正文。
 
 【正误示例】
-错误：["『净界粉？我知道了。』: 走向石像基座..."]（标题含符号）
-错误：["『你为什么在这？』: {{user}}感到很疑惑。"]（对白当标题+越权裁定）
-错误：["追问: {{user}}问他：『为什么？』他听后低下了头。"]（对话引导冒号+越权代演）
-错误：["递出水杯: {{user}}递出水杯说『喝水。』静静等待他接过去。"]（句式机械+完成态收尾）
-正确：["寻找铁罐: {{user}}向她微微点头，随后径直走向基座，蹲下身在积满灰尘的杂物中仔细翻找，试图找出那个生锈的铁罐。", "强势打断: 『够了，别再找借口。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面，带着极强的压迫感逼视过去。", "递上外套: 察觉到她微微发抖的肩膀，{{user}}什么也没问，只是脱下外套轻轻披了过去，顺势挡住了吹来的冷风，低声呢喃『至少别让自己着凉……』"]`;
+错误：["【净界粉？我知道了。】: 走向石像基座..."]（标题非纯汉字）
+错误：["【『你为什么在这？』】{{user}}感到很疑惑。"]（对白当标题+越权裁定）
+错误：["【追问】{{user}}问他：『为什么？』他听后低下了头。"]（对话引导冒号+越权代演）
+正确：["【寻找铁罐】{{user}}向她微微点头，随后径直走向基座，蹲下身在积满灰尘的杂物中仔细翻找。", "【强势打断】『够了。』{{user}}毫不留情地打断了她的话，指尖不耐烦地轻叩着桌面。"]`;
 
 /** 新手字段默认值：叙述风格（人称/视角），自由文本 */
-export const DEFAULT_PERSON_STYLE = `选项内容以第三人称 {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互（如：靠在门框上、把玩手中的杯子），避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
+export const DEFAULT_PERSON_STYLE = `选项内容以{{option_person}} {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互（如：靠在门框上、把玩手中的杯子），避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
 
-/** 新手字段默认值：15条核心选项生成规则 */
-export const DEFAULT_OPTION_RULES = `1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判其他角色反应（如"对方笑了""他松了口气"）。
-2. 直接引语：含言语交流的选项，必须以『……』给出完整对白；纯动作/观察选项不强制。
+/** 新手字段默认值：6条核心选项生成规则 */
+export const DEFAULT_OPTION_RULES = `1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判或代演其他角色的反应（如"对方笑了""他松了口气"）。
+2. 直接引语：含言语交流的选项，必须以『……』给出完整可朗读的对白；纯动作/观察选项不强制。
 3. 输出纯净度：除 <thinking> 和 <options> 标签及其内容外，不输出任何文字。
 4. 条件过滤：可选条目中带 [条件: xxx] 标记的，仅在当前聊天上下文符合条件描述时使用；不符合则跳过。
-5. 防极端化：行为强度与剧情张力匹配，不无故升级为极端行为。
-6. 防阴暗基调：一次输出中至少保留部分中性/建设性选项，避免集体滑向阴暗。
-7. 防老套化：禁止反复使用"平静""低笑""玩味""意味深长"等词，同一次输出中同一情绪词不重复。
-8. 句式多变：禁止"动作+说话+等待"公式，可先声夺人、只行动不说话、说话中途戛然而止。
-9. 对白真实感：对白须有明确情感，不得出现空对白；动作描写作为对白的伴随状态。
-10. 场景逻辑：严禁与已离开/不存在的角色互动，严禁凭空变出道具。
-11. 留白收尾：动作须是未完成态，收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文。
-12. 禁止概括性说话动词：讨论/谈论/询问/告诉/回应/暗示/提议/劝说/解释/商量 → 必须展开为具体对白。
-13. 禁止裁定性词汇：成功/失败/导致/引发/让对方感到/终于/改变了/缓和了。
-14. 禁止越权代演：对方笑了/他答应了/她感到很生气/他惊讶地看着。
-15. 禁止完成态：...好/...完/...毕/已... → 改为试图.../准备.../指尖刚触碰到...`;
+5. 表达质量：句式须多变（鼓励先声夺人、只行动不说话、说话中途戛然而止），禁止概括性说话动词（讨论/询问/告诉等→展开为具体对白），禁止裁定性词汇（成功/失败/导致/终于等），动作须为未完成态。
+6. 留白收尾：收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文；允许简要说明行动内在动机。`;
+
+/** 润色人称默认值 */
+export const DEFAULT_ENRICH_PERSON_STYLE = '统一使用{{enrich_person}} {{user}} 为主语';
 
 export const PromptModule = z.object({
   id: z.string(),
@@ -218,8 +211,22 @@ export const PromptRules = z
     person_style: z.string().default(DEFAULT_PERSON_STYLE),
     /** 核心选项生成规则，自由文本；非空时替换 core_rules 模块中的【核心规则】段落 */
     option_rules: z.string().default(DEFAULT_OPTION_RULES),
+    /** 选项人称（简单值），显示在生成页面。person_style 非空时优先 */
+    option_person: z.string().default('第三人称'),
+    /** 润色人称（简单值），显示在生成页面。enrich_person_style 非空时优先 */
+    enrich_person: z.string().default('第三人称'),
     /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
     enrich_prompt: z.string().default(''),
+    /** 选项字数下限 */
+    option_min_chars: z.number().min(10).max(500).default(30),
+    /** 选项字数上限 */
+    option_max_chars: z.number().min(10).max(500).default(80),
+    /** 润色字数下限 */
+    enrich_min_chars: z.number().min(10).max(500).default(30),
+    /** 润色字数上限 */
+    enrich_max_chars: z.number().min(10).max(500).default(80),
+    /** 润色人称视角，自由文本，通过 {{enrich_person_style}} 占位符注入 enrich_core_rules 模块 */
+    enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
     schema_version: z.number().default(0),
   })
   .prefault({});
@@ -241,7 +248,7 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -291,6 +298,9 @@ export const GlobalSettings = z
     retry_count: z.number().min(0).max(10).default(0),
     global_count_mode: z.string().default('4'),
     pool_gen_sessions: z.array(PoolGenSession).prefault([]),
+    auto_generate: z.boolean().default(true),
+    behavior: z.enum(['send', 'fill', 'append']).default('send'),
+    empty_groups: z.array(z.string()).default([]),
   })
   .prefault({});
 export type GlobalSettings = z.infer<typeof GlobalSettings>;
@@ -306,8 +316,6 @@ export type CharacterSettings = z.infer<typeof CharacterSettings>;
 export const ChatSettings = z
   .object({
     config_id: z.string().nullable().default(null),
-    auto_generate: z.boolean().default(true),
-    behavior: z.enum(['send', 'fill', 'append']).default('send'),
     world_info: WorldInfoChatSettings.prefault({}),
   })
   .prefault({});

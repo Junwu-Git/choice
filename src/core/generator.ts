@@ -48,7 +48,7 @@ export const resolveCount = (cm: string): number => {
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
-type Ctx = { count: number; pinnedCount: number; pinned: string; poolSelected: string; input: string };
+export type Ctx = { count: number; pinnedCount: number; pinned: string; poolSelected: string; input: string; minChars: number; maxChars: number; enrichPersonStyle: string; optionPerson: string; enrichPerson: string };
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
@@ -56,7 +56,12 @@ const sub = (t: string, c: Ctx) =>
     .replaceAll('{{count_minus_1}}', String(Math.max(0, c.count - 1)))
     .replaceAll('{{pinned}}', c.pinned)
     .replaceAll('{{pool_selected}}', c.poolSelected)
-    .replaceAll('{{input}}', c.input);
+    .replaceAll('{{input}}', c.input)
+    .replaceAll('{{min_chars}}', String(c.minChars))
+    .replaceAll('{{max_chars}}', String(c.maxChars))
+    .replaceAll('{{enrich_person_style}}', c.enrichPersonStyle)
+    .replaceAll('{{option_person}}', c.optionPerson)
+    .replaceAll('{{enrich_person}}', c.enrichPerson);
 
 export const buildMessages = async (
   modules: PromptModule[],
@@ -67,6 +72,15 @@ export const buildMessages = async (
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
   const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
+  const pr = gs.settings.prompt_rules;
+  const augmentedCtx: Ctx = {
+    ...ctx,
+    minChars: isEnrich ? pr.enrich_min_chars : pr.option_min_chars,
+    maxChars: isEnrich ? pr.enrich_max_chars : pr.option_max_chars,
+    enrichPersonStyle: pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
+    optionPerson: pr.option_person || '第三人称',
+    enrichPerson: pr.enrich_person || '第三人称',
+  };
   const msgs: ChatMsg[] = [];
   const wiBuckets = wi.enabled ? await buildWI() : null;
 
@@ -79,7 +93,7 @@ export const buildMessages = async (
 
     switch (mod.id) {
       case 'system_prompt': {
-        const content = substituteParams(sub(mod.content, ctx));
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -132,17 +146,27 @@ export const buildMessages = async (
       case 'baibai_summary': {
         if (!gs.settings.prompt_rules.baibai_enabled) break;
         const text = getBaiBaiSummary();
-        if (text) msgs.push({ role: 'system', content: text });
+        if (text) {
+          msgs.push({
+            role: 'system',
+            content: `<baibai_summary>\n以下为记忆系统对已发生剧情的压缩摘要，记录的是已离开当前上下文窗口、不再直接可见的历史角色扮演事件。仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_summary>`,
+          });
+        }
         break;
       }
       case 'baibai_state': {
         if (!gs.settings.prompt_rules.baibai_enabled) break;
         const text = getBaiBaiState();
-        if (text) msgs.push({ role: 'system', content: text });
+        if (text) {
+          msgs.push({
+            role: 'system',
+            content: `<baibai_state>\n以下为记忆系统对当前场景状态的实时记录，仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_state>`,
+          });
+        }
         break;
       }
       case 'user_instruction': {
-        const content = sub(mod.content, ctx);
+        const content = sub(mod.content, augmentedCtx);
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -150,25 +174,26 @@ export const buildMessages = async (
         const pr = gs.settings.prompt_rules;
         const personStyle = pr.person_style || '';
         const optionRules = pr.option_rules || '';
-        // 两个新手字段都非空时，动态组装 core_rules 内容；否则用模块原有 content（向后兼容旧用户）
+        // person_style 优先（高级用户覆盖），回退到 option_person 自动生成
         let content: string;
-        if (personStyle && optionRules) {
+        if (optionRules && (personStyle || pr.option_person)) {
+          const effectivePersonStyle = personStyle || `选项内容以${pr.option_person || '第三人称'} {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：视角切换、与此同时、跳过场景 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互，避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
           content = `【核心规则 - 生成选项时严格遵守】
 ${optionRules}
 
 【叙述风格】
-${personStyle}
+${effectivePersonStyle}
 
 ${CORE_RULES_STATIC}`;
         } else {
           content = mod.content;
         }
-        content = substituteParams(sub(content, ctx));
+        content = substituteParams(sub(content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
       case 'thinking_prompt': {
-        const content = substituteParams(sub(mod.content, ctx));
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -179,7 +204,7 @@ ${CORE_RULES_STATIC}`;
         break;
       }
       default: {
-        const content = substituteParams(sub(mod.content, ctx));
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -396,7 +421,21 @@ export function parseOptions(text: string, count: number): string[] {
       /* not JSON */
     }
 
-  // 按行解析，兼容 "标题: 内容" 格式和纯文本格式
+  // 【】格式：标题用【】包裹，后续文本为内容，跨行自动合并
+  const bracketTitleRe = /【([^】]+?)】\s*/g;
+  const bracketMatches = [...c.matchAll(bracketTitleRe)];
+  if (bracketMatches.length > 0) {
+    const result: string[] = [];
+    for (let i = 0; i < bracketMatches.length; i++) {
+      const start = bracketMatches[i].index!;
+      const end = i + 1 < bracketMatches.length ? bracketMatches[i + 1].index! : c.length;
+      const option = c.slice(start, end).replace(/\r?\n/g, '').trim();
+      if (option) result.push(option);
+    }
+    return result.slice(0, count);
+  }
+
+  // 回退：旧格式 "标题: 内容"，按行解析
   // 先按换行分割，再在每行内按 "标题: 内容" 模式拆分，处理模型将多个选项写在同一行的情况
   const lines = c
     .split(/\r?\n/)
@@ -437,9 +476,8 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const cwi = cs.settings.world_info;
   const restore = gwi.enabled ? applyWIExcl(cwi.excluded_books, cwi.enabled_books) : null;
   try {
+    const count = resolveCount(gs.settings.global_count_mode);
     const gen = ps.effectiveConfig?.generation;
-    const countMode = gen?.count_mode || gs.settings.global_count_mode;
-    const count = resolveCount(countMode);
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,
@@ -469,6 +507,11 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
         .join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
+      minChars: 30,
+      maxChars: 80,
+      enrichPersonStyle: '',
+      optionPerson: '第三人称',
+      enrichPerson: '第三人称',
     };
     const rules = gs.settings.prompt_rules;
 

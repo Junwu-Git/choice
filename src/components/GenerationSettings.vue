@@ -1,15 +1,8 @@
 <template>
   <div class="choice-generation-editor">
     <div class="choice-generation-section">
-      <div class="choice-generation-status">
-        <span class="choice-config-status-label">{{ t`聊天级设置` }}</span>
-        <span class="choice-field-hint">{{ t`仅对当前对话生效，切换聊天后恢复默认` }}</span>
-      </div>
-    </div>
-
-    <div class="choice-generation-section">
       <label class="choice-check">
-        <input v-model="chatStore.settings.auto_generate" type="checkbox" :title="t`开启后 AI 回复完自动生成选项`" />
+        <input v-model="gs.settings.auto_generate" type="checkbox" :title="t`开启后 AI 回复完自动生成选项`" />
         <span class="choice-check-custom"></span>
         <span class="choice-check-label">
           <strong>{{ t`自动生成` }}</strong>
@@ -28,8 +21,8 @@
       <div class="choice-behavior-bar">
         <button
           class="choice-behavior-btn"
-          :class="{ active: chatStore.settings.behavior === 'send' }"
-          @click="chatStore.settings.behavior = 'send'"
+          :class="{ active: gs.settings.behavior === 'send' }"
+          @click="gs.settings.behavior = 'send'"
           :title="t`点击选项后直接发送消息`"
         >
           <i class="fa-solid fa-paper-plane"></i>
@@ -37,8 +30,8 @@
         </button>
         <button
           class="choice-behavior-btn"
-          :class="{ active: chatStore.settings.behavior === 'fill' }"
-          @click="chatStore.settings.behavior = 'fill'"
+          :class="{ active: gs.settings.behavior === 'fill' }"
+          @click="gs.settings.behavior = 'fill'"
           :title="t`点击选项后填入输入框（替换现有内容）`"
         >
           <i class="fa-solid fa-file-pen"></i>
@@ -46,8 +39,8 @@
         </button>
         <button
           class="choice-behavior-btn"
-          :class="{ active: chatStore.settings.behavior === 'append' }"
-          @click="chatStore.settings.behavior = 'append'"
+          :class="{ active: gs.settings.behavior === 'append' }"
+          @click="gs.settings.behavior = 'append'"
           :title="t`点击选项后追加到输入框末尾`"
         >
           <i class="fa-solid fa-plus"></i>
@@ -79,16 +72,95 @@
         </label>
       </div>
     </div>
+
+    <div class="choice-generation-section">
+      <div class="choice-field">
+        <div class="choice-field-label">
+          <label>{{ t`每条字数` }}</label>
+        </div>
+        <small class="choice-field-hint">{{ t`控制每条选项/润色版本的字数区间（中文字符）` }}</small>
+      </div>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`选项` }}</span>
+          <input
+            v-model.number="rules.option_min_chars"
+            class="text_pole"
+            style="width: 60px"
+            type="number"
+            min="10"
+            max="500"
+          />
+          <span>-</span>
+          <input
+            v-model.number="rules.option_max_chars"
+            class="text_pole"
+            style="width: 60px"
+            type="number"
+            min="10"
+            max="500"
+          />
+        </label>
+        <label class="choice-count-item">
+          <span>{{ t`润色` }}</span>
+          <input
+            v-model.number="rules.enrich_min_chars"
+            class="text_pole"
+            style="width: 60px"
+            type="number"
+            min="10"
+            max="500"
+          />
+          <span>-</span>
+          <input
+            v-model.number="rules.enrich_max_chars"
+            class="text_pole"
+            style="width: 60px"
+            type="number"
+            min="10"
+            max="500"
+          />
+        </label>
+      </div>
+    </div>
+
+    <div class="choice-generation-section">
+      <div class="choice-field">
+        <div class="choice-field-label">
+          <label>{{ t`人称视角` }}</label>
+        </div>
+        <small class="choice-field-hint">{{ t`选项和润色输出的人称，如"第三人称"或"第一人称"` }}</small>
+      </div>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`选项人称` }}</span>
+          <input
+            v-model="rules.option_person"
+            class="text_pole"
+            style="width: 100px"
+            :placeholder="t`如：第三人称`"
+          />
+        </label>
+        <label class="choice-count-item">
+          <span>{{ t`润色人称` }}</span>
+          <input
+            v-model="rules.enrich_person"
+            class="text_pole"
+            style="width: 100px"
+            :placeholder="t`如：第三人称`"
+          />
+        </label>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
-const chatStore = useChatSettingsStore();
 const gs = useGlobalSettingsStore();
 const ui = gs.settings.ui;
+const rules = gs.settings.prompt_rules;
 </script>
 
 <style scoped>

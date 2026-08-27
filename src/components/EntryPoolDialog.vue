@@ -45,8 +45,33 @@
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
                 <i class="fa-solid" :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-                <span class="choice-epool-group-name">{{ group.key || t`未分组` }}</span>
+                <span v-if="groupRenameId !== group.key" class="choice-epool-group-name">{{ group.key || t`未分组` }}</span>
+                <input
+                  v-else
+                  ref="groupRenameInput"
+                  v-model="groupRenameText"
+                  class="text_pole"
+                  style="width: 120px; font-size: var(--choice-text-xs)"
+                  @keydown.enter="finishGroupRename(group.key)"
+                  @keydown.escape="cancelGroupRename"
+                  @click.stop
+                />
                 <span class="choice-epool-group-count">({{ group.entries.length }})</span>
+                <button
+                  class="choice-icon-btn"
+                  :title="groupRenameId === group.key ? t`保存` : t`重命名`"
+                  @click.stop="groupRenameId === group.key ? finishGroupRename(group.key) : startGroupRename(group.key)"
+                >
+                  <i :class="groupRenameId === group.key ? 'fa-solid fa-check' : 'fa-solid fa-pen-to-square'"></i>
+                </button>
+                <button
+                  v-if="groupRenameId === group.key"
+                  class="choice-icon-btn"
+                  :title="t`取消`"
+                  @click.stop="cancelGroupRename"
+                >
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
                 <button class="choice-icon-btn" :title="t`添加条目`" @click.stop="addEntryToGroup(group.key)">
                   <i class="fa-solid fa-plus"></i>
                 </button>
@@ -88,9 +113,10 @@
                     }}</span>
                     <span v-if="entry.pinned" class="choice-pin-badge">📌</span>
                     <select
-                      v-model="entry.category"
+                      :value="entry.category"
                       class="text_pole choice-cat-select"
                       :title="t`移动到分组`"
+                      @change="onEntryCategoryChange(entry, ($event.target as HTMLSelectElement).value)"
                       @click.stop
                     >
                       <option value="">{{ t`未分组` }}</option>
@@ -225,6 +251,8 @@ const configs = computed(() => globalStore.settings.configs);
 const expanded = ref<Set<string>>(new Set());
 const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
+const groupRenameId = ref<string | null>(null);
+const groupRenameText = ref('');
 const showGen = ref(false);
 const showImport = ref(false);
 const showGuide = ref(false);
@@ -242,7 +270,24 @@ const deleteTarget = ref<
 const selected = ref<Set<string>>(new Set());
 const moveSelected = ref(false);
 const moveTargetCat = ref('');
-const pendingGroups = ref<Set<string>>(new Set());
+const pendingGroups = computed({
+  get: () => new Set(globalStore.settings.empty_groups),
+  set: (val) => {
+    globalStore.settings.empty_groups = [...val];
+  },
+});
+
+const addPendingGroup = (key: string) => {
+  if (!globalStore.settings.empty_groups.includes(key)) {
+    globalStore.settings.empty_groups = [...globalStore.settings.empty_groups, key];
+  }
+};
+const removePendingGroup = (key: string) => {
+  globalStore.settings.empty_groups = globalStore.settings.empty_groups.filter(k => k !== key);
+};
+const hasPendingGroup = (key: string): boolean => {
+  return globalStore.settings.empty_groups.includes(key);
+};
 
 watch(
   () => props.open,
@@ -251,6 +296,7 @@ watch(
       deleteTarget.value = null;
       selected.value = new Set();
       moveSelected.value = false;
+      groupRenameId.value = null;
     }
   },
 );
@@ -313,6 +359,16 @@ const toggleGroup = (key: string) => {
   deleteTarget.value = null;
   if (expandedGroups.value.has(key)) expandedGroups.value.delete(key);
   else expandedGroups.value.add(key);
+};
+
+const onEntryCategoryChange = (entry: PoolEntry, newCat: string) => {
+  const oldCat = entry.category.trim() || '';
+  entry.category = newCat;
+  if (oldCat && oldCat !== newCat) {
+    if (hasPendingGroup(newCat)) removePendingGroup(newCat);
+    const fromEntries = masterPool.value.filter(e => (e.category.trim() || '') === oldCat);
+    if (fromEntries.length === 0) addPendingGroup(oldCat);
+  }
 };
 
 const toggleExpandAllGroups = () => {
@@ -408,9 +464,16 @@ const copySelected = () => {
 
 const moveSelectedEntries = () => {
   const target = moveTargetCat.value;
+  const sourceCats = new Set<string>();
   for (const e of masterPool.value) {
     if (selected.value.has(e.id)) {
+      sourceCats.add(e.category.trim() || '');
       e.category = target;
+    }
+  }
+  for (const cat of sourceCats) {
+    if (cat !== target && !masterPool.value.some(e => (e.category.trim() || '') === cat)) {
+      addPendingGroup(cat);
     }
   }
   selected.value = new Set();
@@ -449,9 +512,43 @@ const createGroup = () => {
     toastr.warning(t`分组「${trimmed}」已存在`);
     return;
   }
-  pendingGroups.value.add(trimmed);
+  addPendingGroup(trimmed);
   expandedGroups.value.add(trimmed);
   allGroupsExpanded.value = false;
+};
+
+const startGroupRename = (groupKey: string) => {
+  groupRenameId.value = groupKey;
+  groupRenameText.value = groupKey;
+};
+
+const finishGroupRename = (oldKey: string) => {
+  const newName = groupRenameText.value.trim();
+  if (!newName || newName === oldKey) {
+    groupRenameId.value = null;
+    return;
+  }
+  if (newName !== oldKey && categoryNames.value.includes(newName) && newName !== groupRenameId.value) {
+    toastr.warning(t`分组「${newName}」已存在`);
+    groupRenameId.value = null;
+    return;
+  }
+  for (const entry of masterPool.value) {
+    if ((entry.category.trim() || '') === oldKey) {
+      entry.category = newName;
+    }
+  }
+  const orderIdx = globalStore.settings.group_order.indexOf(oldKey);
+  if (orderIdx !== -1) globalStore.settings.group_order[orderIdx] = newName;
+  if (hasPendingGroup(oldKey)) {
+    removePendingGroup(oldKey);
+    addPendingGroup(newName);
+  }
+  groupRenameId.value = null;
+};
+
+const cancelGroupRename = () => {
+  groupRenameId.value = null;
 };
 
 const addEntryToGroup = (groupKey: string) => {
@@ -469,8 +566,8 @@ const addEntryToGroup = (groupKey: string) => {
   masterPool.value.push(entry);
   expanded.value.add(entry.id);
   expandedGroups.value.add(groupKey);
-  if (pendingGroups.value.has(groupKey)) {
-    pendingGroups.value.delete(groupKey);
+  if (hasPendingGroup(groupKey)) {
+    removePendingGroup(groupKey);
   }
 };
 
@@ -500,6 +597,7 @@ const removeGroup = (group: EntryGroup) => {
     expanded.value.delete(id);
   }
   expandedGroups.value.delete(group.key);
+  removePendingGroup(group.key);
   deleteTarget.value = null;
   for (const cfg of configs.value) {
     for (let i = cfg.entries.length - 1; i >= 0; i--) {
@@ -621,6 +719,7 @@ const initEntrySortables = () => {
     const s = Sortable.create(body as HTMLElement, {
       group: 'entries',
       draggable: '.choice-epool-entry',
+      delay: 100,
       animation: 150,
       onEnd: evt => {
         const entryId = evt.item.dataset.entryId;
@@ -632,10 +731,10 @@ const initEntrySortables = () => {
         if (!entry) return;
         if (fromKey !== toKey) {
           entry.category = toKey;
-          if (pendingGroups.value.has(toKey)) pendingGroups.value.delete(toKey);
+          if (hasPendingGroup(toKey)) removePendingGroup(toKey);
           const fromEntries = masterPool.value.filter(e => (e.category.trim() || '') === fromKey);
           if (fromEntries.length === 0) {
-            pendingGroups.value.add(fromKey);
+            addPendingGroup(fromKey);
           }
         }
         const oldIdx = masterPool.value.indexOf(entry);
@@ -829,10 +928,9 @@ onUnmounted(() => {
 }
 
 .choice-epool-group-body.is-collapsed {
-  max-height: 0;
+  max-height: 4px;
   padding: 0;
   opacity: 0;
-  pointer-events: none;
 }
 
 /* 条目 */
