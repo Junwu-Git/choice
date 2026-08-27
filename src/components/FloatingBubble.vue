@@ -10,6 +10,9 @@
         'choice-floating-bubble--disabled': bubbleState === 'disabled',
         'choice-floating-bubble--snapped-left': isSnappedLeft && !isDragging,
         'choice-floating-bubble--snapped-right': isSnappedRight && !isDragging,
+        'choice-floating-bubble--pressed': isPressed,
+        'choice-floating-bubble--press-left': isPressed && pressSide === 'left',
+        'choice-floating-bubble--press-right': isPressed && pressSide === 'right',
       }"
       :style="{
         '--choice-x': x + 'px',
@@ -68,6 +71,16 @@ const bubbleState = computed(() => {
 
 const bubbleEl = ref<HTMLElement | null>(null);
 
+// 按压态：pointerdown 期间保持贴边弹出位移不变，消除"先缩回再弹出"的两段跳。
+// pressSide 记录贴边方向，使拖拽类被摘除后 pressed 仍能补上同样的 translateX。
+const isPressed = ref(false);
+const pressSide = ref<'left' | 'right' | null>(null);
+
+const clearPressed = () => {
+  isPressed.value = false;
+  pressSide.value = null;
+};
+
 const handleClick = () => {
   isBubbleContextMenuOpen.value = false;
   bubbleX.value = posX.value;
@@ -115,6 +128,8 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
       }
       longPressTriggered = false;
     }
+    // 点击/拖拽收尾后延迟清除按压态：此时 hover 已接管弹出位移，切换无跳变
+    setTimeout(clearPressed, 250);
   },
 });
 
@@ -125,8 +140,12 @@ let pointerDownPos = { x: 0, y: 0 };
 const onPointerDown = (e: PointerEvent) => {
   longPressTriggered = false;
   pointerDownPos = { x: e.clientX, y: e.clientY };
+  // 按下即记录贴边方向：贴边球在 isDragging 摘类的瞬间由 pressed 类接管相同位移
+  pressSide.value = isSnappedLeft.value ? 'left' : isSnappedRight.value ? 'right' : null;
+  isPressed.value = true;
   longPressTimer = setTimeout(() => {
     longPressTriggered = true;
+    clearPressed();
     bubbleX.value = posX.value;
     bubbleY.value = posY.value;
     isBubbleContextMenuOpen.value = true;
@@ -140,6 +159,8 @@ const onPointerMove = (e: PointerEvent) => {
     if (dx > 5 || dy > 5) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
+      // 位移超过阈值即转入拖拽意图，撤销按压位移补偿，让球跟手
+      clearPressed();
     }
   }
 };
@@ -219,8 +240,6 @@ onUnmounted(() => {
   height: 60px;
   border-radius: var(--choice-radius-full);
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--choice-border);
   color: var(--choice-primary);
   display: flex;
@@ -255,7 +274,7 @@ onUnmounted(() => {
 
 .choice-floating-bubble:hover {
   opacity: 1;
-  box-shadow: 0 0 28px rgba(74, 144, 217, 0.45);
+  box-shadow: 0 0 28px rgba(var(--choice-primary-rgb), 0.45);
 }
 
 .choice-floating-bubble--snapped-left:hover {
@@ -268,6 +287,20 @@ onUnmounted(() => {
 
 .choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):hover {
   transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(1.08);
+}
+
+/* 按压态：pointerdown 后 isDragging 会摘掉贴边类导致球瞬缩，
+   pressed 类在此期间补上与 hover 完全相同的位移，使视觉连续无跳变 */
+.choice-floating-bubble--press-left {
+  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(20px) scale(1.08);
+}
+
+.choice-floating-bubble--press-right {
+  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(-20px) scale(1.08);
+}
+
+.choice-floating-bubble--pressed:not(.choice-floating-bubble--press-left):not(.choice-floating-bubble--press-right) {
+  transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(0.94);
 }
 
 .choice-bubble-inner-ring {

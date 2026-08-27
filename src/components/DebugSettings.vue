@@ -35,3 +35,24 @@ function factoryReset() {
   toastr.success(t`已恢复出厂设置`);
 }
 </script>
+
+<style scoped>
+/* 调试页此前无任何样式，p 标签继承酒馆浅色文字，在亮色面板上几乎不可读 */
+.choice-debug-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-4);
+}
+
+.choice-debug-section h4 {
+  margin: 0 0 var(--choice-space-1);
+  font-size: var(--choice-text-base);
+  color: var(--choice-text);
+}
+
+.choice-debug-section p {
+  margin: 2px 0;
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+}
+</style>

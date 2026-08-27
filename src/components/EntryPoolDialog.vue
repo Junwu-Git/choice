@@ -19,8 +19,11 @@
             <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
               <i class="fa-solid fa-folder-plus"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`粘贴导入`" @click="showImport = true">
-              <i class="fa-solid fa-paste"></i>
+            <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
+              <i class="fa-solid fa-file-import"></i>
+            </button>
+            <button class="choice-icon-btn" :title="t`导出文件`" @click="onExportPool">
+              <i class="fa-solid fa-file-export"></i>
             </button>
             <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -202,12 +205,14 @@
 
         <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
 
-        <ImportEntriesDialog
-          :open="showImport"
-          :categories="categoryNames"
-          @close="showImport = false"
-          @confirm="onImportConfirm"
+        <ImportPoolDialog
+          :open="showImportPool"
+          :data="importFileData"
+          @close="showImportPool = false"
+          @confirm="onImportPoolConfirm"
         />
+
+        <input type="file" accept=".json" ref="fileInput" style="display: none" @change="onFileSelected" />
 
         <ConfirmDialog
           :open="deleteTarget !== null"
@@ -236,7 +241,7 @@
 <script setup lang="ts">
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import PoolGenDialog from '@/components/PoolGenDialog.vue';
-import ImportEntriesDialog from '@/components/ImportEntriesDialog.vue';
+import ImportPoolDialog from '@/components/ImportPoolDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -256,13 +261,15 @@ const allGroupsExpanded = ref(false);
 const groupRenameId = ref<string | null>(null);
 const groupRenameText = ref('');
 const showGen = ref(false);
-const showImport = ref(false);
+const showImportPool = ref(false);
+const importFileData = ref<any>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
 const guideHtml = `<p><strong>条目库</strong> 是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。</p>
 <p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
-<p><strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、粘贴导入、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
+<p><strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、文件导入/导出、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
 const deleteTarget = ref<
   | { type: 'entry'; id: string; summary: string }
   | { type: 'group'; key: string; count: number }
@@ -644,8 +651,81 @@ const onImportConfirm = (payload: {
     });
     if (e.category) expandedGroups.value.add(e.category);
   }
-  showImport.value = false;
+  showImportPool.value = false;
   toastr.success(t`已导入 ${payload.entries.length} 条条目`);
+};
+
+const onExportPool = () => {
+  const json = JSON.stringify(
+    {
+      version: 1,
+      type: 'choice-pool-export',
+      exportedAt: new Date().toISOString(),
+      data: {
+        master_pool: globalStore.settings.master_pool,
+        configs: globalStore.settings.configs,
+        group_order: globalStore.settings.group_order,
+      },
+    },
+    null,
+    2,
+  );
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `choice-pool-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const onImportFile = () => fileInput.value?.click();
+
+const onFileSelected = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (data?.type !== 'choice-pool-export') {
+      toastr.error(t`文件格式不正确`);
+      return;
+    }
+    importFileData.value = { ...data.data, fileName: file.name, exportedAt: data.exportedAt };
+    showImportPool.value = true;
+  } catch {
+    toastr.error(t`文件解析失败`);
+  }
+  (e.target as HTMLInputElement).value = '';
+};
+
+const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
+  if (!importFileData.value) return;
+  const { master_pool, configs, group_order } = importFileData.value;
+  if (mode === 'replace') {
+    globalStore.settings.master_pool = master_pool ?? [];
+    globalStore.settings.configs = configs ?? [];
+    globalStore.settings.group_order = group_order ?? [];
+  } else {
+    if (master_pool?.length) globalStore.settings.master_pool.push(...master_pool);
+    if (configs?.length) {
+      for (const cfg of configs) {
+        if (!globalStore.settings.configs.some(c => c.name === cfg.name)) {
+          globalStore.settings.configs.push(cfg);
+        }
+      }
+    }
+    if (group_order?.length) {
+      for (const g of group_order) {
+        if (!globalStore.settings.group_order.includes(g)) {
+          globalStore.settings.group_order.push(g);
+        }
+      }
+    }
+  }
+  showImportPool.value = false;
+  importFileData.value = null;
+  toastr.success(mode === 'replace' ? t`条目库已替换` : t`条目库已合并`);
 };
 
 const deleteDialogTitle = computed(() => {
@@ -786,9 +866,7 @@ onUnmounted(() => {
   width: 100vw;
   height: 100vh;
   z-index: var(--choice-z-dialog);
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: var(--choice-overlay);
   display: flex;
   justify-content: center;
   overflow-y: auto;
@@ -800,11 +878,9 @@ onUnmounted(() => {
   max-height: 85vh;
   margin: auto;
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -815,7 +891,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--choice-space-3) var(--choice-space-3);
-  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
@@ -890,6 +966,7 @@ onUnmounted(() => {
   cursor: pointer;
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
   border: 1px solid var(--choice-border);
   font-size: var(--choice-text-sm);
   color: var(--choice-text);
@@ -942,6 +1019,7 @@ onUnmounted(() => {
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
   overflow: hidden;
 }
 
@@ -981,6 +1059,15 @@ onUnmounted(() => {
   min-width: 0;
   max-width: 90px;
   flex-shrink: 1;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-cat-select:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-epool-entry-body {
@@ -1001,6 +1088,15 @@ onUnmounted(() => {
 
 .choice-small-input {
   width: 56px;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-small-input:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-icon-btn {
@@ -1027,15 +1123,15 @@ onUnmounted(() => {
 }
 
 .choice-delete-btn {
-  color: #c86a6a;
+  color: var(--choice-color-error);
 }
 
 .choice-delete-btn:hover:not(:disabled) {
-  color: #e07070;
+  color: var(--choice-color-error);
 }
 
 .choice-confirm-btn {
-  color: #e07070;
+  color: var(--choice-color-error);
   background: rgba(200, 106, 106, 0.15);
 }
 
@@ -1073,7 +1169,7 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) var(--choice-space-3);
   border-top: 1px solid var(--choice-border);
-  background: rgba(74, 144, 217, 0.06);
+  background: rgba(var(--choice-primary-rgb), 0.06);
   flex-shrink: 0;
 }
 
@@ -1107,15 +1203,15 @@ onUnmounted(() => {
 }
 
 .choice-btn-del {
-  color: #c86a6a;
+  color: var(--choice-color-error);
 }
 
 .choice-btn-del:hover:not(:disabled) {
-  color: #e07070;
+  color: var(--choice-color-error);
 }
 
 .choice-confirm-btn {
-  color: #e07070 !important;
+  color: var(--choice-color-error) !important;
   background: rgba(200, 106, 106, 0.15) !important;
   border-color: rgba(200, 106, 106, 0.3) !important;
 }

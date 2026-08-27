@@ -16,24 +16,25 @@
     </div>
 
     <div class="choice-api-select-row">
-      <label class="choice-field" style="flex: 1; min-width: 0">
+      <label class="choice-field" style="flex:1;min-width:0">
         <span>{{ t`生成 API` }}</span>
-        <select
-          :value="selectedApiId"
-          class="text_pole"
-          @change="selectApi(($event.target as HTMLSelectElement).value)"
-        >
+        <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
           <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
             {{ api.name || t`<未命名>` }}
           </option>
         </select>
       </label>
-      <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
+      <button
+        class="menu_button"
+        style="flex-shrink:0;margin-top:auto"
+        :title="t`新建 API 配置`"
+        @click="createApi"
+      >
         <i class="fa-solid fa-plus"></i> {{ t`新建` }}
       </button>
       <button
         class="menu_button"
-        style="flex-shrink: 0; margin-top: auto; color: #c86a6a"
+        style="flex-shrink:0;margin-top:auto;color:var(--choice-color-error)"
         :disabled="!selectedApiId"
         :title="t`删除当前 API`"
         @click="removeApi"
@@ -225,7 +226,9 @@ const save = () => {
   const normalized = { ...draftForm.value, apiurl: normalizeApiUrl(draftForm.value.apiurl) };
   const dupName = normalized.name.trim();
   if (dupName) {
-    const duplicate = globalStore.settings.apis.find(a => a.id !== selectedApiId.value && a.name.trim() === dupName);
+    const duplicate = globalStore.settings.apis.find(
+      a => a.id !== selectedApiId.value && a.name.trim() === dupName,
+    );
     if (duplicate) {
       toastr.warning(t`API 名称「${dupName}」已存在`);
       return;
@@ -312,6 +315,15 @@ const reset = () => {
 
 .choice-api-name-row .text_pole {
   flex: 1;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-api-name-row .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-api-url-row {
@@ -324,11 +336,20 @@ const reset = () => {
 
 .choice-api-key-row .text_pole {
   flex: 1;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-api-key-row .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-icon-btn {
   background: transparent;
-  color: #c86a6a;
+  color: var(--choice-color-error);
   border: none;
   cursor: pointer;
   font-size: var(--choice-text-sm);
@@ -354,6 +375,15 @@ const reset = () => {
 
 .choice-model-row .text_pole {
   flex: 1;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-model-row .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-fetch-btn {

@@ -226,7 +226,7 @@ const rules = gs.settings.prompt_rules;
 
 .choice-check input[type='checkbox']:checked + .choice-check-custom::after {
   content: '✓';
-  color: #fff;
+  color: var(--choice-text-on-primary);
   font-size: var(--choice-text-xs);
   font-weight: bold;
   position: absolute;
@@ -306,7 +306,7 @@ const rules = gs.settings.prompt_rules;
 
 .choice-behavior-btn.active {
   background: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   box-shadow: 0 0 8px var(--choice-primary-glow);
 }
 

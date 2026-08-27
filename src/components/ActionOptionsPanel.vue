@@ -1,6 +1,6 @@
 <template>
   <div v-show="visible" class="choice-panel" :class="{ 'choice-panel--compact': compact }">
-    <div class="choice-panel-header" @click="collapsed = !collapsed">
+    <div class="choice-panel-header" @click="panelStore.setCollapsed(!collapsed)">
       <span class="choice-panel-title" :class="{ 'choice-title--toggleable': hasEnrichHistory }" @click="onTitleClick">
         <i :class="activeView === 'enrich' ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
         {{ activeView === 'enrich' ? t`输入润色` : t`行动选项` }}
@@ -64,7 +64,7 @@
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
         </button>
-        <button class="choice-panel-btn" :title="collapsed ? t`展开` : t`收起`" @click="collapsed = !collapsed">
+        <button class="choice-panel-btn" :title="collapsed ? t`展开` : t`收起`" @click="panelStore.setCollapsed(!collapsed)">
           <i :class="collapsed ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up'"></i>
         </button>
       </div>
@@ -160,9 +160,9 @@ const {
   enrichGenerations,
   enrichCurrentIndex,
   hasEnrichHistory,
+  collapsed,
 } = storeToRefs(panelStore);
 
-const collapsed = ref(false);
 const isGenerating = computed(() => generatorState.loading);
 const gs = useGlobalSettingsStore();
 const behavior = computed({
@@ -205,7 +205,7 @@ const onToggle = async () => {
   }
   storeGeneration(target.messageId, target.swipeId, generation);
   panelStore.load(target.messageId, target.swipeId);
-  collapsed.value = false;
+  panelStore.setCollapsed(false);
 };
 
 const onCancelEnrich = () => {
@@ -248,24 +248,37 @@ const onEnrichNext = () => {
 // 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
 const OPTION_SEP_RE = /[:：]\s/;
 
+// 匹配开头的 [标题] 或 【标题】 模式，标题为括号内文字，括号后紧跟内容
+const OPTION_TYPE_BRACKET_RE = /^[\[【]([^\]】]+)[\]】]\s*/;
+
 const findOptionSep = (text: string): { idx: number; len: number } | null => {
   const m = text.match(OPTION_SEP_RE);
   return m ? { idx: m.index!, len: m[0].length } : null;
 };
 
 const parseOptionType = (text: string): string => {
+  const m = text.match(OPTION_TYPE_BRACKET_RE);
+  if (m) return m[1].replace(/"/g, '');
   const sep = findOptionSep(text);
   return sep ? text.slice(0, sep.idx).replace(/"/g, '') : text.replace(/"/g, '');
 };
 
 const parseOptionContent = (text: string): string => {
+  const m = text.match(OPTION_TYPE_BRACKET_RE);
+  if (m) return text.slice(m[0].length);
   const sep = findOptionSep(text);
   return sep ? text.slice(sep.idx + sep.len) : text;
 };
 
 const onSelect = async (option: ChoiceOption) => {
-  const sep = findOptionSep(option.text);
-  const content = sep ? option.text.slice(sep.idx + sep.len) : option.text;
+  let content: string;
+  const m = option.text.match(OPTION_TYPE_BRACKET_RE);
+  if (m) {
+    content = option.text.slice(m[0].length);
+  } else {
+    const sep = findOptionSep(option.text);
+    content = sep ? option.text.slice(sep.idx + sep.len) : option.text;
+  }
   const $textarea = $('#send_textarea');
   if (behavior.value === 'append') {
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
@@ -275,6 +288,7 @@ const onSelect = async (option: ChoiceOption) => {
   if (behavior.value === 'send') {
     await sendTextareaMessage();
   }
+  panelStore.setCollapsed(true);
 };
 </script>
 
@@ -285,9 +299,8 @@ const onSelect = async (option: ChoiceOption) => {
   margin: var(--choice-space-2) var(--choice-space-3);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-md);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   overflow: hidden;
 }
 
@@ -296,8 +309,6 @@ const onSelect = async (option: ChoiceOption) => {
   border: none;
   border-radius: 0;
   background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 .choice-panel--compact .choice-option-btn {
@@ -352,7 +363,7 @@ const onSelect = async (option: ChoiceOption) => {
   margin-left: 2px;
   border-radius: 8px;
   background: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   font-size: var(--choice-text-xs);
   font-weight: 700;
   line-height: 1;
@@ -406,15 +417,18 @@ const onSelect = async (option: ChoiceOption) => {
   cursor: default;
 }
 
+/* 主按钮弃用老式"渐变+发光"，改实色主蓝 + 磨砂高光，与暖白磨砂语言统一；
+   color 必须显式覆盖父类的 --choice-text，否则蓝底上落暖黑字 */
 .choice-panel-main {
-  background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
+  background: var(--choice-primary);
   border-color: var(--choice-primary);
+  color: var(--choice-text-on-primary);
   font-weight: bold;
-  box-shadow: 0 0 12px var(--choice-primary-glow);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
 }
 
 .choice-panel-main:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--choice-primary-hover), var(--choice-primary));
+  background: var(--choice-primary-hover);
 }
 
 .choice-panel-pager {
@@ -444,7 +458,7 @@ const onSelect = async (option: ChoiceOption) => {
     90deg,
     var(--choice-bg-card) 0%,
     var(--choice-bg-card) 40%,
-    rgba(74, 144, 217, 0.2) 50%,
+    rgba(var(--choice-primary-rgb), 0.2) 50%,
     var(--choice-bg-card) 60%,
     var(--choice-bg-card) 100%
   );
@@ -502,8 +516,8 @@ const onSelect = async (option: ChoiceOption) => {
 
 .choice-behavior-btn.active {
   background: var(--choice-primary);
-  color: #fff;
-  box-shadow: 0 0 8px var(--choice-primary-glow);
+  color: var(--choice-text-on-primary);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
 }
 
 .choice-option-btn {
@@ -515,6 +529,7 @@ const onSelect = async (option: ChoiceOption) => {
   color: var(--choice-text);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
   padding: var(--choice-space-2) var(--choice-space-3);
   font-size: var(--choice-text-base);
   cursor: pointer;

@@ -46,9 +46,7 @@ const emit = defineEmits<{
   width: 100vw;
   height: 100vh;
   z-index: var(--choice-z-dialog);
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: var(--choice-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -58,11 +56,9 @@ const emit = defineEmits<{
   width: 380px;
   max-width: 92vw;
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;

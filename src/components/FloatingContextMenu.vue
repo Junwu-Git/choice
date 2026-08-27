@@ -82,11 +82,9 @@ onUnmounted(() => {
   z-index: var(--choice-z-popover);
   transform: translate3d(var(--choice-menu-x), var(--choice-menu-y), 0);
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-md);
-  box-shadow: var(--choice-shadow-md);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-md);
   min-width: 140px;
   padding: var(--choice-space-1);
 }

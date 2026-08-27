@@ -14,6 +14,7 @@ export const usePanelStateStore = defineStore('panel-state', () => {
   const enrichGenerations = ref<ChoiceGeneration[]>([]);
   const enrichCurrentIndex = ref(0);
   const enrichLoading = ref(false);
+  const collapsed = ref(false);
 
   /** 面板「生成润色」按钮被点击时设为 true，panel-mount 读取输入框后调用 triggerEnrich */
   const triggerEnrichRequested = ref(false);
@@ -49,6 +50,7 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     enrichCurrentIndex.value = 0;
     enrichLoading.value = false;
     activeView.value = 'options';
+    collapsed.value = false;
   };
 
   const goTo = (index: number) => {
@@ -115,6 +117,10 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     }
   }
 
+  function setCollapsed(v: boolean) {
+    collapsed.value = v;
+  }
+
   return {
     messageId,
     swipeId,
@@ -132,6 +138,8 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     currentEnrichGeneration,
     hasEnrichHistory,
     enrichLoading,
+    collapsed,
+    setCollapsed,
     triggerEnrichRequested,
     setActiveView,
     enrichGoTo,

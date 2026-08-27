@@ -1,51 +1,58 @@
+/* ===== 暗色主题（默认）— 暖灰系 ===== */
 :root {
-  --choice-bg-panel-rgb: 22, 22, 28;
-  --choice-bg-card-rgb: 35, 35, 42;
-  --choice-bg-element-rgb: 50, 50, 58;
-  --choice-text-rgb: 232, 232, 236;
-  --choice-primary-rgb: 74, 144, 217;
+  --choice-bg: #1e1e24;
+  --choice-surface: #282830;
+  --choice-surface-2: #34343c;
 
-  --choice-opacity: 0.88;
-  --choice-card-opacity: 0.65;
-  --choice-element-opacity: 0.45;
-
-  --choice-font-scale: 1;
+  --choice-text: #e2e2e8;
+  --choice-text-secondary: #b0b0b8;
+  --choice-text-muted: #888892;
+  --choice-text-hint: #c8a460;
+  --choice-text-on-primary: #fff;
 
   --choice-primary: #4a90d9;
   --choice-primary-hover: #5da8f0;
+  --choice-primary-active: #2f6fb0;
   --choice-primary-light: rgba(74, 144, 217, 0.15);
   --choice-primary-glow: rgba(74, 144, 217, 0.25);
-  --choice-primary-active: #2f6fb0;
+  --choice-primary-rgb: 74, 144, 217;
 
-  --choice-bg-panel: rgba(var(--choice-bg-panel-rgb), var(--choice-opacity));
-  --choice-bg-card: rgba(var(--choice-bg-card-rgb), var(--choice-card-opacity));
-  --choice-bg-element: rgba(var(--choice-bg-element-rgb), var(--choice-element-opacity));
-  --choice-bg-hover: rgba(255, 255, 255, 0.05);
+  --choice-color-error: #e05555;
+  --choice-color-error-bg: rgba(224, 85, 85, 0.12);
+  --choice-color-success: #4caf50;
+  --choice-color-success-bg: rgba(76, 175, 80, 0.12);
+  --choice-color-warning: #e8a838;
+  --choice-color-warning-bg: rgba(232, 168, 56, 0.12);
+  --choice-color-info: #4a90d9;
+  --choice-color-info-bg: rgba(74, 144, 217, 0.12);
+
+  --choice-border: rgba(255, 255, 255, 0.06);
+  --choice-border-strong: rgba(255, 255, 255, 0.10);
+  --choice-border-active: rgba(74, 144, 217, 0.4);
+
+  /* 磨砂高光：容器上边缘的受光线，实色模拟雾面层次，不依赖 blur */
+  --choice-frost-line: rgba(255, 255, 255, 0.06);
+
+  --choice-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --choice-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --choice-shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.5);
+  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
+
+  --choice-overlay: rgba(0, 0, 0, 0.45);
+
+  --choice-bg-hover: rgba(255, 255, 255, 0.09);
   --choice-bg-active: rgba(74, 144, 217, 0.12);
 
-  --choice-text: #e8e8ec;
-  --choice-text-secondary: #c0c0c8;
-  --choice-text-muted: #8a8a94;
-  --choice-text-hint: #b8943a;
-
-  --choice-border: rgba(255, 255, 255, 0.08);
-  --choice-border-strong: rgba(255, 255, 255, 0.12);
-  --choice-border-active: rgba(74, 144, 217, 0.4);
+  --choice-font-scale: 1;
 
   --choice-radius-sm: 6px;
   --choice-radius-md: 10px;
   --choice-radius-lg: 14px;
   --choice-radius-full: 9999px;
 
-  --choice-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.15);
-  --choice-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
-  --choice-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
-
   --choice-transition: 150ms ease;
   --choice-transition-slow: 300ms ease-out;
 
-  /* 间距体系：4px 基准网格 */
   --choice-space-1: 4px;
   --choice-space-2: 8px;
   --choice-space-3: 12px;
@@ -53,85 +60,187 @@
   --choice-space-5: 24px;
   --choice-space-6: 32px;
 
-  /* 字号体系：语义化档位 */
   --choice-text-xs: calc(11px * var(--choice-font-scale));
   --choice-text-sm: calc(13px * var(--choice-font-scale));
   --choice-text-base: calc(15px * var(--choice-font-scale));
   --choice-text-lg: calc(17px * var(--choice-font-scale));
   --choice-text-xl: calc(20px * var(--choice-font-scale));
 
-  /* z-index 分层 */
   --choice-z-panel: 10;
   --choice-z-dropdown: 30200;
   --choice-z-dialog: 30100;
   --choice-z-floating: 30000;
   --choice-z-popover: 30300;
+
+  /* 兼容映射：旧变量名 → 新语义 */
+  --choice-bg-panel: var(--choice-bg);
+  --choice-bg-card: var(--choice-surface);
+  --choice-bg-element: var(--choice-surface-2);
 }
 
+/* ===== 亮色主题 — 暖白纸感磨砂 ===== */
 :root[data-choice-theme='light'] {
-  --choice-bg-panel-rgb: 255, 255, 255;
-  --choice-bg-card-rgb: 240, 240, 245;
-  --choice-bg-element-rgb: 220, 220, 228;
-  --choice-text-rgb: 26, 26, 30;
-  --choice-primary-rgb: 56, 114, 180;
+  --choice-bg: #f5f2ec;
+  --choice-surface: #fdfcf9;
+  --choice-surface-2: #eae5da;
+
+  --choice-text: #292621;
+  --choice-text-secondary: #55514a;
+  --choice-text-muted: #6d6960;
+  --choice-text-hint: #7a6018;
+  --choice-text-on-primary: #fff;
 
   --choice-primary: #3872b4;
   --choice-primary-hover: #4a8ad0;
+  --choice-primary-active: #255a94;
   --choice-primary-light: rgba(56, 114, 180, 0.12);
   --choice-primary-glow: rgba(56, 114, 180, 0.2);
-  --choice-primary-active: #255a94;
+  --choice-primary-rgb: 56, 114, 180;
 
-  --choice-bg-panel: rgba(var(--choice-bg-panel-rgb), var(--choice-opacity));
-  --choice-bg-card: rgba(var(--choice-bg-card-rgb), var(--choice-card-opacity));
-  --choice-bg-element: rgba(var(--choice-bg-element-rgb), var(--choice-element-opacity));
-  --choice-bg-hover: rgba(0, 0, 0, 0.04);
-  --choice-bg-active: rgba(56, 114, 180, 0.1);
+  --choice-color-error: #c84040;
+  --choice-color-error-bg: rgba(200, 64, 64, 0.08);
+  --choice-color-success: #3d8b40;
+  --choice-color-success-bg: rgba(61, 139, 64, 0.08);
+  --choice-color-warning: #b87818;
+  --choice-color-warning-bg: rgba(184, 120, 24, 0.08);
+  --choice-color-info: #3872b4;
+  --choice-color-info-bg: rgba(56, 114, 180, 0.08);
 
-  --choice-text: #1a1a1e;
-  --choice-text-secondary: #4a4a54;
-  --choice-text-muted: #7a7a84;
-  --choice-text-hint: #8a6d20;
-
-  --choice-border: rgba(0, 0, 0, 0.08);
-  --choice-border-strong: rgba(0, 0, 0, 0.12);
+  --choice-border: rgba(84, 72, 52, 0.13);
+  --choice-border-strong: rgba(84, 72, 52, 0.24);
   --choice-border-active: rgba(56, 114, 180, 0.4);
 
-  --choice-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08);
-  --choice-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
-  --choice-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.2);
+  --choice-frost-line: rgba(255, 255, 255, 0.85);
+
+  --choice-shadow-sm: 0 1px 2px rgba(80, 64, 40, 0.07);
+  --choice-shadow-md:
+    0 2px 6px rgba(80, 64, 40, 0.09),
+    0 1px 2px rgba(80, 64, 40, 0.05);
+  --choice-shadow-lg:
+    0 8px 24px rgba(80, 64, 40, 0.14),
+    0 2px 6px rgba(80, 64, 40, 0.07);
   --choice-shadow-glow: 0 0 20px rgba(56, 114, 180, 0.2);
 
-  --choice-opacity: 0.92;
-  --choice-card-opacity: 0.7;
-  --choice-element-opacity: 0.5;
+  --choice-overlay: rgba(58, 50, 38, 0.32);
 
-  --choice-space-1: 4px;
-  --choice-space-2: 8px;
-  --choice-space-3: 12px;
-  --choice-space-4: 16px;
-  --choice-space-5: 24px;
-  --choice-space-6: 32px;
-
-  --choice-text-xs: calc(11px * var(--choice-font-scale));
-  --choice-text-sm: calc(13px * var(--choice-font-scale));
-  --choice-text-base: calc(15px * var(--choice-font-scale));
-  --choice-text-lg: calc(17px * var(--choice-font-scale));
-  --choice-text-xl: calc(20px * var(--choice-font-scale));
-
-  --choice-z-panel: 10;
-  --choice-z-dropdown: 30200;
-  --choice-z-dialog: 30100;
-  --choice-z-floating: 30000;
-  --choice-z-popover: 30300;
+  --choice-bg-hover: rgba(84, 72, 52, 0.08);
+  --choice-bg-active: rgba(56, 114, 180, 0.1);
 }
 
+/* ===== ST 跟随主题 — 极性无关派生 =====
+   层级一律向 BodyColor（文字色）方向混合：暗底变得更深、亮底变得更灰，
+   对明暗极性天然对称；对比度守卫在 theme-detector.ts 的 JS 层执行。 */
+:root[data-choice-theme='st'] {
+  --choice-bg: var(--SmartThemeBlurTintColor, #f5f2ec);
+  --choice-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f5f2ec) 90%, var(--SmartThemeBodyColor, #292621) 10%);
+  --choice-surface-2: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f5f2ec) 78%, var(--SmartThemeBodyColor, #292621) 22%);
+
+  --choice-text: var(--SmartThemeBodyColor, #292621);
+  --choice-text-secondary: color-mix(in srgb, var(--SmartThemeBodyColor, #292621) 70%, var(--SmartThemeBlurTintColor, #f5f2ec) 30%);
+  --choice-text-muted: color-mix(in srgb, var(--SmartThemeBodyColor, #292621) 50%, var(--SmartThemeBlurTintColor, #f5f2ec) 50%);
+  --choice-text-hint: var(--SmartThemeQuoteColor, #7a6018);
+  --choice-text-on-primary: var(--SmartThemeBlurTintColor, #fff);
+
+  --choice-primary: var(--SmartThemeQuoteColor, #3872b4);
+  --choice-primary-hover: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 85%, white 15%);
+  --choice-primary-active: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 70%, black 30%);
+  --choice-primary-light: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 14%, transparent 86%);
+  --choice-primary-glow: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 22%, transparent 78%);
+  --choice-primary-rgb: 56, 114, 180;
+
+  --choice-color-error: #e05555;
+  --choice-color-error-bg: rgba(224, 85, 85, 0.12);
+  --choice-color-success: #4caf50;
+  --choice-color-success-bg: rgba(76, 175, 80, 0.12);
+  --choice-color-warning: #e8a838;
+  --choice-color-warning-bg: rgba(232, 168, 56, 0.12);
+  --choice-color-info: var(--choice-primary);
+  --choice-color-info-bg: var(--choice-primary-light);
+
+  --choice-border: color-mix(in srgb, var(--SmartThemeBodyColor, #000) 14%, transparent 86%);
+  --choice-border-strong: color-mix(in srgb, var(--SmartThemeBodyColor, #000) 26%, transparent 74%);
+  --choice-border-active: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 40%, transparent 60%);
+
+  --choice-frost-line: color-mix(in srgb, white 60%, transparent 40%);
+
+  --choice-shadow-sm: 0 1px 3px var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.15));
+  --choice-shadow-md: 0 4px 12px var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.25));
+  --choice-shadow-lg: 0 8px 28px var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.4));
+  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
+
+  --choice-overlay: #00000073;
+
+  --choice-bg-hover: color-mix(in srgb, var(--SmartThemeBodyColor, #000) 8%, transparent 92%);
+  --choice-bg-active: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 12%, transparent 88%);
+}
+
+/* ===== ST 原生控件接管 =====
+   扩展面板复用了酒馆的 .menu_button / .text_pole。当酒馆主题与扩展主题极性相反时，
+   这些控件会露出酒馆配色（暗底按钮落在暖白面板上、浅色文字落在浅底输入框里）。
+   限域用 [class*="choice-"]：choice-* 是扩展专属命名空间，不会污染酒馆自身界面；
+   :not 排除带 choice- 修饰类的按钮，把设计权留给组件 scoped 样式（如红色删除键）。 */
+[data-choice-theme] [class*='choice-'] .text_pole {
+  color: var(--choice-text);
+  background-color: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+}
+
+[data-choice-theme] [class*='choice-'] .text_pole::placeholder {
+  color: var(--choice-text-muted);
+  opacity: 1;
+}
+
+[data-choice-theme] [class*='choice-'] .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
+}
+
+/* select 展开的 option 在部分浏览器吃系统样式，至少把墨色钉住 */
+[data-choice-theme] [class*='choice-'] select.text_pole option,
+[data-choice-theme] [class*='choice-'] select.text_pole optgroup {
+  color: var(--choice-text);
+  background-color: var(--choice-surface);
+}
+
+/* menu_button 的 choice-* 修饰类经审计只定义布局尺寸、零颜色，因此不做排除——
+   全量接管 color/background/border，scoped 布局不受影响 */
+[data-choice-theme] [class*='choice-'] .menu_button {
+  color: var(--choice-text);
+  background-color: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  text-shadow: none;
+  box-shadow: none;
+}
+
+[data-choice-theme] [class*='choice-'] .menu_button:hover {
+  background-color: var(--choice-bg-hover);
+  border-color: var(--choice-border-strong);
+}
+
+[data-choice-theme] [class*='choice-'] .menu_button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 主按钮变体（确认/创建/导入）保持主蓝识别度，书写顺序在基础态之后以同特异性取胜 */
+[data-choice-theme] [class*='choice-'] .menu_button_default:not([class*='choice-']) {
+  color: var(--choice-text-on-primary);
+  background-color: var(--choice-primary);
+  border-color: var(--choice-primary);
+}
+
+[data-choice-theme] [class*='choice-'] .menu_button_default:not([class*='choice-']):hover {
+  background-color: var(--choice-primary-hover);
+}
+
+/* ===== 动画 ===== */
 @keyframes choice-bubble-pulse {
   0%,
   100% {
     box-shadow: 0 0 16px var(--choice-primary-glow);
   }
   50% {
-    box-shadow: 0 0 28px rgba(74, 144, 217, 0.45);
+    box-shadow: 0 0 28px rgba(var(--choice-primary-rgb), 0.45);
   }
 }
 

@@ -342,13 +342,13 @@ onUnmounted(() => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #555;
+  background: var(--choice-bg-element);
   flex-shrink: 0;
 }
 
 .choice-wi-light.active {
-  background: #4caf50;
-  box-shadow: 0 0 6px #4caf50;
+  background: var(--choice-color-success);
+  box-shadow: 0 0 6px var(--choice-color-success);
 }
 
 .choice-wi-name {
@@ -364,15 +364,15 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   flex-shrink: 0;
 }
 
 .badge-global {
-  background: #4a6a8a;
+  background: var(--choice-color-info-bg);
 }
 .badge-character {
-  background: #8a6a4a;
+  background: var(--choice-color-warning-bg);
 }
 .badge-plugin {
   background: #4a8a6a;
@@ -437,7 +437,7 @@ onUnmounted(() => {
 .choice-wi-enable-btn:hover {
   background: rgba(76, 175, 80, 0.2);
   border-color: rgba(76, 175, 80, 0.5);
-  color: #4caf50;
+  color: var(--choice-color-success);
 }
 
 .choice-empty-hint {

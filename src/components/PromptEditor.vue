@@ -12,10 +12,14 @@
           {{ t`新增润色模块` }}
         </button>
         <div class="choice-export-wrap">
-          <button class="menu_button" :title="t`导出全部提示词模块`" @click="exportPrompts('all')">
-            {{ t`导出` }}
+          <button
+            class="menu_button choice-export-btn"
+            :title="t`选择要导出的模块范围`"
+            @click.stop="showExportMenu = !showExportMenu"
+          >
+            <span>{{ t`导出` }}</span>
+            <i class="fa-solid fa-chevron-down choice-export-caret" :class="{ 'choice-export-caret--open': showExportMenu }"></i>
           </button>
-          <button class="menu_button choice-export-arrow" @click.stop="showExportMenu = !showExportMenu">▼</button>
           <div v-if="showExportMenu" class="choice-export-dropdown">
             <button
               @click="
@@ -158,7 +162,11 @@
               class="fa-solid choice-filter-group-caret"
               :class="groupExpanded[group.id] ? 'fa-chevron-down' : 'fa-chevron-right'"
             ></i>
-            <span v-if="groupRenameId !== group.id" class="choice-filter-group-name">{{ group.name }}</span>
+            <span
+              v-if="groupRenameId !== group.id"
+              class="choice-filter-group-name"
+              >{{ group.name }}</span
+            >
             <input
               v-else
               ref="groupRenameInput"
@@ -190,12 +198,8 @@
             <button class="menu_button choice-filter-del" :title="t`新增规则`" @click.stop="addFilterRule(group.id)">
               +
             </button>
-            <button
-              class="menu_button choice-filter-del"
-              :title="t`删除分组`"
-              @click.stop="deleteGroupTarget = group.id"
-            >
-              <i class="fa-solid fa-trash" style="color: #e06666"></i>
+            <button class="menu_button choice-filter-del" :title="t`删除分组`" @click.stop="deleteGroupTarget = group.id">
+              <i class="fa-solid fa-trash" style="color: var(--choice-color-error)"></i>
             </button>
           </div>
           <div v-if="groupExpanded[group.id]" class="choice-filter-group-body">
@@ -293,7 +297,7 @@
               :title="t`删除`"
               @click="deleteTarget = mod.id"
             >
-              <i class="fa-solid fa-trash" style="color: #e06666"></i>
+              <i class="fa-solid fa-trash" style="color: var(--choice-color-error)"></i>
             </button>
           </div>
         </div>
@@ -921,18 +925,18 @@ onUnmounted(() => {
 }
 
 .choice-role-system {
-  background: rgba(74, 144, 217, 0.2);
-  color: #6aabe0;
+  background: var(--choice-primary-light);
+  color: var(--choice-color-info);
 }
 
 .choice-role-user {
   background: rgba(100, 180, 100, 0.2);
-  color: #6ac06a;
+  color: var(--choice-color-success);
 }
 
 .choice-role-assistant {
   background: rgba(180, 140, 80, 0.2);
-  color: #c8a460;
+  color: var(--choice-color-warning);
 }
 
 .choice-module-lock {
@@ -975,6 +979,15 @@ onUnmounted(() => {
   font-size: var(--choice-text-sm);
   width: 120px;
   padding: 2px var(--choice-space-1);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-rename-input:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-module-edit {
@@ -1022,7 +1035,7 @@ onUnmounted(() => {
 }
 
 .choice-preview-system {
-  background: rgba(74, 144, 217, 0.12);
+  background: rgba(var(--choice-primary-rgb), 0.12);
   border-left: 3px solid var(--choice-primary);
 }
 
@@ -1158,12 +1171,30 @@ onUnmounted(() => {
   flex: 1;
   min-width: 0;
   font-size: var(--choice-text-sm);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-filter-row input:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-filter-type {
   flex-shrink: 0;
   width: 96px;
   font-size: var(--choice-text-sm);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-filter-type:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-filter-del {
@@ -1238,8 +1269,8 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  background: rgba(74, 144, 217, 0.18);
-  color: #6aabe0;
+  background: rgba(var(--choice-primary-rgb), 0.18);
+  color: var(--choice-color-info);
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -1286,12 +1317,12 @@ onUnmounted(() => {
 
 .choice-mode-btn--active {
   background: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
 }
 
 .choice-mode-btn--active:hover {
   background: var(--choice-primary-hover);
-  color: #fff;
+  color: var(--choice-text-on-primary);
 }
 
 .choice-export-wrap {
@@ -1300,10 +1331,20 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.choice-export-arrow {
-  padding: 0 var(--choice-space-1);
-  margin-left: -1px;
-  border-radius: 0 var(--choice-radius-sm) var(--choice-radius-sm) 0;
+.choice-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+}
+
+/* 箭头是按钮内部装饰而非独立按键，随菜单开合旋转 */
+.choice-export-caret {
+  font-size: var(--choice-text-xs);
+  transition: transform var(--choice-transition);
+}
+
+.choice-export-caret--open {
+  transform: rotate(180deg);
 }
 
 .choice-export-dropdown {

@@ -220,9 +220,7 @@ const onInject = () => {
   width: 100vw;
   height: 100vh;
   z-index: var(--choice-z-dialog);
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: var(--choice-overlay);
   display: flex;
   justify-content: center;
   overflow-y: auto;
@@ -234,11 +232,9 @@ const onInject = () => {
   max-height: 85vh;
   margin: auto;
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -249,7 +245,7 @@ const onInject = () => {
   align-items: center;
   justify-content: space-between;
   padding: var(--choice-space-3) var(--choice-space-4);
-  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
 
@@ -311,6 +307,15 @@ const onInject = () => {
 
 .choice-poolgen-field .text_pole {
   width: 100%;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-poolgen-field .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-poolgen-options {
@@ -385,7 +390,7 @@ const onInject = () => {
   height: 22px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--choice-primary), var(--choice-primary-active));
-  color: #fff;
+  color: var(--choice-text-on-primary);
   font-size: var(--choice-text-xs);
   font-weight: bold;
   display: flex;
@@ -407,6 +412,15 @@ const onInject = () => {
   flex: 1;
   min-width: 0;
   resize: vertical;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-poolgen-result-main .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-poolgen-replace-info {
@@ -451,7 +465,7 @@ const onInject = () => {
 
 .choice-icon-btn {
   background: transparent;
-  color: #c86a6a;
+  color: var(--choice-color-error);
   border: none;
   cursor: pointer;
   font-size: var(--choice-text-sm);

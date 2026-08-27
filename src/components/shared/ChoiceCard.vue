@@ -31,6 +31,7 @@ defineEmits<{
   background: var(--choice-bg-card);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
   overflow: hidden;
   transition: border-color var(--choice-transition);
 }

@@ -84,6 +84,7 @@ export function initPanelMount() {
         return;
       }
       storeGeneration(messageId, swipeId, generation);
+      panelStore.setCollapsed(false);
       resync();
     } catch (error) {
       console.error('[Choice] onMessageReceived failed', error);
@@ -102,7 +103,10 @@ export function initPanelMount() {
   eventSource.on(event_types.MESSAGE_SWIPED, safeResync);
   eventSource.on(event_types.MESSAGE_DELETED, safeResync);
   eventSource.on(event_types.MESSAGE_UPDATED, safeResync);
-  eventSource.on(event_types.USER_MESSAGE_RENDERED, safeResync);
+  eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
+    safeResync();
+    panelStore.setCollapsed(true);
+  });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, safeResync);
   eventSource.on(event_types.CHAT_CHANGED, safeResync);
   eventSource.on(event_types.MORE_MESSAGES_LOADED, safeResync);

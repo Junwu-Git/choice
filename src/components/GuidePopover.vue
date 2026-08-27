@@ -79,11 +79,9 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   z-index: var(--choice-z-popover);
   width: 360px;
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -94,7 +92,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   align-items: center;
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) var(--choice-space-3);
-  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
   user-select: none;
 }

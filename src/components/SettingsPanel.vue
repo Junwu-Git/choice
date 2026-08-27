@@ -145,7 +145,7 @@ const onResizeEnd = () => {
 .choice-tab.active {
   background: var(--choice-primary);
   border-color: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   box-shadow: 0 0 10px var(--choice-primary-glow);
 }
 

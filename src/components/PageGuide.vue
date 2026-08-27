@@ -47,7 +47,7 @@ const expanded = useStorage(`choice_pg_${props.pageId}`, !props.defaultCollapsed
 
 .choice-page-guide--guide {
   border-color: var(--choice-primary);
-  background: linear-gradient(135deg, rgba(74, 144, 217, 0.04), rgba(74, 144, 217, 0.01));
+  background: linear-gradient(135deg, rgba(var(--choice-primary-rgb), 0.04), rgba(var(--choice-primary-rgb), 0.01));
 }
 
 .choice-page-guide-header {

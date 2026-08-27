@@ -101,9 +101,29 @@ const { x, y, isDragging } = useDraggable(dialogEl, {
   handle: headerEl,
   initialValue: { x: posX.value, y: posY.value },
   onEnd: ({ x, y }) => {
-    posX.value = Math.max(0, Math.min(x, window.innerWidth - 200));
+    posX.value = clampPanelX(x);
     posY.value = Math.max(0, Math.min(y, window.innerHeight - 100));
   },
+});
+
+// 夹取边界按面板实际宽度计算：留 40px 保证面板主体可见，
+// 否则窄窗口下 innerWidth-200 的旧公式会让 680px 宽的面板大半出界
+function clampPanelX(x: number): number {
+  const maxX = Math.max(0, window.innerWidth - dialogWidth.value + 40);
+  return Math.max(0, Math.min(x, maxX));
+}
+
+// 面板坐标持久化在 localStorage，窗口缩小/换分辨率后可能整体落在视口外，
+// 表现为"点击气泡后主界面不出现"。每次打开时先夹回可视区，并同步给 useDraggable
+// （storage → posX 变化不会自动联动内部 x/y，必须手动写回）。
+watch(isSettingsOpen, open => {
+  if (!open) return;
+  const nx = clampPanelX(posX.value);
+  const ny = Math.max(0, Math.min(posY.value, window.innerHeight - 100));
+  if (nx !== x.value) x.value = nx;
+  if (ny !== y.value) y.value = ny;
+  posX.value = nx;
+  posY.value = ny;
 });
 
 let resizeStartX = 0;
@@ -149,7 +169,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   width: 100vw;
   height: 100vh;
   z-index: var(--choice-z-floating);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--choice-overlay);
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
@@ -166,11 +186,9 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   max-width: calc(100vw - 20px);
   max-height: calc(100vh - 20px);
   background: var(--choice-bg-panel);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -192,7 +210,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   align-items: center;
   justify-content: space-between;
   padding: var(--choice-space-3) var(--choice-space-4);
-  background: linear-gradient(180deg, rgba(74, 144, 217, 0.08), transparent);
+  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
   cursor: move;
   user-select: none;
@@ -275,7 +293,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 .choice-tab.active {
   background: var(--choice-primary);
   border-color: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   box-shadow: 0 0 10px var(--choice-primary-glow);
 }
 

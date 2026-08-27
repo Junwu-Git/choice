@@ -386,6 +386,15 @@ onUnmounted(() => {
 .choice-config-select {
   flex: 1;
   min-width: 0;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-config-select:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-config-actions {
@@ -425,21 +434,21 @@ onUnmounted(() => {
 .choice-btn-sm.active {
   background: var(--choice-primary);
   border-color: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
 }
 
 .choice-btn-del {
-  color: #c86a6a;
+  color: var(--choice-color-error);
 }
 
 .choice-btn-del:hover:not(:disabled) {
-  color: #e07070;
+  color: var(--choice-color-error);
 }
 
 .choice-btn-new {
   background: var(--choice-primary);
   border-color: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
 }
 
 .choice-btn-new:hover {
@@ -469,14 +478,14 @@ onUnmounted(() => {
   border-radius: var(--choice-radius-full);
   background: rgba(90, 138, 90, 0.15);
   border: 1px solid rgba(90, 138, 90, 0.2);
-  color: #6ac06a;
+  color: var(--choice-color-success);
   flex-shrink: 0;
 }
 
 .choice-bound-char {
   background: rgba(138, 106, 74, 0.15);
   border-color: rgba(138, 106, 74, 0.2);
-  color: #c8a460;
+  color: var(--choice-color-warning);
 }
 
 .choice-bound-fallback {
@@ -546,10 +555,28 @@ onUnmounted(() => {
 .choice-inline-gen-item .text_pole {
   font-size: var(--choice-text-xs);
   padding: 2px var(--choice-space-1);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-inline-gen-item .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-inline-gen-item select.text_pole {
   width: auto;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-inline-gen-item select.text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-inline-field-head {
@@ -606,9 +633,9 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  background: rgba(74, 144, 217, 0.12);
-  border: 1px solid rgba(74, 144, 217, 0.2);
-  color: #6a9fd8;
+  background: rgba(var(--choice-primary-rgb), 0.12);
+  border: 1px solid var(--choice-primary-light);
+  color: var(--choice-color-info);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -631,6 +658,15 @@ onUnmounted(() => {
 .choice-inline-entry-fields .text_pole {
   font-size: var(--choice-text-xs);
   padding: 2px var(--choice-space-2);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-inline-entry-fields .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-inline-field-item {
@@ -649,16 +685,43 @@ onUnmounted(() => {
 .choice-inline-field-item .text_pole {
   font-size: var(--choice-text-xs);
   padding: 2px var(--choice-space-2);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-inline-field-item .text_pole:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-cond-input {
   width: 100px;
   min-width: 0;
   flex-shrink: 1;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-cond-input:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-small-input {
   width: 40px;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  color: var(--choice-text);
+}
+
+.choice-small-input:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
 }
 
 .choice-check {
@@ -694,11 +757,11 @@ onUnmounted(() => {
 }
 
 .choice-delete-btn {
-  color: #c86a6a;
+  color: var(--choice-color-error);
 }
 
 .choice-delete-btn:hover:not(:disabled) {
-  color: #e07070;
+  color: var(--choice-color-error);
 }
 
 .choice-empty-hint {

@@ -7,22 +7,16 @@ import {
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import {
-  GlobalSettings,
-  SCHEMA_VERSION,
-  setting_field,
-  DEFAULT_MODULES,
-  BAIBAI_MODULE_IDS,
-  DEFAULT_ENRICH_PERSON_STYLE,
-} from '@/type/settings';
+import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS, DEFAULT_ENRICH_PERSON_STYLE } from '@/type/settings';
+import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 
 /** 构建 10 条默认条目，基于用户定义的选项类型 */
 function buildDefaultEntries(): PoolEntry[] {
   return [
     {
       id: uuidv4(),
-      type: '普通发展',
-      content: '根据当前处境，合理构思符合角色性格的自然反应，不预设特定策略倾向',
+      type: '顺势而为',
+      content: '不预设特定策略，让角色顺着当前情境做出最自然的反应，行动与情绪贴合角色既有性格',
       pinned: false,
       weight: 1,
       category: '',
@@ -31,8 +25,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '跳过场景',
-      content: '当剧情适合快速推进时，用一两句精炼的过渡性描述总结时间流逝或空间转移，并直接开启一个新场景',
+      type: '转场推进',
+      content: '用一两句精炼的叙述完成时间跳跃或地点切换，快速进入下一段剧情',
       pinned: true,
       weight: 1,
       category: '',
@@ -41,8 +35,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '欧亨利反转',
-      content: '给出一个意料之外情理之中的剧情发展，巧妙地利用当前场景中不起眼的细节引出意外转折',
+      type: '意外走向',
+      content: '利用当前场景中被忽略的细节或信息差，制造一个意料之外但情理之中的转折',
       pinned: false,
       weight: 1,
       category: '',
@@ -51,8 +45,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '罗曼蒂克',
-      content: '根据当前环境和角色关系，给出一个浪漫或暧昧的举动，推进角色之间的情感进程',
+      type: '暧昧触碰',
+      content: '在不逾越角色关系边界的前提下，通过细微的肢体动作或含蓄的暗示拉近情感距离',
       pinned: false,
       weight: 1,
       category: '',
@@ -61,8 +55,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '视角切换',
-      content: '以另一个角色的视角接续下文，描述该角色在同时刻的所见所感或正在进行的行动',
+      type: '他人视角',
+      content: '暂时离开当前角色的视线，以在场另一位角色的眼睛观察同一时刻发生的事情',
       pinned: false,
       weight: 1,
       category: '',
@@ -71,8 +65,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '利用场景',
-      content: '结合当前场景的物理特性或氛围，进行具体的环境互动、物品利用或隐蔽行为',
+      type: '就地取材',
+      content: '抓住当前环境中的具体物件或空间特征，做出有目的性的互动行为',
       pinned: false,
       weight: 1,
       category: '',
@@ -81,8 +75,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '破局行动',
-      content: '构思一个打破常规思维的高风险行动，旨在突破当前僵局或探索隐藏的可能性',
+      type: '大胆尝试',
+      content: '当常规手段不足以推动局面时，采取一个带有明显风险但可能改变局势走向的行动',
       pinned: false,
       weight: 1,
       category: '',
@@ -91,8 +85,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '沉默观察',
-      content: '刻意不表态，通过视线焦点、细微的肢体反应或内心的揣测来传达态度，全程不主动开口',
+      type: '悄然旁观',
+      content: '不主动介入对话，通过眼神、姿态或细微情绪变化传递态度，保持沉默但并非无动于衷',
       pinned: false,
       weight: 1,
       category: '',
@@ -101,8 +95,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '共情靠近',
-      content: '通过分享感受、复述对方处境或给予实际支持，尝试拉近与对方的距离',
+      type: '温暖靠近',
+      content: '通过表达理解、分享类似经历或提供实际帮助，缩短与对方的心理距离',
       pinned: false,
       weight: 1,
       category: '',
@@ -111,8 +105,8 @@ function buildDefaultEntries(): PoolEntry[] {
     },
     {
       id: uuidv4(),
-      type: '幽默化解',
-      content: '用调侃、自嘲或反差感的言行打破紧张或尴尬的氛围，语气轻松但不失分寸',
+      type: '轻松调侃',
+      content: '用一句俏皮话、一个自嘲的举动或反差感十足的小动作，冲淡空气中的紧张',
       pinned: false,
       weight: 1,
       category: '',
@@ -604,6 +598,14 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v18: 旧 theme 字段迁移到 theme_mode
+  if ((validated.schema_version ?? 0) < 18) {
+    const oldTheme = (validated.ui as any).theme;
+    if (oldTheme && (validated.ui as any).theme_mode === undefined) {
+      (validated.ui as any).theme_mode = oldTheme;
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -670,7 +672,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 16;
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 17;
   if (promptNeedsMigration) {
     migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
@@ -836,12 +838,49 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
   }
 
+  // ST 主题自动检测：当 theme_mode 为 'auto' 时，监听 ST 主题变化
+  let stopThemeWatcher: (() => void) | null = null;
+
+  function resolveTheme(): 'st' | 'dark' | 'light' {
+    const mode = settings.value.ui.theme_mode;
+    if (mode === 'st' || mode === 'dark' || mode === 'light') return mode;
+    return detectSTTheme();
+  }
+
+  function startThemeWatcher() {
+    stopThemeWatcher?.();
+    stopThemeWatcher = watchSTTheme(() => {
+      // 触发响应式更新，让 watchEffect 重新执行
+      settings.value = { ...settings.value };
+    });
+  }
+
+  startThemeWatcher();
+
   watchEffect(() => {
     const ui = settings.value.ui;
-    document.documentElement.setAttribute('data-choice-theme', ui.theme);
-    document.documentElement.style.setProperty('--choice-opacity', String(ui.opacity));
-    document.documentElement.style.setProperty('--choice-card-opacity', String(ui.opacity * 0.74));
-    document.documentElement.style.setProperty('--choice-element-opacity', String(ui.opacity * 0.51));
+    const theme = resolveTheme();
+    document.documentElement.setAttribute('data-choice-theme', theme);
+
+    // st 跟随模式的对比度守卫：ST 极端主题下用兜底墨色覆盖派生值；
+    // 离开 st 或对比恢复时必须移除行内覆盖，否则残留上一次主题的墨色
+    if (theme === 'st') {
+      const fallback = getSTInkFallback();
+      if (fallback) {
+        document.documentElement.style.setProperty('--choice-text', fallback.text);
+        document.documentElement.style.setProperty('--choice-text-secondary', fallback.secondary);
+        document.documentElement.style.setProperty('--choice-text-muted', fallback.muted);
+      } else {
+        document.documentElement.style.removeProperty('--choice-text');
+        document.documentElement.style.removeProperty('--choice-text-secondary');
+        document.documentElement.style.removeProperty('--choice-text-muted');
+      }
+    } else {
+      document.documentElement.style.removeProperty('--choice-text');
+      document.documentElement.style.removeProperty('--choice-text-secondary');
+      document.documentElement.style.removeProperty('--choice-text-muted');
+    }
+
     const scaleMap = { small: 0.85, medium: 1, large: 1.2 };
     document.documentElement.style.setProperty('--choice-font-scale', String(scaleMap[ui.font_size]));
   });

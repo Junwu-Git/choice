@@ -33,30 +33,41 @@
       <div class="choice-theme-switch">
         <button
           class="choice-theme-btn"
-          :class="{ active: ui.theme === 'dark' }"
-          :title="t`切换到暗色主题`"
-          @click="ui.theme = 'dark'"
+          :class="{ active: ui.theme_mode === 'auto' }"
+          :title="t`自动检测酒馆主题（亮/暗）`"
+          @click="ui.theme_mode = 'auto'"
+        >
+          <i class="fa-solid fa-magic"></i>
+          {{ t`自动` }}
+        </button>
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.theme_mode === 'st' }"
+          :title="t`完全跟随酒馆主题配色`"
+          @click="ui.theme_mode = 'st'"
+        >
+          <i class="fa-solid fa-palette"></i>
+          {{ t`跟随` }}
+        </button>
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.theme_mode === 'dark' }"
+          :title="t`强制使用暗色主题`"
+          @click="ui.theme_mode = 'dark'"
         >
           <i class="fa-solid fa-moon"></i>
           {{ t`暗色` }}
         </button>
         <button
           class="choice-theme-btn"
-          :class="{ active: ui.theme === 'light' }"
-          :title="t`切换到亮色主题`"
-          @click="ui.theme = 'light'"
+          :class="{ active: ui.theme_mode === 'light' }"
+          :title="t`强制使用亮色主题`"
+          @click="ui.theme_mode = 'light'"
         >
           <i class="fa-solid fa-sun"></i>
           {{ t`亮色` }}
         </button>
       </div>
-    </div>
-
-    <div class="choice-appearance-section">
-      <span class="choice-appearance-label"
-        >{{ t`透明度` }} <span class="choice-appearance-value">{{ Math.round(ui.opacity * 100) }}%</span></span
-      >
-      <input v-model.number="ui.opacity" type="range" min="0.3" max="1" step="0.05" class="choice-opacity-slider" />
     </div>
 
     <div class="choice-appearance-section">
@@ -161,7 +172,7 @@ const fontSizes = [
 
 .choice-check input[type='checkbox']:checked + .choice-check-custom::after {
   content: '✓';
-  color: #fff;
+  color: var(--choice-text-on-primary);
   font-size: var(--choice-text-xs);
   font-weight: bold;
   position: absolute;
@@ -240,7 +251,7 @@ const fontSizes = [
 
 .choice-theme-btn.active {
   background: var(--choice-primary);
-  color: #fff;
+  color: var(--choice-text-on-primary);
   box-shadow: 0 0 8px var(--choice-primary-glow);
 }
 
