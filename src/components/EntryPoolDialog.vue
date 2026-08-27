@@ -45,7 +45,9 @@
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
                 <i class="fa-solid" :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-                <span v-if="groupRenameId !== group.key" class="choice-epool-group-name">{{ group.key || t`未分组` }}</span>
+                <span v-if="groupRenameId !== group.key" class="choice-epool-group-name">{{
+                  group.key || t`未分组`
+                }}</span>
                 <input
                   v-else
                   ref="groupRenameInput"
@@ -272,7 +274,7 @@ const moveSelected = ref(false);
 const moveTargetCat = ref('');
 const pendingGroups = computed({
   get: () => new Set(globalStore.settings.empty_groups),
-  set: (val) => {
+  set: val => {
     globalStore.settings.empty_groups = [...val];
   },
 });

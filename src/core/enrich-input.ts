@@ -55,7 +55,8 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     input,
     minChars: pr.enrich_min_chars,
     maxChars: pr.enrich_max_chars,
-    enrichPersonStyle: pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
+    enrichPersonStyle:
+      pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
     optionPerson: pr.option_person || '第三人称',
     enrichPerson: pr.enrich_person || '第三人称',
   };

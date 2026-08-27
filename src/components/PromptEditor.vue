@@ -158,11 +158,7 @@
               class="fa-solid choice-filter-group-caret"
               :class="groupExpanded[group.id] ? 'fa-chevron-down' : 'fa-chevron-right'"
             ></i>
-            <span
-              v-if="groupRenameId !== group.id"
-              class="choice-filter-group-name"
-              >{{ group.name }}</span
-            >
+            <span v-if="groupRenameId !== group.id" class="choice-filter-group-name">{{ group.name }}</span>
             <input
               v-else
               ref="groupRenameInput"
@@ -194,7 +190,11 @@
             <button class="menu_button choice-filter-del" :title="t`新增规则`" @click.stop="addFilterRule(group.id)">
               +
             </button>
-            <button class="menu_button choice-filter-del" :title="t`删除分组`" @click.stop="deleteGroupTarget = group.id">
+            <button
+              class="menu_button choice-filter-del"
+              :title="t`删除分组`"
+              @click.stop="deleteGroupTarget = group.id"
+            >
               <i class="fa-solid fa-trash" style="color: #e06666"></i>
             </button>
           </div>

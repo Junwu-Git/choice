@@ -16,25 +16,24 @@
     </div>
 
     <div class="choice-api-select-row">
-      <label class="choice-field" style="flex:1;min-width:0">
+      <label class="choice-field" style="flex: 1; min-width: 0">
         <span>{{ t`生成 API` }}</span>
-        <select :value="selectedApiId" class="text_pole" @change="selectApi(($event.target as HTMLSelectElement).value)">
+        <select
+          :value="selectedApiId"
+          class="text_pole"
+          @change="selectApi(($event.target as HTMLSelectElement).value)"
+        >
           <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
             {{ api.name || t`<未命名>` }}
           </option>
         </select>
       </label>
-      <button
-        class="menu_button"
-        style="flex-shrink:0;margin-top:auto"
-        :title="t`新建 API 配置`"
-        @click="createApi"
-      >
+      <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
         <i class="fa-solid fa-plus"></i> {{ t`新建` }}
       </button>
       <button
         class="menu_button"
-        style="flex-shrink:0;margin-top:auto;color:#c86a6a"
+        style="flex-shrink: 0; margin-top: auto; color: #c86a6a"
         :disabled="!selectedApiId"
         :title="t`删除当前 API`"
         @click="removeApi"
@@ -226,9 +225,7 @@ const save = () => {
   const normalized = { ...draftForm.value, apiurl: normalizeApiUrl(draftForm.value.apiurl) };
   const dupName = normalized.name.trim();
   if (dupName) {
-    const duplicate = globalStore.settings.apis.find(
-      a => a.id !== selectedApiId.value && a.name.trim() === dupName,
-    );
+    const duplicate = globalStore.settings.apis.find(a => a.id !== selectedApiId.value && a.name.trim() === dupName);
     if (duplicate) {
       toastr.warning(t`API 名称「${dupName}」已存在`);
       return;

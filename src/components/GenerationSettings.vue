@@ -134,21 +134,11 @@
       <div class="choice-count-row">
         <label class="choice-count-item">
           <span>{{ t`选项人称` }}</span>
-          <input
-            v-model="rules.option_person"
-            class="text_pole"
-            style="width: 100px"
-            :placeholder="t`如：第三人称`"
-          />
+          <input v-model="rules.option_person" class="text_pole" style="width: 100px" :placeholder="t`如：第三人称`" />
         </label>
         <label class="choice-count-item">
           <span>{{ t`润色人称` }}</span>
-          <input
-            v-model="rules.enrich_person"
-            class="text_pole"
-            style="width: 100px"
-            :placeholder="t`如：第三人称`"
-          />
+          <input v-model="rules.enrich_person" class="text_pole" style="width: 100px" :placeholder="t`如：第三人称`" />
         </label>
       </div>
     </div>

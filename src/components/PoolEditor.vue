@@ -7,12 +7,7 @@
         <select v-model="selectedConfigId" class="text_pole choice-config-select">
           <option v-for="cfg in configs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
         </select>
-        <button
-          class="choice-btn-sm"
-          :title="t`重命名`"
-          :disabled="!selectedConfig"
-          @click="startRenameConfig"
-        >
+        <button class="choice-btn-sm" :title="t`重命名`" :disabled="!selectedConfig" @click="startRenameConfig">
           <i class="fa-solid fa-pen-to-square"></i>
         </button>
         <div class="choice-config-actions">
