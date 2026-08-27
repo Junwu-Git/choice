@@ -248,6 +248,7 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   if (mode === 'rounds' && contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
+  let lastAssistantIdx = -1;
   for (const m of msgs) {
     if (m.is_system) continue;
     let content = m.mes ?? '';
@@ -273,12 +274,13 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
     if (!content.trim()) continue;
     const role = m.role === 'user' || m.is_user ? 'user' : 'assistant';
     h.push({ role, content });
+    if (role === 'assistant') lastAssistantIdx = h.length - 1;
   }
-  // 将最后一条消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
-  // 避免在长对话中注意力被稀释到更早的剧情。
+  // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
+  // 避免在长对话中注意力被稀释到更早的剧情。回退到 h 最后一条（无 assistant 时）。
   if (h.length > 0) {
-    const last = h[h.length - 1];
-    last.content = `<current_scene>\n${last.content}\n</current_scene>`;
+    const wrapIdx = lastAssistantIdx >= 0 ? lastAssistantIdx : h.length - 1;
+    h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }
   return h;
 };
