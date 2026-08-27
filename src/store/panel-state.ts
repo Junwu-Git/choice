@@ -39,6 +39,9 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     currentIndex.value = data?.currentIndex ?? Math.max(0, (data?.generations.length ?? 1) - 1);
     enrichGenerations.value = data?.enrichGenerations ?? [];
     enrichCurrentIndex.value = data?.enrichCurrentIndex ?? 0;
+    if (activeView.value === 'enrich' && enrichGenerations.value.length === 0) {
+      activeView.value = 'options';
+    }
   };
 
   const clear = () => {

@@ -170,10 +170,6 @@ export function initPanelMount() {
     const input = ($('#send_textarea').val() as string).trim();
     if (!input) return;
 
-    // 清空输入框并触发 input 事件以同步按钮状态
-    $('#send_textarea')
-      .val('')[0]
-      .dispatchEvent(new Event('input', { bubbles: true }));
     $enrichBtn.removeClass('fa-pen-to-square').addClass('fa-stop').attr('title', '取消润色');
     try {
       await store.triggerEnrich(input);
@@ -193,10 +189,6 @@ export function initPanelMount() {
       state.triggerEnrichRequested = false;
       return;
     }
-    // 清空输入框
-    $('#send_textarea')
-      .val('')[0]
-      .dispatchEvent(new Event('input', { bubbles: true }));
     state.triggerEnrichRequested = false;
     enrichStore.triggerEnrich(input);
   });
