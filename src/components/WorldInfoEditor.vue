@@ -54,7 +54,13 @@
             >
               {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
             </span>
-            <input type="checkbox" :checked="isBookChecked(book)" :disabled="isBookGloballyExcluded(book)" @click.stop @change="toggleBook(book)" />
+            <input
+              type="checkbox"
+              :checked="isBookChecked(book)"
+              :disabled="isBookGloballyExcluded(book)"
+              @click.stop
+              @change="toggleBook(book)"
+            />
             <span v-if="isBookGloballyExcluded(book)" class="choice-wi-badge badge-global-excl">{{ t`全局排除` }}</span>
           </div>
           <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
