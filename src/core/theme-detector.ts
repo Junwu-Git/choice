@@ -21,9 +21,7 @@ function luminance(r: number, g: number, b: number): number {
 
 /** 检测 ST 当前主题是亮色还是暗色 */
 export function detectSTTheme(): 'dark' | 'light' {
-  const bgColor = getComputedStyle(document.documentElement)
-    .getPropertyValue('--SmartThemeBlurTintColor')
-    .trim();
+  const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--SmartThemeBlurTintColor').trim();
 
   if (!bgColor) {
     // ST 变量不存在时回退到系统偏好

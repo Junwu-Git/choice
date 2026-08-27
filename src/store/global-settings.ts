@@ -7,7 +7,14 @@ import {
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { GlobalSettings, SCHEMA_VERSION, setting_field, DEFAULT_MODULES, BAIBAI_MODULE_IDS, DEFAULT_ENRICH_PERSON_STYLE } from '@/type/settings';
+import {
+  GlobalSettings,
+  SCHEMA_VERSION,
+  setting_field,
+  DEFAULT_MODULES,
+  BAIBAI_MODULE_IDS,
+  DEFAULT_ENRICH_PERSON_STYLE,
+} from '@/type/settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 
 /** 构建 10 条默认条目，基于用户定义的选项类型 */

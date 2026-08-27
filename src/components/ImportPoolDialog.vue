@@ -1,13 +1,29 @@
 <template>
   <Teleport to="body">
-    <div v-if="open" class="choice-cfdlg-overlay" @click.self="mode = null; emit('close')">
+    <div
+      v-if="open"
+      class="choice-cfdlg-overlay"
+      @click.self="
+        mode = null;
+        emit('close');
+      "
+    >
       <div class="choice-cfdlg-dialog">
         <div class="choice-cfdlg-header">
           <span class="choice-cfdlg-title">
             <i class="fa-solid fa-file-import"></i>
             {{ t`导入条目库` }}
           </span>
-          <button class="choice-cfdlg-close" :title="t`取消`" @click="mode = null; emit('close')">&times;</button>
+          <button
+            class="choice-cfdlg-close"
+            :title="t`取消`"
+            @click="
+              mode = null;
+              emit('close');
+            "
+          >
+            &times;
+          </button>
         </div>
 
         <div class="choice-cfdlg-body">
@@ -47,7 +63,15 @@
         </div>
 
         <div class="choice-cfdlg-footer">
-          <button class="menu_button" @click="mode = null; emit('close')">{{ t`取消` }}</button>
+          <button
+            class="menu_button"
+            @click="
+              mode = null;
+              emit('close');
+            "
+          >
+            {{ t`取消` }}
+          </button>
           <button class="menu_button menu_button_default" :disabled="!mode" @click="emit('confirm', mode!)">
             {{ t`确认导入` }}
           </button>

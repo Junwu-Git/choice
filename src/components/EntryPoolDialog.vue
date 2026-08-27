@@ -880,7 +880,9 @@ onUnmounted(() => {
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-lg);
+  box-shadow:
+    inset 0 1px 0 var(--choice-frost-line),
+    var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;

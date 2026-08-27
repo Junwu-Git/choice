@@ -64,7 +64,11 @@
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
         </button>
-        <button class="choice-panel-btn" :title="collapsed ? t`展开` : t`收起`" @click="panelStore.setCollapsed(!collapsed)">
+        <button
+          class="choice-panel-btn"
+          :title="collapsed ? t`展开` : t`收起`"
+          @click="panelStore.setCollapsed(!collapsed)"
+        >
           <i :class="collapsed ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-up'"></i>
         </button>
       </div>

@@ -48,7 +48,18 @@ export const resolveCount = (cm: string): number => {
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
-export type Ctx = { count: number; pinnedCount: number; pinned: string; poolSelected: string; input: string; minChars: number; maxChars: number; enrichPersonStyle: string; optionPerson: string; enrichPerson: string };
+export type Ctx = {
+  count: number;
+  pinnedCount: number;
+  pinned: string;
+  poolSelected: string;
+  input: string;
+  minChars: number;
+  maxChars: number;
+  enrichPersonStyle: string;
+  optionPerson: string;
+  enrichPerson: string;
+};
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
@@ -77,7 +88,8 @@ export const buildMessages = async (
     ...ctx,
     minChars: isEnrich ? pr.enrich_min_chars : pr.option_min_chars,
     maxChars: isEnrich ? pr.enrich_max_chars : pr.option_max_chars,
-    enrichPersonStyle: pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
+    enrichPersonStyle:
+      pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
     optionPerson: pr.option_person || '第三人称',
     enrichPerson: pr.enrich_person || '第三人称',
   };
@@ -177,7 +189,9 @@ export const buildMessages = async (
         // person_style 优先（高级用户覆盖），回退到 option_person 自动生成
         let content: string;
         if (optionRules && (personStyle || pr.option_person)) {
-          const effectivePersonStyle = personStyle || `选项内容以${pr.option_person || '第三人称'} {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：他人视角、与此同时、转场推进 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互，避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
+          const effectivePersonStyle =
+            personStyle ||
+            `选项内容以${pr.option_person || '第三人称'} {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：他人视角、与此同时、转场推进 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互，避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
           content = `【核心规则 - 生成选项时严格遵守】
 ${optionRules}
 

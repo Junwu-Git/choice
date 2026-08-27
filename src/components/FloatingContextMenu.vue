@@ -84,7 +84,9 @@ onUnmounted(() => {
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-md);
-  box-shadow: inset 0 1px 0 var(--choice-frost-line), var(--choice-shadow-md);
+  box-shadow:
+    inset 0 1px 0 var(--choice-frost-line),
+    var(--choice-shadow-md);
   min-width: 140px;
   padding: var(--choice-space-1);
 }

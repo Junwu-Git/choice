@@ -27,7 +27,7 @@
   --choice-color-info-bg: rgba(74, 144, 217, 0.12);
 
   --choice-border: rgba(255, 255, 255, 0.06);
-  --choice-border-strong: rgba(255, 255, 255, 0.10);
+  --choice-border-strong: rgba(255, 255, 255, 0.1);
   --choice-border-active: rgba(74, 144, 217, 0.4);
 
   /* 磨砂高光：容器上边缘的受光线，实色模拟雾面层次，不依赖 blur */
@@ -113,12 +113,8 @@
   --choice-frost-line: rgba(255, 255, 255, 0.85);
 
   --choice-shadow-sm: 0 1px 2px rgba(80, 64, 40, 0.07);
-  --choice-shadow-md:
-    0 2px 6px rgba(80, 64, 40, 0.09),
-    0 1px 2px rgba(80, 64, 40, 0.05);
-  --choice-shadow-lg:
-    0 8px 24px rgba(80, 64, 40, 0.14),
-    0 2px 6px rgba(80, 64, 40, 0.07);
+  --choice-shadow-md: 0 2px 6px rgba(80, 64, 40, 0.09), 0 1px 2px rgba(80, 64, 40, 0.05);
+  --choice-shadow-lg: 0 8px 24px rgba(80, 64, 40, 0.14), 0 2px 6px rgba(80, 64, 40, 0.07);
   --choice-shadow-glow: 0 0 20px rgba(56, 114, 180, 0.2);
 
   --choice-overlay: rgba(58, 50, 38, 0.32);
@@ -132,12 +128,28 @@
    对明暗极性天然对称；对比度守卫在 theme-detector.ts 的 JS 层执行。 */
 :root[data-choice-theme='st'] {
   --choice-bg: var(--SmartThemeBlurTintColor, #f5f2ec);
-  --choice-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f5f2ec) 90%, var(--SmartThemeBodyColor, #292621) 10%);
-  --choice-surface-2: color-mix(in srgb, var(--SmartThemeBlurTintColor, #f5f2ec) 78%, var(--SmartThemeBodyColor, #292621) 22%);
+  --choice-surface: color-mix(
+    in srgb,
+    var(--SmartThemeBlurTintColor, #f5f2ec) 90%,
+    var(--SmartThemeBodyColor, #292621) 10%
+  );
+  --choice-surface-2: color-mix(
+    in srgb,
+    var(--SmartThemeBlurTintColor, #f5f2ec) 78%,
+    var(--SmartThemeBodyColor, #292621) 22%
+  );
 
   --choice-text: var(--SmartThemeBodyColor, #292621);
-  --choice-text-secondary: color-mix(in srgb, var(--SmartThemeBodyColor, #292621) 70%, var(--SmartThemeBlurTintColor, #f5f2ec) 30%);
-  --choice-text-muted: color-mix(in srgb, var(--SmartThemeBodyColor, #292621) 50%, var(--SmartThemeBlurTintColor, #f5f2ec) 50%);
+  --choice-text-secondary: color-mix(
+    in srgb,
+    var(--SmartThemeBodyColor, #292621) 70%,
+    var(--SmartThemeBlurTintColor, #f5f2ec) 30%
+  );
+  --choice-text-muted: color-mix(
+    in srgb,
+    var(--SmartThemeBodyColor, #292621) 50%,
+    var(--SmartThemeBlurTintColor, #f5f2ec) 50%
+  );
   --choice-text-hint: var(--SmartThemeQuoteColor, #7a6018);
   --choice-text-on-primary: var(--SmartThemeBlurTintColor, #fff);
 
