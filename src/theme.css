@@ -76,6 +76,7 @@
   --choice-bg-panel: var(--choice-bg);
   --choice-bg-card: var(--choice-surface);
   --choice-bg-element: var(--choice-surface-2);
+  --choice-warning: var(--choice-color-warning);
 }
 
 /* ===== 亮色主题 — 暖白纸感磨砂 ===== */

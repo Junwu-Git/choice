@@ -253,7 +253,7 @@ const onEnrichNext = () => {
 const OPTION_SEP_RE = /[:：]\s/;
 
 // 匹配开头的 [标题] 或 【标题】 模式，标题为括号内文字，括号后紧跟内容
-const OPTION_TYPE_BRACKET_RE = /^[\[【]([^\]】]+)[\]】]\s*/;
+const OPTION_TYPE_BRACKET_RE = /^[[【]([^\]】]+)[\]】]\s*/;
 
 const findOptionSep = (text: string): { idx: number; len: number } | null => {
   const m = text.match(OPTION_SEP_RE);

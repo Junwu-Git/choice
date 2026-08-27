@@ -1,6 +1,28 @@
 # Changelog
 
-## v1.0.0 (2026-08-26)
+## v0.0.2 (2026-08-27)
+
+### 核心功能
+- 主题系统重构：实色三层配色，ST 跟随模式（`auto`/`st`/`dark`/`light` 四模），对比度守卫
+- 条目池数据模型重构：PoolEntry `text` → `type` + `content` + `rule` 三字段
+- 条目池导入导出：合并/替换双模式，单键导出 JSON
+- 润色/选项生成 prompt 灵活化：去掉死板模板，精简规则
+- 柏宝书提示词标签化：`baibai_summary` / `baibai_state` 模块，开关控制
+- 润色计数：`enrich_count` 改为 string 类型，支持 `"4"` 或 `"3-6"` 区间，空值返回 0
+
+### UI
+- 原生控件样式接管（`global.css`），保持与 ST 主题一致
+- API 编辑器交互优化
+- 模块计数修复（柏宝书过滤后计数准确）
+- 字体一致性：硬编码字号替换为 `--choice-text-*` 设计令牌
+- 聊天记录过滤默认折叠
+
+### 修复
+- 贴边气泡弹跳修复 + 面板出界修复
+- 固定条目溢出策略从配置中移除 `pinned_follows_condition`
+- 旧数据迁移：`text`→`type`、`enrich_count` number→string、`theme`→`theme_mode`、`entry_ids`→`entries`
+
+## v0.0.1 (2026-08-26)
 
 ### 核心功能
 - 行动选项异步生成：独立 API 调用，不影响主回复

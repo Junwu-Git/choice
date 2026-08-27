@@ -436,7 +436,7 @@ export function parseOptions(text: string, count: number): string[] {
     }
 
   // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
-  const bracketTitleRe = /[\[【]([^\]】]+?)[\]】]\s*/g;
+  const bracketTitleRe = /[[【]([^\]】]+?)[\]】]\s*/g;
   const bracketMatches = [...c.matchAll(bracketTitleRe)];
   if (bracketMatches.length > 0) {
     const result: string[] = [];
