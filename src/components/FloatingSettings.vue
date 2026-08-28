@@ -206,6 +206,11 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 @media (max-width: 720px) {
   .choice-floating-dialog {
     width: 96vw;
+    /* 行内 width（localStorage 持久化的 dialogWidth）优先级高于上面的 width 规则；
+       且 min-width(400px) 与 max-width(100vw-20px) 在 <420px 视口冲突时 CSS 规定 min-width 胜出，
+       两者叠加会导致窄屏（手机 WebView ~380px）下面板横向出界——必须放开 min-width，
+       让 max-width 成为唯一收窄依据 */
+    min-width: 0;
   }
 }
 
