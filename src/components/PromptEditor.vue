@@ -23,7 +23,7 @@
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
       </label>
-</div>
+    </div>
 
     <div class="choice-config-bar">
       <div class="choice-config-row">
@@ -31,17 +31,31 @@
         <select v-model="selectedPromptConfigId" class="text_pole choice-config-select">
           <option v-for="cfg in promptConfigs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
         </select>
-        <button class="choice-btn-sm" :disabled="!selectedPromptConfig" :title="t`重命名`" @click="startRenamePromptConfig">
+        <button
+          class="choice-btn-sm"
+          :disabled="!selectedPromptConfig"
+          :title="t`重命名`"
+          @click="startRenamePromptConfig"
+        >
           <i class="fa-solid fa-pen-to-square"></i>
         </button>
         <div class="choice-config-actions">
-          <button class="choice-btn-sm" :disabled="selectedPromptConfig?.is_default" :title="t`设为默认`" @click="setPromptDefault">
+          <button
+            class="choice-btn-sm"
+            :disabled="selectedPromptConfig?.is_default"
+            :title="t`设为默认`"
+            @click="setPromptDefault"
+          >
             <i class="fa-solid fa-star"></i>
           </button>
           <button
             class="choice-btn-sm"
             :class="{ active: selectedPromptConfigId === chatStore.settings.prompt_config_id }"
-            :title="selectedPromptConfigId === chatStore.settings.prompt_config_id ? t`当前聊天已绑定（点击取消）` : t`绑定到当前聊天`"
+            :title="
+              selectedPromptConfigId === chatStore.settings.prompt_config_id
+                ? t`当前聊天已绑定（点击取消）`
+                : t`绑定到当前聊天`
+            "
             @click="bindPromptChat"
           >
             <i class="fa-solid fa-comment"></i>
@@ -49,12 +63,21 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedPromptConfigId === characterStore.settings.prompt_config_id }"
-            :title="selectedPromptConfigId === characterStore.settings.prompt_config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`"
+            :title="
+              selectedPromptConfigId === characterStore.settings.prompt_config_id
+                ? t`当前角色已绑定（点击取消）`
+                : t`绑定到当前角色`
+            "
             @click="bindPromptCharacter"
           >
             <i class="fa-solid fa-user"></i>
           </button>
-          <button class="choice-btn-sm choice-btn-del" :disabled="selectedPromptConfig?.is_default" :title="t`删除`" @click="removePromptConfig">
+          <button
+            class="choice-btn-sm choice-btn-del"
+            :disabled="selectedPromptConfig?.is_default"
+            :title="t`删除`"
+            @click="removePromptConfig"
+          >
             <i class="fa-solid fa-trash-can"></i>
           </button>
           <button class="choice-btn-sm choice-btn-new" :title="t`新建`" @click="showCreatePromptConfig = true">
@@ -66,7 +89,9 @@
         <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
         <span class="choice-config-status-name">{{ effectiveConfigName }}</span>
         <span v-if="chatStore.settings.prompt_config_id" class="choice-bound-badge">{{ t`聊天` }}</span>
-        <span v-if="characterStore.settings.prompt_config_id" class="choice-bound-badge choice-bound-char">{{ t`角色` }}</span>
+        <span v-if="characterStore.settings.prompt_config_id" class="choice-bound-badge choice-bound-char">{{
+          t`角色`
+        }}</span>
       </div>
     </div>
 
@@ -310,7 +335,6 @@
       @close="showCreatePromptConfig = false"
       @create="onCreatePromptConfig"
     />
-
   </div>
 </template>
 
@@ -412,9 +436,11 @@ watch(
   { immediate: true },
 );
 
-const selectedPromptConfig = computed(() => promptConfigs.value.find(c => c.id === selectedPromptConfigId.value) ?? null);
+const selectedPromptConfig = computed(
+  () => promptConfigs.value.find(c => c.id === selectedPromptConfigId.value) ?? null,
+);
 
-watch(selectedPromptConfigId, (newId) => {
+watch(selectedPromptConfigId, newId => {
   if (newId) {
     try {
       globalStore.switchPromptConfig(newId);

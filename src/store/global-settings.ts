@@ -643,13 +643,17 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const simplifiedModules = klona(pr.modules).map((m: PromptModule) => {
       const copy = { ...m };
       if (copy.id === 'core_rules') {
-        copy.content = '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
+        copy.content =
+          '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
       } else if (copy.id === 'thinking_prompt') {
-        copy.content = '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
+        copy.content =
+          '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
       } else if (copy.id === 'enrich_core_rules') {
-        copy.content = '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
+        copy.content =
+          '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
       } else if (copy.id === 'enrich_thinking') {
-        copy.content = '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
+        copy.content =
+          '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
       }
       return copy;
     });
@@ -693,7 +697,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     pr.baibai_enabled = false;
 
     // 4. 已有分组补充绑定字段
-    for (const g of (pr.chat_filter_groups ?? [])) {
+    for (const g of pr.chat_filter_groups ?? []) {
       if (g.preset_name === undefined) g.preset_name = null;
       if (g.character_id === undefined) g.character_id = null;
     }

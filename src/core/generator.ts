@@ -169,7 +169,7 @@ export const buildMessages = async (
         }
         break;
       }
-      
+
       case 'user_instruction': {
         const content = sub(mod.content, augmentedCtx);
         if (content) msgs.push({ role: mod.role, content });

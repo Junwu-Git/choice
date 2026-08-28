@@ -1,10 +1,7 @@
 <template>
   <div v-if="group" class="choice-filter-group-card" :class="{ 'choice-filter-group-dimmed': dimmed }">
     <div class="choice-filter-group-header" @click="expanded = !expanded">
-      <i
-        class="fa-solid choice-filter-group-caret"
-        :class="expanded ? 'fa-chevron-down' : 'fa-chevron-right'"
-      ></i>
+      <i class="fa-solid choice-filter-group-caret" :class="expanded ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
       <span v-if="renamingId !== groupId" class="choice-filter-group-name">{{ group.name }}</span>
       <input
         v-else
@@ -16,12 +13,7 @@
         @keydown.escape="cancelRename"
         @click.stop
       />
-      <button
-        v-if="dimmed && locked"
-        class="choice-icon-btn"
-        :title="t`点击解锁后可编辑`"
-        @click.stop="locked = false"
-      >
+      <button v-if="dimmed && locked" class="choice-icon-btn" :title="t`点击解锁后可编辑`" @click.stop="locked = false">
         <i class="fa-solid fa-lock"></i>
       </button>
       <button
@@ -54,12 +46,7 @@
       >
         <i class="fa-solid fa-book-open"></i>
       </button>
-      <button
-        class="choice-icon-btn"
-        :disabled="dimmed && locked"
-        :title="t`新增规则`"
-        @click.stop="addInlineRule"
-      >
+      <button class="choice-icon-btn" :disabled="dimmed && locked" :title="t`新增规则`" @click.stop="addInlineRule">
         <i class="fa-solid fa-plus"></i>
       </button>
       <button
@@ -78,12 +65,7 @@
             {{ bindingLabel || t`未绑定` }}
           </span>
         </span>
-        <button
-          v-if="bindingLabel"
-          class="choice-icon-btn"
-          :title="t`取消绑定`"
-          @click.stop="emit('unbind')"
-        >
+        <button v-if="bindingLabel" class="choice-icon-btn" :title="t`取消绑定`" @click.stop="emit('unbind')">
           <i class="fa-solid fa-link-slash"></i>
         </button>
       </template>
@@ -103,29 +85,45 @@
             <span class="choice-lib-ref-sep">›</span>
             <span>{{ getLibEntryDisplay(entry.library_entry_id) }}</span>
           </span>
-          <button
-            class="choice-icon-btn choice-delete-btn"
-            :disabled="dimmed && locked"
-            @click="removeEntry(idx)"
-          >
+          <button class="choice-icon-btn choice-delete-btn" :disabled="dimmed && locked" @click="removeEntry(idx)">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </template>
         <template v-else>
-          <select v-model="entry.inline_rule!.type" class="text_pole" style="width: 90px; flex-shrink: 0" :disabled="dimmed && locked">
+          <select
+            v-model="entry.inline_rule!.type"
+            class="text_pole"
+            style="width: 90px; flex-shrink: 0"
+            :disabled="dimmed && locked"
+          >
             <option value="tag">{{ t`标签匹配` }}</option>
             <option value="regex">{{ t`正则表达式` }}</option>
           </select>
           <template v-if="entry.inline_rule!.type === 'tag'">
-            <input v-model="entry.inline_rule!.start" class="text_pole" :placeholder="t`标签头`" style="flex: 1; min-width: 0" :disabled="dimmed && locked" />
-            <input v-model="entry.inline_rule!.end" class="text_pole" :placeholder="t`标签尾`" style="flex: 1; min-width: 0" :disabled="dimmed && locked" />
+            <input
+              v-model="entry.inline_rule!.start"
+              class="text_pole"
+              :placeholder="t`标签头`"
+              style="flex: 1; min-width: 0"
+              :disabled="dimmed && locked"
+            />
+            <input
+              v-model="entry.inline_rule!.end"
+              class="text_pole"
+              :placeholder="t`标签尾`"
+              style="flex: 1; min-width: 0"
+              :disabled="dimmed && locked"
+            />
           </template>
-          <input v-else v-model="entry.inline_rule!.pattern" class="text_pole" :placeholder="t`正则表达式`" style="flex: 1; min-width: 0" :disabled="dimmed && locked" />
-          <button
-            class="choice-icon-btn choice-delete-btn"
+          <input
+            v-else
+            v-model="entry.inline_rule!.pattern"
+            class="text_pole"
+            :placeholder="t`正则表达式`"
+            style="flex: 1; min-width: 0"
             :disabled="dimmed && locked"
-            @click="removeEntry(idx)"
-          >
+          />
+          <button class="choice-icon-btn choice-delete-btn" :disabled="dimmed && locked" @click="removeEntry(idx)">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </template>
@@ -141,16 +139,19 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import Sortable from 'sortablejs';
 
-const props = withDefaults(defineProps<{
-  groupId: string;
-  dimmed: boolean;
-  showBindings: boolean;
-  bindingLabel: string;
-  bindingIcon: string;
-  duplicateIndices: Set<number>;
-}>(), {
-  duplicateIndices: () => new Set(),
-});
+const props = withDefaults(
+  defineProps<{
+    groupId: string;
+    dimmed: boolean;
+    showBindings: boolean;
+    bindingLabel: string;
+    bindingIcon: string;
+    duplicateIndices: Set<number>;
+  }>(),
+  {
+    duplicateIndices: () => new Set(),
+  },
+);
 
 const emit = defineEmits<{
   addFromLibrary: [];
@@ -164,9 +165,12 @@ const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const locked = ref(true);
 
-watch(() => props.dimmed, (d) => {
-  if (d) locked.value = true;
-});
+watch(
+  () => props.dimmed,
+  d => {
+    if (d) locked.value = true;
+  },
+);
 
 const group = computed(() => gs.settings.filter_settings.groups.find(g => g.id === props.groupId) ?? null);
 
@@ -220,21 +224,25 @@ const entriesBody = ref<HTMLElement | null>(null);
 let sortable: Sortable | null = null;
 
 onMounted(() => {
-  watch(entriesBody, el => {
-    if (sortable) sortable.destroy();
-    if (!el) return;
-    sortable = Sortable.create(el, {
-      animation: 150,
-      handle: '.choice-filter-row',
-      onEnd: evt => {
-        if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
-        const g = group.value;
-        if (!g) return;
-        const [moved] = g.entries.splice(evt.oldIndex, 1);
-        g.entries.splice(evt.newIndex, 0, moved);
-      },
-    });
-  }, { immediate: true });
+  watch(
+    entriesBody,
+    el => {
+      if (sortable) sortable.destroy();
+      if (!el) return;
+      sortable = Sortable.create(el, {
+        animation: 150,
+        handle: '.choice-filter-row',
+        onEnd: evt => {
+          if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
+          const g = group.value;
+          if (!g) return;
+          const [moved] = g.entries.splice(evt.oldIndex, 1);
+          g.entries.splice(evt.newIndex, 0, moved);
+        },
+      });
+    },
+    { immediate: true },
+  );
 });
 
 onUnmounted(() => {

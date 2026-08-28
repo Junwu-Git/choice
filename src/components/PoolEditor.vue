@@ -535,5 +535,4 @@ onUnmounted(() => {
   border-color: var(--choice-border-active);
   outline: none;
 }
-
 </style>

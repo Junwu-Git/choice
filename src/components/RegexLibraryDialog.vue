@@ -9,7 +9,11 @@
             <span class="choice-regexlib-count">({{ library.length }})</span>
           </span>
           <div class="choice-regexlib-header-actions">
-            <button class="choice-icon-btn" :title="allGroupsExpanded ? t`全部收起` : t`全部展开`" @click="toggleExpandAll">
+            <button
+              class="choice-icon-btn"
+              :title="allGroupsExpanded ? t`全部收起` : t`全部展开`"
+              @click="toggleExpandAll"
+            >
               <i :class="allGroupsExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
             </button>
             <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
@@ -33,7 +37,9 @@
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
                 <i class="fa-solid" :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-                <span v-if="groupRenameId !== group.key" class="choice-regexlib-group-name">{{ group.key || t`未分组` }}</span>
+                <span v-if="groupRenameId !== group.key" class="choice-regexlib-group-name">{{
+                  group.key || t`未分组`
+                }}</span>
                 <input
                   v-else
                   ref="groupRenameInput"
@@ -52,13 +58,22 @@
                 >
                   <i :class="groupRenameId === group.key ? 'fa-solid fa-check' : 'fa-solid fa-pen-to-square'"></i>
                 </button>
-                <button v-if="groupRenameId === group.key" class="choice-icon-btn" :title="t`取消`" @click.stop="cancelGroupRename">
+                <button
+                  v-if="groupRenameId === group.key"
+                  class="choice-icon-btn"
+                  :title="t`取消`"
+                  @click.stop="cancelGroupRename"
+                >
                   <i class="fa-solid fa-xmark"></i>
                 </button>
                 <button class="choice-icon-btn" :title="t`添加条目`" @click.stop="addEntryToGroup(group.key)">
                   <i class="fa-solid fa-plus"></i>
                 </button>
-                <button class="choice-icon-btn choice-delete-btn" :title="t`删除分组`" @click.stop="deleteGroupTarget = group.key">
+                <button
+                  class="choice-icon-btn choice-delete-btn"
+                  :title="t`删除分组`"
+                  @click.stop="deleteGroupTarget = group.key"
+                >
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
               </div>
@@ -75,10 +90,26 @@
                     <option value="regex">{{ t`正则表达式` }}</option>
                   </select>
                   <template v-if="entry.type === 'tag'">
-                    <input v-model="entry.start" class="text_pole" :placeholder="t`标签头`" style="flex: 1; min-width: 0" />
-                    <input v-model="entry.end" class="text_pole" :placeholder="t`标签尾`" style="flex: 1; min-width: 0" />
+                    <input
+                      v-model="entry.start"
+                      class="text_pole"
+                      :placeholder="t`标签头`"
+                      style="flex: 1; min-width: 0"
+                    />
+                    <input
+                      v-model="entry.end"
+                      class="text_pole"
+                      :placeholder="t`标签尾`"
+                      style="flex: 1; min-width: 0"
+                    />
                   </template>
-                  <input v-else v-model="entry.pattern" class="text_pole" :placeholder="t`正则表达式`" style="flex: 1; min-width: 0" />
+                  <input
+                    v-else
+                    v-model="entry.pattern"
+                    class="text_pole"
+                    :placeholder="t`正则表达式`"
+                    style="flex: 1; min-width: 0"
+                  />
                   <button class="choice-icon-btn choice-delete-btn" @click="removeEntry(entry.id)">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
@@ -118,14 +149,17 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 
-const props = withDefaults(defineProps<{
-  open: boolean;
-  selectable?: boolean;
-  alreadyReferencedIds?: Set<string>;
-}>(), {
-  selectable: false,
-  alreadyReferencedIds: () => new Set(),
-});
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    selectable?: boolean;
+    alreadyReferencedIds?: Set<string>;
+  }>(),
+  {
+    selectable: false,
+    alreadyReferencedIds: () => new Set(),
+  },
+);
 
 const emit = defineEmits<{
   close: [];
@@ -309,12 +343,15 @@ const onImportFile = () => {
   input.click();
 };
 
-watch(() => props.open, (isOpen) => {
-  if (isOpen) {
-    selectedIds.value = new Set(props.alreadyReferencedIds);
-    expandedGroups.value = new Set([...new Set(library.value.map(e => e.category))]);
-  }
-});
+watch(
+  () => props.open,
+  isOpen => {
+    if (isOpen) {
+      selectedIds.value = new Set(props.alreadyReferencedIds);
+      expandedGroups.value = new Set([...new Set(library.value.map(e => e.category))]);
+    }
+  },
+);
 </script>
 
 <style scoped>
@@ -441,7 +478,7 @@ watch(() => props.open, (isOpen) => {
   font-size: var(--choice-text-sm);
   background: var(--choice-bg-element);
   border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
   color: var(--choice-text);
 }
 .choice-regexlib-entry input:focus {

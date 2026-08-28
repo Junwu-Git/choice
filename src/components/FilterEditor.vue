@@ -3,9 +3,7 @@
     <!-- 状态栏 -->
     <div class="choice-config-status">
       <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
-      <span class="choice-bound-badge">
-        <i class="fa-solid fa-globe"></i> {{ t`全局` }} {{ globalActiveCount }}
-      </span>
+      <span class="choice-bound-badge"> <i class="fa-solid fa-globe"></i> {{ t`全局` }} {{ globalActiveCount }} </span>
       <span v-if="gs.currentPresetName" class="choice-bound-badge">
         <i class="fa-solid fa-sliders"></i> {{ gs.currentPresetName }} {{ presetActiveCount }}
       </span>
@@ -24,9 +22,7 @@
 
     <!-- 全局正则区 -->
     <div class="choice-inline-field-head">
-      <span class="choice-inline-label">
-        <i class="fa-solid fa-globe"></i> {{ t`全局正则区` }}
-      </span>
+      <span class="choice-inline-label"> <i class="fa-solid fa-globe"></i> {{ t`全局正则区` }} </span>
       <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('global')">
         <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
       </button>
@@ -55,9 +51,7 @@
 
     <!-- 预设正则区 -->
     <div class="choice-inline-field-head">
-      <span class="choice-inline-label">
-        <i class="fa-solid fa-sliders"></i> {{ t`预设正则区` }}
-      </span>
+      <span class="choice-inline-label"> <i class="fa-solid fa-sliders"></i> {{ t`预设正则区` }} </span>
       <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('preset')">
         <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
       </button>
@@ -86,9 +80,7 @@
 
     <!-- 角色卡正则区 -->
     <div class="choice-inline-field-head">
-      <span class="choice-inline-label">
-        <i class="fa-solid fa-address-card"></i> {{ t`角色卡正则区` }}
-      </span>
+      <span class="choice-inline-label"> <i class="fa-solid fa-address-card"></i> {{ t`角色卡正则区` }} </span>
       <button class="choice-btn-sm choice-btn-new" @click="addCharGroup">
         <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
       </button>
@@ -166,8 +158,12 @@ const presetGroups = computed(() => filterGroups.value.filter(g => g.preset_name
 const charGroups = computed(() => filterGroups.value.filter(g => g.character_id !== null));
 
 const globalActiveCount = computed(() => globalGroups.value.filter(g => g.enabled).length);
-const presetActiveCount = computed(() => presetGroups.value.filter(g => g.preset_name === gs.currentPresetName && g.enabled).length);
-const charActiveCount = computed(() => charGroups.value.filter(g => g.character_id === gs.currentCharacterId && g.enabled).length);
+const presetActiveCount = computed(
+  () => presetGroups.value.filter(g => g.preset_name === gs.currentPresetName && g.enabled).length,
+);
+const charActiveCount = computed(
+  () => charGroups.value.filter(g => g.character_id === gs.currentCharacterId && g.enabled).length,
+);
 
 const presetGroupsSorted = computed(() => {
   const current = gs.currentPresetName;
@@ -250,11 +246,17 @@ const getReferencedIds = (groupId: string): Set<string> => {
 
 const onLibraryConfirm = (ids: string[]) => {
   const targetId = libraryTargetId.value;
-  if (!targetId) { libraryTargetId.value = null; return; }
+  if (!targetId) {
+    libraryTargetId.value = null;
+    return;
+  }
   const existingIds = getReferencedIds(targetId);
   const newIds = new Set(ids);
   const group = gs.settings.filter_settings.groups.find(g => g.id === targetId);
-  if (!group) { libraryTargetId.value = null; return; }
+  if (!group) {
+    libraryTargetId.value = null;
+    return;
+  }
   for (const id of ids) {
     if (!existingIds.has(id)) {
       gs.addFilterGroupEntry(targetId, { library_entry_id: id, inline_rule: null });
@@ -373,7 +375,11 @@ function createSortable(el: HTMLElement, area: string) {
           if (toArea === 'preset') return g.preset_name !== null;
           return g.character_id !== null;
         });
-        if (toIdx === -1) { groups.push(moved); } else { groups.splice(toIdx + (evt.newIndex > evt.oldIndex ? 1 : 0), 0, moved); }
+        if (toIdx === -1) {
+          groups.push(moved);
+        } else {
+          groups.splice(toIdx + (evt.newIndex > evt.oldIndex ? 1 : 0), 0, moved);
+        }
       } else {
         if (toArea === 'global') {
           group.preset_name = null;
