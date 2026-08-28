@@ -13,7 +13,12 @@
         @keydown.escape="cancelRename"
         @click.stop
       />
-      <button v-if="dimmed && locked" class="choice-icon-btn choice-lock-btn" :title="t`点击解锁后可编辑`" @click.stop="locked = false">
+      <button
+        v-if="dimmed && locked"
+        class="choice-icon-btn choice-lock-btn"
+        :title="t`点击解锁后可编辑`"
+        @click.stop="locked = false"
+      >
         <i class="fa-solid fa-lock"></i>
       </button>
       <button
@@ -65,7 +70,12 @@
             {{ bindingLabel || t`未绑定` }}
           </span>
         </span>
-        <button v-if="bindingLabel && isNotCurrentPreset" class="choice-icon-btn" :title="t`绑定到当前预设`" @click.stop="emit('bindToCurrent')">
+        <button
+          v-if="bindingLabel && isNotCurrentPreset"
+          class="choice-icon-btn"
+          :title="t`绑定到当前预设`"
+          @click.stop="emit('bindToCurrent')"
+        >
           <i class="fa-solid fa-link"></i>
         </button>
         <button v-if="bindingLabel" class="choice-icon-btn" :title="t`取消绑定`" @click.stop="emit('unbind')">

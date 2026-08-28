@@ -84,7 +84,12 @@
                 <div v-if="group.entries.length === 0" class="choice-empty-hint">
                   <span>{{ t`暂无条目，点击 + 添加` }}</span>
                 </div>
-                <div v-for="entry in group.entries" :key="entry.id" class="choice-regexlib-entry" :data-entry-id="entry.id">
+                <div
+                  v-for="entry in group.entries"
+                  :key="entry.id"
+                  class="choice-regexlib-entry"
+                  :data-entry-id="entry.id"
+                >
                   <i class="fa-solid fa-grip-vertical choice-regexlib-drag-handle" :title="t`拖动排序/换组`"></i>
                   <label class="choice-check" v-if="selectable">
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
