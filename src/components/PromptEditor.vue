@@ -23,11 +23,7 @@
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
       </label>
-      <button
-        class="menu_button"
-        :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`"
-        @click="togglePreview"
-      >
+      <button class="menu_button" :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`" @click="togglePreview">
         <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
         {{ showPreview ? t`隐藏预览` : t`预览` }}
       </button>
@@ -177,11 +173,28 @@
             ></i>
           </button>
           <div v-if="showAddMenu" class="choice-export-dropdown">
-            <button @click="addModule(false, false); showAddMenu = false;">{{ t`通用模块` }}</button>
-            <button @click="addModule(false, true); showAddMenu = false;">{{ t`选项模块` }}</button>
+            <button
+              @click="
+                addModule(false, false);
+                showAddMenu = false;
+              "
+            >
+              {{ t`通用模块` }}
+            </button>
+            <button
+              @click="
+                addModule(false, true);
+                showAddMenu = false;
+              "
+            >
+              {{ t`选项模块` }}
+            </button>
             <button
               v-if="globalStore.settings.ui.enrich_enabled"
-              @click="addModule(true, false); showAddMenu = false;"
+              @click="
+                addModule(true, false);
+                showAddMenu = false;
+              "
             >
               {{ t`润色模块` }}
             </button>
