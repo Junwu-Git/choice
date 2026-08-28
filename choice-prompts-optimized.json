@@ -62,7 +62,7 @@
       "marker": true,
       "system": true,
       "enabled": true,
-      "order": 5
+      "order": 6
     },
     {
       "id": "persona_description",
@@ -72,7 +72,7 @@
       "marker": true,
       "system": true,
       "enabled": true,
-      "order": 6
+      "order": 5
     },
     {
       "id": "char_description",

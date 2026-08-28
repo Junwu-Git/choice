@@ -707,12 +707,13 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     (settings.value.prompt_rules.chat_filter_groups ?? []).filter(g => g.enabled).flatMap(g => g.rules),
   );
 
-  function addModule(afterId?: string, enrichOnly = false) {
+  function addModule(afterId?: string, enrichOnly = false, optionOnly = false) {
     const modules = settings.value.prompt_rules.modules;
     const maxOrder = modules.length ? Math.max(...modules.map(m => m.order)) : -1;
+    const name = optionOnly ? '选项模块' : enrichOnly ? '润色模块' : '通用模块';
     const newModule: PromptModuleType = {
       id: uuidv4(),
-      name: enrichOnly ? '润色模块' : '新模块',
+      name,
       role: 'system',
       content: '',
       marker: false,
@@ -720,6 +721,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       enabled: true,
       order: maxOrder + 1,
       enrich_only: enrichOnly,
+      option_only: optionOnly,
     };
     modules.push(newModule);
     return newModule;

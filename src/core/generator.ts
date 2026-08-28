@@ -119,7 +119,7 @@ export const buildMessages = async (
       case 'persona_description': {
         const personaDesc = power_user?.persona_description;
         if (personaDesc) {
-          msgs.push({ role: 'system', content: substituteParams(personaDesc) });
+          msgs.push({ role: 'system', content: `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${substituteParams(personaDesc)}\n</user_persona>` });
         }
         break;
       }

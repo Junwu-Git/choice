@@ -1,122 +1,35 @@
 <template>
   <div class="choice-prompt-editor">
-    <div class="choice-prompt-toolbar">
-      <div class="choice-prompt-toolbar-left">
-        <button class="menu_button" :title="t`添加新的提示词模块`" @click="addModule">{{ t`新增模块` }}</button>
-        <button
-          v-if="globalStore.settings.ui.enrich_enabled"
-          class="menu_button"
-          :title="t`添加润色专用的提示词模块`"
-          @click="addEnrichModule"
-        >
-          {{ t`新增润色模块` }}
-        </button>
-        <div class="choice-export-wrap">
-          <button
-            class="menu_button choice-export-btn"
-            :title="t`选择要导出的模块范围`"
-            @click.stop="showExportMenu = !showExportMenu"
-          >
-            <span>{{ t`导出` }}</span>
-            <i
-              class="fa-solid fa-chevron-down choice-export-caret"
-              :class="{ 'choice-export-caret--open': showExportMenu }"
-            ></i>
-          </button>
-          <div v-if="showExportMenu" class="choice-export-dropdown">
-            <button
-              @click="
-                exportPrompts('all');
-                showExportMenu = false;
-              "
-            >
-              {{ t`导出全部` }}
-            </button>
-            <button
-              @click="
-                exportPrompts('option');
-                showExportMenu = false;
-              "
-            >
-              {{ t`导出选项模块` }}
-            </button>
-            <button
-              v-if="globalStore.settings.ui.enrich_enabled"
-              @click="
-                exportPrompts('enrich');
-                showExportMenu = false;
-              "
-            >
-              {{ t`导出润色模块` }}
-            </button>
-          </div>
-        </div>
-        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
-          {{ t`导入` }}
-        </button>
-      </div>
-      <div class="choice-prompt-toolbar-right">
-        <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
-          <select v-model="rules.context_mode" class="text_pole" style="width: auto">
-            <option value="rounds">{{ t`轮数模式` }}</option>
-            <option value="visible_only">{{ t`仅可见消息` }}</option>
-          </select>
-          <input
-            v-if="rules.context_mode === 'rounds'"
-            v-model.number="rules.context_rounds"
-            class="text_pole"
-            type="number"
-            min="0"
-            style="width: 60px"
-          />
-        </label>
-        <label class="choice-context-rounds" :title="t`关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型`">
-          <input v-model="rules.prefill_enabled" type="checkbox" />
-          {{ t`预填充` }}
-        </label>
-        <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
-          <input v-model="rules.baibai_enabled" type="checkbox" />
-          {{ t`柏宝书` }}
-        </label>
-        <button
-          class="menu_button"
-          :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`"
-          @click="togglePreview"
-        >
-          <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
-          {{ showPreview ? t`隐藏预览` : t`预览` }}
-        </button>
-        <button
-          class="menu_button"
-          :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`"
-          @click="resetPromptToDefaults"
-        >
-          {{ t`恢复默认` }}
-        </button>
-      </div>
-    </div>
-
-    <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
+    <div class="choice-page-toolbar">
+      <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
+        <select v-model="rules.context_mode" class="text_pole" style="width: auto">
+          <option value="rounds">{{ t`轮数模式` }}</option>
+          <option value="visible_only">{{ t`仅可见消息` }}</option>
+        </select>
+        <input
+          v-if="rules.context_mode === 'rounds'"
+          v-model.number="rules.context_rounds"
+          class="text_pole"
+          type="number"
+          min="0"
+          style="width: 60px"
+        />
+      </label>
+      <label class="choice-context-rounds" :title="t`关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型`">
+        <input v-model="rules.prefill_enabled" type="checkbox" />
+        {{ t`预填充` }}
+      </label>
+      <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
+        <input v-model="rules.baibai_enabled" type="checkbox" />
+        {{ t`柏宝书` }}
+      </label>
       <button
-        class="choice-mode-btn"
-        :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
-        @click="promptMode = 'all'"
+        class="menu_button"
+        :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`"
+        @click="togglePreview"
       >
-        {{ t`全部` }} ({{ totalCount }})
-      </button>
-      <button
-        class="choice-mode-btn"
-        :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
-        @click="promptMode = 'option'"
-      >
-        {{ t`选项生成` }} ({{ optionCount }})
-      </button>
-      <button
-        class="choice-mode-btn"
-        :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
-        @click="promptMode = 'enrich'"
-      >
-        {{ t`润色` }} ({{ enrichCount }})
+        <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
+        {{ showPreview ? t`隐藏预览` : t`预览` }}
       </button>
     </div>
 
@@ -221,6 +134,109 @@
           </div>
         </div>
         <button class="menu_button" @click="addFilterGroup">{{ t`新增分组` }}</button>
+      </div>
+    </div>
+
+    <div class="choice-module-toolbar">
+      <div class="choice-module-toolbar-left">
+        <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
+          <button
+            class="choice-mode-btn"
+            :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
+            @click="promptMode = 'all'"
+          >
+            {{ t`全部` }} ({{ totalCount }})
+          </button>
+          <button
+            class="choice-mode-btn"
+            :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
+            @click="promptMode = 'option'"
+          >
+            {{ t`选项生成` }} ({{ optionCount }})
+          </button>
+          <button
+            class="choice-mode-btn"
+            :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
+            @click="promptMode = 'enrich'"
+          >
+            {{ t`润色` }} ({{ enrichCount }})
+          </button>
+        </div>
+      </div>
+      <div class="choice-module-toolbar-right">
+        <div class="choice-export-wrap">
+          <button
+            class="menu_button choice-export-btn"
+            :title="t`添加新的提示词模块`"
+            @click.stop="showAddMenu = !showAddMenu"
+          >
+            <span>{{ t`新增模块` }}</span>
+            <i
+              class="fa-solid fa-chevron-down choice-export-caret"
+              :class="{ 'choice-export-caret--open': showAddMenu }"
+            ></i>
+          </button>
+          <div v-if="showAddMenu" class="choice-export-dropdown">
+            <button @click="addModule(false, false); showAddMenu = false;">{{ t`通用模块` }}</button>
+            <button @click="addModule(false, true); showAddMenu = false;">{{ t`选项模块` }}</button>
+            <button
+              v-if="globalStore.settings.ui.enrich_enabled"
+              @click="addModule(true, false); showAddMenu = false;"
+            >
+              {{ t`润色模块` }}
+            </button>
+          </div>
+        </div>
+        <div class="choice-export-wrap">
+          <button
+            class="menu_button choice-export-btn"
+            :title="t`选择要导出的模块范围`"
+            @click.stop="showExportMenu = !showExportMenu"
+          >
+            <span>{{ t`导出` }}</span>
+            <i
+              class="fa-solid fa-chevron-down choice-export-caret"
+              :class="{ 'choice-export-caret--open': showExportMenu }"
+            ></i>
+          </button>
+          <div v-if="showExportMenu" class="choice-export-dropdown">
+            <button
+              @click="
+                exportPrompts('all');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出全部` }}
+            </button>
+            <button
+              @click="
+                exportPrompts('option');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出选项模块` }}
+            </button>
+            <button
+              v-if="globalStore.settings.ui.enrich_enabled"
+              @click="
+                exportPrompts('enrich');
+                showExportMenu = false;
+              "
+            >
+              {{ t`导出润色模块` }}
+            </button>
+          </div>
+        </div>
+        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
+          {{ t`导入` }}
+        </button>
+        <button
+          class="menu_button"
+          :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`"
+          @click="resetPromptToDefaults"
+        >
+          {{ t`恢复默认` }}
+        </button>
       </div>
     </div>
 
@@ -430,6 +446,7 @@ const allModules = computed(() => {
 type PromptMode = 'all' | 'option' | 'enrich';
 const promptMode = ref<PromptMode>('all');
 const showExportMenu = ref(false);
+const showAddMenu = ref(false);
 
 const baibaiFilteredModules = computed(() => {
   if (!rules.baibai_enabled) {
@@ -472,12 +489,8 @@ const editingModule = computed(() => {
 const dragIndex = ref<number | null>(null);
 const dragOverIndex = ref<number | null>(null);
 
-const addModule = () => {
-  globalStore.addModule();
-};
-
-const addEnrichModule = () => {
-  globalStore.addModule(undefined, true);
+const addModule = (enrichOnly = false, optionOnly = false) => {
+  globalStore.addModule(undefined, enrichOnly, optionOnly);
 };
 
 const resetPromptToDefaults = () => {
@@ -800,6 +813,7 @@ function onDocumentClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
   if (!target.closest('.choice-export-wrap')) {
     showExportMenu.value = false;
+    showAddMenu.value = false;
   }
 }
 
@@ -818,7 +832,14 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
 }
 
-.choice-prompt-toolbar {
+.choice-page-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  flex-wrap: wrap;
+}
+
+.choice-module-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -826,8 +847,8 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.choice-prompt-toolbar-left,
-.choice-prompt-toolbar-right {
+.choice-module-toolbar-left,
+.choice-module-toolbar-right {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
@@ -1294,7 +1315,6 @@ onUnmounted(() => {
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   overflow: hidden;
-  align-self: flex-start;
 }
 
 .choice-mode-btn {
