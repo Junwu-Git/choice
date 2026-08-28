@@ -59,6 +59,7 @@
           <PromptEditor v-else-if="activeTab === 'prompt'" />
           <ApiEditor v-else-if="activeTab === 'api'" />
           <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
+          <FilterEditor v-else-if="activeTab === 'filter'" />
           <AppearanceSettings v-else-if="activeTab === 'appearance'" />
           <DebugSettings v-else-if="activeTab === 'debug'" />
         </div>
@@ -77,6 +78,7 @@ import AppearanceSettings from '@/components/AppearanceSettings.vue';
 import GenerationSettings from '@/components/GenerationSettings.vue';
 import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
+import FilterEditor from '@/components/FilterEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';

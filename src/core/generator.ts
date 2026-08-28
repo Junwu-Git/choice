@@ -4,7 +4,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
-import { getBaiBaiSummary, getBaiBaiState } from '@/core/baibai-bridge';
+import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
@@ -169,17 +169,7 @@ export const buildMessages = async (
         }
         break;
       }
-      case 'baibai_state': {
-        if (!gs.settings.prompt_rules.baibai_enabled) break;
-        const text = getBaiBaiState();
-        if (text) {
-          msgs.push({
-            role: 'system',
-            content: `<baibai_state>\n以下为记忆系统对当前场景状态的实时记录，仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_state>`,
-          });
-        }
-        break;
-      }
+      
       case 'user_instruction': {
         const content = sub(mod.content, augmentedCtx);
         if (content) msgs.push({ role: mod.role, content });

@@ -1,4 +1,4 @@
-export type TabId = 'pool' | 'generation' | 'prompt' | 'api' | 'worldinfo' | 'appearance' | 'debug';
+export type TabId = 'pool' | 'generation' | 'prompt' | 'api' | 'worldinfo' | 'filter' | 'appearance' | 'debug';
 
 export interface TabDefinition {
   id: TabId;
@@ -18,6 +18,7 @@ export const INLINE_TABS: TabDefinition[] = [
   { id: 'prompt', label: '提示词', icon: 'fa-solid fa-align-left' },
   { id: 'api', label: 'API', icon: 'fa-solid fa-plug' },
   { id: 'worldinfo', label: '世界书', icon: 'fa-solid fa-book' },
+  { id: 'filter', label: '过滤', icon: 'fa-solid fa-filter' },
   { id: 'appearance', label: '外观', icon: 'fa-solid fa-palette' },
   { id: 'debug', label: '调试', icon: 'fa-solid fa-gear' },
 ];
@@ -28,6 +29,7 @@ export const FLOATING_TABS: TabDefinition[] = [
   { id: 'prompt', label: '提示词', icon: 'fa-solid fa-align-left' },
   { id: 'api', label: 'API', icon: 'fa-solid fa-plug' },
   { id: 'worldinfo', label: '世界书', icon: 'fa-solid fa-book' },
+  { id: 'filter', label: '过滤', icon: 'fa-solid fa-filter' },
   { id: 'appearance', label: '外观', icon: 'fa-solid fa-palette' },
   { id: 'debug', label: '调试', icon: 'fa-solid fa-gear' },
 ];
@@ -81,6 +83,14 @@ export const GUIDE_CONTENTS: Record<TabId, GuideContent> = {
 <p><strong>默认行为</strong>：自动包含角色世界书和全局世界书。取消勾选某本书，该书的所有条目都不参与生成；展开某本书后，可以单独排除特定条目。</p>
 <p><strong>条目状态</strong>：🔵 蓝灯 = 常驻条目（始终注入），🟢 绿灯 = 关键词触发（匹配时注入），灰色/禁用 = 跳过。禁用条目会自动排除，无需手动操作。</p>
 <p><strong>操作</strong>：点击书名可展开查看条目列表，取消勾选可排除书或条目。通过"刷新列表"可同步最新世界书变更。</p>`,
+  },
+  filter: {
+    icon: 'fa-solid fa-filter',
+    title: '聊天记录过滤',
+    html: `<p><strong>三大区域</strong>：全局正则区（始终生效）、预设正则区（随ST预设切换）、角色卡正则区（随角色卡切换）。</p>
+<p><strong>正则库</strong>：类似条目库，存放可复用的正则表达式。支持标签匹配和正则匹配两种类型。</p>
+<p><strong>操作流程</strong>：在对应区域创建分组 → 点击「从正则库添加」选择正则 → 或直接添加内联规则 → 启用分组即可。</p>
+<p><strong>调暗效果</strong>：预设区和角色卡区中，不属于当前预设/角色的分组会以半透明显示，不会对当前聊天生效。</p>`,
   },
   appearance: {
     icon: 'fa-solid fa-palette',

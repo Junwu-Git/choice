@@ -23,113 +23,50 @@
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
       </label>
-      <button class="menu_button" :title="showPreview ? t`隐藏预览` : t`显示当前提示词组装预览`" @click="togglePreview">
-        <i class="fa-solid" :class="showPreview ? 'fa-eye-slash' : 'fa-eye'"></i>
-        {{ showPreview ? t`隐藏预览` : t`预览` }}
-      </button>
-    </div>
+</div>
 
-    <div class="choice-beginner-section">
-      <div class="choice-filter-header" @click="showBeginner = !showBeginner">
-        <i class="fa-solid" :class="showBeginner ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-        <span>{{ t`新手快捷编辑` }}</span>
-        <span class="choice-field-module">{{ t`对应模块: core_rules` }}</span>
-      </div>
-      <div v-if="showBeginner" class="choice-beginner-body">
-        <div class="choice-field">
-          <div class="choice-field-label">
-            <label>{{ t`叙述风格` }}</label>
-            <button class="menu_button choice-restore-btn" @click="resetPersonStyleTarget = true">
-              {{ t`恢复默认` }}
-            </button>
-          </div>
-          <textarea v-model="globalStore.settings.prompt_rules.person_style" rows="3" class="text_pole"></textarea>
-          <small class="choice-field-hint">{{
-            t`描述选项的叙述视角和人称要求，如"第三人称"、"第一人称女主视角"等`
-          }}</small>
+    <div class="choice-config-bar">
+      <div class="choice-config-row">
+        <label class="choice-config-label">{{ t`提示词配置` }}</label>
+        <select v-model="selectedPromptConfigId" class="text_pole choice-config-select">
+          <option v-for="cfg in promptConfigs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
+        </select>
+        <button class="choice-btn-sm" :disabled="!selectedPromptConfig" :title="t`重命名`" @click="startRenamePromptConfig">
+          <i class="fa-solid fa-pen-to-square"></i>
+        </button>
+        <div class="choice-config-actions">
+          <button class="choice-btn-sm" :disabled="selectedPromptConfig?.is_default" :title="t`设为默认`" @click="setPromptDefault">
+            <i class="fa-solid fa-star"></i>
+          </button>
+          <button
+            class="choice-btn-sm"
+            :class="{ active: selectedPromptConfigId === chatStore.settings.prompt_config_id }"
+            :title="selectedPromptConfigId === chatStore.settings.prompt_config_id ? t`当前聊天已绑定（点击取消）` : t`绑定到当前聊天`"
+            @click="bindPromptChat"
+          >
+            <i class="fa-solid fa-comment"></i>
+          </button>
+          <button
+            class="choice-btn-sm"
+            :class="{ active: selectedPromptConfigId === characterStore.settings.prompt_config_id }"
+            :title="selectedPromptConfigId === characterStore.settings.prompt_config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`"
+            @click="bindPromptCharacter"
+          >
+            <i class="fa-solid fa-user"></i>
+          </button>
+          <button class="choice-btn-sm choice-btn-del" :disabled="selectedPromptConfig?.is_default" :title="t`删除`" @click="removePromptConfig">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+          <button class="choice-btn-sm choice-btn-new" :title="t`新建`" @click="showCreatePromptConfig = true">
+            <i class="fa-solid fa-plus"></i> {{ t`新建` }}
+          </button>
         </div>
-        <div class="choice-field">
-          <div class="choice-field-label">
-            <label>{{ t`选项规则` }}</label>
-            <button class="menu_button choice-restore-btn" @click="resetOptionRulesTarget = true">
-              {{ t`恢复默认` }}
-            </button>
-          </div>
-          <textarea v-model="globalStore.settings.prompt_rules.option_rules" rows="10" class="text_pole"></textarea>
-          <small class="choice-field-hint">{{ t`生成选项时 AI 必须遵守的核心规则，每行一条` }}</small>
-        </div>
       </div>
-    </div>
-
-    <div class="choice-filter-section">
-      <div class="choice-filter-header" @click="showFilter = !showFilter">
-        <i class="fa-solid" :class="showFilter ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-        <span>{{ t`聊天记录过滤` }}</span>
-      </div>
-      <div v-if="showFilter" class="choice-filter-body">
-        <p class="choice-filter-desc">{{ t`过滤聊天记录中标签包裹或匹配正则的内容（如思维链、小剧场、防截断等）` }}</p>
-        <div v-for="group in rules.chat_filter_groups" :key="group.id" class="choice-filter-group">
-          <div class="choice-filter-group-header" @click="toggleGroup(group.id)">
-            <i
-              class="fa-solid choice-filter-group-caret"
-              :class="groupExpanded[group.id] ? 'fa-chevron-down' : 'fa-chevron-right'"
-            ></i>
-            <span v-if="groupRenameId !== group.id" class="choice-filter-group-name">{{ group.name }}</span>
-            <input
-              v-else
-              ref="groupRenameInput"
-              v-model="groupRenameText"
-              class="text_pole"
-              style="width: 100px; font-size: var(--choice-text-xs); flex-shrink: 0"
-              @keydown.enter="finishGroupRename(group)"
-              @keydown.escape="cancelGroupRename"
-              @click.stop
-            />
-            <button
-              class="menu_button choice-filter-del"
-              :title="groupRenameId === group.id ? t`保存` : t`重命名`"
-              @click.stop="groupRenameId === group.id ? finishGroupRename(group) : startGroupRename(group)"
-            >
-              <i :class="groupRenameId === group.id ? 'fa-solid fa-check' : 'fa-solid fa-pen-to-square'"></i>
-            </button>
-            <button
-              v-if="groupRenameId === group.id"
-              class="menu_button choice-filter-del"
-              :title="t`取消`"
-              @click.stop="cancelGroupRename"
-            >
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-            <label class="choice-module-toggle" :title="group.enabled ? t`启用` : t`禁用`" @click.stop>
-              <input type="checkbox" :checked="group.enabled" @change="group.enabled = !group.enabled" />
-            </label>
-            <button class="menu_button choice-filter-del" :title="t`新增规则`" @click.stop="addFilterRule(group.id)">
-              +
-            </button>
-            <button
-              class="menu_button choice-filter-del"
-              :title="t`删除分组`"
-              @click.stop="deleteGroupTarget = group.id"
-            >
-              <i class="fa-solid fa-trash" style="color: var(--choice-color-error)"></i>
-            </button>
-          </div>
-          <div v-if="groupExpanded[group.id]" class="choice-filter-group-body">
-            <div v-for="(rule, idx) in group.rules" :key="idx" class="choice-filter-row">
-              <select v-model="rule.type" class="text_pole choice-filter-type">
-                <option value="tag">{{ t`标签匹配` }}</option>
-                <option value="regex">{{ t`正则表达式` }}</option>
-              </select>
-              <template v-if="rule.type === 'tag'">
-                <input v-model="rule.start" class="text_pole" :placeholder="t`标签头`" />
-                <input v-model="rule.end" class="text_pole" :placeholder="t`标签尾`" />
-              </template>
-              <input v-else v-model="rule.pattern" class="text_pole" :placeholder="t`正则表达式`" />
-              <button class="menu_button choice-filter-del" @click="removeFilterRule(group.id, idx)">✕</button>
-            </div>
-          </div>
-        </div>
-        <button class="menu_button" @click="addFilterGroup">{{ t`新增分组` }}</button>
+      <div class="choice-config-status">
+        <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
+        <span class="choice-config-status-name">{{ effectiveConfigName }}</span>
+        <span v-if="chatStore.settings.prompt_config_id" class="choice-bound-badge">{{ t`聊天` }}</span>
+        <span v-if="characterStore.settings.prompt_config_id" class="choice-bound-badge choice-bound-char">{{ t`角色` }}</span>
       </div>
     </div>
 
@@ -359,16 +296,6 @@
     />
 
     <ConfirmDialog
-      :open="deleteGroupTarget !== null"
-      :title="t`删除分组`"
-      :message="t`确定要删除该分组及其所有规则吗？此操作不可撤销。`"
-      :confirm-text="t`删除`"
-      :cancel-text="t`取消`"
-      @confirm="onDeleteGroupConfirm"
-      @cancel="deleteGroupTarget = null"
-    />
-
-    <ConfirmDialog
       :open="restoreTarget !== null"
       :title="t`恢复默认`"
       :message="t`确定要将该模块恢复为默认内容吗？当前修改将丢失。`"
@@ -378,53 +305,30 @@
       @cancel="restoreTarget = null"
     />
 
-    <ConfirmDialog
-      :open="resetPersonStyleTarget"
-      :title="t`恢复默认`"
-      :message="resetPersonStyleMsg"
-      :confirm-text="t`恢复`"
-      :cancel-text="t`取消`"
-      @confirm="onResetPersonStyleConfirm"
-      @cancel="resetPersonStyleTarget = false"
-    />
-    <ConfirmDialog
-      :open="resetOptionRulesTarget"
-      :title="t`恢复默认`"
-      :message="resetOptionRulesMsg"
-      :confirm-text="t`恢复`"
-      :cancel-text="t`取消`"
-      @confirm="onResetOptionRulesConfirm"
-      @cancel="resetOptionRulesTarget = false"
+    <CreateConfigDialog
+      :open="showCreatePromptConfig"
+      @close="showCreatePromptConfig = false"
+      @create="onCreatePromptConfig"
     />
 
-    <div v-if="showPreview" class="choice-preview-box">
-      <div v-if="previewMessages.length === 0" class="choice-preview-empty">
-        {{ t`暂无聊天历史` }}
-      </div>
-      <div
-        v-for="(msg, i) in previewMessages"
-        :key="i"
-        class="choice-preview-msg"
-        :class="`choice-preview-${msg.role}`"
-      >
-        <span class="choice-preview-role">{{ msg.role.toUpperCase() }}</span>
-        <pre class="choice-preview-content">{{ msg.content }}</pre>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { useCharacterSettingsStore } from '@/store/character-settings';
+import { useChatSettingsStore } from '@/store/chat-settings';
+import { usePromptConfigSelectorStore } from '@/store/prompt-config-selector';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-import type { PromptModule, ChatFilterGroup } from '@/type/settings';
-import { BAIBAI_MODULE_IDS, DEFAULT_PERSON_STYLE, DEFAULT_OPTION_RULES } from '@/type/settings';
-import { PromptModule as PromptModuleSchema } from '@/type/settings';
+import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
+import type { PromptModule } from '@/type/settings';
+import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
 import { z } from 'zod';
-import { chat, characters, this_chid } from '@sillytavern/script';
-import { uuidv4 } from '@sillytavern/scripts/utils';
 
 const globalStore = useGlobalSettingsStore();
+const characterStore = useCharacterSettingsStore();
+const chatStore = useChatSettingsStore();
+const promptConfigSelector = usePromptConfigSelectorStore();
 const rules = globalStore.settings.prompt_rules;
 
 /** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
@@ -437,11 +341,11 @@ const READONLY_MODULE_IDS = new Set([
   'world_info_after',
   'chat_history',
   'baibai_summary',
-  'baibai_state',
 ]);
+const DEPRECATED_MODULE_IDS = new Set(['baibai_state']);
 
 const allModules = computed(() => {
-  let modules = globalStore.allModules;
+  let modules = globalStore.allModules.filter(m => !DEPRECATED_MODULE_IDS.has(m.id));
   if (!rules.baibai_enabled) {
     modules = modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
   }
@@ -462,10 +366,11 @@ const showExportMenu = ref(false);
 const showAddMenu = ref(false);
 
 const baibaiFilteredModules = computed(() => {
+  let modules = globalStore.allModules.filter(m => !DEPRECATED_MODULE_IDS.has(m.id));
   if (!rules.baibai_enabled) {
-    return globalStore.allModules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
+    modules = modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
   }
-  return globalStore.allModules;
+  return modules;
 });
 
 const totalCount = computed(() => baibaiFilteredModules.value.length);
@@ -479,20 +384,87 @@ watch(
   },
 );
 
-const showPreview = ref(false);
 const showFilter = ref(false);
-const showBeginner = ref(false);
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const deleteTarget = ref<string | null>(null);
-const deleteGroupTarget = ref<string | null>(null);
 const restoreTarget = ref<string | null>(null);
-const resetPersonStyleTarget = ref(false);
-const resetOptionRulesTarget = ref(false);
-const groupExpanded = ref<Record<string, boolean>>({});
-const groupRenameId = ref<string | null>(null);
-const groupRenameText = ref('');
+
+// 提示词配置栏
+const promptConfigs = computed(() => globalStore.settings.prompt_configs);
+const effectiveConfig = computed(() => promptConfigSelector.effectiveConfig);
+const effectiveConfigName = computed(() => effectiveConfig.value?.name ?? '—');
+const selectedPromptConfigId = ref<string | null>(null);
+const showCreatePromptConfig = ref(false);
+
+watch(
+  [promptConfigs, effectiveConfig],
+  () => {
+    if (promptConfigs.value.length === 0) {
+      selectedPromptConfigId.value = null;
+      return;
+    }
+    if (!selectedPromptConfigId.value || !promptConfigs.value.find(c => c.id === selectedPromptConfigId.value)) {
+      selectedPromptConfigId.value = effectiveConfig.value?.id ?? promptConfigs.value[0].id;
+    }
+  },
+  { immediate: true },
+);
+
+const selectedPromptConfig = computed(() => promptConfigs.value.find(c => c.id === selectedPromptConfigId.value) ?? null);
+
+watch(selectedPromptConfigId, (newId) => {
+  if (newId) {
+    try {
+      globalStore.switchPromptConfig(newId);
+    } catch (e) {
+      console.warn('[Choice] switchPromptConfig failed', e);
+    }
+  }
+});
+
+function startRenamePromptConfig() {
+  const cfg = selectedPromptConfig.value;
+  if (!cfg) return;
+  const name = prompt(t`请输入新名称`, cfg.name);
+  if (name && name.trim() && name.trim() !== cfg.name) {
+    globalStore.renamePromptConfig(cfg.id, name.trim());
+  }
+}
+
+function setPromptDefault() {
+  if (!selectedPromptConfigId.value) return;
+  globalStore.setDefaultPromptConfig(selectedPromptConfigId.value);
+}
+
+function bindPromptChat() {
+  const id = selectedPromptConfigId.value;
+  chatStore.settings.prompt_config_id = chatStore.settings.prompt_config_id === id ? null : id;
+}
+
+function bindPromptCharacter() {
+  const id = selectedPromptConfigId.value;
+  characterStore.settings.prompt_config_id = characterStore.settings.prompt_config_id === id ? null : id;
+}
+
+function removePromptConfig() {
+  const cfg = selectedPromptConfig.value;
+  if (!cfg || cfg.is_default) return;
+  if (!confirm(t`确定要删除配置「${cfg.name}」吗？此操作不可撤销。`)) return;
+  globalStore.deletePromptConfig(cfg.id);
+  if (promptConfigs.value.length > 0) {
+    selectedPromptConfigId.value = effectiveConfig.value?.id ?? promptConfigs.value[0].id;
+  }
+}
+
+function onCreatePromptConfig(payload: { name: string; isDefault: boolean; bindChat: boolean; bindChar: boolean }) {
+  const cfg = globalStore.createPromptConfig(payload.name, payload.isDefault);
+  selectedPromptConfigId.value = cfg.id;
+  if (payload.bindChat) chatStore.settings.prompt_config_id = cfg.id;
+  if (payload.bindChar) characterStore.settings.prompt_config_id = cfg.id;
+  showCreatePromptConfig.value = false;
+}
 
 const editingModule = computed(() => {
   if (!editingId.value) return null;
@@ -584,63 +556,6 @@ function importPrompts() {
   };
   input.click();
 }
-
-const addFilterGroup = () => {
-  const group: ChatFilterGroup = {
-    id: uuidv4(),
-    name: '新分组',
-    enabled: true,
-    rules: [],
-  };
-  rules.chat_filter_groups.push(group);
-  groupExpanded.value[group.id] = true;
-};
-
-const removeFilterGroup = (id: string) => {
-  const idx = rules.chat_filter_groups.findIndex(g => g.id === id);
-  if (idx !== -1) rules.chat_filter_groups.splice(idx, 1);
-};
-
-const onDeleteGroupConfirm = () => {
-  if (deleteGroupTarget.value) {
-    removeFilterGroup(deleteGroupTarget.value);
-    deleteGroupTarget.value = null;
-  }
-};
-
-const toggleGroup = (id: string) => {
-  groupExpanded.value[id] = !groupExpanded.value[id];
-};
-
-const addFilterRule = (groupId: string) => {
-  const group = rules.chat_filter_groups.find(g => g.id === groupId);
-  if (group) {
-    group.rules.push({ type: 'tag', start: '', end: '' });
-    groupExpanded.value[groupId] = true;
-  }
-};
-
-const removeFilterRule = (groupId: string, idx: number) => {
-  const group = rules.chat_filter_groups.find(g => g.id === groupId);
-  if (group) {
-    group.rules.splice(idx, 1);
-  }
-};
-
-const startGroupRename = (group: ChatFilterGroup) => {
-  groupRenameId.value = group.id;
-  groupRenameText.value = group.name;
-};
-
-const finishGroupRename = (group: ChatFilterGroup) => {
-  const t = groupRenameText.value.trim();
-  if (t) group.name = t;
-  groupRenameId.value = null;
-};
-
-const cancelGroupRename = () => {
-  groupRenameId.value = null;
-};
 
 const toggleEnabled = (mod: PromptModule) => {
   mod.enabled = !mod.enabled;
@@ -743,84 +658,6 @@ const onDragEnd = () => {
   dragIndex.value = null;
   dragOverIndex.value = null;
 };
-
-const togglePreview = () => {
-  showPreview.value = !showPreview.value;
-};
-
-type PreviewMsg = { role: string; content: string };
-
-const previewMessages = computed<PreviewMsg[]>(() => {
-  if (!showPreview.value) return [];
-  const msgs: PreviewMsg[] = [];
-  const sorted = [...rules.modules].filter(m => m.enabled && !m.enrich_only).sort((a, b) => a.order - b.order);
-
-  for (const mod of sorted) {
-    // 预填充关闭时跳过 assistant 角色模块，与 generator.ts 保持一致
-    if (!rules.prefill_enabled && mod.role === 'assistant') continue;
-    switch (mod.id) {
-      case 'system_prompt':
-        if (mod.content) msgs.push({ role: mod.role, content: mod.content.slice(0, 200) + '...' });
-        break;
-      case 'world_info_before':
-        msgs.push({ role: 'system', content: '[World Info (before) + anchor before + EM]' });
-        break;
-      case 'persona_description':
-        msgs.push({ role: 'system', content: '[Persona Description]' });
-        break;
-      case 'world_info_after':
-        msgs.push({ role: 'system', content: '[World Info (after) + anchor after + atDepth]' });
-        break;
-      case 'chat_history': {
-        let history = chat.filter(m => !m.is_hidden);
-        if (rules.context_rounds > 0) history = history.slice(-rules.context_rounds * 2);
-        for (const m of history) {
-          if (m.is_system) continue;
-          const c = m.mes ?? '';
-          if (!c) continue;
-          // 预填充关闭时，聊天历史转为 system 角色，与 generator.ts 保持一致
-          const role = rules.prefill_enabled ? (m.is_user ? 'user' : 'assistant') : 'system';
-          msgs.push({
-            role,
-            content: c.slice(0, 200) + (c.length > 200 ? '...' : ''),
-          });
-        }
-        break;
-      }
-      case 'user_instruction':
-        if (mod.content) msgs.push({ role: mod.role, content: mod.content.slice(0, 200) + '...' });
-        break;
-      case 'core_rules':
-        if (mod.content) msgs.push({ role: mod.role, content: mod.content.slice(0, 150) + '...' });
-        break;
-      default:
-        if (mod.content) msgs.push({ role: mod.role, content: mod.content.slice(0, 200) + '...' });
-        break;
-    }
-  }
-
-  const merged: PreviewMsg[] = [];
-  for (const msg of msgs) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === msg.role) {
-      last.content = last.content + '\n\n' + msg.content;
-    } else {
-      merged.push({ ...msg });
-    }
-  }
-  return merged;
-});
-
-const onResetPersonStyleConfirm = () => {
-  globalStore.settings.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
-  resetPersonStyleTarget.value = false;
-};
-const onResetOptionRulesConfirm = () => {
-  globalStore.settings.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
-  resetOptionRulesTarget.value = false;
-};
-const resetPersonStyleMsg = computed(() => t`确定要将"叙述风格"恢复为默认值吗？当前修改将丢失。`);
-const resetOptionRulesMsg = computed(() => t`确定要将"选项规则"恢复为默认值吗？当前修改将丢失。`);
 
 function onDocumentClick(e: MouseEvent) {
   const target = e.target as HTMLElement;
@@ -1046,62 +883,6 @@ onUnmounted(() => {
   color: var(--choice-text-secondary);
 }
 
-.choice-preview-box {
-  max-height: 250px;
-  overflow-y: auto;
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  padding: var(--choice-space-2);
-  background: var(--choice-bg-card);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-}
-
-.choice-preview-empty {
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  text-align: center;
-  padding: var(--choice-space-3) 0;
-}
-
-.choice-preview-msg {
-  border-radius: var(--choice-space-1);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  font-size: var(--choice-text-xs);
-}
-
-.choice-preview-system {
-  background: rgba(var(--choice-primary-rgb), 0.12);
-  border-left: 3px solid var(--choice-primary);
-}
-
-.choice-preview-user {
-  background: rgba(100, 180, 100, 0.12);
-  border-left: 3px solid #5aaf5a;
-}
-
-.choice-preview-assistant {
-  background: rgba(180, 140, 80, 0.12);
-  border-left: 3px solid var(--choice-text-hint);
-}
-
-.choice-preview-role {
-  font-weight: bold;
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  margin-bottom: 2px;
-}
-
-.choice-preview-content {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--choice-text-secondary);
-  margin: 0;
-  font-family: inherit;
-  line-height: 1.4;
-}
-
 .choice-beginner-section {
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
@@ -1152,154 +933,6 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 2px var(--choice-space-2);
   margin-left: auto;
-}
-
-.choice-filter-section {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  overflow: hidden;
-}
-
-.choice-filter-header {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  cursor: pointer;
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-  color: var(--choice-text-secondary);
-  background: var(--choice-bg-card);
-  user-select: none;
-}
-
-.choice-filter-header:hover {
-  background: rgba(128, 128, 128, 0.05);
-}
-
-.choice-filter-header i {
-  font-size: var(--choice-text-xs);
-  width: 12px;
-  text-align: center;
-}
-
-.choice-filter-body {
-  padding: var(--choice-space-2) var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-  border-top: 1px solid var(--choice-border);
-}
-
-.choice-filter-desc {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  margin: 0;
-  line-height: 1.4;
-}
-
-.choice-filter-row {
-  display: flex;
-  gap: var(--choice-space-1);
-  align-items: center;
-}
-
-.choice-filter-row input {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--choice-text-sm);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-filter-row input:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-filter-type {
-  flex-shrink: 0;
-  width: 96px;
-  font-size: var(--choice-text-sm);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-filter-type:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-filter-del {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--choice-text-sm);
-  flex-shrink: 0;
-}
-
-.choice-filter-group {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  overflow: hidden;
-}
-
-.choice-filter-group-header {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  background: var(--choice-bg-card);
-  cursor: pointer;
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-  color: var(--choice-text-secondary);
-  user-select: none;
-}
-
-.choice-filter-group-header:hover {
-  background: rgba(128, 128, 128, 0.05);
-}
-
-.choice-filter-group-caret {
-  font-size: var(--choice-text-xs);
-  width: 12px;
-  text-align: center;
-  cursor: pointer;
-  color: var(--choice-text-muted);
-  flex-shrink: 0;
-}
-
-.choice-filter-group-name {
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-  color: var(--choice-text-secondary);
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.choice-filter-group-header .choice-filter-del {
-  flex-shrink: 0;
-}
-
-.choice-filter-group-header .choice-module-toggle {
-  flex-shrink: 0;
-}
-
-.choice-filter-group-body {
-  padding: var(--choice-space-2);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  border-top: 1px solid var(--choice-border);
 }
 
 .choice-enrich-badge-sm {

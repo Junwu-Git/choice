@@ -151,6 +151,29 @@ export const PromptModule = z.object({
 });
 export type PromptModule = z.infer<typeof PromptModule>;
 
+export const PromptConfig = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    is_default: z.boolean().default(false),
+    modules: z.array(PromptModule).prefault([]),
+    person_style: z.string().default(''),
+    option_rules: z.string().default(''),
+    option_person: z.string().default('第三人称'),
+    enrich_person: z.string().default('第三人称'),
+    enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
+    option_min_chars: z.number().min(10).max(500).default(30),
+    option_max_chars: z.number().min(10).max(500).default(80),
+    enrich_min_chars: z.number().min(10).max(500).default(30),
+    enrich_max_chars: z.number().min(10).max(500).default(80),
+    context_rounds: z.number().min(0).default(10),
+    context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
+    prefill_enabled: z.boolean().default(true),
+    baibai_enabled: z.boolean().default(false),
+  })
+  .prefault({});
+export type PromptConfig = z.infer<typeof PromptConfig>;
+
 export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好 {{count}} 条行动选项。
 
 固定条目（共 {{pinned_count}} 条）：
@@ -168,7 +191,7 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好
 export const DEFAULT_MODULES: PromptModule[] = defaultModulesJson.modules;
 
 /** 柏宝书模块 ID 集合，供 PromptEditor 按总开关过滤显示 */
-export const BAIBAI_MODULE_IDS = new Set(['baibai_summary', 'baibai_state']);
+export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 
 // 聊天记录过滤规则：标签匹配（字面量头/尾）或正则匹配，二者可混用
 export const ChatFilterRule = z.discriminatedUnion('type', [
@@ -190,8 +213,45 @@ export const ChatFilterGroup = z.object({
   name: z.string(),
   enabled: z.boolean().default(true),
   rules: z.array(ChatFilterRule).default([]),
+  /** 绑定 ST 对话补全预设名，null = 全局 */
+  preset_name: z.string().nullable().default(null),
+  /** 绑定角色卡（this_chid），null = 全局 */
+  character_id: z.number().nullable().default(null),
 });
 export type ChatFilterGroup = z.infer<typeof ChatFilterGroup>;
+
+export const RegexLibraryEntry = z.object({
+  id: z.string(),
+  name: z.string().default(''),
+  type: z.enum(['tag', 'regex']),
+  pattern: z.string().default(''),
+  start: z.string().default(''),
+  end: z.string().default(''),
+  category: z.string().default(''),
+});
+export type RegexLibraryEntry = z.infer<typeof RegexLibraryEntry>;
+
+export const FilterGroupEntry = z.object({
+  library_entry_id: z.string().nullable().default(null),
+  inline_rule: ChatFilterRule.nullable().default(null),
+});
+export type FilterGroupEntry = z.infer<typeof FilterGroupEntry>;
+
+export const FilterGroup = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean().default(true),
+  entries: z.array(FilterGroupEntry).default([]),
+  preset_name: z.string().nullable().default(null),
+  character_id: z.number().nullable().default(null),
+});
+export type FilterGroup = z.infer<typeof FilterGroup>;
+
+export const FilterSettings = z.object({
+  regex_library: z.array(RegexLibraryEntry).default([]),
+  groups: z.array(FilterGroup).default([]),
+});
+export type FilterSettings = z.infer<typeof FilterSettings>;
 
 export const PromptRules = z
   .object({
@@ -248,7 +308,7 @@ export const SecondaryApi = z
   .prefault({});
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -295,6 +355,8 @@ export const GlobalSettings = z
     configs: z.array(PoolConfig).prefault([]),
     group_order: z.array(z.string()).prefault([]),
     prompt_rules: PromptRules.prefault({}),
+    prompt_configs: z.array(PromptConfig).prefault([]),
+    filter_settings: FilterSettings.default({}),
     apis: z.array(SecondaryApi).prefault([]),
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
@@ -312,6 +374,7 @@ export type GlobalSettings = z.infer<typeof GlobalSettings>;
 export const CharacterSettings = z
   .object({
     config_id: z.string().nullable().default(null),
+    prompt_config_id: z.string().nullable().default(null),
     pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});
@@ -320,6 +383,7 @@ export type CharacterSettings = z.infer<typeof CharacterSettings>;
 export const ChatSettings = z
   .object({
     config_id: z.string().nullable().default(null),
+    prompt_config_id: z.string().nullable().default(null),
     world_info: WorldInfoChatSettings.prefault({}),
   })
   .prefault({});

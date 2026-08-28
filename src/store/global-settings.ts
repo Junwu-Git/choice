@@ -6,6 +6,7 @@ import {
   this_chid,
 } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
+import { eventSource, event_types } from '@sillytavern/scripts/events';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import {
   GlobalSettings,
@@ -14,6 +15,7 @@ import {
   DEFAULT_MODULES,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
+  type PromptConfig,
 } from '@/type/settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 
@@ -130,6 +132,9 @@ import type {
   PoolEntry,
   PromptModule as PromptModuleType,
   ChatFilterGroup,
+  FilterGroup,
+  RegexLibraryEntry,
+  FilterGroupEntry,
 } from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
@@ -190,7 +195,6 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
       'world_info_after',
       'chat_history',
       'baibai_summary',
-      'baibai_state',
     ]);
     for (const m of validated.prompt_rules.modules) {
       if (READONLY_IDS.has(m.id)) {
@@ -297,11 +301,9 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
   }
 
   if (version < 11) {
-    // v11: 柏宝书模块默认启用，调整顺序（摘要→历史开始下，状态→历史结束下）
+    // v11: 柏宝书模块默认启用，调整顺序
     const baibaiSummary = validated.prompt_rules.modules.find(m => m.id === 'baibai_summary');
-    const baibaiState = validated.prompt_rules.modules.find(m => m.id === 'baibai_state');
     if (baibaiSummary) baibaiSummary.enabled = true;
-    if (baibaiState) baibaiState.enabled = true;
     resetOrderFromDefaults(validated);
   }
 
@@ -326,7 +328,6 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
       'world_info_after',
       'chat_history',
       'baibai_summary',
-      'baibai_state',
     ]);
     for (const m of validated.prompt_rules.modules) {
       if (READONLY_IDS.has(m.id)) {
@@ -613,6 +614,91 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  if ((validated.schema_version ?? 0) < 19) {
+    // v19: 提示词配置切换 + 过滤分组绑定
+    const pr = validated.prompt_rules;
+
+    // 1. 创建"经典"配置（快照当前状态）
+    const classicConfig: PromptConfig = {
+      id: uuidv4(),
+      name: '经典',
+      is_default: false,
+      modules: klona(pr.modules),
+      person_style: pr.person_style ?? '',
+      option_rules: pr.option_rules ?? '',
+      option_person: pr.option_person ?? '第三人称',
+      enrich_person: pr.enrich_person ?? '第三人称',
+      enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
+      option_min_chars: pr.option_min_chars ?? 30,
+      option_max_chars: pr.option_max_chars ?? 80,
+      enrich_min_chars: pr.enrich_min_chars ?? 30,
+      enrich_max_chars: pr.enrich_max_chars ?? 80,
+      context_rounds: pr.context_rounds ?? 10,
+      context_mode: pr.context_mode ?? 'visible_only',
+      prefill_enabled: pr.prefill_enabled ?? true,
+      baibai_enabled: pr.baibai_enabled ?? false,
+    };
+
+    // 2. 创建"简洁"配置（简化版模块）
+    const simplifiedModules = klona(pr.modules).map((m: PromptModule) => {
+      const copy = { ...m };
+      if (copy.id === 'core_rules') {
+        copy.content = '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
+      } else if (copy.id === 'thinking_prompt') {
+        copy.content = '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
+      } else if (copy.id === 'enrich_core_rules') {
+        copy.content = '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
+      } else if (copy.id === 'enrich_thinking') {
+        copy.content = '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
+      }
+      return copy;
+    });
+
+    const simpleConfig: PromptConfig = {
+      id: uuidv4(),
+      name: '简洁',
+      is_default: true,
+      modules: simplifiedModules,
+      person_style: '',
+      option_rules: '',
+      option_person: '第三人称',
+      enrich_person: '第三人称',
+      enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
+      option_min_chars: 30,
+      option_max_chars: 80,
+      enrich_min_chars: 30,
+      enrich_max_chars: 80,
+      context_rounds: 10,
+      context_mode: 'visible_only',
+      prefill_enabled: true,
+      baibai_enabled: false,
+    };
+
+    validated.prompt_configs = [classicConfig, simpleConfig];
+
+    // 3. 将"简洁"配置加载到 prompt_rules
+    pr.modules = klona(simpleConfig.modules);
+    pr.person_style = '';
+    pr.option_rules = '';
+    pr.option_person = '第三人称';
+    pr.enrich_person = '第三人称';
+    pr.enrich_person_style = DEFAULT_ENRICH_PERSON_STYLE;
+    pr.option_min_chars = 30;
+    pr.option_max_chars = 80;
+    pr.enrich_min_chars = 30;
+    pr.enrich_max_chars = 80;
+    pr.context_rounds = 10;
+    pr.context_mode = 'visible_only';
+    pr.prefill_enabled = true;
+    pr.baibai_enabled = false;
+
+    // 4. 已有分组补充绑定字段
+    for (const g of (pr.chat_filter_groups ?? [])) {
+      if (g.preset_name === undefined) g.preset_name = null;
+      if (g.character_id === undefined) g.character_id = null;
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -669,6 +755,18 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     rawUI.enrich_count = String(rawUI.enrich_count);
   }
 
+  // character_id 从 string 转 number（预校验转换，必须在 Zod 验证前执行）
+  // 旧数据中 chat_filter_groups 的 character_id 可能以字符串形式存储，Zod 期望 number|null
+  const rawFilterGroups = _.get(existing, 'prompt_rules.chat_filter_groups');
+  if (Array.isArray(rawFilterGroups)) {
+    for (const g of rawFilterGroups) {
+      if (typeof g.character_id === 'string') {
+        const num = parseInt(g.character_id, 10);
+        g.character_id = isNaN(num) ? null : num;
+      }
+    }
+  }
+
   const validated = validateInplace(GlobalSettings, existing);
 
   const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
@@ -697,15 +795,70 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     { deep: true },
   );
 
+  const currentPresetName = ref<string | null>(null);
+  const currentCharacterId = ref<number | undefined>(this_chid);
+
+  function syncPresetName() {
+    try {
+      const presetEl = $('#settings_preset_openai');
+      if (presetEl.length) {
+        currentPresetName.value = presetEl.find(':selected').text() || null;
+      }
+    } catch {
+      /* DOM 不可用时跳过 */
+    }
+  }
+  syncPresetName();
+
+  try {
+    eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => syncPresetName());
+    eventSource.on(event_types.CHARACTER_PAGE_LOADED, () => {
+      currentCharacterId.value = this_chid;
+    });
+    eventSource.on(event_types.CHAT_CHANGED, () => {
+      currentCharacterId.value = this_chid;
+    });
+  } catch {
+    /* eventSource 不可用时静默跳过 */
+  }
+
   const sortedEnabledModules = computed(() =>
     settings.value.prompt_rules.modules.filter(m => m.enabled).sort((a, b) => a.order - b.order),
   );
 
   const allModules = computed(() => [...settings.value.prompt_rules.modules].sort((a, b) => a.order - b.order));
 
-  const sortedEnabledFilterRules = computed(() =>
-    (settings.value.prompt_rules.chat_filter_groups ?? []).filter(g => g.enabled).flatMap(g => g.rules),
-  );
+  const sortedEnabledFilterRules = computed(() => {
+    const preset = currentPresetName.value;
+    const chid = currentCharacterId.value;
+    const fs = settings.value.filter_settings;
+    const library = fs.regex_library ?? [];
+    const libMap = new Map(library.map(e => [e.id, e]));
+    return (fs.groups ?? [])
+      .filter(g => {
+        if (!g.enabled) return false;
+        if (g.preset_name !== null && g.preset_name !== preset) return false;
+        if (g.character_id !== null && g.character_id !== chid) return false;
+        return true;
+      })
+      .flatMap(g =>
+        (g.entries ?? [])
+          .map(e => {
+            if (e.library_entry_id) {
+              const libEntry = libMap.get(e.library_entry_id);
+              if (!libEntry) return null;
+              return {
+                type: libEntry.type,
+                pattern: libEntry.pattern,
+                start: libEntry.start,
+                end: libEntry.end,
+              };
+            }
+            return e.inline_rule;
+          })
+          .filter(Boolean),
+      );
+  });
 
   function addModule(afterId?: string, enrichOnly = false, optionOnly = false) {
     const modules = settings.value.prompt_rules.modules;
@@ -727,6 +880,86 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     return newModule;
   }
 
+  function addFilterGroup(area: 'global' | 'preset' | 'character') {
+    const fs = settings.value.filter_settings;
+    const group: FilterGroup = {
+      id: uuidv4(),
+      name: '新分组',
+      enabled: true,
+      entries: [],
+      preset_name: area === 'preset' ? currentPresetName.value : null,
+      character_id: area === 'character' ? (currentCharacterId.value ?? null) : null,
+    };
+    fs.groups.push(group);
+    return group;
+  }
+
+  function removeFilterGroup(id: string) {
+    const fs = settings.value.filter_settings;
+    const idx = fs.groups.findIndex(g => g.id === id);
+    if (idx !== -1) fs.groups.splice(idx, 1);
+  }
+
+  function addFilterGroupEntry(groupId: string, entry: FilterGroupEntry) {
+    const fs = settings.value.filter_settings;
+    const group = fs.groups.find(g => g.id === groupId);
+    if (group) group.entries.push(entry);
+  }
+
+  function removeFilterGroupEntry(groupId: string, entryIdx: number) {
+    const fs = settings.value.filter_settings;
+    const group = fs.groups.find(g => g.id === groupId);
+    if (group) group.entries.splice(entryIdx, 1);
+  }
+
+  function addRegexLibraryEntry(category: string = ''): RegexLibraryEntry {
+    const fs = settings.value.filter_settings;
+    const entry: RegexLibraryEntry = {
+      id: uuidv4(),
+      name: '',
+      type: 'tag',
+      pattern: '',
+      start: '',
+      end: '',
+      category,
+    };
+    fs.regex_library.push(entry);
+    return entry;
+  }
+
+  function removeRegexLibraryEntry(id: string) {
+    const fs = settings.value.filter_settings;
+    const idx = fs.regex_library.findIndex(e => e.id === id);
+    if (idx !== -1) fs.regex_library.splice(idx, 1);
+    for (const group of fs.groups) {
+      group.entries = group.entries.filter(e => e.library_entry_id !== id);
+    }
+  }
+
+  function updateRegexLibraryEntry(id: string, patch: Partial<RegexLibraryEntry>) {
+    const fs = settings.value.filter_settings;
+    const entry = fs.regex_library.find(e => e.id === id);
+    if (entry) Object.assign(entry, patch);
+  }
+
+  function renameRegexLibraryGroup(oldCategory: string, newCategory: string) {
+    const fs = settings.value.filter_settings;
+    for (const entry of fs.regex_library) {
+      if (entry.category === oldCategory) {
+        entry.category = newCategory;
+      }
+    }
+  }
+
+  function deleteRegexLibraryGroup(category: string) {
+    const fs = settings.value.filter_settings;
+    const ids = new Set(fs.regex_library.filter(e => e.category === category).map(e => e.id));
+    fs.regex_library = fs.regex_library.filter(e => e.category !== category);
+    for (const group of fs.groups) {
+      group.entries = group.entries.filter(e => !ids.has(e.library_entry_id ?? ''));
+    }
+  }
+
   function duplicateModule(id: string) {
     const READONLY_IDS = new Set([
       'world_info_before',
@@ -737,7 +970,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       'world_info_after',
       'chat_history',
       'baibai_summary',
-      'baibai_state',
     ]);
     if (READONLY_IDS.has(id)) return;
     const modules = settings.value.prompt_rules.modules;
@@ -809,11 +1041,118 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
   }
 
+  function syncPromptRulesToConfig(config: PromptConfig) {
+    const pr = settings.value.prompt_rules;
+    config.modules = klona(pr.modules);
+    config.person_style = pr.person_style;
+    config.option_rules = pr.option_rules;
+    config.option_person = pr.option_person;
+    config.enrich_person = pr.enrich_person;
+    config.enrich_person_style = pr.enrich_person_style;
+    config.option_min_chars = pr.option_min_chars;
+    config.option_max_chars = pr.option_max_chars;
+    config.enrich_min_chars = pr.enrich_min_chars;
+    config.enrich_max_chars = pr.enrich_max_chars;
+    config.context_rounds = pr.context_rounds;
+    config.context_mode = pr.context_mode;
+    config.prefill_enabled = pr.prefill_enabled;
+    config.baibai_enabled = pr.baibai_enabled;
+  }
+
+  function loadPromptConfig(config: PromptConfig) {
+    const pr = settings.value.prompt_rules;
+    pr.modules = klona(config.modules);
+    pr.person_style = config.person_style;
+    pr.option_rules = config.option_rules;
+    pr.option_person = config.option_person;
+    pr.enrich_person = config.enrich_person;
+    pr.enrich_person_style = config.enrich_person_style;
+    pr.option_min_chars = config.option_min_chars;
+    pr.option_max_chars = config.option_max_chars;
+    pr.enrich_min_chars = config.enrich_min_chars;
+    pr.enrich_max_chars = config.enrich_max_chars;
+    pr.context_rounds = config.context_rounds;
+    pr.context_mode = config.context_mode;
+    pr.prefill_enabled = config.prefill_enabled;
+    pr.baibai_enabled = config.baibai_enabled;
+  }
+
+  function switchPromptConfig(configId: string) {
+    const configs = settings.value.prompt_configs;
+    const oldConfig = configs.find(c => {
+      const chatId = useChatSettingsStore().settings.prompt_config_id;
+      const charId = useCharacterSettingsStore().settings.prompt_config_id;
+      if (chatId) return c.id === chatId;
+      if (charId) return c.id === charId;
+      return c.is_default;
+    });
+    if (oldConfig && oldConfig.id !== configId) {
+      syncPromptRulesToConfig(oldConfig);
+    }
+    const newConfig = configs.find(c => c.id === configId);
+    if (newConfig) {
+      loadPromptConfig(newConfig);
+    }
+  }
+
+  function createPromptConfig(name: string, isDefault: boolean) {
+    const configs = settings.value.prompt_configs;
+    const cfg: PromptConfig = {
+      id: uuidv4(),
+      name,
+      is_default: isDefault || configs.length === 0,
+      modules: klona(settings.value.prompt_rules.modules),
+      person_style: settings.value.prompt_rules.person_style,
+      option_rules: settings.value.prompt_rules.option_rules,
+      option_person: settings.value.prompt_rules.option_person,
+      enrich_person: settings.value.prompt_rules.enrich_person,
+      enrich_person_style: settings.value.prompt_rules.enrich_person_style,
+      option_min_chars: settings.value.prompt_rules.option_min_chars,
+      option_max_chars: settings.value.prompt_rules.option_max_chars,
+      enrich_min_chars: settings.value.prompt_rules.enrich_min_chars,
+      enrich_max_chars: settings.value.prompt_rules.enrich_max_chars,
+      context_rounds: settings.value.prompt_rules.context_rounds,
+      context_mode: settings.value.prompt_rules.context_mode,
+      prefill_enabled: settings.value.prompt_rules.prefill_enabled,
+      baibai_enabled: settings.value.prompt_rules.baibai_enabled,
+    };
+    if (cfg.is_default) {
+      for (const c of configs) c.is_default = false;
+    }
+    configs.push(cfg);
+    return cfg;
+  }
+
+  function deletePromptConfig(id: string) {
+    const configs = settings.value.prompt_configs;
+    const cfg = configs.find(c => c.id === id);
+    if (!cfg || cfg.is_default) return;
+    const idx = configs.findIndex(c => c.id === id);
+    if (idx === -1) return;
+    const chatStore = useChatSettingsStore();
+    const charStore = useCharacterSettingsStore();
+    if (chatStore.settings.prompt_config_id === id) chatStore.settings.prompt_config_id = null;
+    if (charStore.settings.prompt_config_id === id) charStore.settings.prompt_config_id = null;
+    configs.splice(idx, 1);
+  }
+
+  function renamePromptConfig(id: string, name: string) {
+    const cfg = settings.value.prompt_configs.find(c => c.id === id);
+    if (cfg) cfg.name = name;
+  }
+
+  function setDefaultPromptConfig(id: string) {
+    for (const cfg of settings.value.prompt_configs) {
+      cfg.is_default = cfg.id === id;
+    }
+  }
+
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
     fresh.prompt_rules.schema_version = 16;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
+    fresh.filter_settings = { regex_library: [], groups: [] };
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
@@ -899,6 +1238,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     sortedEnabledModules,
     allModules,
     sortedEnabledFilterRules,
+    currentPresetName,
+    currentCharacterId,
+    syncPresetName,
     addModule,
     duplicateModule,
     removeModule,
@@ -907,6 +1249,22 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     resetModuleContent,
     resetAllPromptContents,
     resetPromptToDefaults,
+    syncPromptRulesToConfig,
+    loadPromptConfig,
+    switchPromptConfig,
+    createPromptConfig,
+    deletePromptConfig,
+    renamePromptConfig,
+    setDefaultPromptConfig,
     factoryReset,
+    addFilterGroup,
+    removeFilterGroup,
+    addFilterGroupEntry,
+    removeFilterGroupEntry,
+    addRegexLibraryEntry,
+    removeRegexLibraryEntry,
+    updateRegexLibraryEntry,
+    renameRegexLibraryGroup,
+    deleteRegexLibraryGroup,
   };
 });
