@@ -13,12 +13,12 @@
         @keydown.escape="cancelRename"
         @click.stop
       />
-      <button v-if="dimmed && locked" class="choice-icon-btn" :title="t`点击解锁后可编辑`" @click.stop="locked = false">
+      <button v-if="dimmed && locked" class="choice-icon-btn choice-lock-btn" :title="t`点击解锁后可编辑`" @click.stop="locked = false">
         <i class="fa-solid fa-lock"></i>
       </button>
       <button
         v-else-if="dimmed && !locked"
-        class="choice-icon-btn"
+        class="choice-icon-btn choice-lock-btn"
         :title="t`已解锁，可编辑`"
         @click.stop="locked = true"
       >
@@ -65,6 +65,9 @@
             {{ bindingLabel || t`未绑定` }}
           </span>
         </span>
+        <button v-if="bindingLabel && isNotCurrentPreset" class="choice-icon-btn" :title="t`绑定到当前预设`" @click.stop="emit('bindToCurrent')">
+          <i class="fa-solid fa-link"></i>
+        </button>
         <button v-if="bindingLabel" class="choice-icon-btn" :title="t`取消绑定`" @click.stop="emit('unbind')">
           <i class="fa-solid fa-link-slash"></i>
         </button>
@@ -157,10 +160,11 @@ const emit = defineEmits<{
   addFromLibrary: [];
   delete: [];
   unbind: [];
+  bindToCurrent: [];
 }>();
 
 const gs = useGlobalSettingsStore();
-const expanded = ref(true);
+const expanded = ref(!props.dimmed);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');
 const locked = ref(true);
@@ -174,6 +178,15 @@ watch(
 
 const group = computed(() => gs.settings.filter_settings.groups.find(g => g.id === props.groupId) ?? null);
 
+// 预设分组绑定的不是当前预设时显示"绑定到当前预设"按钮
+const isNotCurrentPreset = computed(() => {
+  if (!props.showBindings) return false;
+  if (!props.bindingIcon.includes('sliders')) return false;
+  const g = group.value;
+  if (!g) return false;
+  return g.preset_name !== gs.currentPresetName;
+});
+
 const getLibEntryCategory = (id: string) => {
   const entry = gs.settings.filter_settings.regex_library.find(e => e.id === id);
   return entry?.category || t`未分组`;
@@ -181,7 +194,7 @@ const getLibEntryCategory = (id: string) => {
 
 const getLibEntryDisplay = (id: string) => {
   const entry = gs.settings.filter_settings.regex_library.find(e => e.id === id);
-  if (!entry) return '(已删除)';
+  if (!entry) return '';
   if (entry.type === 'tag') return `${entry.start || '...'} ... ${entry.end || '...'}`;
   return entry.pattern || '(空)';
 };
@@ -242,6 +255,25 @@ onMounted(() => {
       });
     },
     { immediate: true },
+  );
+
+  // 正则库条目被删除后，自动清理分组中残留的引用
+  watch(
+    () => gs.settings.filter_settings.regex_library.length,
+    () => {
+      const g = group.value;
+      if (!g) return;
+      const libIds = new Set(gs.settings.filter_settings.regex_library.map(e => e.id));
+      const orphanIndices: number[] = [];
+      for (let i = 0; i < g.entries.length; i++) {
+        if (g.entries[i].library_entry_id && !libIds.has(g.entries[i].library_entry_id!)) {
+          orphanIndices.push(i);
+        }
+      }
+      for (let i = orphanIndices.length - 1; i >= 0; i--) {
+        gs.removeFilterGroupEntry(props.groupId, orphanIndices[i]);
+      }
+    },
   );
 });
 
@@ -331,5 +363,9 @@ onUnmounted(() => {
 .choice-lib-ref-sep {
   opacity: 0.5;
   margin: 0 2px;
+}
+
+.choice-lock-btn {
+  color: var(--choice-color-warning, #d4a017);
 }
 </style>

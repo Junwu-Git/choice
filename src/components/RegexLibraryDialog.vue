@@ -29,8 +29,8 @@
           </div>
         </div>
 
-        <div class="choice-regexlib-body choice-scrollbar">
-          <div v-if="groupedEntries.length > 0" class="choice-regexlib-list">
+        <div ref="listBody" class="choice-regexlib-body choice-scrollbar">
+          <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">
             <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
               <div class="choice-regexlib-group-head" @click="toggleGroup(group.key)">
                 <label class="choice-check" @click.stop v-if="selectable">
@@ -77,11 +77,15 @@
                   <i class="fa-solid fa-trash-can"></i>
                 </button>
               </div>
-              <div :class="['choice-regexlib-group-body', { 'is-collapsed': !expandedGroups.has(group.key) }]">
+              <div
+                :class="['choice-regexlib-group-body', { 'is-collapsed': !expandedGroups.has(group.key) }]"
+                :data-group-key="group.key"
+              >
                 <div v-if="group.entries.length === 0" class="choice-empty-hint">
                   <span>{{ t`暂无条目，点击 + 添加` }}</span>
                 </div>
-                <div v-for="entry in group.entries" :key="entry.id" class="choice-regexlib-entry">
+                <div v-for="entry in group.entries" :key="entry.id" class="choice-regexlib-entry" :data-entry-id="entry.id">
+                  <i class="fa-solid fa-grip-vertical choice-regexlib-drag-handle" :title="t`拖动排序/换组`"></i>
                   <label class="choice-check" v-if="selectable">
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
                   </label>
@@ -148,6 +152,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import Sortable from 'sortablejs';
 
 const props = withDefaults(
   defineProps<{
@@ -176,7 +181,7 @@ const deleteGroupTarget = ref<string | null>(null);
 const selectedIds = ref<Set<string>>(new Set());
 
 const allGroupsExpanded = computed(() => {
-  const groups = new Set(library.value.map(e => e.category));
+  const groups = new Set(groupedEntries.value.map(g => g.key));
   return groups.size > 0 && [...groups].every(k => expandedGroups.value.has(k));
 });
 
@@ -187,11 +192,17 @@ const groupedEntries = computed(() => {
     if (!map.has(cat)) map.set(cat, []);
     map.get(cat)!.push(entry);
   }
+  // 从 library_groups 补上无条目的空分组
+  const libGroups = gs.settings.filter_settings.library_groups ?? [];
+  for (const cat of libGroups) {
+    if (!map.has(cat)) {
+      map.set(cat, []);
+    }
+  }
   const result = [...map.entries()].map(([key, entries]) => ({ key, entries }));
-  const order = gs.settings.group_order ?? [];
   result.sort((a, b) => {
-    const ai = order.indexOf(a.key);
-    const bi = order.indexOf(b.key);
+    const ai = libGroups.indexOf(a.key);
+    const bi = libGroups.indexOf(b.key);
     if (ai === -1 && bi === -1) return a.key.localeCompare(b.key);
     if (ai === -1) return 1;
     if (bi === -1) return -1;
@@ -212,7 +223,7 @@ const toggleExpandAll = () => {
   if (allGroupsExpanded.value) {
     expandedGroups.value = new Set();
   } else {
-    expandedGroups.value = new Set([...new Set(library.value.map(e => e.category))]);
+    expandedGroups.value = new Set(groupedEntries.value.map(g => g.key));
   }
 };
 
@@ -245,7 +256,10 @@ const createGroup = () => {
   const name = prompt(t`请输入分组名称`);
   if (!name || !name.trim()) return;
   const cat = name.trim();
-  gs.addRegexLibraryEntry(cat);
+  const groups = gs.settings.filter_settings.library_groups ?? [];
+  if (!groups.includes(cat)) {
+    groups.push(cat);
+  }
   expandedGroups.value.add(cat);
 };
 
@@ -348,10 +362,125 @@ watch(
   isOpen => {
     if (isOpen) {
       selectedIds.value = new Set(props.alreadyReferencedIds);
-      expandedGroups.value = new Set([...new Set(library.value.map(e => e.category))]);
+      // 全部分组展开：条目行为单行输入区，展开即可见全部正则
+      expandedGroups.value = new Set(groupedEntries.value.map(g => g.key));
+      setupSortables();
     }
   },
+  { flush: 'post' },
 );
+
+// 分组条目变化时重新挂载 Sortable
+watch(
+  () => groupedEntries.value,
+  () => {
+    if (props.open) setupSortables();
+  },
+  { flush: 'post' },
+);
+
+onMounted(() => {
+  if (props.open) setupSortables();
+});
+
+// 正则库条目拖拽
+const listBody = ref<HTMLElement | null>(null);
+const groupListEl = ref<HTMLElement | null>(null);
+const sortables: Sortable[] = [];
+
+// 拖拽悬停自动展开：折叠分组体只剩 4px 隐形投放带，靠它命中体感是"等很久"。
+// 拖拽期间监听 document dragover，指针进入某分组任意区域即展开该组（折叠机制本身保留，此处只是消除命中难度）。
+// 必须用捕获阶段：SortableJS 在容器上绑定了 dragover 并阻断冒泡，气泡阶段监听永远收不到事件
+const onDragHoverExpand = (e: DragEvent) => {
+  const group = (e.target as Element | null)?.closest?.('.choice-regexlib-group');
+  const key = group?.querySelector('.choice-regexlib-group-body')?.getAttribute('data-group-key');
+  if (key && !expandedGroups.value.has(key)) expandedGroups.value.add(key);
+};
+
+// Sortable 的 onEnd 在拖拽结束（无论是否成功投放）都会触发，监听清理可靠；onUnmounted 再兜底
+const attachHoverExpand = () => document.addEventListener('dragover', onDragHoverExpand, true);
+const detachHoverExpand = () => document.removeEventListener('dragover', onDragHoverExpand, true);
+
+function setupSortables() {
+  destroySortables();
+  const el = listBody.value;
+  if (el) {
+    const bodies = el.querySelectorAll<HTMLElement>('.choice-regexlib-group-body');
+    for (const body of bodies) {
+      sortables.push(
+        Sortable.create(body, {
+          animation: 150,
+          group: 'regex-lib-entries',
+          draggable: '.choice-regexlib-entry',
+          // 行内几乎全是 input/select，原生拖拽无法从表单控件发起——限定从左侧把手发起。
+          // delay 区分点击与拖拽：100ms 内松手 = 点击控件，按住再移动 = 拖拽
+          handle: '.choice-regexlib-drag-handle',
+          delay: 100,
+          onStart: attachHoverExpand,
+          onEnd: evt => {
+            detachHoverExpand();
+            if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
+            const entryId = evt.item.dataset.entryId;
+            if (!entryId) return;
+            const fromKey = (evt.from as HTMLElement).dataset.groupKey;
+            const toKey = (evt.to as HTMLElement).dataset.groupKey;
+            if (fromKey === toKey && evt.from === evt.to) {
+              const cat = fromKey ?? '';
+              const catEntries = library.value.filter(e => (e.category || '') === cat);
+              const entry = catEntries.find(e => e.id === entryId);
+              if (!entry) return;
+              const fromIdx = catEntries.indexOf(entry);
+              if (fromIdx === -1) return;
+              const [moved] = catEntries.splice(fromIdx, 1);
+              catEntries.splice(evt.newIndex, 0, moved);
+              const flat = library.value.filter(e => (e.category || '') !== cat);
+              for (const e of catEntries) flat.push(e);
+              gs.settings.filter_settings.regex_library = flat;
+            } else if (fromKey !== toKey) {
+              const entry = library.value.find(e => e.id === entryId);
+              if (!entry) return;
+              entry.category = toKey ?? '';
+              expandedGroups.value.add(toKey ?? '');
+            }
+          },
+        }),
+      );
+    }
+  }
+  // 分组头拖拽排序：重排 library_groups（只写回其中已有的 key，避免把"未分组"空 key 写入）
+  const listEl = groupListEl.value;
+  if (listEl) {
+    sortables.push(
+      Sortable.create(listEl, {
+        draggable: '.choice-regexlib-group',
+        delay: 100,
+        animation: 150,
+        onStart: attachHoverExpand,
+        onEnd: evt => {
+          detachHoverExpand();
+          if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
+          const keys = groupedEntries.value.map(g => g.key);
+          const [moved] = keys.splice(evt.oldIndex, 1);
+          keys.splice(evt.newIndex, 0, moved);
+          const groups = gs.settings.filter_settings.library_groups ?? [];
+          const newOrder = keys.filter(k => groups.includes(k));
+          groups.length = 0;
+          for (const k of newOrder) groups.push(k);
+        },
+      }),
+    );
+  }
+}
+
+function destroySortables() {
+  for (const s of sortables) s.destroy();
+  sortables.length = 0;
+}
+
+onUnmounted(() => {
+  detachHoverExpand();
+  destroySortables();
+});
 </script>
 
 <style scoped>
@@ -459,20 +588,42 @@ watch(
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
 }
+/* 折叠用 max-height 而非 display:none：body 仍占 4px 高度留在布局中，
+   SortableJS 才能把它识别为 drop target（拖入折叠分组后 onEnd 自动展开） */
 .choice-regexlib-group-body {
   border-top: 1px solid var(--choice-border);
   padding: var(--choice-space-2);
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-1);
+  max-height: 2000px;
+  overflow: hidden;
+  opacity: 1;
+  transition:
+    max-height var(--choice-transition-slow, 0.2s ease),
+    opacity var(--choice-transition-slow, 0.2s ease),
+    padding var(--choice-transition-slow, 0.2s ease);
 }
 .choice-regexlib-group-body.is-collapsed {
-  display: none;
+  max-height: 4px;
+  padding: 0;
+  opacity: 0;
 }
+/* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽 */
 .choice-regexlib-entry {
   display: flex;
   align-items: center;
   gap: var(--choice-space-1);
+}
+.choice-regexlib-drag-handle {
+  cursor: grab;
+  color: var(--choice-text-muted);
+  flex-shrink: 0;
+  font-size: var(--choice-text-sm);
+  padding: var(--choice-space-1) 2px;
+}
+.choice-regexlib-drag-handle:hover {
+  color: var(--choice-text);
 }
 .choice-regexlib-entry input {
   font-size: var(--choice-text-sm);

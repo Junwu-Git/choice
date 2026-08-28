@@ -29,7 +29,7 @@
     </div>
     <div ref="globalListEl" class="choice-filter-group-list" data-area="global">
       <FilterGroupPanel
-        v-for="group in globalGroups"
+        v-for="group in globalGroupsSorted"
         :key="group.id"
         :group-id="group.id"
         :data-group-id="group.id"
@@ -70,6 +70,7 @@
         @add-from-library="openLibrary(group.id)"
         @delete="onDeleteGroup(group.id)"
         @unbind="unbindPreset(group)"
+        @bind-to-current="bindPresetToCurrent(group)"
       />
       <div v-if="presetGroups.length === 0" class="choice-empty-hint">
         <span>{{ t`暂无预设分组，点击「新增分组」创建` }}</span>
@@ -154,6 +155,13 @@ const gs = useGlobalSettingsStore();
 const filterGroups = computed(() => gs.settings.filter_settings.groups);
 
 const globalGroups = computed(() => filterGroups.value.filter(g => g.preset_name === null && g.character_id === null));
+const globalGroupsSorted = computed(() => {
+  const groups = [...globalGroups.value];
+  return groups.sort((a, b) => {
+    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
+    return 0;
+  });
+});
 const presetGroups = computed(() => filterGroups.value.filter(g => g.preset_name !== null));
 const charGroups = computed(() => filterGroups.value.filter(g => g.character_id !== null));
 
@@ -213,6 +221,10 @@ const getCharName = (chid: number | null) => {
 
 const unbindPreset = (group: FilterGroup) => {
   group.preset_name = null;
+};
+
+const bindPresetToCurrent = (group: FilterGroup) => {
+  group.preset_name = gs.currentPresetName;
 };
 
 const unbindCharacter = (group: FilterGroup) => {
@@ -357,6 +369,12 @@ function createSortable(el: HTMLElement, area: string) {
   return Sortable.create(el, {
     animation: 150,
     group: 'filter-groups',
+    onMove: evt => {
+      const toArea = (evt.to as HTMLElement).dataset.area;
+      if (toArea === 'character' && gs.currentCharacterId == null) {
+        return false;
+      }
+    },
     onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
       const fromArea = evt.from.dataset.area;

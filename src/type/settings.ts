@@ -250,6 +250,7 @@ export type FilterGroup = z.infer<typeof FilterGroup>;
 export const FilterSettings = z.object({
   regex_library: z.array(RegexLibraryEntry).default([]),
   groups: z.array(FilterGroup).default([]),
+  library_groups: z.array(z.string()).default([]),
 });
 export type FilterSettings = z.infer<typeof FilterSettings>;
 

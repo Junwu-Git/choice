@@ -15,7 +15,7 @@
         </div>
 
         <div class="choice-cfdlg-footer">
-          <button class="menu_button" @click="emit('cancel')">{{ cancelText }}</button>
+          <button v-if="cancelText" class="menu_button" @click="emit('cancel')">{{ cancelText }}</button>
           <button class="menu_button menu_button_default" @click="emit('confirm')">{{ confirmText }}</button>
         </div>
       </div>

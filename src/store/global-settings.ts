@@ -15,8 +15,16 @@ import {
   DEFAULT_MODULES,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
+  DEFAULT_PERSON_STYLE,
+  DEFAULT_OPTION_RULES,
+  USER_INSTRUCTION_DEFAULT,
   type PromptConfig,
 } from '@/type/settings';
+// chat/character store 不反向依赖 global-settings，无循环导入；
+// 不能依赖 unplugin-auto-import——它只覆盖 vue/pinia/@vueuse/zod 等预设，
+// 本仓库自有模块漏导入时构建不报错（rollup 视为全局引用），直到运行时才 ReferenceError
+import { useChatSettingsStore } from '@/store/chat-settings';
+import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 
 /** 构建 10 条默认条目，基于用户定义的选项类型 */
@@ -640,7 +648,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     };
 
     // 2. 创建"简洁"配置（简化版模块）
-    const simplifiedModules = klona(pr.modules).map((m: PromptModule) => {
+    const simplifiedModules = klona(pr.modules).map((m: PromptModuleType) => {
       const copy = { ...m };
       if (copy.id === 'core_rules') {
         copy.content =
@@ -696,10 +704,19 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     pr.prefill_enabled = true;
     pr.baibai_enabled = false;
 
-    // 4. 已有分组补充绑定字段
-    for (const g of pr.chat_filter_groups ?? []) {
-      if (g.preset_name === undefined) g.preset_name = null;
-      if (g.character_id === undefined) g.character_id = null;
+    // 4. 旧过滤分组（prompt_rules.chat_filter_groups）搬运到新家 filter_settings.groups。
+    //    新 FilterGroup 用 entries（引用正则库或内联规则），旧分组是平铺 rules 数组——逐条包成
+    //    library_entry_id=null 的内联条目。复制而非移动：旧字段留在原地，迁移逻辑有误时可发
+    //    修复版重跑；filter_settings.groups 非空说明已搬过，跳过保证幂等。
+    if (validated.filter_settings.groups.length === 0 && (pr.chat_filter_groups ?? []).length > 0) {
+      validated.filter_settings.groups = (pr.chat_filter_groups ?? []).map(g => ({
+        id: g.id,
+        name: g.name,
+        enabled: g.enabled,
+        entries: g.rules.map(rule => ({ library_entry_id: null, inline_rule: klona(rule) })),
+        preset_name: g.preset_name ?? null,
+        character_id: g.character_id ?? null,
+      }));
     }
   }
 
@@ -953,12 +970,18 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         entry.category = newCategory;
       }
     }
+    const libGroups = fs.library_groups ?? [];
+    const idx = libGroups.indexOf(oldCategory);
+    if (idx !== -1) libGroups[idx] = newCategory;
   }
 
   function deleteRegexLibraryGroup(category: string) {
     const fs = settings.value.filter_settings;
     const ids = new Set(fs.regex_library.filter(e => e.category === category).map(e => e.id));
     fs.regex_library = fs.regex_library.filter(e => e.category !== category);
+    const libGroups = fs.library_groups ?? [];
+    const idx = libGroups.indexOf(category);
+    if (idx !== -1) libGroups.splice(idx, 1);
     for (const group of fs.groups) {
       group.entries = group.entries.filter(e => !ids.has(e.library_entry_id ?? ''));
     }
@@ -1156,7 +1179,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     fresh.schema_version = SCHEMA_VERSION;
     fresh.prompt_rules.schema_version = 16;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
-    fresh.filter_settings = { regex_library: [], groups: [] };
+    // 不能整体覆盖 filter_settings：validateInplace 产出的对象带 Zod 默认字段，
+    // 若覆盖成缺 library_groups 的裸对象，之后 RegexLibraryDialog.createGroup 的 `?? []`
+    // 兜底会拿到临时数组，新建分组写入静默丢失（直到刷新页面才恢复）
+    fresh.filter_settings.regex_library = [];
+    fresh.filter_settings.groups = [];
+    fresh.filter_settings.library_groups = [];
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
