@@ -42,6 +42,15 @@
         {{ t`⚠ 整体替换将丢弃不在导入文件中的现有模块（含自建模块），不可撤销。` }}
       </p>
     </div>
+
+    <template #footer>
+      <button class="menu_button" @click="$emit('close')">
+        {{ t`取消` }}
+      </button>
+      <button class="menu_button menu_button_default" @click="$emit('confirm', mode)">
+        {{ t`确认导入` }}
+      </button>
+    </template>
   </ChoiceDialog>
 </template>
 

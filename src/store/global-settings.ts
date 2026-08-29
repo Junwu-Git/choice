@@ -7,6 +7,7 @@ import {
   SCHEMA_VERSION,
   setting_field,
   DEFAULT_MODULES,
+  SIMPLE_MODULE_CONTENTS,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
   DEFAULT_PERSON_STYLE,
@@ -409,11 +410,12 @@ const resetOrderFromDefaults = (validated: GlobalSettingsType) => {
   }
 };
 
-/** 创建「经典/简洁」双提示词配置并加载简洁到工作副本。
- *  从 v19 迁移块抽取：老存档升级（applyDefaults）与 factoryReset 两条路都必须走这里，
- *  否则会出现"工作副本=长版默认、配置列表为空"的不一致。
+/** 老存档（schema < 19）迁移专用：创建「经典/简洁」双提示词配置并加载简洁到工作副本。
+ *  经典 = 用户迁移前已有提示词的存档（可能是他们自己改过的内容），不是内置预设；
+ *  简洁 = 出厂默认基准，is_default: true。
  *  前置条件：调用前 pr.modules 必须已填充完整（初始化顺序上 migratePromptModules 先于本函数），
- *  否则空模块会被原样快照进「经典」——全新档曾经的静默 bug。 */
+ *  否则空模块会被原样快照进「经典」——全新档曾经的静默 bug。
+ *  全新安装不走本函数（没有用户状态可存档），走 ensureDefaultPromptConfig。 */
 const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
   const pr = validated.prompt_rules;
 
@@ -439,22 +441,11 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
   };
 
   // 2. 创建"简洁"配置（简化版模块）
+  //    简洁文本单一来源是 settings.ts 的 SIMPLE_MODULE_CONTENTS（派生自 DEFAULT_MODULES），
+  //    避免迁移代码与 JSON 默认内容两处文本漂移
   const simplifiedModules = klona(pr.modules).map((m: PromptModuleType) => {
-    const copy = { ...m };
-    if (copy.id === 'core_rules') {
-      copy.content =
-        '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
-    } else if (copy.id === 'thinking_prompt') {
-      copy.content =
-        '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
-    } else if (copy.id === 'enrich_core_rules') {
-      copy.content =
-        '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
-    } else if (copy.id === 'enrich_thinking') {
-      copy.content =
-        '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
-    }
-    return copy;
+    const simple = SIMPLE_MODULE_CONTENTS[m.id];
+    return simple !== undefined ? { ...m, content: simple } : m;
   });
 
   const simpleConfig: PromptConfig = {
@@ -509,6 +500,36 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
       character_id: g.character_id ?? null,
     }));
   }
+};
+
+/** 全新档/恢复出厂的默认提示词配置：仅一个「简洁」（is_default: true），不建经典。
+ *  经典只作为老存档迁移时用户已有提示词的存档存在——全新环境没有"用户改动"可存档，
+ *  不应把内置默认伪装成经典预设。pr.modules 此时必须已是简洁默认（JSON 即简洁基准）。
+ *  幂等：prompt_configs 非空时跳过。 */
+const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
+  if (validated.prompt_configs.length > 0) return;
+  const pr = validated.prompt_rules;
+  validated.prompt_configs = [
+    {
+      id: uuidv4(),
+      name: '简洁',
+      is_default: true,
+      modules: klona(pr.modules),
+      person_style: pr.person_style ?? '',
+      option_rules: pr.option_rules ?? '',
+      option_person: pr.option_person ?? '第三人称',
+      enrich_person: pr.enrich_person ?? '第三人称',
+      enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
+      option_min_chars: pr.option_min_chars ?? 30,
+      option_max_chars: pr.option_max_chars ?? 80,
+      enrich_min_chars: pr.enrich_min_chars ?? 30,
+      enrich_max_chars: pr.enrich_max_chars ?? 80,
+      context_rounds: pr.context_rounds ?? 10,
+      context_mode: pr.context_mode ?? 'visible_only',
+      prefill_enabled: pr.prefill_enabled ?? true,
+      baibai_enabled: pr.baibai_enabled ?? false,
+    },
+  ];
 };
 
 const applyDefaults = (validated: GlobalSettingsType) => {
@@ -721,10 +742,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
-  if ((validated.schema_version ?? 0) < 19) {
-    // v19: 提示词配置切换 + 过滤分组绑定（经典/简洁双配置创建逻辑见 ensureBuiltinPromptConfigs）
-    ensureBuiltinPromptConfigs(validated);
-  }
+  // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
+  // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
   validated.schema_version = SCHEMA_VERSION;
 };
@@ -790,6 +809,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   const validated = validateInplace(GlobalSettings, existing);
 
+  // v19 提示词配置创建的分流依据，必须在 applyDefaults 置 SCHEMA_VERSION 前捕获：
+  // 有旧存档（existing 非空）→ 经典 = 用户已有提示词的存档 + 简洁默认；
+  // 全新档 → 仅一个简洁默认配置，不造经典（内置默认不该伪装成用户存档）
+  const wasPreV19 = (validated.schema_version ?? 0) < 19;
+  const hadExistingSave = existing !== undefined && existing !== null;
+
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查。
   // 必须先于 applyDefaults 执行：v19 的经典/简洁配置快照依赖迁移后填充完整的 pr.modules，
   // 顺序颠倒时全新档会把空 modules 快照进两个配置（历史 bug）
@@ -803,6 +828,16 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
   if (needsMigration) {
     applyDefaults(validated);
+    _.set(extension_settings, setting_field, klona(validated));
+    saveSettingsDebounced();
+  }
+
+  if (wasPreV19) {
+    if (hadExistingSave) {
+      ensureBuiltinPromptConfigs(validated);
+    } else {
+      ensureDefaultPromptConfig(validated);
+    }
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
@@ -1099,6 +1134,13 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     config.baibai_enabled = pr.baibai_enabled;
   }
 
+  /** 工作副本当前归属的配置 id（最近一次 loadPromptConfig 的加载目标），仅会话内有效。
+   *  切换配置时的回写必须命中"正在编辑的配置"而非"生效配置"（聊天/角色绑定决定）：
+   *  两者不一致时按生效配置回写，会把 A 配置的编辑内容静默串写进 B——导入落盘成果
+   *  也会被随后的切换冲掉。跨会话无归属记录（boot 时 prompt_rules 即生效配置内容），
+   *  归属为 null 时回退旧语义按生效配置回写，行为不变。 */
+  let promptEditConfigId: string | null = null;
+
   function loadPromptConfig(config: PromptConfig) {
     const pr = settings.value.prompt_rules;
     pr.modules = klona(config.modules);
@@ -1115,17 +1157,21 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     pr.context_mode = config.context_mode;
     pr.prefill_enabled = config.prefill_enabled;
     pr.baibai_enabled = config.baibai_enabled;
+    promptEditConfigId = config.id;
   }
 
   function switchPromptConfig(configId: string) {
     const configs = settings.value.prompt_configs;
-    const oldConfig = configs.find(c => {
-      const chatId = useChatSettingsStore().settings.prompt_config_id;
-      const charId = useCharacterSettingsStore().settings.prompt_config_id;
-      if (chatId) return c.id === chatId;
-      if (charId) return c.id === charId;
-      return c.is_default;
-    });
+    const owner = promptEditConfigId ? configs.find(c => c.id === promptEditConfigId) : null;
+    const oldConfig =
+      owner ??
+      configs.find(c => {
+        const chatId = useChatSettingsStore().settings.prompt_config_id;
+        const charId = useCharacterSettingsStore().settings.prompt_config_id;
+        if (chatId) return c.id === chatId;
+        if (charId) return c.id === charId;
+        return c.is_default;
+      });
     if (oldConfig && oldConfig.id !== configId) {
       syncPromptRulesToConfig(oldConfig);
     }
@@ -1241,9 +1287,10 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     fresh.filter_settings.groups = [];
     fresh.filter_settings.library_groups = [];
 
-    // 恢复出厂与全新首载终态一致：经典=长版 DEFAULT_MODULES 快照，简洁=精简版且为默认，
-    // 工作副本加载简洁。schema_version 已置为最新，applyDefaults 不会跑，必须显式调用
-    ensureBuiltinPromptConfigs(fresh);
+    // 恢复出厂与全新首载终态一致：只有简洁默认配置（经典仅来自老存档迁移的用户存档），
+    // 工作副本加载简洁。schema_version 已置为最新，applyDefaults 不会跑，必须显式调用。
+    // 用户确认弹窗已明示"删除所有提示词配置"，此处不再把当前提示词存档为经典
+    ensureDefaultPromptConfig(fresh);
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
