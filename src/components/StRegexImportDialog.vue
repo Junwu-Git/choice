@@ -53,7 +53,9 @@
             >
               <input type="checkbox" :checked="selected.has(i)" :disabled="isDisplayOnly(s)" @change="toggle(i)" />
               <span class="choice-strdlg-name">{{ s.scriptName || s.script_name || t`未命名` }}</span>
-              <span v-if="isDisplayOnly(s)" class="choice-strdlg-badge choice-strdlg-badge--warn">{{ t`仅显示美化` }}</span>
+              <span v-if="isDisplayOnly(s)" class="choice-strdlg-badge choice-strdlg-badge--warn">{{
+                t`仅显示美化`
+              }}</span>
               <span v-else-if="s.promptOnly && s.markdownOnly" class="choice-strdlg-badge">{{ t`显示+提示词` }}</span>
               <span v-else-if="s.promptOnly" class="choice-strdlg-badge">{{ t`仅提示词` }}</span>
               <span v-if="s.disabled" class="choice-strdlg-badge">{{ t`已禁用` }}</span>
@@ -117,11 +119,7 @@ watch(
       scripts.value = getStRegexScripts(zone.value);
       selected.value = new Set();
       newCategoryName.value =
-        zone.value === 'global'
-          ? t`酒馆全局正则`
-          : zone.value === 'preset'
-            ? t`酒馆预设正则`
-            : t`酒馆角色卡正则`;
+        zone.value === 'global' ? t`酒馆全局正则` : zone.value === 'preset' ? t`酒馆预设正则` : t`酒馆角色卡正则`;
     }
   },
   { immediate: true },
@@ -336,7 +334,7 @@ const onCancel = () => {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.choice-strdlg-entry.is-display-only input[type="checkbox"] {
+.choice-strdlg-entry.is-display-only input[type='checkbox'] {
   cursor: not-allowed;
 }
 .choice-strdlg-badge--warn {
