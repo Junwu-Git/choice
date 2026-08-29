@@ -239,6 +239,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportPoolDialog from '@/components/ImportPoolDialog.vue';
@@ -581,10 +582,6 @@ const addEntryToGroup = (groupKey: string) => {
   }
 };
 
-const addEntry = () => {
-  addEntryToGroup('');
-};
-
 const removeEntry = (id: string) => {
   const idx = masterPool.value.findIndex(e => e.id === id);
   if (idx !== -1) masterPool.value.splice(idx, 1);
@@ -634,26 +631,6 @@ const onGenConfirm = ({
   }
   if (additions.length) masterPool.value.push(...additions);
   showGen.value = false;
-};
-
-const onImportConfirm = (payload: {
-  entries: { type: string; content: string; category: string; pinned?: boolean; weight?: number; condition?: string }[];
-}) => {
-  for (const e of payload.entries) {
-    masterPool.value.push({
-      id: uuidv4(),
-      type: e.type,
-      content: e.content || '',
-      rule: '',
-      pinned: e.pinned ?? false,
-      weight: e.weight ?? 1,
-      category: e.category || '',
-      condition: e.condition || '',
-    });
-    if (e.category) expandedGroups.value.add(e.category);
-  }
-  showImportPool.value = false;
-  toastr.success(t`已导入 ${payload.entries.length} 条条目`);
 };
 
 const onExportPool = () => {
@@ -761,7 +738,9 @@ const onDeleteConfirm = () => {
       break;
     }
     case 'group': {
-      const group = groupedEntries.value.find(g => g.key === deleteTarget.value.key);
+      const target = deleteTarget.value;
+      if (!target || target.type !== 'group') break;
+      const group = groupedEntries.value.find(g => g.key === target.key);
       if (group) removeGroup(group);
       break;
     }
@@ -795,7 +774,7 @@ const initGroupSortable = () => {
 };
 
 const initEntrySortables = () => {
-  for (const [key, s] of entrySortables) s.destroy();
+  for (const [, s] of entrySortables) s.destroy();
   entrySortables.clear();
   const bodies = document.querySelectorAll('.choice-epool-group-body');
   bodies.forEach(body => {

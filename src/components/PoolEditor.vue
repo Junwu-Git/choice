@@ -174,7 +174,8 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import type { PoolConfig, PoolConfigEntry, PoolEntry } from '@/type/settings';
+import type { PoolConfig } from '@/type/settings';
+import { GenerationSettings } from '@/type/settings';
 import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
@@ -222,12 +223,8 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     name: payload.name,
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
-    generation: {
-      categories_enabled: true,
-      shuffle_final: true,
-      pinned_overflow: 'send_all',
-      cross_layer_fallback: false,
-    },
+    // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode）与默认值漂移
+    generation: GenerationSettings.parse({}),
   };
   if (payload.isDefault) {
     for (const cfg of configs.value) {

@@ -20,7 +20,7 @@ export type MessageChoiceData = {
   enrichCurrentIndex: number;
 };
 
-const getMessage = (messageId: number) => chat[messageId];
+const getMessage = (messageId: number): StChatMessage | undefined => chat[messageId] as StChatMessage | undefined;
 
 export function getMessageSwipeId(messageId: number): number {
   return getMessage(messageId)?.swipe_id ?? 0;

@@ -107,13 +107,31 @@
 </template>
 
 <script setup lang="ts">
-import { characters, this_chid, eventSource, event_types } from '@sillytavern/script';
+import { this_chid, eventSource, event_types } from '@sillytavern/script';
+import { getStCharacter } from '@/core/st-character';
 import { loadWorldInfo, selected_world_info, world_names } from '@sillytavern/scripts/world-info';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const chatStore = useChatSettingsStore();
 const globalStore = useGlobalSettingsStore();
+
+/** loadWorldInfo 的酒馆官方 JSDoc 只写了 Object|null（world-info.js），实际返回世界书数据
+ *  { entries: Record<uid, 条目> }；本组件只消费这几个字段，按使用面声明，调用点显式断言 */
+type LoadedWorldInfo = {
+  entries?: Record<
+    string,
+    {
+      uid?: number;
+      comment?: string;
+      key?: string[] | string;
+      content?: string;
+      constant?: boolean;
+      disable?: boolean;
+      vectorized?: boolean;
+    }
+  >;
+} | null;
 
 type BookInfo = {
   name: string;
@@ -145,11 +163,8 @@ const inactiveBooks = computed(() =>
   allBooks.value.filter(b => !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)),
 );
 
-const isBookExcluded = (name: string) => chatStore.settings.world_info.excluded_books.includes(name);
 const isEntryExcluded = (bookName: string, uid: string | number) =>
   chatStore.settings.world_info.excluded_entries.includes(`${bookName}::${uid}`);
-
-const isExtEnabled = (name: string) => chatStore.settings.world_info.enabled_books.includes(name);
 
 const globalExcludedBooks = computed(() => globalStore.settings.world_info.global_excluded_books);
 
@@ -210,7 +225,7 @@ const enableBook = async (name: string) => {
   const xi = excluded.indexOf(name);
   if (xi !== -1) excluded.splice(xi, 1);
   try {
-    const data = await loadWorldInfo(name);
+    const data = (await loadWorldInfo(name)) as LoadedWorldInfo;
     if (data?.entries) {
       bookEntries.value = {
         ...bookEntries.value,
@@ -257,8 +272,7 @@ const entryStateIcon = (entry: EntryInfo) => {
 const refreshAll = async () => {
   const global = [...(selected_world_info ?? [])];
   const enabledSet = new Set(chatStore.settings.world_info.enabled_books);
-  const chid = this_chid;
-  const charWorld = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
+  const charWorld = getStCharacter(this_chid)?.data?.extensions?.world as string | undefined;
   const result: BookInfo[] = [];
   for (const name of world_names ?? []) {
     const isGlobal = global.includes(name) && !enabledSet.has(name);
@@ -276,7 +290,7 @@ const refreshAll = async () => {
     const isExtEnabled = chatStore.settings.world_info.enabled_books.includes(book.name);
     if (!book.active && !isExtEnabled) continue;
     try {
-      const data = await loadWorldInfo(book.name);
+      const data = (await loadWorldInfo(book.name)) as LoadedWorldInfo;
       if (data?.entries) {
         entries[book.name] = Object.values(data.entries).map((e: any) => ({
           uid: e.uid,

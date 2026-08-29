@@ -1,4 +1,6 @@
-import { characters, substituteParams, this_chid } from '@sillytavern/script';
+import { substituteParams, this_chid } from '@sillytavern/script';
+import { getStCharacter } from '@/core/st-character';
+import toastr from 'toastr';
 import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
@@ -9,8 +11,8 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PoolEntry, PromptModule, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
-import { DEFAULT_MODULES, GenerationSettings, CORE_RULES_STATIC } from '@/type/settings';
+import type { PromptModule, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
+import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -127,19 +129,19 @@ export const buildMessages = async (
         break;
       }
       case 'char_description': {
-        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const ch = getStCharacter(this_chid);
         const desc = ch?.data?.description;
         if (desc) msgs.push({ role: 'system', content: substituteParams(desc) });
         break;
       }
       case 'char_personality': {
-        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const ch = getStCharacter(this_chid);
         const personality = ch?.data?.personality;
         if (personality) msgs.push({ role: 'system', content: substituteParams(personality) });
         break;
       }
       case 'char_scenario': {
-        const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+        const ch = getStCharacter(this_chid);
         const scenario = ch?.data?.scenario;
         if (scenario) msgs.push({ role: 'system', content: substituteParams(scenario) });
         break;
@@ -300,7 +302,7 @@ const buildWI = async (): Promise<WIBuckets> => {
     // 中 .reverse() 保持一致。不倒序会导致 WorldInfoBuffer 把最旧消息当作最新层扫描，
     // 绿灯关键词匹配的是旧上下文而非当前层。
     const chatStrings = chatArr.map((m: any) => m?.mes ?? '').reverse();
-    const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+    const ch = getStCharacter(this_chid);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
     // 但行动选项是独立 API 调用，沿用 8192 会让角色世界书的大条目先耗尽预算，
@@ -354,15 +356,15 @@ export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
     }
   }
   selected_world_info.push(...newList);
-  const chid = this_chid;
-  const cw = chid !== undefined && characters[chid] ? characters[chid]?.data?.extensions?.world : undefined;
+  const ch = getStCharacter(this_chid);
+  const cw = ch?.data?.extensions?.world;
   const cwEx = cw ? excl.includes(cw) : false;
-  if (cwEx && chid !== undefined && characters[chid]?.data?.extensions) characters[chid].data.extensions.world = '';
+  if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
   return {
     restore: () => {
       selected_world_info.length = 0;
       selected_world_info.push(...saved);
-      if (cwEx && chid !== undefined && characters[chid]?.data?.extensions) characters[chid].data.extensions.world = cw;
+      if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
     },
   };
 };
@@ -471,7 +473,8 @@ export function parseOptions(text: string, count: number): string[] {
   return result.slice(0, count);
 }
 
-export async function generateOptions(target: GenerateTarget): Promise<ChoiceGeneration | null> {
+// _target 预留：调用方语义上指定生成目标楼层，当前实现始终读取最新楼层上下文
+export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
     toastr.info(t`选项生成中,请稍候`);
     return null;
@@ -488,7 +491,9 @@ export async function generateOptions(target: GenerateTarget): Promise<ChoiceGen
   const restore = gwi.enabled ? applyWIExcl(allExcl, cwi.enabled_books) : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
-    const gen = ps.effectiveConfig?.generation;
+    // ?? 兜底：无命中 config（effectiveConfig 为 null）时用 schema 默认生成参数，
+    // 不硬编码字面量——默认值曾与真实 schema 默认相反，改 schema 后这里自动跟随
+    const gen = ps.effectiveConfig?.generation ?? GenerationSettings.parse({});
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,
@@ -590,9 +595,12 @@ const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为
 
 /** 解析条目池生成输出：宽松按行解析，兼容编号列表/无序列表/纯文本。
  *  与 parseOptions 刻意分离：条目池不依赖 <options> 标签，输出契约不同，勿合并逻辑。
- *  返回中间结构 {text, replaceTarget?}：replaceTarget 为已有条目的 1-based 序号，
- *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。 */
-export function parsePoolGenItems(text: string, count: number): { text: string; replaceTarget?: number }[] {
+ *  返回中间结构 {type, content, replaceTarget?}：AI 每行只输出纯文本行动方向（无类型信息），
+ *  故 type 恒为空串、行文本落 content；replaceTarget 为已有条目的 1-based 序号，
+ *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。
+ *  键名必须与 generatePoolEntries 的消费端一致（曾因 text→type+content 迁移漏改此处
+ *  导致生成条目 type/content 全为 undefined，勿再把键名单独改回）。 */
+export function parsePoolGenItems(text: string, count: number): { type: string; content: string; replaceTarget?: number }[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹
@@ -605,7 +613,7 @@ export function parsePoolGenItems(text: string, count: number): { text: string; 
   // 去掉行首编号 "1." / "2)" / "3、" 与无序列表符 "- " / "• "；
   // 编号分隔符后须非数字，避免误吞 "10.5" 这类十进制开头的条目
   const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
-  const items: { text: string; replaceTarget?: number }[] = [];
+  const items: { type: string; content: string; replaceTarget?: number }[] = [];
   for (const raw of c.split(/\r?\n/)) {
     let l = raw.trim();
     if (!l || /^<\/?\w+>$/i.test(l)) continue;
@@ -616,9 +624,9 @@ export function parsePoolGenItems(text: string, count: number): { text: string; 
     if (m) {
       // 替换行的文本也剥一次列表标记（模型可能写 "替换#2：1. 新文本"）
       const t = stripMarker(m[2]);
-      if (t) items.push({ text: t, replaceTarget: parseInt(m[1], 10) });
+      if (t) items.push({ type: '', content: t, replaceTarget: parseInt(m[1], 10) });
     } else {
-      items.push({ text: l });
+      items.push({ type: '', content: l });
     }
     if (items.length >= count) break;
   }
@@ -638,7 +646,6 @@ export async function generatePoolEntries(params: {
     return [];
   }
   const gs = useGlobalSettingsStore();
-  const cs = useChatSettingsStore();
   const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
   if (!api) {
     toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
@@ -654,7 +661,7 @@ export async function generatePoolEntries(params: {
       : '（无）';
     const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
-    const ch = this_chid !== undefined ? characters[this_chid] : undefined;
+    const ch = getStCharacter(this_chid);
     if (ch?.data?.description) messages.push({ role: 'system', content: substituteParams(ch.data.description) });
     if (ch?.data?.personality) messages.push({ role: 'system', content: substituteParams(ch.data.personality) });
     if (ch?.data?.scenario) messages.push({ role: 'system', content: substituteParams(ch.data.scenario) });

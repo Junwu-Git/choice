@@ -147,7 +147,8 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import RegexLibraryDialog from '@/components/RegexLibraryDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
-import { characters, this_chid } from '@sillytavern/script';
+import { this_chid } from '@sillytavern/script';
+import { getStCharacter } from '@/core/st-character';
 import { draggableFilterOptions } from '@/util/sortable';
 import type { FilterGroup } from '@/type/settings';
 import Sortable from 'sortablejs';
@@ -201,24 +202,13 @@ const isPresetActive = (group: FilterGroup) => group.preset_name === gs.currentP
 const isCharActive = (group: FilterGroup) => group.character_id === gs.currentCharacterId;
 
 const currentCharName = computed(() => {
-  try {
-    const chid = this_chid;
-    if (chid !== undefined && characters?.[chid]) {
-      return characters[chid].name || `#${chid}`;
-    }
-    return t`未选择`;
-  } catch {
-    return t`未选择`;
-  }
+  const ch = getStCharacter(this_chid);
+  return ch?.name || t`未选择`;
 });
 
 const getCharName = (chid: string | number | null) => {
   if (chid === null) return '';
-  try {
-    return characters?.[chid]?.name || `#${chid}`;
-  } catch {
-    return `#${chid}`;
-  }
+  return getStCharacter(chid)?.name || `#${chid}`;
 };
 
 const unbindPreset = (group: FilterGroup) => {
@@ -367,16 +357,18 @@ const presetListEl = ref<HTMLElement | null>(null);
 const charListEl = ref<HTMLElement | null>(null);
 const sortables: Sortable[] = [];
 
-function createSortable(el: HTMLElement, area: string) {
+function createSortable(el: HTMLElement) {
   return Sortable.create(el, {
     ...draggableFilterOptions,
     animation: 150,
     group: 'filter-groups',
     onMove: evt => {
       const toArea = (evt.to as HTMLElement).dataset.area;
+      // 未绑定角色卡时禁止拖入 character 区；其余路径显式 return true（SortableJS 约定非 false 即放行）
       if (toArea === 'character' && gs.currentCharacterId == null) {
         return false;
       }
+      return true;
     },
     onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
@@ -418,9 +410,9 @@ function createSortable(el: HTMLElement, area: string) {
 }
 
 onMounted(() => {
-  if (globalListEl.value) sortables.push(createSortable(globalListEl.value, 'global'));
-  if (presetListEl.value) sortables.push(createSortable(presetListEl.value, 'preset'));
-  if (charListEl.value) sortables.push(createSortable(charListEl.value, 'character'));
+  if (globalListEl.value) sortables.push(createSortable(globalListEl.value));
+  if (presetListEl.value) sortables.push(createSortable(presetListEl.value));
+  if (charListEl.value) sortables.push(createSortable(charListEl.value));
 });
 
 onUnmounted(() => {

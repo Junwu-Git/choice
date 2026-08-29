@@ -63,13 +63,13 @@
           />
           <button
             class="menu_button choice-fetch-btn"
-            :disabled="isFetching"
+            :disabled="fetching"
             :title="t`从 API 拉取可用模型列表`"
             @click="fetchModels"
           >
-            <i v-if="isFetching" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-if="fetching" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-cloud-arrow-down"></i>
-            {{ isFetching ? '' : t`拉取` }}
+            {{ fetching ? '' : t`拉取` }}
           </button>
         </div>
         <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
@@ -125,6 +125,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';

@@ -1,3 +1,4 @@
+import toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState } from '@/core/generator';
@@ -21,7 +22,9 @@ export function initPanelMount() {
   const getPanelMessageId = (): number | null => {
     try {
       for (let i = chat.length - 1; i >= 0; i--) {
-        const message = chat[i];
+        // chat[] 元素是 ST 原生楼层结构（is_user/is_system/mes 等字段在 StChatMessage 上），
+        // @sillytavern/script 导出的 chat 类型是 TavernHelper 子集，需显式断言
+        const message = chat[i] as StChatMessage | undefined;
         if (message && !message.is_user && !message.is_system) {
           return i;
         }
@@ -62,7 +65,7 @@ export function initPanelMount() {
   const onMessageReceived = async (messageId: number, type: string) => {
     try {
       resync();
-      if (!chat[messageId]?.mes?.trim()) {
+      if (!(chat[messageId] as StChatMessage | undefined)?.mes?.trim()) {
         return;
       }
       if (type === 'quiet') {
@@ -180,7 +183,6 @@ export function initPanelMount() {
 
   // 面板「生成润色」按钮点击时，通过 store 标志位触发润色流程
   const enrichStore = usePanelStateStore(pinia);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   enrichStore.$subscribe((_mutation: any, state: any) => {
     if (!state.triggerEnrichRequested) return;
     const input = ($('#send_textarea').val() as string).trim();

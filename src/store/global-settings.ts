@@ -1,6 +1,5 @@
 import {
   chat_metadata,
-  characters,
   saveCharacterDebounced,
   saveSettingsDebounced,
   this_chid,
@@ -26,6 +25,7 @@ import {
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
+import { getStCharacter } from '@/core/st-character';
 
 /** 构建 10 条默认条目，基于用户定义的选项类型 */
 function buildDefaultEntries(): PoolEntry[] {
@@ -422,21 +422,19 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     let charName = '';
     let oldCharPool: PoolEntry[] = [];
     try {
-      const chid = this_chid;
-      if (chid !== undefined && characters?.[chid]) {
-        charName = characters[chid].name || '';
-        oldCharPool = (_.get(characters[chid], ['data', 'extensions', setting_field, 'pool']) as PoolEntry[]) ?? [];
+      const ch = getStCharacter(this_chid);
+      if (ch) {
+        charName = ch.name || '';
+        oldCharPool = (_.get(ch, ['data', 'extensions', setting_field, 'pool']) as PoolEntry[]) ?? [];
       }
     } catch {
       // 角色数据不可用时跳过
     }
-    let chatName = '';
     let oldChatPool: PoolEntry[] = [];
     try {
       const cMeta = chat_metadata?.[setting_field];
       if (cMeta) {
         oldChatPool = (cMeta.pool as PoolEntry[]) ?? [];
-        chatName = '当前聊天';
       }
     } catch {
       // 聊天元数据不可用时跳过
@@ -491,10 +489,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         },
       });
       try {
-        const chid = this_chid;
-        if (chid !== undefined && characters?.[chid]) {
-          _.set(characters[chid], ['data', 'extensions', setting_field, 'config_id'], charConfigId);
-          delete characters[chid].data.extensions[setting_field].pool;
+        const ch = getStCharacter(this_chid);
+        if (ch) {
+          _.set(ch, ['data', 'extensions', setting_field, 'config_id'], charConfigId);
+          // 旧 pool 字段被 config 体系取代，删除残留；extensions 可能在异常卡上缺失
+          delete ch.data?.extensions?.[setting_field]?.pool;
           saveCharacterDebounced();
         }
       } catch {
@@ -727,7 +726,9 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 };
 
 export const useGlobalSettingsStore = defineStore('global-settings', () => {
-  const existing = _.get(extension_settings, setting_field);
+  // 迁移逻辑处理的是未经 Zod 验证的旧存档，字段形态不可知，显式 any；
+  // 且 extension_settings 的类型声明不含 choice 命名空间键，_.get 会推断成 undefined/never
+  const existing = _.get(extension_settings, setting_field) as any;
   // 旧字段 chat_filter_regexes 已被新 schema 移除，Zod 解析会将其剥离，
   // 因此必须在 validateInplace 之前捕获，供迁移使用
   const legacyRegexes: string[] = _.get(existing, 'prompt_rules.chat_filter_regexes', []) ?? [];
@@ -779,17 +780,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     rawUI.enrich_count = String(rawUI.enrich_count);
   }
 
-  // character_id 从 string 转 number（预校验转换，必须在 Zod 验证前执行）
-  // 旧数据中 chat_filter_groups 的 character_id 可能以字符串形式存储，Zod 期望 number|null
-  const rawFilterGroups = _.get(existing, 'prompt_rules.chat_filter_groups');
-  if (Array.isArray(rawFilterGroups)) {
-    for (const g of rawFilterGroups) {
-      if (typeof g.character_id === 'string') {
-        const num = parseInt(g.character_id, 10);
-        g.character_id = isNaN(num) ? null : num;
-      }
-    }
-  }
+  // 注意：曾有一个 v14 迁移块把 chat_filter_groups.character_id 从字符串转 number，
+  // 方向与现行 schema（z.preprocess(String) 归一化为字符串）相反，已删除——
+  // schema 的 preprocess 已兼容旧数字/旧字符串存档，保留该块只会误导后人。
 
   const validated = validateInplace(GlobalSettings, existing);
 
@@ -808,7 +801,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     saveSettingsDebounced();
   }
 
-  const settings = ref(validated);
+  // 显式标注：ref() 的 UnwrapRef 推断遇 zod4 输出类型（含 StandardSchema 符号键）会退化成 any，
+  // 导致所有消费方 settings.configs/master_pool 等变 any[]，回调参数全变隐式 any
+  const settings = ref<GlobalSettingsType>(validated);
 
   watch(
     settings,
@@ -885,11 +880,14 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
             }
             return e.inline_rule;
           })
-          .filter(Boolean),
+          // filter(Boolean) 不收窄类型：下游（generator 的 tag/regex 判别）需要排除 null 后的联合
+          .filter((r): r is NonNullable<typeof r> => r !== null),
       );
   });
 
-  function addModule(afterId?: string, enrichOnly = false, optionOnly = false) {
+  // _afterId 为预留参数：产品上支持"在指定模块后插入"，当前实现一律追加到末尾；
+  // 保留参数位避免调用方（传 undefined 占位）与未来实现一起改动
+  function addModule(_afterId?: string, enrichOnly = false, optionOnly = false) {
     const modules = settings.value.prompt_rules.modules;
     const maxOrder = modules.length ? Math.max(...modules.map(m => m.order)) : -1;
     const name = optionOnly ? '选项模块' : enrichOnly ? '润色模块' : '通用模块';
