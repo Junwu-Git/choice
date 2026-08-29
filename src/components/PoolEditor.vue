@@ -175,6 +175,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { PoolConfig, PoolConfigEntry, PoolEntry } from '@/type/settings';
+import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const globalStore = useGlobalSettingsStore();
@@ -338,6 +339,7 @@ onMounted(() => {
       if (sortable) sortable.destroy();
       if (!el || !selectedConfig.value) return;
       sortable = Sortable.create(el, {
+        ...draggableFilterOptions,
         animation: 150,
         onEnd: evt => {
           if (evt.oldIndex === undefined || evt.newIndex === undefined) return;

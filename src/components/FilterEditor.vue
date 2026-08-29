@@ -148,6 +148,7 @@ import RegexLibraryDialog from '@/components/RegexLibraryDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
 import { characters, this_chid } from '@sillytavern/script';
+import { draggableFilterOptions } from '@/util/sortable';
 import type { FilterGroup } from '@/type/settings';
 import Sortable from 'sortablejs';
 
@@ -191,7 +192,8 @@ const charGroupsSorted = computed(() => {
     const aActive = a.character_id === current ? 0 : 1;
     const bActive = b.character_id === current ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
-    return (a.character_id ?? 0) - (b.character_id ?? 0);
+    // character_id 归一化为字符串后需显式转数值排序（字符串相减会得到 NaN）
+    return Number(a.character_id ?? 0) - Number(b.character_id ?? 0);
   });
 });
 
@@ -210,7 +212,7 @@ const currentCharName = computed(() => {
   }
 });
 
-const getCharName = (chid: number | null) => {
+const getCharName = (chid: string | number | null) => {
   if (chid === null) return '';
   try {
     return characters?.[chid]?.name || `#${chid}`;
@@ -367,6 +369,7 @@ const sortables: Sortable[] = [];
 
 function createSortable(el: HTMLElement, area: string) {
   return Sortable.create(el, {
+    ...draggableFilterOptions,
     animation: 150,
     group: 'filter-groups',
     onMove: evt => {

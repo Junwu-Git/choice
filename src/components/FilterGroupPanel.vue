@@ -96,7 +96,8 @@
             <i class="fa-solid fa-bookmark"></i>
             <span class="choice-lib-ref-cat">{{ getLibEntryCategory(entry.library_entry_id) }}</span>
             <span class="choice-lib-ref-sep">›</span>
-            <span>{{ getLibEntryDisplay(entry.library_entry_id) }}</span>
+            <!-- 库条目 pattern 可能很长，必须省略截断，否则整行被撑开、右侧删除按钮被挤出可视区 -->
+            <span class="choice-lib-ref-name">{{ getLibEntryDisplay(entry.library_entry_id) }}</span>
           </span>
           <button class="choice-icon-btn choice-delete-btn" :disabled="dimmed && locked" @click="removeEntry(idx)">
             <i class="fa-solid fa-xmark"></i>
@@ -150,6 +151,7 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -253,6 +255,7 @@ onMounted(() => {
       if (sortable) sortable.destroy();
       if (!el) return;
       sortable = Sortable.create(el, {
+        ...draggableFilterOptions,
         animation: 150,
         handle: '.choice-filter-row',
         onEnd: evt => {
@@ -368,6 +371,29 @@ onUnmounted(() => {
 .choice-lib-ref-cat {
   font-size: var(--choice-text-xs);
   opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* 库引用徽章占满剩余宽度并允许内部截断，保证同行删除按钮始终可见。
+   覆盖 global.css 的 flex-shrink:0（scoped 选择器优先级更高），并转为 flex 容器使名称 span 可伸缩截断 */
+.choice-inline-cat-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.choice-lib-ref-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.choice-filter-row .choice-delete-btn {
+  flex-shrink: 0;
 }
 
 .choice-lib-ref-sep {

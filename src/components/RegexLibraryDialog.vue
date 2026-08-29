@@ -22,6 +22,9 @@
             <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
               <i class="fa-solid fa-file-import"></i>
             </button>
+            <button class="choice-icon-btn" :title="t`从酒馆正则导入`" @click="showStImport = true">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+            </button>
             <button class="choice-icon-btn" :title="t`导出文件`" @click="onExport">
               <i class="fa-solid fa-file-export"></i>
             </button>
@@ -119,6 +122,12 @@
                     :placeholder="t`正则表达式`"
                     style="flex: 1; min-width: 0"
                   />
+                  <input
+                    v-if="entry.type === 'regex'"
+                    v-model="entry.replace"
+                    class="text_pole choice-regexlib-replace"
+                    :placeholder="t`替换为（留空=删除）`"
+                  />
                   <button class="choice-icon-btn choice-delete-btn" @click="removeEntry(entry.id)">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
@@ -150,13 +159,19 @@
     @confirm="onDeleteGroupConfirm"
     @cancel="deleteGroupTarget = null"
   />
+
+  <!-- 从酒馆三区（全局/预设/角色卡）勾选导入：入口在正则库头部，条目写入正则库的目标分组（category） -->
+  <StRegexImportDialog :open="open && showStImport" @close="showStImport = false" />
 </template>
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
+import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
+import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -184,6 +199,8 @@ const groupRenameId = ref<string | null>(null);
 const groupRenameText = ref('');
 const deleteGroupTarget = ref<string | null>(null);
 const selectedIds = ref<Set<string>>(new Set());
+// 从酒馆正则导入弹窗（随本弹窗关闭而关闭：open 由父级 open && showStImport 联合控制）
+const showStImport = ref(false);
 
 const allGroupsExpanded = computed(() => {
   const groups = new Set(groupedEntries.value.map(g => g.key));
@@ -323,38 +340,65 @@ const onImportFile = () => {
       const text = await file.text();
       const data = JSON.parse(text);
       const fs = gs.settings.filter_settings;
-      // ST 原生正则格式：包含 script_name / findRegex 字段
-      if (Array.isArray(data) && data.length > 0 && data[0].findRegex !== undefined) {
-        const existingIds = new Set(fs.regex_library.map(e => e.id));
-        let added = 0;
-        for (const item of data) {
-          const entryId = uuidv4();
-          if (existingIds.has(entryId)) continue;
-          const entry: RegexLibraryEntry = {
-            id: entryId,
-            name: item.script_name || '',
-            type: 'regex',
-            pattern: item.findRegex || '',
-            start: '',
-            end: '',
-            category: '',
-          };
-          fs.regex_library.push(entry);
-          added++;
-        }
-        toastr.success(t`已从 ST 格式导入 ${added} 条正则`);
-        return;
-      }
-      if (!data.entries || !Array.isArray(data.entries)) throw new Error('格式不正确');
       const existingIds = new Set(fs.regex_library.map(e => e.id));
-      let added = 0;
-      for (const entry of data.entries) {
-        if (!existingIds.has(entry.id)) {
-          fs.regex_library.push({ ...entry, id: entry.id || uuidv4() });
-          added++;
+      const imported: RegexLibraryEntry[] = [];
+      let invalid = 0;
+      let duplicated = 0;
+
+      // ST 原生正则脚本判定（酒馆正则扩展导出格式，字段以酒馆源码为准：scriptName 驼峰 / findRegex / replaceString）。
+      // 映射逻辑（剥 /…/flags、填 replace）与"从酒馆正则区导入"弹窗共享 st-regex-source，避免两处实现漂移。
+      const isStScript = (item: any) => typeof item?.findRegex === 'string';
+
+      // 插件自有格式条目（本插件导出文件的 entries 内元素，或裸数组中的同类条目）：
+      // 补默认字段；按原 id 去重——重复导入同一份导出文件时跳过已有条目
+      const importPluginEntry = (raw: any): RegexLibraryEntry | null => {
+        if (!raw || typeof raw !== 'object') return null;
+        if ((raw.type !== 'tag' && raw.type !== 'regex') || typeof raw.pattern !== 'string') return null;
+        const id = typeof raw.id === 'string' && raw.id ? raw.id : uuidv4();
+        return {
+          id,
+          name: raw.name ?? '',
+          type: raw.type,
+          pattern: raw.pattern,
+          replace: raw.replace ?? '',
+          start: raw.start ?? '',
+          end: raw.end ?? '',
+          category: raw.category ?? '',
+        };
+      };
+
+      // 归一化为待判定列表：兼容 ST 单对象 / ST 数组 / 插件 { entries } / 插件条目裸数组
+      const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : [data];
+      for (const item of items) {
+        if (isStScript(item)) {
+          imported.push(mapStScriptToLibraryEntry(item));
+          continue;
+        }
+        if (item && typeof item === 'object' && typeof item.id === 'string' && item.id && existingIds.has(item.id)) {
+          duplicated++;
+          continue;
+        }
+        const entry = importPluginEntry(item);
+        if (entry) {
+          existingIds.add(entry.id);
+          imported.push(entry);
+        } else {
+          invalid++;
         }
       }
-      toastr.success(t`已导入 ${added} 条正则`);
+      if (imported.length === 0) {
+        // 全部为重复项不是失败，单独提示，避免误报"导入失败"
+        if (duplicated > 0) {
+          toastr.info(t`${duplicated} 条正则均已存在，未重复导入`);
+          return;
+        }
+        throw new Error('未识别到可导入的正则条目');
+      }
+      fs.regex_library.push(...imported);
+      const parts = [t`已导入 ${imported.length} 条正则`];
+      if (duplicated > 0) parts.push(t`去重 ${duplicated} 条重复项`);
+      if (invalid > 0) parts.push(t`跳过 ${invalid} 条无效项`);
+      toastr.success(parts.join('，'));
     } catch (err) {
       toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效文件'}`);
     }
@@ -414,6 +458,7 @@ function setupSortables() {
     for (const body of bodies) {
       sortables.push(
         Sortable.create(body, {
+          ...draggableFilterOptions,
           animation: 150,
           group: 'regex-lib-entries',
           draggable: '.choice-regexlib-entry',
@@ -457,6 +502,7 @@ function setupSortables() {
   if (listEl) {
     sortables.push(
       Sortable.create(listEl, {
+        ...draggableFilterOptions,
         draggable: '.choice-regexlib-group',
         delay: 100,
         animation: 150,
@@ -502,9 +548,9 @@ onUnmounted(() => {
   justify-content: center;
 }
 .choice-regexlib-dialog {
-  width: 700px;
-  max-width: 90vw;
-  max-height: 80vh;
+  width: 600px;
+  max-width: 92vw;
+  max-height: 85vh;
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -640,6 +686,11 @@ onUnmounted(() => {
 .choice-regexlib-entry input:focus {
   border-color: var(--choice-border-active);
   outline: none;
+}
+/* 替换为：导入 ST 正则时承载 replaceString（如 $1 保留内容只去标签壳），留空 = 整段删除 */
+.choice-regexlib-replace {
+  width: 110px;
+  flex-shrink: 0;
 }
 .choice-regexlib-footer {
   display: flex;

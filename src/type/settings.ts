@@ -203,6 +203,9 @@ export const ChatFilterRule = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('regex'),
     pattern: z.string().default(''),
+    // 匹配段替换为此字符串（JS replace 语法，支持 $1 等分组引用）；空串 = 整段删除。
+    // 不放 tag 变体：标签规则语义固定为"剥掉标签对"，不存在保留内容的需求
+    replace: z.string().default(''),
   }),
 ]);
 export type ChatFilterRule = z.infer<typeof ChatFilterRule>;
@@ -215,8 +218,10 @@ export const ChatFilterGroup = z.object({
   rules: z.array(ChatFilterRule).default([]),
   /** 绑定 ST 对话补全预设名，null = 全局 */
   preset_name: z.string().nullable().default(null),
-  /** 绑定角色卡（this_chid），null = 全局 */
-  character_id: z.number().nullable().default(null),
+  /** 绑定角色卡（this_chid），null = 全局。
+   *  归一化为字符串：酒馆 1.18 的 this_chid 实测是字符串（如 "2"），旧版本/旧存档可能是数字。
+   *  若声明为 number，运行时 addFilterGroup 写入字符串 → 重载时 Zod 抛错 → 整个插件启动失败 */
+  character_id: z.preprocess(v => (v == null ? null : String(v)), z.string().nullable().default(null)),
 });
 export type ChatFilterGroup = z.infer<typeof ChatFilterGroup>;
 
@@ -225,6 +230,8 @@ export const RegexLibraryEntry = z.object({
   name: z.string().default(''),
   type: z.enum(['tag', 'regex']),
   pattern: z.string().default(''),
+  // 仅 regex 类型生效：匹配段替换为此字符串（兼容 ST replaceString 的 $1 语法），空串 = 整段删除
+  replace: z.string().default(''),
   start: z.string().default(''),
   end: z.string().default(''),
   category: z.string().default(''),
@@ -243,7 +250,8 @@ export const FilterGroup = z.object({
   enabled: z.boolean().default(true),
   entries: z.array(FilterGroupEntry).default([]),
   preset_name: z.string().nullable().default(null),
-  character_id: z.number().nullable().default(null),
+  // 同 ChatFilterGroup：归一化为字符串，兼容旧数字存档与新版字符串 this_chid
+  character_id: z.preprocess(v => (v == null ? null : String(v)), z.string().nullable().default(null)),
 });
 export type FilterGroup = z.infer<typeof FilterGroup>;
 

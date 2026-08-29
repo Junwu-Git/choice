@@ -258,7 +258,8 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
           content = content.replace(re, '');
         } else {
           if (!rule.pattern) continue;
-          content = content.replace(new RegExp(rule.pattern, 'gs'), '');
+          // replace 为空串时即"整段删除"；导入 ST 正则时承载其 replaceString（如 $1 保留内容去标签壳）
+          content = content.replace(new RegExp(rule.pattern, 'gs'), rule.replace ?? '');
         }
       } catch {
         console.warn('[choice] 无效过滤规则:', rule);

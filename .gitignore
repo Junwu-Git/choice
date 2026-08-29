@@ -16,6 +16,9 @@ components.d.ts
 
 screenshot_verify.png
 
+# 本地测试用数据（ST 正则导出样例等用户数据），不属于扩展代码
+正则示例/
+
 .playwright-mcp/
 .kilo/
 .vscode/

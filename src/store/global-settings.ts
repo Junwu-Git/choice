@@ -188,7 +188,7 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     // 此处仅在新规则列表为空时填充，避免覆盖用户已经录入的新数据
     const legacy = legacyRegexes.filter(p => typeof p === 'string' && p);
     if (legacy.length && validated.prompt_rules.chat_filter_rules.length === 0) {
-      validated.prompt_rules.chat_filter_rules = legacy.map(p => ({ type: 'regex', pattern: p }));
+      validated.prompt_rules.chat_filter_rules = legacy.map(p => ({ type: 'regex', pattern: p, replace: '' }));
     }
   }
 
@@ -224,6 +224,9 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
         name: '默认分组',
         enabled: true,
         rules: klona(oldRules),
+        // 迁移自旧平铺列表，无绑定信息；留空否则运行时为 undefined，分区判定会把分组错当预设/角色卡绑定
+        preset_name: null,
+        character_id: null,
       };
       validated.prompt_rules.chat_filter_groups = [group];
     }
@@ -817,7 +820,10 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   );
 
   const currentPresetName = ref<string | null>(null);
-  const currentCharacterId = ref<number | undefined>(this_chid);
+  // this_chid 在酒馆 1.18 实测是字符串（如 "2"），旧版本可能是数字——统一归一化为字符串，
+  // 与 FilterGroup.character_id 的 schema 归一化保持一致，否则 === 比较会因类型不一致失配
+  const normChid = (v: string | number | null | undefined) => (v == null ? undefined : String(v));
+  const currentCharacterId = ref<string | undefined>(normChid(this_chid));
 
   function syncPresetName() {
     try {
@@ -834,10 +840,10 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   try {
     eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => syncPresetName());
     eventSource.on(event_types.CHARACTER_PAGE_LOADED, () => {
-      currentCharacterId.value = this_chid;
+      currentCharacterId.value = normChid(this_chid);
     });
     eventSource.on(event_types.CHAT_CHANGED, () => {
-      currentCharacterId.value = this_chid;
+      currentCharacterId.value = normChid(this_chid);
     });
   } catch {
     /* eventSource 不可用时静默跳过 */
@@ -871,6 +877,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
               return {
                 type: libEntry.type,
                 pattern: libEntry.pattern,
+                // ?? 兜底：老存档/裸 push 的条目可能没有 replace 字段
+                replace: libEntry.replace ?? '',
                 start: libEntry.start,
                 end: libEntry.end,
               };
@@ -940,6 +948,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       name: '',
       type: 'tag',
       pattern: '',
+      replace: '',
       start: '',
       end: '',
       category,

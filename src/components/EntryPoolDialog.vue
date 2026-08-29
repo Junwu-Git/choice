@@ -246,6 +246,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
+import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = defineProps<{ open: boolean }>();
@@ -779,6 +780,7 @@ const initGroupSortable = () => {
   if (!groupList.value) return;
   if (groupSortable) groupSortable.destroy();
   groupSortable = Sortable.create(groupList.value, {
+    ...draggableFilterOptions,
     draggable: '.choice-epool-group',
     animation: 150,
     delay: 100,
@@ -799,6 +801,7 @@ const initEntrySortables = () => {
   bodies.forEach(body => {
     const groupKey = (body as HTMLElement).dataset.groupKey || '';
     const s = Sortable.create(body as HTMLElement, {
+      ...draggableFilterOptions,
       group: 'entries',
       draggable: '.choice-epool-entry',
       delay: 100,
