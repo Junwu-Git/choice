@@ -409,6 +409,108 @@ const resetOrderFromDefaults = (validated: GlobalSettingsType) => {
   }
 };
 
+/** 创建「经典/简洁」双提示词配置并加载简洁到工作副本。
+ *  从 v19 迁移块抽取：老存档升级（applyDefaults）与 factoryReset 两条路都必须走这里，
+ *  否则会出现"工作副本=长版默认、配置列表为空"的不一致。
+ *  前置条件：调用前 pr.modules 必须已填充完整（初始化顺序上 migratePromptModules 先于本函数），
+ *  否则空模块会被原样快照进「经典」——全新档曾经的静默 bug。 */
+const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
+  const pr = validated.prompt_rules;
+
+  // 1. 创建"经典"配置（快照当前状态）
+  const classicConfig: PromptConfig = {
+    id: uuidv4(),
+    name: '经典',
+    is_default: false,
+    modules: klona(pr.modules),
+    person_style: pr.person_style ?? '',
+    option_rules: pr.option_rules ?? '',
+    option_person: pr.option_person ?? '第三人称',
+    enrich_person: pr.enrich_person ?? '第三人称',
+    enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
+    option_min_chars: pr.option_min_chars ?? 30,
+    option_max_chars: pr.option_max_chars ?? 80,
+    enrich_min_chars: pr.enrich_min_chars ?? 30,
+    enrich_max_chars: pr.enrich_max_chars ?? 80,
+    context_rounds: pr.context_rounds ?? 10,
+    context_mode: pr.context_mode ?? 'visible_only',
+    prefill_enabled: pr.prefill_enabled ?? true,
+    baibai_enabled: pr.baibai_enabled ?? false,
+  };
+
+  // 2. 创建"简洁"配置（简化版模块）
+  const simplifiedModules = klona(pr.modules).map((m: PromptModuleType) => {
+    const copy = { ...m };
+    if (copy.id === 'core_rules') {
+      copy.content =
+        '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
+    } else if (copy.id === 'thinking_prompt') {
+      copy.content =
+        '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
+    } else if (copy.id === 'enrich_core_rules') {
+      copy.content =
+        '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
+    } else if (copy.id === 'enrich_thinking') {
+      copy.content =
+        '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
+    }
+    return copy;
+  });
+
+  const simpleConfig: PromptConfig = {
+    id: uuidv4(),
+    name: '简洁',
+    is_default: true,
+    modules: simplifiedModules,
+    person_style: '',
+    option_rules: '',
+    option_person: '第三人称',
+    enrich_person: '第三人称',
+    enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
+    option_min_chars: 30,
+    option_max_chars: 80,
+    enrich_min_chars: 30,
+    enrich_max_chars: 80,
+    context_rounds: 10,
+    context_mode: 'visible_only',
+    prefill_enabled: true,
+    baibai_enabled: false,
+  };
+
+  validated.prompt_configs = [classicConfig, simpleConfig];
+
+  // 3. 将"简洁"配置加载到 prompt_rules
+  pr.modules = klona(simpleConfig.modules);
+  pr.person_style = '';
+  pr.option_rules = '';
+  pr.option_person = '第三人称';
+  pr.enrich_person = '第三人称';
+  pr.enrich_person_style = DEFAULT_ENRICH_PERSON_STYLE;
+  pr.option_min_chars = 30;
+  pr.option_max_chars = 80;
+  pr.enrich_min_chars = 30;
+  pr.enrich_max_chars = 80;
+  pr.context_rounds = 10;
+  pr.context_mode = 'visible_only';
+  pr.prefill_enabled = true;
+  pr.baibai_enabled = false;
+
+  // 4. 旧过滤分组（prompt_rules.chat_filter_groups）搬运到新家 filter_settings.groups。
+  //    新 FilterGroup 用 entries（引用正则库或内联规则），旧分组是平铺 rules 数组——逐条包成
+  //    library_entry_id=null 的内联条目。复制而非移动：旧字段留在原地，迁移逻辑有误时可发
+  //    修复版重跑；filter_settings.groups 非空说明已搬过，跳过保证幂等。
+  if (validated.filter_settings.groups.length === 0 && (pr.chat_filter_groups ?? []).length > 0) {
+    validated.filter_settings.groups = (pr.chat_filter_groups ?? []).map(g => ({
+      id: g.id,
+      name: g.name,
+      enabled: g.enabled,
+      entries: g.rules.map(rule => ({ library_entry_id: null, inline_rule: klona(rule) })),
+      preset_name: g.preset_name ?? null,
+      character_id: g.character_id ?? null,
+    }));
+  }
+};
+
 const applyDefaults = (validated: GlobalSettingsType) => {
   if ((validated.schema_version ?? 0) < 9) {
     // 旧三层池数据迁移：收集 → 去重 → 合并为 master_pool + 自动配置
@@ -620,101 +722,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   }
 
   if ((validated.schema_version ?? 0) < 19) {
-    // v19: 提示词配置切换 + 过滤分组绑定
-    const pr = validated.prompt_rules;
-
-    // 1. 创建"经典"配置（快照当前状态）
-    const classicConfig: PromptConfig = {
-      id: uuidv4(),
-      name: '经典',
-      is_default: false,
-      modules: klona(pr.modules),
-      person_style: pr.person_style ?? '',
-      option_rules: pr.option_rules ?? '',
-      option_person: pr.option_person ?? '第三人称',
-      enrich_person: pr.enrich_person ?? '第三人称',
-      enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
-      option_min_chars: pr.option_min_chars ?? 30,
-      option_max_chars: pr.option_max_chars ?? 80,
-      enrich_min_chars: pr.enrich_min_chars ?? 30,
-      enrich_max_chars: pr.enrich_max_chars ?? 80,
-      context_rounds: pr.context_rounds ?? 10,
-      context_mode: pr.context_mode ?? 'visible_only',
-      prefill_enabled: pr.prefill_enabled ?? true,
-      baibai_enabled: pr.baibai_enabled ?? false,
-    };
-
-    // 2. 创建"简洁"配置（简化版模块）
-    const simplifiedModules = klona(pr.modules).map((m: PromptModuleType) => {
-      const copy = { ...m };
-      if (copy.id === 'core_rules') {
-        copy.content =
-          '【核心规则】\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 选项基于当前场景状态生成。\n3. 全部选项包裹在 <options> 标签内，每个选项独占一行，格式为"[标题]内容"。严禁在选项内容中使用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。';
-      } else if (copy.id === 'thinking_prompt') {
-        copy.content =
-          '【输出前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号复述当前轮次关键输入，确认已正确接收。\n1. 选项数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每条字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接进入 <options> 输出。';
-      } else if (copy.id === 'enrich_core_rules') {
-        copy.content =
-          '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。';
-      } else if (copy.id === 'enrich_thinking') {
-        copy.content =
-          '【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。';
-      }
-      return copy;
-    });
-
-    const simpleConfig: PromptConfig = {
-      id: uuidv4(),
-      name: '简洁',
-      is_default: true,
-      modules: simplifiedModules,
-      person_style: '',
-      option_rules: '',
-      option_person: '第三人称',
-      enrich_person: '第三人称',
-      enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
-      option_min_chars: 30,
-      option_max_chars: 80,
-      enrich_min_chars: 30,
-      enrich_max_chars: 80,
-      context_rounds: 10,
-      context_mode: 'visible_only',
-      prefill_enabled: true,
-      baibai_enabled: false,
-    };
-
-    validated.prompt_configs = [classicConfig, simpleConfig];
-
-    // 3. 将"简洁"配置加载到 prompt_rules
-    pr.modules = klona(simpleConfig.modules);
-    pr.person_style = '';
-    pr.option_rules = '';
-    pr.option_person = '第三人称';
-    pr.enrich_person = '第三人称';
-    pr.enrich_person_style = DEFAULT_ENRICH_PERSON_STYLE;
-    pr.option_min_chars = 30;
-    pr.option_max_chars = 80;
-    pr.enrich_min_chars = 30;
-    pr.enrich_max_chars = 80;
-    pr.context_rounds = 10;
-    pr.context_mode = 'visible_only';
-    pr.prefill_enabled = true;
-    pr.baibai_enabled = false;
-
-    // 4. 旧过滤分组（prompt_rules.chat_filter_groups）搬运到新家 filter_settings.groups。
-    //    新 FilterGroup 用 entries（引用正则库或内联规则），旧分组是平铺 rules 数组——逐条包成
-    //    library_entry_id=null 的内联条目。复制而非移动：旧字段留在原地，迁移逻辑有误时可发
-    //    修复版重跑；filter_settings.groups 非空说明已搬过，跳过保证幂等。
-    if (validated.filter_settings.groups.length === 0 && (pr.chat_filter_groups ?? []).length > 0) {
-      validated.filter_settings.groups = (pr.chat_filter_groups ?? []).map(g => ({
-        id: g.id,
-        name: g.name,
-        enabled: g.enabled,
-        entries: g.rules.map(rule => ({ library_entry_id: null, inline_rule: klona(rule) })),
-        preset_name: g.preset_name ?? null,
-        character_id: g.character_id ?? null,
-      }));
-    }
+    // v19: 提示词配置切换 + 过滤分组绑定（经典/简洁双配置创建逻辑见 ensureBuiltinPromptConfigs）
+    ensureBuiltinPromptConfigs(validated);
   }
 
   validated.schema_version = SCHEMA_VERSION;
@@ -781,17 +790,19 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   const validated = validateInplace(GlobalSettings, existing);
 
-  const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
-  if (needsMigration) {
-    applyDefaults(validated);
+  // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查。
+  // 必须先于 applyDefaults 执行：v19 的经典/简洁配置快照依赖迁移后填充完整的 pr.modules，
+  // 顺序颠倒时全新档会把空 modules 快照进两个配置（历史 bug）
+  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 17;
+  if (promptNeedsMigration) {
+    migratePromptModules(validated, legacyRegexes);
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
 
-  // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查
-  const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 17;
-  if (promptNeedsMigration) {
-    migratePromptModules(validated, legacyRegexes);
+  const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
+  if (needsMigration) {
+    applyDefaults(validated);
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
@@ -1176,6 +1187,48 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     }
   }
 
+  /** 导入提示词模块（合并或整体替换），并落盘到指定配置快照。
+   *  合并语义：同 id 用导入模块整对象覆盖但保留本地 order（order 属当前配置的布局状态，
+   *  导入文件的 order 会打乱现有排列），其余字段以导入为准；新 id 追加到末尾。
+   *  落盘是硬要求而非优化：只写工作副本 prompt_rules 的话，下次 switchPromptConfig 会把
+   *  工作副本同步回"生效配置"（聊天/角色绑定可能指向另一个配置），导入内容会被静默
+   *  写错位置或丢失——故必须同步写入用户正在编辑的配置快照。configId 为 null（无配置）
+   *  时仅写工作副本，维持旧行为。 */
+  function importPromptModules(
+    imported: PromptModuleType[],
+    opts: { replaceAll: boolean; configId: string | null },
+  ): { overwritten: number; added: number } {
+    const pr = settings.value.prompt_rules;
+    let overwritten = 0;
+    let added = 0;
+
+    if (opts.replaceAll) {
+      overwritten = pr.modules.filter(m => imported.some(im => im.id === m.id)).length;
+      added = imported.length - overwritten;
+      pr.modules = klona(imported);
+    } else {
+      const byId = new Map(pr.modules.map(m => [m.id, m]));
+      let nextOrder = pr.modules.reduce((max, m) => Math.max(max, m.order ?? 0), 0) + 1;
+      for (const im of imported) {
+        const existing = byId.get(im.id);
+        if (existing) {
+          const order = existing.order;
+          pr.modules[pr.modules.indexOf(existing)] = { ...klona(im), order };
+          overwritten++;
+        } else {
+          pr.modules.push({ ...klona(im), order: nextOrder++ });
+          added++;
+        }
+      }
+    }
+
+    if (opts.configId) {
+      const cfg = settings.value.prompt_configs.find(c => c.id === opts.configId);
+      if (cfg) syncPromptRulesToConfig(cfg);
+    }
+    return { overwritten, added };
+  }
+
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
@@ -1187,6 +1240,10 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     fresh.filter_settings.regex_library = [];
     fresh.filter_settings.groups = [];
     fresh.filter_settings.library_groups = [];
+
+    // 恢复出厂与全新首载终态一致：经典=长版 DEFAULT_MODULES 快照，简洁=精简版且为默认，
+    // 工作副本加载简洁。schema_version 已置为最新，applyDefaults 不会跑，必须显式调用
+    ensureBuiltinPromptConfigs(fresh);
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
@@ -1290,6 +1347,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     deletePromptConfig,
     renamePromptConfig,
     setDefaultPromptConfig,
+    importPromptModules,
     factoryReset,
     addFilterGroup,
     removeFilterGroup,

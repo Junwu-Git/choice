@@ -335,6 +335,13 @@
       @close="showCreatePromptConfig = false"
       @create="onCreatePromptConfig"
     />
+
+    <PromptImportDialog
+      :open="showImportDialog"
+      :summary="importSummary"
+      @close="showImportDialog = false"
+      @confirm="onImportConfirm"
+    />
   </div>
 </template>
 
@@ -346,6 +353,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { usePromptConfigSelectorStore } from '@/store/prompt-config-selector';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
+import PromptImportDialog from '@/components/PromptImportDialog.vue';
 import type { PromptModule } from '@/type/settings';
 import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
 import { z } from 'zod';
@@ -538,6 +546,18 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
   URL.revokeObjectURL(url);
 }
 
+type ImportFileMode = 'all' | 'option' | 'enrich';
+
+const showImportDialog = ref(false);
+const importSummary = ref<{
+  fileName: string;
+  mode: ImportFileMode;
+  scoped: PromptModule[];
+  overwriteCount: number;
+  addCount: number;
+  keptCount: number;
+} | null>(null);
+
 function importPrompts() {
   const input = document.createElement('input');
   input.type = 'file';
@@ -556,32 +576,48 @@ function importPrompts() {
       if (new Set(ids).size !== ids.length) {
         throw new Error('导入的模块中存在重复 ID');
       }
-      const mode: string = data.mode || 'all';
-      const existingModules = globalStore.settings.prompt_rules.modules;
-
-      if (mode === 'all') {
-        if (!confirm(t`确定要导入 ${importedModules.length} 个提示词模块吗？这将替换当前所有模块。`)) return;
-        globalStore.settings.prompt_rules.modules = importedModules;
-      } else if (mode === 'option') {
-        const kept = existingModules.filter(m => m.enrich_only);
-        if (!confirm(t`将导入 ${importedModules.length} 个选项模块，保留现有 ${kept.length} 个润色模块。确定继续？`))
-          return;
-        globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
-      } else if (mode === 'enrich') {
-        const kept = existingModules.filter(m => m.option_only);
-        if (!confirm(t`将导入 ${importedModules.length} 个润色模块，保留现有 ${kept.length} 个选项模块。确定继续？`))
-          return;
-        globalStore.settings.prompt_rules.modules = [...importedModules, ...kept];
-      } else {
+      const mode: ImportFileMode = data.mode || 'all';
+      if (mode !== 'all' && mode !== 'option' && mode !== 'enrich') {
         throw new Error(`未知的导入模式：${mode}`);
       }
-      toastr.success(t`已导入 ${importedModules.length} 个提示词模块`);
+      const existingModules = globalStore.settings.prompt_rules.modules;
+      // 按文件模式圈定导入范围：option/enrich 导出文件只覆盖对应类模块，对立类现有模块不动
+      const scoped =
+        mode === 'all'
+          ? importedModules
+          : mode === 'option'
+            ? importedModules.filter(m => !m.enrich_only)
+            : importedModules.filter(m => !m.option_only);
+      // 计数为合并模式的预览值：id 命中 → 覆盖，未命中 → 新增，现有中未被导入覆盖的 → 保留
+      const existingIds = new Set(existingModules.map(m => m.id));
+      const overwriteCount = scoped.filter(m => existingIds.has(m.id)).length;
+      importSummary.value = {
+        fileName: file.name,
+        mode,
+        scoped,
+        overwriteCount,
+        addCount: scoped.length - overwriteCount,
+        keptCount: existingModules.length - overwriteCount,
+      };
+      showImportDialog.value = true;
     } catch (err) {
       toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效的 JSON 文件'}`);
     }
   };
   input.click();
 }
+
+const onImportConfirm = (importMode: 'merge' | 'replace') => {
+  if (!importSummary.value) return;
+  const { overwritten, added } = globalStore.importPromptModules(importSummary.value.scoped, {
+    replaceAll: importMode === 'replace',
+    // 落盘到正在编辑（下拉选中）的配置快照；无配置时为 null，仅写工作副本
+    configId: selectedPromptConfigId.value,
+  });
+  showImportDialog.value = false;
+  importSummary.value = null;
+  toastr.success(t`已导入：覆盖 ${overwritten} 个模块，新增 ${added} 个模块`);
+};
 
 const toggleEnabled = (mod: PromptModule) => {
   mod.enabled = !mod.enabled;

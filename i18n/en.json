@@ -459,5 +459,17 @@
   "AI 生成指令": "AI Generate Prompt",
   "目标类型": "Target Type",
   "留空由 AI 判断": "Leave empty for AI to decide",
-  "写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向": "Specify entry kind/topic/length/scenario, e.g. \"option-guidance entries, under 20 chars each\"; leave empty for default concise action directions"
+  "写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向": "Specify entry kind/topic/length/scenario, e.g. \"option-guidance entries, under 20 chars each\"; leave empty for default concise action directions",
+  "导入提示词模块": "Import Prompt Modules",
+  "导入范围": "Import Scope",
+  "覆盖现有": "Overwrite Existing",
+  "新增": "New",
+  "保留现有": "Keep Existing",
+  "合并到现有模块（同 ID 覆盖内容，保留现有顺序）": "Merge into existing modules (same ID overwrites content, keeps current order)",
+  "整体替换现有模块": "Replace all existing modules",
+  "⚠ 整体替换将丢弃不在导入文件中的现有模块（含自建模块），不可撤销。": "⚠ Replace-all discards existing modules not present in the file (including custom ones). This cannot be undone.",
+  "仅选项模块": "Option modules only",
+  "仅润色模块": "Enrich modules only",
+  "全部模块": "All modules",
+  "已导入：覆盖 ${0} 个模块，新增 ${1} 个模块": "Imported: overwrote ${0} modules, added ${1} modules"
 }
