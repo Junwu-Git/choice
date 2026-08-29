@@ -16,11 +16,12 @@ import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/s
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
-/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（仅改 type/content），否则为新增条目。
+/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（改 type/content/rule），否则为新增条目。
  *  replaceOriginal 仅用于 UI 预览被替换的原文，不参与注入逻辑。 */
 export type PoolGenItem = {
   type: string;
   content: string;
+  rule: string;
   replaceTargetId?: string;
   replaceOriginal?: string;
 };
@@ -578,32 +579,84 @@ export function cancelGeneration() {
 }
 
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
- *  与行动选项生成提示词刻意分离：条目池只要简短"行动方向"，
- *  不要求标题/对白/格式标签，输出契约不同，故不复用 parseOptions。
- *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 替换#序号 提替换建议。 */
+ *  与行动选项生成提示词刻意分离：输出契约是 JSON 数组（type/content/rule/replace），
+ *  与行动选项输出改 JSON 的决策同向，但结构不同，故不复用 parseOptions。
+ *  条目种类跟随用户要求而非写死"行动方向"——条目库重构后 type/rule 是一等字段，
+ *  生成结果必须能落进这两个字段，否则类型标签会被塞回 content（UI 的"AI 生成指令"框）。
+ *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 replace 字段提替换建议。 */
 const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
 
 用户消息中会给出【当前层已有条目】（带序号 1、2、3…）。
 
-【输出要求】
-1. 共输出 N 条建议，每条文本 5-25 个中文字符，只写行动方向，不写对白原文/越权结果（不预判他人反应）/动作细节描写。
-2. 新增条目不得与已有条目重复或高度雷同。
-3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可用"替换#序号：新文本"提出替换建议，序号对应【当前层已有条目】列表中的序号。
-4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
-5. 不输出思考过程、不输出任何标签、不输出解释或前后缀语；只输出条目列表，每行一条。
-6. 格式：新增条目直接写文本；替换条目写作 "替换#序号：新文本"（序号必须对应已给出的已有条目序号）。`;
+【输出格式（严格 JSON）】
+只输出一个 JSON 数组，每个元素为一个对象：
+- "type"：条目类型短标签（如"选项指导"、"行动"、"氛围"），根据条目内容与用户要求判断，不得留空。
+- "content"：条目正文。字数与写法跟随用户要求；用户未指明条目种类时，默认输出简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。
+- "rule"：该条目的补充规则（使用约束、适用时机，如"仅战斗场景使用"），没有则写空字符串 ""。
+- "replace"：仅替换建议填写：要替换的【当前层已有条目】序号（数字，1-based）；新增条目必须省略此字段。
 
-/** 解析条目池生成输出：宽松按行解析，兼容编号列表/无序列表/纯文本。
- *  与 parseOptions 刻意分离：条目池不依赖 <options> 标签，输出契约不同，勿合并逻辑。
- *  返回中间结构 {type, content, replaceTarget?}：AI 每行只输出纯文本行动方向（无类型信息），
- *  故 type 恒为空串、行文本落 content；replaceTarget 为已有条目的 1-based 序号，
+【生成要求】
+1. 条目总数以用户消息为准；条目种类必须跟随用户要求——用户要"选项指导"就写指导/约束文本，要"行动方向"才写具体行动，严禁把指导类要求做成具体选项。
+2. 新增条目不得与已有条目重复或高度雷同。
+3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可输出替换建议（携带 "replace" 序号），并给出新的 type/content/rule。
+4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
+5. 不输出思考过程、解释或前后缀语；除 JSON 数组本身（可包在代码块中）外不输出任何文字。`;
+
+/** 解析条目池生成输出：主路径 JSON（[{type,content,rule,replace?}]，与行动选项输出改 JSON 的决策同向），
+ *  回退路径按行解析并提取类型前缀。与 parseOptions 刻意分离：条目池不依赖 <options> 标签，勿合并逻辑。
+ *  返回 {type, content, rule, replaceTarget?}：replaceTarget 为已有条目的 1-based 序号，
  *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。
  *  键名必须与 generatePoolEntries 的消费端一致（曾因 text→type+content 迁移漏改此处
  *  导致生成条目 type/content 全为 undefined，勿再把键名单独改回）。 */
-export function parsePoolGenItems(
-  text: string,
-  count: number,
-): { type: string; content: string; replaceTarget?: number }[] {
+type ParsedPoolGenItem = { type: string; content: string; rule: string; replaceTarget?: number };
+
+/** 宽松取条目对象字段：缺省字段补空串；replace 兼容数字/数字字符串，非正数视为新增 */
+const pickPoolGenFields = (x: any): ParsedPoolGenItem | null => {
+  if (!x || typeof x !== 'object') return null;
+  const type = typeof x.type === 'string' ? x.type.trim() : '';
+  const content = typeof x.content === 'string' ? x.content.trim() : '';
+  if (!type && !content) return null;
+  const replaceRaw = typeof x.replace === 'number' ? x.replace : parseInt(String(x.replace ?? ''), 10);
+  return {
+    type,
+    content,
+    rule: typeof x.rule === 'string' ? x.rule.trim() : '',
+    replaceTarget: Number.isFinite(replaceRaw) && replaceRaw >= 1 ? replaceRaw : undefined,
+  };
+};
+
+/** 字符串感知的尾随逗号清理：跳过引号区间，仅删除引号外 `,`+空白+`]`/`}` 处的逗号。
+ *  不能用全局正则 `,(\s*[\]}])` 替换——它会命中字符串值内部的 ",]"/",}" 字面量，
+ *  静默篡改条目正文（如列举示例"苹果,橘子]"）。 */
+const stripTrailingCommas = (s: string): string => {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      out += ch;
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ',') {
+      let k = i + 1;
+      while (k < s.length && (s[k] === ' ' || s[k] === '\t' || s[k] === '\n' || s[k] === '\r')) k++;
+      if (s[k] === ']' || s[k] === '}') continue;
+    }
+    out += ch;
+  }
+  return out;
+};
+
+export function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹
@@ -611,38 +664,109 @@ export function parsePoolGenItems(
     .replace(/^```[a-zA-Z]*\s*/i, '')
     .replace(/\s*```$/, '')
     .trim();
+
+  const items: ParsedPoolGenItem[] = [];
+  const push = (item: ParsedPoolGenItem | null) => {
+    if (item && items.length < count) items.push(item);
+  };
+
+  // JSON 主路径：取首个 [ 到最后一个 ]，修尾随逗号后解析；字符串元素整条落 content
+  const arrStart = c.indexOf('[');
+  const arrEnd = c.lastIndexOf(']');
+  if (arrStart !== -1 && arrEnd > arrStart) {
+    try {
+      const p = JSON.parse(stripTrailingCommas(c.slice(arrStart, arrEnd + 1)));
+      if (Array.isArray(p)) {
+        for (const x of p) {
+          if (typeof x === 'string') {
+            const s = x.trim();
+            if (s) push({ type: '', content: s, rule: '' });
+          } else {
+            push(pickPoolGenFields(x));
+          }
+          if (items.length >= count) break;
+        }
+        if (items.length) return items;
+      }
+    } catch {
+      /* 非 JSON，走回退 */
+    }
+  }
+
+  // 回退路径：宽松按行解析，兼容编号列表/无序列表/逐行 JSON 对象
   // 替换前缀："替换#N：文本" 或 "替换N: 文本"（N=已有条目序号），序号后须紧跟 : 或 ：
   const replaceRe = /^替换\s*#?(\d+)\s*[:：]\s*(.+)$/;
   // 去掉行首编号 "1." / "2)" / "3、" 与无序列表符 "- " / "• "；
   // 编号分隔符后须非数字，避免误吞 "10.5" 这类十进制开头的条目
   const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
-  const items: { type: string; content: string; replaceTarget?: number }[] = [];
+  // 类型前缀提取：【短标签】正文 / [短标签] 正文 / 短标签：正文（标签限长，降低正文自带冒号被误判为标签的概率）。
+  // 半角方括号必须支持：renderPoolEntryLine 喂给 AI 的已有条目格式就是 [type] content，
+  // 模型在回退场景模仿该格式输出时类型才能被还原，否则丢失到 content
+  const bracketTypeRe = /^【(.{1,10}?)】\s*(.+)$/;
+  const halfBracketTypeRe = /^\[([^\[\]]{1,10})\]\s*(.+)$/;
+  const colonTypeRe = /^([^：:]{1,6})[：:]\s+(.+)$/;
   for (const raw of c.split(/\r?\n/)) {
     let l = raw.trim();
     if (!l || /^<\/?\w+>$/i.test(l)) continue;
     // 先剥行首列表标记，再去判别是否为替换前缀
     l = stripMarker(l);
     if (!l) continue;
-    const m = l.match(replaceRe);
-    if (m) {
-      // 替换行的文本也剥一次列表标记（模型可能写 "替换#2：1. 新文本"）
-      const t = stripMarker(m[2]);
-      if (t) items.push({ type: '', content: t, replaceTarget: parseInt(m[1], 10) });
-    } else {
-      items.push({ type: '', content: l });
+    // 逐行 JSON 对象兜底（模型输出 {...} 而非数组时）
+    if (l.startsWith('{') && l.endsWith('}')) {
+      try {
+        push(pickPoolGenFields(JSON.parse(l)));
+        if (items.length >= count) break;
+        continue;
+      } catch {
+        /* 普通文本行，继续按前缀解析 */
+      }
     }
+    let type = '';
+    const rm = l.match(replaceRe);
+    if (rm) {
+      // 替换行的文本也剥一次列表标记（模型可能写 "替换#2：1. 新文本"）
+      l = stripMarker(rm[2]);
+      if (!l) continue;
+    }
+    // 类型提取须在替换判定之后：替换行正文可能自带类型前缀
+    const bm = l.match(bracketTypeRe);
+    const hm = bm ? null : l.match(halfBracketTypeRe);
+    const cm = !bm && !hm ? l.match(colonTypeRe) : null;
+    if (bm) {
+      type = bm[1].trim();
+      l = bm[2].trim();
+    } else if (hm) {
+      type = hm[1].trim();
+      l = hm[2].trim();
+    } else if (cm) {
+      type = cm[1].trim();
+      l = cm[2].trim();
+    }
+    push({ type, content: l, rule: '', replaceTarget: rm ? parseInt(rm[1], 10) : undefined });
     if (items.length >= count) break;
   }
   return items;
 }
 
+/** 已有条目列表/替换预览的统一渲染：[type] content（type 空则只列 content）。
+ *  该格式被回退解析器的 halfBracketTypeRe 支持往返还原——喂给 AI 的已有条目格式
+ *  必须能被模型模仿输出后再解析出类型，改动渲染格式前先确认解析器覆盖。 */
+const renderPoolEntryLine = (e: { type: string; content: string }): string => {
+  const t = e.type.trim();
+  const c = e.content.trim();
+  return t ? `[${t}] ${c}` : c;
+};
+
 /** 条目池 AI 生成：复用活动 API（与 generateOptions 同一套 resolveCustomApi），
  *  始终带角色描述/性格/场景以贴合角色语气；includeContext 时纳入近 N 轮聊天历史。
+ *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（如"选项指导"），
+ *  留空则由 AI 按生成要求自行判断；不做生成后改写标签——那会给不匹配的内容错挂类型。
  *  不走思维链预填充（区别于行动选项生成），stream 由 api.stream 决定。 */
 export async function generatePoolEntries(params: {
   count: number;
   requirements: string;
   includeContext: boolean;
+  targetType: string;
 }): Promise<PoolGenItem[]> {
   if (poolGenState.loading) {
     toastr.info(t`条目生成中,请稍候`);
@@ -657,12 +781,18 @@ export async function generatePoolEntries(params: {
   poolGenState.loading = true;
   poolGenController = new AbortController();
   try {
-    // 快照总条目库已有条目（id+text）：用于喂给 AI 的编号列表，以及 inject 时序号→id 的映射
-    const existing = gs.settings.master_pool.map(e => ({ id: e.id, type: e.type, content: e.content }));
+    // 快照总条目库已有条目：喂给 AI 的编号列表 + inject 时序号→id 映射；
+    // rule 一并快照，用于替换行在 AI 未给规则时预填原规则（避免注入时静默清空）
+    const existing = gs.settings.master_pool.map(e => ({ id: e.id, type: e.type, content: e.content, rule: e.rule }));
     const existingList = existing.length
-      ? existing.map((e, i) => `${i + 1}. ${e.type}: ${e.content}`).join('\n')
+      ? existing.map((e, i) => `${i + 1}. ${renderPoolEntryLine(e)}`).join('\n')
       : '（无）';
-    const messages: ChatMsg[] = [{ role: 'system', content: POOL_GEN_SYSTEM_PROMPT }];
+    const forceType = params.targetType.trim();
+    // 强制类型双路下发（system + user）：只改 user 或只改 system 时，部分模型会忽略较弱一侧
+    const systemPrompt = forceType
+      ? `${POOL_GEN_SYSTEM_PROMPT}\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。`
+      : POOL_GEN_SYSTEM_PROMPT;
+    const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
     const ch = getStCharacter(this_chid);
     if (ch?.data?.description) messages.push({ role: 'system', content: substituteParams(ch.data.description) });
@@ -673,7 +803,10 @@ export async function generatePoolEntries(params: {
     }
     messages.push({
       role: 'user',
-      content: `请生成 ${params.count} 条行动条目建议。\n已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
+      content:
+        `请生成 ${params.count} 条行动条目建议。\n` +
+        (forceType ? `强制类型：所有生成条目的 type 必须为 "${forceType}"。\n` : '') +
+        `已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
     });
     const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, poolGenController.signal);
     const parsed = parsePoolGenItems(raw, params.count);
@@ -685,11 +818,13 @@ export async function generatePoolEntries(params: {
         return {
           type: p.type,
           content: p.content,
+          // 替换行规则预填：AI 未给规则时回退原条目规则，结果行所见即注入所写
+          rule: p.rule || tgt.rule,
           replaceTargetId: tgt.id,
-          replaceOriginal: `${tgt.type}: ${tgt.content}`,
+          replaceOriginal: renderPoolEntryLine(tgt),
         };
       }
-      return { type: p.type, content: p.content };
+      return { type: p.type, content: p.content, rule: p.rule };
     });
     if (!items.length) {
       toastr.error(t`未解析出条目,请检查模型输出`);

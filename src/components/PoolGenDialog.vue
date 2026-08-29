@@ -29,12 +29,26 @@
             </label>
             <label class="choice-poolgen-field">
               <span>{{ t`生成要求` }}</span>
-              <textarea v-model="requirements" class="text_pole" rows="4" :placeholder="t`生成要求`"></textarea>
+              <textarea
+                v-model="requirements"
+                class="text_pole"
+                rows="4"
+                :placeholder="t`写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向`"
+              ></textarea>
             </label>
             <div class="choice-poolgen-options">
               <label class="choice-poolgen-check">
                 <input v-model="includeContext" type="checkbox" />
                 {{ t`结合近期对话` }}
+              </label>
+              <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
+                <span>{{ t`目标类型` }}</span>
+                <input
+                  v-model="targetType"
+                  class="text_pole"
+                  style="width: 130px"
+                  :placeholder="t`留空由 AI 判断`"
+                />
               </label>
               <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
                 <span>{{ t`目标分组` }}</span>
@@ -77,6 +91,7 @@
                 </div>
                 <textarea v-model="item.type" class="text_pole" rows="1" :placeholder="t`类型`"></textarea>
                 <textarea v-model="item.content" class="text_pole" rows="1" :placeholder="t`内容`"></textarea>
+                <input v-model="item.rule" class="text_pole" :placeholder="t`规则(可选)`" />
               </div>
               <button class="choice-icon-btn" :title="t`删除`" @click="removeResult(i)">
                 <i class="fa-solid fa-trash-can"></i>
@@ -115,23 +130,25 @@ import GuidePopover from '@/components/GuidePopover.vue';
 const props = defineProps<{ open: boolean; categories: string[] }>();
 const emit = defineEmits<{
   close: [];
-  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; type: string; content: string }[] }];
+  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; type: string; content: string; rule: string }[] }];
 }>();
 
 const count = ref(6);
 const requirements = ref('');
 const includeContext = ref(true);
 const targetCategory = ref('');
+// 强制类型：非空时写进提示词约束 AI 的 type 字段（如"选项指导"），留空由 AI 按生成要求判断
+const targetType = ref('');
 const results = ref<PoolGenItem[]>([]);
 const selected = ref<Set<number>>(new Set());
 const attempted = ref(false);
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
-const guideHtml = `<p><strong>作用</strong>：让 AI 根据你的要求自动生成一批条目，省去手动输入的麻烦。</p>
-<p><strong>参数</strong>：条目数控制生成数量，生成要求描述你想要什么类型的条目（如"战斗中的行动选项，每个选项 15 字以内"），目标分组决定生成后放到哪个分组。</p>
+const guideHtml = `<p><strong>作用</strong>：让 AI 根据你的要求自动生成一批条目（含类型标签与补充规则），省去手动输入的麻烦。</p>
+<p><strong>参数</strong>：条目数控制生成数量；生成要求描述你想要什么条目，写明种类才不会跑偏（如"生成 8 条选项指导，每条 20 字以内"，不写明则默认生成简洁行动方向）；目标分组决定生成后放到哪个分组；目标类型可强制所有生成条目使用同一类型标签（留空则由 AI 按要求自行判断）。</p>
 <p><strong>结合近期对话</strong>：勾选后 AI 会参考最近的聊天内容生成更贴合场景的条目。</p>
-<p><strong>生成后</strong>：勾选需要的条目，点击"注入"将它们加入条目库。未勾选的条目会被丢弃。</p>`;
+<p><strong>生成后</strong>：勾选需要的条目，点击"注入"将它们加入条目库。类型/内容/规则可直接在结果行修改，注入以修改后为准。若 AI 建议替换已有条目，会显示"替换"标记与原文。未勾选的条目会被丢弃。</p>`;
 
 watch(
   () => props.open,
@@ -141,6 +158,7 @@ watch(
       selected.value = new Set();
       attempted.value = false;
       targetCategory.value = '';
+      targetType.value = '';
     } else {
       cancelPoolGen();
     }
@@ -157,6 +175,7 @@ const doGenerate = async () => {
     count: n,
     requirements: requirements.value,
     includeContext: includeContext.value,
+    targetType: targetType.value,
   });
   if (items.length) {
     results.value = items;
@@ -184,21 +203,22 @@ const removeResult = (i: number) => {
 
 const onInject = () => {
   const additions: PoolEntry[] = [];
-  const replacements: { id: string; type: string; content: string }[] = [];
+  const replacements: { id: string; type: string; content: string; rule: string }[] = [];
   for (const i of [...selected.value].sort((a, b) => a - b)) {
     const item = results.value[i];
     if (!item) continue;
     const type = item.type.trim();
     const content = item.content.trim();
+    const rule = item.rule.trim();
     if (!type && !content) continue;
     if (item.replaceTargetId) {
-      replacements.push({ id: item.replaceTargetId, type, content });
+      replacements.push({ id: item.replaceTargetId, type, content, rule });
     } else {
       additions.push({
         id: uuidv4(),
         type,
         content,
-        rule: '',
+        rule,
         pinned: false,
         weight: 1,
         category: targetCategory.value,

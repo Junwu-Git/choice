@@ -620,13 +620,14 @@ const onGenConfirm = ({
   replacements,
 }: {
   additions: PoolEntry[];
-  replacements: { id: string; type: string; content: string }[];
+  replacements: { id: string; type: string; content: string; rule: string }[];
 }) => {
   for (const r of replacements) {
     const target = masterPool.value.find(e => e.id === r.id);
     if (target) {
       target.type = r.type;
       target.content = r.content;
+      target.rule = r.rule;
     }
   }
   if (additions.length) masterPool.value.push(...additions);

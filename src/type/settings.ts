@@ -1,4 +1,7 @@
 import defaultModulesJson from '../../choice-prompts-optimized.json';
+// 显式导入 z：auto-imports.d.ts 生成的全局 const z（typeof import('zod').z）在类型位置
+// 无法当命名空间用（z.infer 报 TS2503，且该文件被 gitignore 随时重生成），不能用
+import { z } from 'zod';
 
 export const setting_field = 'choice';
 
