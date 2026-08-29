@@ -6,7 +6,7 @@
   "js": "dist/index.js",
   "css": "dist/index.css",
   "author": "哈哈氣💨",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "homePage": "https://github.com/Junwu-Git/choice",
   "auto_update": true,
   "i18n": {
