@@ -600,7 +600,10 @@ const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为
  *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。
  *  键名必须与 generatePoolEntries 的消费端一致（曾因 text→type+content 迁移漏改此处
  *  导致生成条目 type/content 全为 undefined，勿再把键名单独改回）。 */
-export function parsePoolGenItems(text: string, count: number): { type: string; content: string; replaceTarget?: number }[] {
+export function parsePoolGenItems(
+  text: string,
+  count: number,
+): { type: string; content: string; replaceTarget?: number }[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹

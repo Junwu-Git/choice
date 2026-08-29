@@ -1,9 +1,4 @@
-import {
-  chat_metadata,
-  saveCharacterDebounced,
-  saveSettingsDebounced,
-  this_chid,
-} from '@sillytavern/script';
+import { chat_metadata, saveCharacterDebounced, saveSettingsDebounced, this_chid } from '@sillytavern/script';
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 import { uuidv4 } from '@sillytavern/scripts/utils';

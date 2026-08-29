@@ -40,4 +40,3 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
     effectivePool,
   };
 });
-

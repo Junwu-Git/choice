@@ -10,7 +10,7 @@
 declare module 'vue' {
   interface ComponentCustomProperties {
     /** 酒馆全局翻译函数，签名见 SillyTavern/public/scripts/i18n.js 的 export function t */
-    t: typeof import('@sillytavern/scripts/i18n')['t'];
+    t: (typeof import('@sillytavern/scripts/i18n'))['t'];
   }
 }
 
