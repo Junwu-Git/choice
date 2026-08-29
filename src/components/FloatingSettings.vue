@@ -109,8 +109,7 @@ const scrollActiveTabIntoStrip = () => {
   // 它会把所有可滚祖先一起滚（含竖向），移动端反而可能把页面拖动
   const stripRect = strip.getBoundingClientRect();
   const btnRect = btn.getBoundingClientRect();
-  const target =
-    strip.scrollLeft + (btnRect.left - stripRect.left) - (strip.clientWidth - btnRect.width) / 2;
+  const target = strip.scrollLeft + (btnRect.left - stripRect.left) - (strip.clientWidth - btnRect.width) / 2;
   strip.scrollLeft = Math.max(0, Math.min(target, strip.scrollWidth - strip.clientWidth));
 };
 
