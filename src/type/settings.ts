@@ -13,7 +13,9 @@ export const PoolEntry = z
     category: z.string().default(''),
     condition: z.string().default(''),
   })
-  .prefault({});
+  // zod4 的 prefault 参数类型是输入类型：PoolEntry 的 id/type 无 default（必填），
+  // 空对象不满足签名；占位值仅在输入为 undefined 的极端路径触发，正常条目不受影响
+  .prefault(() => ({ id: '', type: '' }));
 export type PoolEntry = z.infer<typeof PoolEntry>;
 
 export const GenerationSettings = z
@@ -50,7 +52,7 @@ export const PoolConfigEntry = z
     weight: z.number().min(0).default(1),
     condition: z.string().default(''),
   })
-  .prefault({});
+  .prefault(() => ({ entry_id: '' }));
 export type PoolConfigEntry = z.infer<typeof PoolConfigEntry>;
 
 export const PoolConfig = z
@@ -61,7 +63,7 @@ export const PoolConfig = z
     is_default: z.boolean().default(false),
     generation: GenerationSettings.prefault({}),
   })
-  .prefault({});
+  .prefault(() => ({ id: '', name: '', entries: [] }));
 export type PoolConfig = z.infer<typeof PoolConfig>;
 
 export const DEFAULT_AI_PERSONA =
@@ -171,7 +173,7 @@ export const PromptConfig = z
     prefill_enabled: z.boolean().default(true),
     baibai_enabled: z.boolean().default(false),
   })
-  .prefault({});
+  .prefault(() => ({ id: '', name: '' }));
 export type PromptConfig = z.infer<typeof PromptConfig>;
 
 export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好 {{count}} 条行动选项。
@@ -188,7 +190,9 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好
 3. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目
 4. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
 
-export const DEFAULT_MODULES: PromptModule[] = defaultModulesJson.modules;
+// JSON 导入的 role 推断为 string，与 PromptModule 的字面量联合不兼容；内容受构建期 JSON 约束，
+// 此处断言安全（若 JSON 里 role 拼错，运行时由 zod 解析/生成流程兜底）
+export const DEFAULT_MODULES = defaultModulesJson.modules as unknown as PromptModule[];
 
 /** 柏宝书模块 ID 集合，供 PromptEditor 按总开关过滤显示 */
 export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
@@ -314,7 +318,7 @@ export const SecondaryApi = z
     stream: z.boolean().default(false),
     exclude_params: z.string().default(''),
   })
-  .prefault({});
+  .prefault(() => ({ id: '', name: '', apiurl: '', key: '', model: '' }));
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
 export const SCHEMA_VERSION = 19;
@@ -365,7 +369,9 @@ export const GlobalSettings = z
     group_order: z.array(z.string()).prefault([]),
     prompt_rules: PromptRules.prefault({}),
     prompt_configs: z.array(PromptConfig).prefault([]),
-    filter_settings: FilterSettings.default({}),
+    // FilterSettings 全字段带 default，{} 作为输入 parse 即得全默认对象；
+    // 不能用 .default({})：zod4 的 default 参数是输出类型，要求逐字段写全
+    filter_settings: FilterSettings.prefault({}),
     apis: z.array(SecondaryApi).prefault([]),
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),

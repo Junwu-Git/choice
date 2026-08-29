@@ -165,6 +165,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
@@ -286,7 +287,7 @@ const createGroup = () => {
 };
 
 const addEntryToGroup = (category: string) => {
-  const entry = gs.addRegexLibraryEntry(category);
+  gs.addRegexLibraryEntry(category);
   expandedGroups.value.add(category);
 };
 

@@ -339,6 +339,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
@@ -408,7 +409,6 @@ watch(
   },
 );
 
-const showFilter = ref(false);
 const editingId = ref<string | null>(null);
 const renamingId = ref<string | null>(null);
 const renameText = ref('');

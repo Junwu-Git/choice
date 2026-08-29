@@ -5,6 +5,7 @@ import type { PoolConfig, PoolEntry } from '@/type/settings';
 
 export const usePoolSelectorStore = defineStore('pool-selector', () => {
   const globalStore = useGlobalSettingsStore();
+
   const characterStore = useCharacterSettingsStore();
   const chatStore = useChatSettingsStore();
 
@@ -39,3 +40,4 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
     effectivePool,
   };
 });
+

@@ -87,6 +87,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import {
   getStCharacterName,

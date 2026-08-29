@@ -1,3 +1,4 @@
+import toastr from 'toastr';
 import type { SecondaryApi } from '@/type/settings';
 
 /** 与酒馆 generate 端点对接的消息格式：system/user/assistant 三态分离。

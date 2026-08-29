@@ -20,6 +20,7 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const globalStore = useGlobalSettingsStore();

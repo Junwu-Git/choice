@@ -1,4 +1,3 @@
-import { defineStore } from 'pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';

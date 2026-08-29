@@ -154,7 +154,6 @@ const props = defineProps<{ compact?: boolean }>();
 const panelStore = usePanelStateStore();
 const {
   messageId,
-  swipeId,
   visibleOptions,
   currentIndex,
   generations,

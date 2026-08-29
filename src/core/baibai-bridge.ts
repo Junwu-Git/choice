@@ -1,5 +1,3 @@
-import type { ChatMsg } from '@/core/api-client';
-
 interface BaiBaiBookApi {
   apiVersion: number;
   pluginVersion: string;
