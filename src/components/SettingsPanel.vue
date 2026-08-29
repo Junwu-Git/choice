@@ -6,10 +6,11 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
       </div>
       <div class="inline-drawer-content">
-        <div class="choice-tabs">
+        <div ref="tabsEl" class="choice-tabs">
           <button
             v-for="tab in INLINE_TABS"
             :key="tab.id"
+            :ref="setTabBtnRef(tab.id)"
             class="choice-tab"
             :class="{ active: activeTab === tab.id }"
             @click="activeTab = tab.id"
@@ -78,6 +79,31 @@ const guideBtn = ref<HTMLElement | null>(null);
 
 const currentGuide = computed(() => GUIDE_CONTENTS[activeTab.value]);
 
+// 手机视口下 tab 栏横向滚动、滚动条被隐藏，溢出的激活 tab 需手动滚回可视区，
+// 否则用户感知不到"后面还有 tab"
+const tabsEl = ref<HTMLElement | null>(null);
+const tabBtnEls = new Map<TabId, HTMLElement>();
+const setTabBtnRef = (id: TabId) => (el: unknown) => {
+  if (el instanceof HTMLElement) tabBtnEls.set(id, el);
+};
+
+const scrollActiveTabIntoStrip = () => {
+  const strip = tabsEl.value;
+  const btn = tabBtnEls.get(activeTab.value);
+  if (!strip || !btn) return;
+  // 用 getBoundingClientRect 计算相对位置而非 offsetLeft：strip 非 positioned，
+  // offsetLeft 相对的 offsetParent 不一定是 strip；且禁用 scrollIntoView——
+  // 它会把所有可滚祖先一起滚（含竖向），移动端反而可能把页面拖动
+  const stripRect = strip.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  const target =
+    strip.scrollLeft + (btnRect.left - stripRect.left) - (strip.clientWidth - btnRect.width) / 2;
+  strip.scrollLeft = Math.max(0, Math.min(target, strip.scrollWidth - strip.clientWidth));
+};
+
+watch(activeTab, () => nextTick(scrollActiveTabIntoStrip));
+onMounted(() => nextTick(scrollActiveTabIntoStrip));
+
 const panelHeight = computed({
   get: () => gs.settings.ui.panel_height,
   set: (v: number) => {
@@ -113,7 +139,10 @@ const onResizeEnd = () => {
   display: inline-flex;
   gap: var(--choice-space-1);
   margin-bottom: 10px;
+  /* 触屏横滑 tab 到滚动边缘时禁止滚动链传导，避免把酒馆抽屉/页面一起拖走 */
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
@@ -160,6 +189,8 @@ const onResizeEnd = () => {
 
 .choice-panel-body {
   overflow-y: auto;
+  /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把酒馆抽屉/页面一起拖走 */
+  overscroll-behavior: contain;
 }
 
 .choice-panel-resize {

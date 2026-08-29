@@ -132,6 +132,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-guide-popover-body {
   overflow-y: auto;
+  /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
+  overscroll-behavior: contain;
   padding: var(--choice-space-3) var(--choice-space-4) var(--choice-space-3);
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);

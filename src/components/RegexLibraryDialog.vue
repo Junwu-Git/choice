@@ -606,6 +606,8 @@ onUnmounted(() => {
 .choice-regexlib-body {
   flex: 1;
   overflow-y: auto;
+  /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
+  overscroll-behavior: contain;
   padding: var(--choice-space-3);
 }
 .choice-regexlib-list {

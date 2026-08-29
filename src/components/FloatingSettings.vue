@@ -23,10 +23,11 @@
         </div>
 
         <div class="choice-floating-body choice-scrollbar">
-          <div class="choice-tabs">
+          <div ref="tabsEl" class="choice-tabs">
             <button
               v-for="tab in FLOATING_TABS"
               :key="tab.id"
+              :ref="setTabBtnRef(tab.id)"
               class="choice-tab"
               :class="{ active: activeTab === tab.id }"
               @click="activeTab = tab.id"
@@ -90,6 +91,36 @@ const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
 const currentGuide = computed(() => GUIDE_CONTENTS[activeTab.value]);
+
+// 手机视口下 tab 栏横向滚动、滚动条被隐藏，溢出的激活 tab 需手动滚回可视区，
+// 否则用户感知不到"后面还有 tab"
+const tabsEl = ref<HTMLElement | null>(null);
+const tabBtnEls = new Map<TabId, HTMLElement>();
+const setTabBtnRef = (id: TabId) => (el: unknown) => {
+  if (el instanceof HTMLElement) tabBtnEls.set(id, el);
+};
+
+const scrollActiveTabIntoStrip = () => {
+  const strip = tabsEl.value;
+  const btn = tabBtnEls.get(activeTab.value);
+  if (!strip || !btn) return;
+  // 用 getBoundingClientRect 计算相对位置而非 offsetLeft：strip 非 positioned，
+  // offsetLeft 相对的 offsetParent 不一定是 strip；且禁用 scrollIntoView——
+  // 它会把所有可滚祖先一起滚（含竖向），移动端反而可能把页面拖动
+  const stripRect = strip.getBoundingClientRect();
+  const btnRect = btn.getBoundingClientRect();
+  const target =
+    strip.scrollLeft + (btnRect.left - stripRect.left) - (strip.clientWidth - btnRect.width) / 2;
+  strip.scrollLeft = Math.max(0, Math.min(target, strip.scrollWidth - strip.clientWidth));
+};
+
+watch(activeTab, () => nextTick(scrollActiveTabIntoStrip));
+// 弹窗 DOM 由 v-if 按需创建：每次打开 scrollLeft 归零，而组件实例整个页面生命周期只 mount 一次，
+// onMounted 覆盖不到"重新打开"，必须监听开关注册补居中
+watch(isSettingsOpen, open => {
+  if (open) nextTick(scrollActiveTabIntoStrip);
+});
+onMounted(() => nextTick(scrollActiveTabIntoStrip));
 
 const posX = useStorage('choice_floating_settings_x', (window.innerWidth - 680) / 2);
 const posY = useStorage('choice_floating_settings_y', (window.innerHeight - 500) / 2);
@@ -266,6 +297,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-floating-body {
   overflow-y: auto;
+  /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把弹窗背后的酒馆聊天页一起拖走 */
+  overscroll-behavior: contain;
   padding: var(--choice-space-4);
   flex: 1;
 }
@@ -274,6 +307,17 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: inline-flex;
   gap: var(--choice-space-1);
   margin-bottom: var(--choice-space-3);
+  /* 手机视口下 tab 溢出时必须在 tab 栏内部横向滚动：
+     若不滚，手势会穿透到 .choice-floating-body（overflow-y:auto 隐式推出 overflow-x:auto），
+     整个面板内容被横着划走；overscroll-behavior-x 再挡掉滚动到边缘后向页面链式传导 */
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.choice-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .choice-tab {

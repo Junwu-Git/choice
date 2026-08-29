@@ -243,6 +243,8 @@ const onInject = () => {
   display: flex;
   justify-content: center;
   overflow-y: auto;
+  /* 触屏上拖到边缘禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
+  overscroll-behavior: contain;
 }
 
 .choice-poolgen-dialog {
@@ -309,6 +311,8 @@ const onInject = () => {
   gap: var(--choice-space-3);
   padding: var(--choice-space-4);
   overflow-y: auto;
+  /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
+  overscroll-behavior: contain;
   flex: 1;
 }
 
