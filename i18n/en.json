@@ -456,5 +456,8 @@
   "预设正则": "Preset Regex",
   "在发送消息前用 AI 改写为多个润色版本": "AI rewrites your message into multiple polished versions before sending",
   "AI 回复完成后自动触发选项生成": "Auto-trigger options generation when the AI reply completes",
-  "AI 生成指令": "AI Generate Prompt"
+  "AI 生成指令": "AI Generate Prompt",
+  "目标类型": "Target Type",
+  "留空由 AI 判断": "Leave empty for AI to decide",
+  "写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向": "Specify entry kind/topic/length/scenario, e.g. \"option-guidance entries, under 20 chars each\"; leave empty for default concise action directions"
 }
