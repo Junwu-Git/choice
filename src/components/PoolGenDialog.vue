@@ -33,7 +33,9 @@
                 v-model="requirements"
                 class="text_pole"
                 rows="4"
-                :placeholder="t`写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向`"
+                :placeholder="
+                  t`写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向`
+                "
               ></textarea>
             </label>
             <div class="choice-poolgen-options">
@@ -43,12 +45,7 @@
               </label>
               <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
                 <span>{{ t`目标类型` }}</span>
-                <input
-                  v-model="targetType"
-                  class="text_pole"
-                  style="width: 130px"
-                  :placeholder="t`留空由 AI 判断`"
-                />
+                <input v-model="targetType" class="text_pole" style="width: 130px" :placeholder="t`留空由 AI 判断`" />
               </label>
               <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
                 <span>{{ t`目标分组` }}</span>
@@ -130,7 +127,9 @@ import GuidePopover from '@/components/GuidePopover.vue';
 const props = defineProps<{ open: boolean; categories: string[] }>();
 const emit = defineEmits<{
   close: [];
-  confirm: [payload: { additions: PoolEntry[]; replacements: { id: string; type: string; content: string; rule: string }[] }];
+  confirm: [
+    payload: { additions: PoolEntry[]; replacements: { id: string; type: string; content: string; rule: string }[] },
+  ];
 }>();
 
 const count = ref(6);
