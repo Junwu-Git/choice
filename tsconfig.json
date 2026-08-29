@@ -3,11 +3,14 @@
     "target": "ESNext",
     "module": "ESNext",
     "outDir": "dist",
-    "baseUrl": "src",
+    // 不设 baseUrl：baseUrl 会让裸导入（如 'pinia'）先按项目内路径解析，
+    // 命中本仓库的 src/pinia.ts 而不是 node_modules 的 pinia 包，
+    // 导致 import { defineStore } from 'pinia' 报 TS2305、全部 store 实例类型退化为 any
+    // （auto-imports.d.ts 的 @ts-nocheck 掩盖了这条链路的报错）。
     "types": ["jquery", "jqueryui", "lodash", "toastr", "type-fest"],
     "paths": {
-      "@sillytavern/*": ["../../../../../*"],
-      "@/*": ["./*"]
+      "@sillytavern/*": ["./../../../../*"],
+      "@/*": ["./src/*"]
     },
     "moduleDetection": "auto",
     "moduleResolution": "bundler",

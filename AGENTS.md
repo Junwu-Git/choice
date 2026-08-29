@@ -108,7 +108,7 @@ export function useCompactLayout(target: Ref<HTMLElement | null>) {
 ```bash
 pnpm install
 pnpm build          # 一次性打包，验证TS类型和构建是否通过
-npx vue-tsc --noEmit # 单独跑类型检查
+npx vue-tsc --noEmit # 单独跑类型检查，退出码必须为 0（类型债已清零，勿新增）
 ```
 
 **`pnpm watch` 由我在独立终端里全程跑着**，不需要agent自己调用——`watch`是常驻进程不会退出，agent的工具调用是"跑命令等结束"模式，扔给它一个不结束的命令会卡住。agent只需要用一次性的`pnpm build`（或`vue-tsc --noEmit`）自查有没有类型/编译错误。
