@@ -56,11 +56,7 @@
                   </div>
                   <!-- 只读详情：条目内容/规则属于条目库，此处仅展示，编辑请去条目库弹窗 -->
                   <div v-if="expandedEntries.has(entry.id)" class="choice-sedlg-entry-detail">
-                    <div
-                      v-for="field in entryDetailFields(entry)"
-                      :key="field.label"
-                      class="choice-sedlg-detail-item"
-                    >
+                    <div v-for="field in entryDetailFields(entry)" :key="field.label" class="choice-sedlg-detail-item">
                       <span class="choice-sedlg-detail-label">{{ field.label }}</span>
                       <div class="choice-sedlg-detail-text">{{ field.value }}</div>
                     </div>

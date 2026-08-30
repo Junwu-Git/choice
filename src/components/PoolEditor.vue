@@ -314,15 +314,14 @@ const selectedEntryIds = computed(() => {
 
 // 展开态按 entry_id 记录；切换配置时清空，避免残留指向其他配置条目的展开态
 const expandedEntries = ref<Set<string>>(new Set());
-watch(selectedConfigId, () => expandedEntries.value = new Set());
+watch(selectedConfigId, () => (expandedEntries.value = new Set()));
 
 const toggleExpandEntry = (entryId: string) => {
   if (expandedEntries.value.has(entryId)) expandedEntries.value.delete(entryId);
   else expandedEntries.value.add(entryId);
 };
 
-const masterEntryOf = (entryId: string): PoolEntry | undefined =>
-  masterPool.value.find(e => e.id === entryId);
+const masterEntryOf = (entryId: string): PoolEntry | undefined => masterPool.value.find(e => e.id === entryId);
 
 const getEntryCategory = (entryId: string): string => {
   const entry = masterEntryOf(entryId);

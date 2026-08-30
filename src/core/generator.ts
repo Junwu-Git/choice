@@ -1,7 +1,12 @@
 import { substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import toastr from 'toastr';
-import { getWorldInfoPrompt, loadWorldInfo, selected_world_info, worldInfoCache } from '@sillytavern/scripts/world-info';
+import {
+  getWorldInfoPrompt,
+  loadWorldInfo,
+  selected_world_info,
+  worldInfoCache,
+} from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
@@ -348,7 +353,7 @@ type Restore = { restore: () => void } | null;
  *  2. 条目级：force/follow/custom 模式下经 loadWorldInfo 取 worldInfoCache 缓存引用（world-info.js:2041
  *     返回缓存对象本身，已核实），临时变异条目 disable 标志，restore 逐条还原——
  *     checkWorldInfo 对 disable==true 的条目跳过（world-info.js:4689），变异即控制注入。
-  *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，
+ *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，
  *  切换模式即脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条
  *  生效（快照未覆盖的条目保持酒馆原状）。
  *  异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt 之前完成，
@@ -394,7 +399,8 @@ export const applyWIExcl = async (
     if (mode === 'off') continue;
     try {
       await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
-      const data = Map.prototype.get.call(worldInfoCache, name) as { entries?: Record<string, MutableEntry> } | undefined;
+      const data = Map.prototype.get.call(worldInfoCache, name) as
+        { entries?: Record<string, MutableEntry> } | undefined;
       if (!data?.entries) continue;
       const bookOverrides = overrides[name] ?? {};
       for (const entry of Object.values(data.entries)) {

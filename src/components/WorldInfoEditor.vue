@@ -27,16 +27,17 @@
             <button class="choice-wi-enable-btn" @click.stop="removeGlobalExcl(name)">{{ t`移除` }}</button>
           </div>
         </div>
-        <input
-          v-model="globalExclSearch"
-          class="text_pole choice-wi-search"
-          :placeholder="t`搜索世界书名`"
-        />
+        <input v-model="globalExclSearch" class="text_pole choice-wi-search" :placeholder="t`搜索世界书名`" />
         <div class="choice-wi-list choice-wi-available">
           <div v-if="availableGlobalExclBooks.length === 0" class="choice-empty-hint">
             {{ t`无可添加的世界书` }}
           </div>
-          <div v-for="name in availableGlobalExclBooks" :key="name" class="choice-wi-row available" @click.stop="addGlobalExcl(name)">
+          <div
+            v-for="name in availableGlobalExclBooks"
+            :key="name"
+            class="choice-wi-row available"
+            @click.stop="addGlobalExcl(name)"
+          >
             <span class="choice-wi-name">{{ name }}</span>
             <button class="choice-wi-enable-btn" @click.stop="addGlobalExcl(name)">{{ t`添加` }}</button>
           </div>
@@ -79,7 +80,9 @@
               <i v-if="getBookMode(book.name) === 'force'" class="fa-solid fa-check choice-wi-mode-check"></i>
               <span v-else-if="getBookMode(book.name) !== 'off'" class="choice-wi-mode-block"></span>
             </span>
-            <span v-if="isBookGloballyExcluded(book.name)" class="choice-wi-badge badge-global-excl">{{ t`全局排除` }}</span>
+            <span v-if="isBookGloballyExcluded(book.name)" class="choice-wi-badge badge-global-excl">{{
+              t`全局排除`
+            }}</span>
           </div>
           <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
@@ -195,8 +198,7 @@ const availableGlobalExclBooks = computed(() => {
   return (world_names ?? []).filter(name => !excluded.has(name) && (!kw || name.toLowerCase().includes(kw)));
 });
 
-const isBookGloballyExcluded = (name: string) =>
-  globalStore.settings.world_info.global_excluded_books.includes(name);
+const isBookGloballyExcluded = (name: string) => globalStore.settings.world_info.global_excluded_books.includes(name);
 
 const addGlobalExcl = (name: string) => {
   if (!name) return;
@@ -211,8 +213,7 @@ const removeGlobalExcl = (name: string) => {
 };
 
 // 三态条目模式：无记录按 follow（条目启用）处理
-const getBookMode = (name: string): WIBookMode =>
-  chatStore.settings.world_info.book_entry_modes[name] ?? 'follow';
+const getBookMode = (name: string): WIBookMode => chatStore.settings.world_info.book_entry_modes[name] ?? 'follow';
 
 const cycleBookMode = (name: string) => {
   if (isBookGloballyExcluded(name)) return;

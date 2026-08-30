@@ -635,7 +635,12 @@ function importPrompts() {
         ['enrich_min_chars', n(rawConfig.enrich_min_chars)],
         ['enrich_max_chars', n(rawConfig.enrich_max_chars)],
         ['context_rounds', n(rawConfig.context_rounds)],
-        ['context_mode', rawConfig.context_mode === 'rounds' || rawConfig.context_mode === 'visible_only' ? rawConfig.context_mode : undefined],
+        [
+          'context_mode',
+          rawConfig.context_mode === 'rounds' || rawConfig.context_mode === 'visible_only'
+            ? rawConfig.context_mode
+            : undefined,
+        ],
         ['prefill_enabled', b(rawConfig.prefill_enabled)],
         ['baibai_enabled', b(rawConfig.baibai_enabled)],
       ];
@@ -679,7 +684,9 @@ const onImportConfirm = (payload: { mode: 'merge' | 'replace' | 'new'; newName?:
     showImportDialog.value = false;
     importSummary.value = null;
     selectedPromptConfigId.value = cfg.id;
-    toastr.success(t`已导入为新配置「${cfg.name}」：导入 ${summary.scoped.length} 个模块，补齐 ${summary.keptCount} 个`);
+    toastr.success(
+      t`已导入为新配置「${cfg.name}」：导入 ${summary.scoped.length} 个模块，补齐 ${summary.keptCount} 个`,
+    );
     return;
   }
   const { overwritten, added } = globalStore.importPromptModules(summary.scoped, {
