@@ -40,10 +40,34 @@
               </div>
               <div v-if="expandedGroups.has(group.key)" class="choice-sedlg-group-body">
                 <div v-for="entry in group.entries" :key="entry.id" class="choice-sedlg-entry">
-                  <label class="choice-check" @click.stop>
-                    <input type="checkbox" :checked="pending.has(entry.id)" @change="toggleEntry(entry.id)" />
-                    <span class="choice-sedlg-entry-text">{{ entrySummary(entry) }}</span>
-                  </label>
+                  <div class="choice-sedlg-entry-row">
+                    <label class="choice-check" @click.stop>
+                      <input type="checkbox" :checked="pending.has(entry.id)" @change="toggleEntry(entry.id)" />
+                    </label>
+                    <i
+                      class="fa-solid choice-sedlg-expand"
+                      :class="expandedEntries.has(entry.id) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                      :title="t`查看条目内容与规则`"
+                      @click.stop="toggleExpandEntry(entry.id)"
+                    ></i>
+                    <span class="choice-sedlg-entry-text" @click="toggleExpandEntry(entry.id)">{{
+                      entrySummary(entry)
+                    }}</span>
+                  </div>
+                  <!-- 只读详情：条目内容/规则属于条目库，此处仅展示，编辑请去条目库弹窗 -->
+                  <div v-if="expandedEntries.has(entry.id)" class="choice-sedlg-entry-detail">
+                    <div
+                      v-for="field in entryDetailFields(entry)"
+                      :key="field.label"
+                      class="choice-sedlg-detail-item"
+                    >
+                      <span class="choice-sedlg-detail-label">{{ field.label }}</span>
+                      <div class="choice-sedlg-detail-text">{{ field.value }}</div>
+                    </div>
+                    <div v-if="entryDetailFields(entry).length === 0" class="choice-sedlg-detail-empty">
+                      {{ t`该条目无内容与规则` }}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -84,6 +108,8 @@ const masterPool = computed(() => globalStore.settings.master_pool);
 const pending = ref<Set<string>>(new Set());
 const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
+// 条目只读详情展开态；弹窗每次打开时重置
+const expandedEntries = ref<Set<string>>(new Set());
 
 watch(
   () => props.open,
@@ -92,6 +118,7 @@ watch(
       pending.value = new Set(props.selectedIds);
       expandedGroups.value = new Set();
       allGroupsExpanded.value = false;
+      expandedEntries.value = new Set();
     }
   },
 );
@@ -121,10 +148,29 @@ const groupedEntries = computed<EntryGroup[]>(() => {
   return groups;
 });
 
+// 折叠摘要只显示条目标识，与 PoolEditor.entrySummary 同格式；完整内容/规则仅在展开详情出现
 const entrySummary = (entry: PoolEntry): string => {
   const type = entry.type.trim();
-  if (!type && !entry.content.trim()) return t`<空条目>`;
-  return type.replace(/"/g, '').slice(0, 50);
+  if (type) return type.replace(/"/g, '').slice(0, 50);
+  const content = entry.content.trim();
+  // 无类型的条目以内容首段充当标识，否则折叠行全空白
+  if (content) return content.replace(/"/g, '').slice(0, 30);
+  return t`<空条目>`;
+};
+
+type DetailField = { label: string; value: string };
+
+// 只读详情字段：内容/规则非空才显示对应块；两块都空时由模板的空态分支兜底
+const entryDetailFields = (entry: PoolEntry): DetailField[] => {
+  const fields: DetailField[] = [];
+  if (entry.content.trim()) fields.push({ label: t`内容`, value: entry.content });
+  if (entry.rule.trim()) fields.push({ label: t`规则`, value: entry.rule });
+  return fields;
+};
+
+const toggleExpandEntry = (id: string) => {
+  if (expandedEntries.value.has(id)) expandedEntries.value.delete(id);
+  else expandedEntries.value.add(id);
 };
 
 const toggleGroup = (key: string) => {
@@ -314,7 +360,60 @@ const onCancel = () => {
   background: var(--choice-bg-hover);
 }
 
+.choice-sedlg-entry-row {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+}
+
+.choice-sedlg-expand {
+  cursor: pointer;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.choice-sedlg-entry-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
+  margin-top: 2px;
+  border-top: 1px dashed var(--choice-border);
+}
+
+.choice-sedlg-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.choice-sedlg-detail-label {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-sedlg-detail-text {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.choice-sedlg-detail-empty {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
 .choice-sedlg-entry-text {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   overflow: hidden;
@@ -361,6 +460,8 @@ const onCancel = () => {
   color: var(--choice-text);
 }
 
+/* 对齐 global.css 的贴内容语义：label 不撑满，分组名/条目摘要用自身 flex:1 填满，
+   否则 label 撑满会把箭头+名称挤到行中央（与条目库不一致的居中观感） */
 .choice-check {
   display: inline-flex;
   align-items: center;
@@ -368,8 +469,7 @@ const onCancel = () => {
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   cursor: pointer;
-  flex: 1;
-  min-width: 0;
+  white-space: nowrap;
 }
 
 .choice-empty-hint {

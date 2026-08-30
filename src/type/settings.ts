@@ -10,11 +10,12 @@ export const PoolEntry = z
     id: z.string(),
     type: z.string(),
     content: z.string().default(''),
+    // v20 删除了 condition 字段：原设计是客户端变量表达式过滤，实际早已退化为发给 AI 的
+    // 自由文本提示，与 rule 的"适用时机"语义完全重叠；旧存档里的 condition 键由 zod 剥离
     rule: z.string().default(''),
     pinned: z.boolean().default(false),
     weight: z.number().min(0).default(1),
     category: z.string().default(''),
-    condition: z.string().default(''),
   })
   // zod4 的 prefault 参数类型是输入类型：PoolEntry 的 id/type 无 default（必填），
   // 空对象不满足签名；占位值仅在输入为 undefined 的极端路径触发，正常条目不受影响
@@ -53,7 +54,8 @@ export const PoolConfigEntry = z
     entry_id: z.string(),
     pinned: z.boolean().default(false),
     weight: z.number().min(0).default(1),
-    condition: z.string().default(''),
+    // v20 删除了 condition 字段：条件职责并入条目库层 rule（v21 起作为写作约束，不作为选用门槛），
+    // 配置层不再单独设条件；旧存档里的 condition 键由 zod 剥离
   })
   .prefault(() => ({ entry_id: '' }));
 export type PoolConfigEntry = z.infer<typeof PoolConfigEntry>;
@@ -90,7 +92,7 @@ export const DEFAULT_PERSON_STYLE = `选项内容以{{option_person}} {{user}} �
 export const DEFAULT_OPTION_RULES = `1. 独立与防越权：选项独立于正文，{{user}} 的行为不视为已发生；严禁预判或代演其他角色的反应（如"对方笑了""他松了口气"）。
 2. 直接引语：含言语交流的选项，必须以『……』给出完整可朗读的对白；纯动作/观察选项不强制。
 3. 输出纯净度：除 <thinking> 和 <options> 标签及其内容外，不输出任何文字。
-4. 条件过滤：可选条目中带 [条件: xxx] 标记的，仅在当前聊天上下文符合条件描述时使用；不符合则跳过。
+4. 条目规则：可选条目可能附带 [规则: xxx] 标记，该标记是对应选项的写作约束，生成该条目的选项时必须严格遵守；规则不是跳过条目的理由。
 5. 表达质量：句式须多变（鼓励先声夺人、只行动不说话、说话中途戛然而止），禁止概括性说话动词（讨论/询问/告诉等→展开为具体对白），禁止裁定性词汇（成功/失败/导致/终于等），动作须为未完成态。
 6. 留白收尾：收尾可悬在半空、抛出反问、转身欲走，把反应权留给正文；允许简要说明行动内在动机。`;
 
@@ -139,13 +141,13 @@ export const USER_INSTRUCTION_DEFAULT = `请为角色的当前处境生成恰好
 固定条目（共 {{pinned_count}} 条）：
 {{pinned}}
 
-可选条目（根据 [条件] 标记判断是否适用当前上下文）：
+可选条目（附带 [规则: xxx] 标记的，标记为对应选项的写作约束）：
 {{pool_selected}}
 
 生成规则：
 1. 生成选项的类型、切入点、情绪态度均应有明显差异
 2. 每个选项独立生成"标题"与"内容"两部分，格式约束见系统规则
-3. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目
+3. 可选条目可能附带 [规则: xxx] 标记，该标记是对应选项的写作约束，生成时必须严格遵守；不得以规则为由跳过条目
 4. 输出时严格遵守输出纯净度铁律，先输出 <thinking> 分析，再输出 <options> 选项，每个选项独占一行`;
 
 // JSON 导入的 role 推断为 string，与 PromptModule 的字面量联合不兼容；内容受构建期 JSON 约束，
@@ -290,7 +292,64 @@ export const SecondaryApi = z
   .prefault(() => ({ id: '', name: '', apiurl: '', key: '', model: '' }));
 export type SecondaryApi = z.infer<typeof SecondaryApi>;
 
-export const SCHEMA_VERSION = 19;
+/** 提示词文本迁移对：v20 删除 condition 字段后 [条件: xxx] 标记不再生成，老存档里引用该标记的
+ *  提示词段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束（不再是跳过条目的触发条件），
+ *  把 v20 产出的"适用时机不符则跳过"措辞收敛为约束措辞。
+ *  旧串必须与前一版本的默认文本逐字一致，替换为精确子串匹配、幂等；按序应用——
+ *  v19 存档先命中 v20 对（条件→skip）再命中 v21 对（skip→约束），同一遍内收敛到终态。
+ *  更早版本的措辞若不同则匹配不到、保留旧文本，属可接受降级（旧指令惰性失效，不报错）。 */
+export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = [
+  // v20：DEFAULT_OPTION_RULES 第4条（条件→规则 skip 措辞，供 v21 对继续改写为约束措辞）
+  [
+    '4. 条件过滤：可选条目中带 [条件: xxx] 标记的，仅在当前聊天上下文符合条件描述时使用；不符合则跳过。',
+    '4. 条目规则：可选条目中带 [规则: xxx] 标记的，若规则描述的适用时机与当前上下文不符则不使用该条目；选用时严格遵守规则约束。',
+  ],
+  // v20：USER_INSTRUCTION_DEFAULT
+  [
+    '可选条目（根据 [条件] 标记判断是否适用当前上下文）：',
+    '可选条目（根据 [规则] 标记判断是否适用当前上下文）：',
+  ],
+  [
+    '3. 可选条目可能附带 [条件: xxx] 标记，仅当当前聊天上下文符合条件描述时才使用该条目',
+    '3. 可选条目可能附带 [规则: xxx] 标记，仅当当前聊天上下文符合规则描述的适用时机时才使用该条目，选用时严格遵守规则约束',
+  ],
+  // v20：choice-prompts-optimized.json user_instruction 模块
+  [
+    '【固定条目】（共 {{pinned_count}} 条，本轮必须全部包含，不受下方条件过滤影响）：',
+    '【固定条目】（共 {{pinned_count}} 条，本轮必须全部包含；附带 [规则: xxx] 的，遵守其写作约束）：',
+  ],
+  [
+    '【候选条目池】（每条可能带 [条件: xxx] 标记；仅当当前上下文明确满足该条件时才可选用，否则直接跳过，不得为凑数而强行关联）：',
+    '【候选条目池】（每条可能带 [规则: xxx] 标记；若规则描述的适用时机与当前上下文不符则直接跳过，不得为凑数而强行关联；选用时须遵守规则约束）：',
+  ],
+  [
+    '3. 候选条目的条件过滤是本轮唯一的取舍依据：条件满足才使用，条件不满足或无法判断则舍弃。',
+    '3. 候选条目的取舍依据是其 [规则] 标记：规则描述的适用时机与当前上下文不符或无法判断则舍弃，选用时严格遵守规则约束。',
+  ],
+  // v21：规则改为纯写作约束，v20 产出的 skip 措辞全部收敛（from 与上方 v20 对的 to 逐字一致）
+  [
+    '4. 条目规则：可选条目中带 [规则: xxx] 标记的，若规则描述的适用时机与当前上下文不符则不使用该条目；选用时严格遵守规则约束。',
+    '4. 条目规则：可选条目可能附带 [规则: xxx] 标记，该标记是对应选项的写作约束，生成该条目的选项时必须严格遵守；规则不是跳过条目的理由。',
+  ],
+  [
+    '可选条目（根据 [规则] 标记判断是否适用当前上下文）：',
+    '可选条目（附带 [规则: xxx] 标记的，标记为对应选项的写作约束）：',
+  ],
+  [
+    '3. 可选条目可能附带 [规则: xxx] 标记，仅当当前聊天上下文符合规则描述的适用时机时才使用该条目，选用时严格遵守规则约束',
+    '3. 可选条目可能附带 [规则: xxx] 标记，该标记是对应选项的写作约束，生成时必须严格遵守；不得以规则为由跳过条目',
+  ],
+  [
+    '【候选条目池】（每条可能带 [规则: xxx] 标记；若规则描述的适用时机与当前上下文不符则直接跳过，不得为凑数而强行关联；选用时须遵守规则约束）：',
+    '【候选条目池】（每条可能带 [规则: xxx] 标记，该标记是对应选项的写作约束，不是跳过条目的理由）：',
+  ],
+  [
+    '3. 候选条目的取舍依据是其 [规则] 标记：规则描述的适用时机与当前上下文不符或无法判断则舍弃，选用时严格遵守规则约束。',
+    '3. 候选条目必须全部使用，每条对应一个选项；[规则: xxx] 标记是写作约束，生成时严格遵守，不得以规则为由跳过或舍弃条目。',
+  ],
+];
+
+export const SCHEMA_VERSION = 21;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -306,12 +365,21 @@ export type WorldInfoGlobalSettings = z.infer<typeof WorldInfoGlobalSettings>;
 
 export const WorldInfoChatSettings = z
   .object({
+    /** @deprecated v23 起被三态/自定义条目模式吸收（book_entry_modes + book_entry_overrides），不再读写 */
     excluded_books: z.array(z.string()).prefault([]),
+    /** @deprecated v23 起迁移进 book_entry_overrides（false=排除），不再读写 */
     excluded_entries: z.array(z.string()).prefault([]),
     enabled_books: z.array(z.string()).prefault([]),
+    /** 已启用书的条目模式（键=书名）：off=条目全关（生成时整本不注入）、
+     *  follow=条目启用（尊重酒馆条目 disable + 覆盖，默认）、force=条目全启用（无视一切关闭态）、
+     *  custom=自定义（按 book_entry_overrides 逐条生效，由手动勾选任意条目进入）。 */
+    book_entry_modes: z.record(z.string(), z.enum(['off', 'follow', 'force', 'custom'])).prefault({}),
+    /** 自定义模式下的逐条覆盖（键=书名，内层键=uid 字符串，值=条目启用态）。仅 custom 模式生效。 */
+    book_entry_overrides: z.record(z.string(), z.record(z.string(), z.boolean())).prefault({}),
   })
   .prefault({});
 export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
+export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 
 export const UISettings = z
   .object({

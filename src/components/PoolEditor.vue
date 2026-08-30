@@ -97,13 +97,19 @@
         <div v-if="selectedEntries.length > 0" ref="entriesContainer" class="choice-inline-entries">
           <div v-for="cfgEntry in selectedEntries" :key="cfgEntry.entry_id" class="choice-inline-entry">
             <div class="choice-inline-entry-row">
-              <span class="choice-inline-entry-text">
+              <i
+                class="fa-solid choice-inline-expand"
+                :class="expandedEntries.has(cfgEntry.entry_id) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                :title="t`查看条目内容与规则`"
+                @click="toggleExpandEntry(cfgEntry.entry_id)"
+              ></i>
+              <span class="choice-inline-entry-text" @click="toggleExpandEntry(cfgEntry.entry_id)">
                 <span
                   class="choice-inline-cat-badge"
                   :class="{ 'choice-inline-cat-badge--muted': !getEntryCategory(cfgEntry.entry_id) }"
                   >{{ getEntryCategory(cfgEntry.entry_id) || t`未分组` }}</span
                 >
-                {{ getEntryText(cfgEntry.entry_id) }}
+                {{ entrySummary(cfgEntry.entry_id) }}
               </span>
               <div class="choice-inline-entry-fields">
                 <label class="choice-check">
@@ -114,14 +120,6 @@
                   <span class="choice-inline-field-label">{{ t`权重` }}</span>
                   <input v-model.number="cfgEntry.weight" class="text_pole choice-small-input" type="number" min="0" />
                 </label>
-                <label class="choice-inline-field-item">
-                  <span class="choice-inline-field-label">{{ t`条件` }}</span>
-                  <input
-                    v-model="cfgEntry.condition"
-                    class="text_pole choice-cond-input"
-                    :placeholder="t`如:战斗场景、关系亲密时`"
-                  />
-                </label>
                 <button
                   class="choice-icon-btn choice-delete-btn"
                   :title="t`移除`"
@@ -130,6 +128,24 @@
                   <i class="fa-solid fa-xmark"></i>
                 </button>
               </div>
+            </div>
+            <!-- 只读详情：content/rule/category 只存在于 master_pool（内容层唯一真相源），
+                 配置层不持有这些字段，这里只做展示，编辑请去条目库 -->
+            <div v-if="expandedEntries.has(cfgEntry.entry_id)" class="choice-inline-entry-detail">
+              <template v-if="masterEntryOf(cfgEntry.entry_id)">
+                <div
+                  v-for="field in entryDetailFields(cfgEntry.entry_id)"
+                  :key="field.label"
+                  class="choice-inline-detail-item"
+                >
+                  <span class="choice-inline-detail-label">{{ field.label }}</span>
+                  <div class="choice-inline-detail-text">{{ field.value }}</div>
+                </div>
+                <div v-if="entryDetailFields(cfgEntry.entry_id).length === 0" class="choice-inline-detail-empty">
+                  {{ t`该条目无内容与规则` }}
+                </div>
+              </template>
+              <div v-else class="choice-inline-detail-empty">{{ t`条目已不存在` }}</div>
             </div>
           </div>
         </div>
@@ -153,7 +169,12 @@
 
     <EntryPoolDialog :open="showEntryPool" @close="showEntryPool = false" />
 
-    <CreateConfigDialog :open="showCreateDialog" @close="showCreateDialog = false" @create="onCreateConfig" />
+    <CreateConfigDialog
+      :open="showCreateDialog"
+      :existing-names="configs.map(c => c.name)"
+      @close="showCreateDialog = false"
+      @create="onCreateConfig"
+    />
 
     <SelectEntriesDialog
       :open="showSelectDialog"
@@ -169,12 +190,13 @@
 import EntryPoolDialog from '@/components/EntryPoolDialog.vue';
 import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import SelectEntriesDialog from '@/components/SelectEntriesDialog.vue';
+import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import type { PoolConfig } from '@/type/settings';
+import type { PoolConfig, PoolEntry } from '@/type/settings';
 import { GenerationSettings } from '@/type/settings';
 import { draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
@@ -241,9 +263,14 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
 const startRenameConfig = () => {
   if (!selectedConfig.value) return;
   const name = prompt(t`请输入新名称`, selectedConfig.value.name);
-  if (name && name.trim() && name.trim() !== selectedConfig.value.name) {
-    selectedConfig.value.name = name.trim();
+  const trimmed = name?.trim();
+  if (!trimmed || trimmed === selectedConfig.value.name) return;
+  // 重名检测：与其他配置同名会让下拉/绑定歧义，提醒后放弃修改
+  if (configs.value.some(c => c.id !== selectedConfig.value!.id && c.name === trimmed)) {
+    toastr.warning(t`配置名「${trimmed}」已存在`);
+    return;
   }
+  selectedConfig.value.name = trimmed;
 };
 
 const setDefault = () => {
@@ -285,23 +312,53 @@ const selectedEntryIds = computed(() => {
   return new Set(selectedConfig.value.entries.map(e => e.entry_id));
 });
 
+// 展开态按 entry_id 记录；切换配置时清空，避免残留指向其他配置条目的展开态
+const expandedEntries = ref<Set<string>>(new Set());
+watch(selectedConfigId, () => expandedEntries.value = new Set());
+
+const toggleExpandEntry = (entryId: string) => {
+  if (expandedEntries.value.has(entryId)) expandedEntries.value.delete(entryId);
+  else expandedEntries.value.add(entryId);
+};
+
+const masterEntryOf = (entryId: string): PoolEntry | undefined =>
+  masterPool.value.find(e => e.id === entryId);
+
 const getEntryCategory = (entryId: string): string => {
-  const entry = masterPool.value.find(e => e.id === entryId);
+  const entry = masterEntryOf(entryId);
   return entry?.category?.trim() || '';
 };
 
-const getEntryText = (entryId: string): string => {
-  const entry = masterPool.value.find(e => e.id === entryId);
+// 折叠摘要只显示条目标识：完整内容/规则仅在展开详情出现，避免同一内容两处重复
+const entrySummary = (entryId: string): string => {
+  const entry = masterEntryOf(entryId);
   if (!entry) return t`<空条目>`;
   const type = entry.type.trim();
-  if (!type && !entry.content.trim()) return t`<空条目>`;
-  return type.replace(/"/g, '').slice(0, 50);
+  if (type) return type.replace(/"/g, '').slice(0, 50);
+  const content = entry.content.trim();
+  // 无类型的条目以内容首段充当标识，否则折叠行全空白
+  if (content) return content.replace(/"/g, '').slice(0, 30);
+  return t`<空条目>`;
+};
+
+type DetailField = { label: string; value: string };
+
+// 只读详情字段：内容/规则均非空才显示对应块；条目已被从条目库删除时返回空数组，
+// 由模板的"条目已不存在"分支兜底
+const entryDetailFields = (entryId: string): DetailField[] => {
+  const entry = masterEntryOf(entryId);
+  if (!entry) return [];
+  const fields: DetailField[] = [];
+  if (entry.content.trim()) fields.push({ label: t`内容`, value: entry.content });
+  if (entry.rule.trim()) fields.push({ label: t`规则`, value: entry.rule });
+  return fields;
 };
 
 const removeConfigEntry = (entryId: string) => {
   if (!selectedConfig.value) return;
   const idx = selectedConfig.value.entries.findIndex(e => e.entry_id === entryId);
   if (idx !== -1) selectedConfig.value.entries.splice(idx, 1);
+  expandedEntries.value.delete(entryId);
 };
 
 const handleSelectEntries = (selectedIds: Set<string>) => {
@@ -314,12 +371,11 @@ const handleSelectEntries = (selectedIds: Set<string>) => {
   }
   for (const id of selectedIds) {
     if (!currentIds.has(id)) {
-      const src = masterPool.value.find(e => e.id === id);
+      const src = masterEntryOf(id);
       selectedConfig.value.entries.push({
         entry_id: id,
         pinned: src?.pinned ?? false,
         weight: src?.weight ?? 1,
-        condition: src?.condition ?? '',
       });
     }
   }
@@ -455,6 +511,49 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: var(--choice-space-2);
+  cursor: pointer;
+}
+
+.choice-inline-expand {
+  cursor: pointer;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
+  flex-shrink: 0;
+  padding-left: var(--choice-space-2);
+}
+
+.choice-inline-entry-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-1) var(--choice-space-2) var(--choice-space-2) var(--choice-space-4);
+  border-top: 1px solid var(--choice-border);
+}
+
+.choice-inline-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.choice-inline-detail-label {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-inline-detail-text {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.choice-inline-detail-empty {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
 }
 
 .choice-inline-entry-fields {
@@ -503,21 +602,6 @@ onUnmounted(() => {
 }
 
 .choice-inline-field-item .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-cond-input {
-  width: 100px;
-  min-width: 0;
-  flex-shrink: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-cond-input:focus {
   border-color: var(--choice-border-active);
   outline: none;
 }

@@ -14,6 +14,7 @@
           <div class="choice-ccdlg-field">
             <label class="choice-ccdlg-label">{{ t`配置名称` }}</label>
             <input v-model="name" class="text_pole" :placeholder="t`输入配置名称`" @keyup.enter="onCreate" />
+            <p v-if="isDup" class="choice-ccdlg-warning">{{ t`已存在同名配置，请换一个名称` }}</p>
           </div>
 
           <div class="choice-ccdlg-checks">
@@ -34,7 +35,7 @@
 
         <div class="choice-ccdlg-footer">
           <button class="menu_button" @click="emit('close')">{{ t`取消` }}</button>
-          <button class="menu_button" :disabled="!name.trim()" @click="onCreate">{{ t`创建` }}</button>
+          <button class="menu_button" :disabled="!name.trim() || isDup" @click="onCreate">{{ t`创建` }}</button>
         </div>
       </div>
     </div>
@@ -42,7 +43,9 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ open: boolean }>();
+import { computed } from 'vue';
+
+const props = defineProps<{ open: boolean; existingNames?: string[] }>();
 
 const emit = defineEmits<{
   close: [];
@@ -54,9 +57,15 @@ const isDefault = ref(false);
 const bindChat = ref(false);
 const bindChar = ref(false);
 
+// 与现有配置重名（trim 后精确比较）时禁止创建，行内提示
+const isDup = computed(() => {
+  const trimmed = name.value.trim();
+  return trimmed.length > 0 && (props.existingNames ?? []).some(n => n.trim() === trimmed);
+});
+
 const onCreate = () => {
   const trimmed = name.value.trim();
-  if (!trimmed) return;
+  if (!trimmed || isDup.value) return;
   emit('create', {
     name: trimmed,
     isDefault: isDefault.value,
@@ -157,6 +166,11 @@ const onCreate = () => {
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   font-weight: bold;
+}
+
+.choice-ccdlg-warning {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-color-error);
 }
 
 .choice-ccdlg-checks {

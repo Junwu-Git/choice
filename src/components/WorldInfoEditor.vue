@@ -27,10 +27,20 @@
             <button class="choice-wi-enable-btn" @click.stop="removeGlobalExcl(name)">{{ t`移除` }}</button>
           </div>
         </div>
-        <select class="choice-wi-global-excl-select" v-model="selectedGlobalExcl" @change="addGlobalExcl">
-          <option value="">{{ t`-- 添加世界书到全局排除 --` }}</option>
-          <option v-for="name in availableGlobalExclBooks" :key="name" :value="name">{{ name }}</option>
-        </select>
+        <input
+          v-model="globalExclSearch"
+          class="text_pole choice-wi-search"
+          :placeholder="t`搜索世界书名`"
+        />
+        <div class="choice-wi-list choice-wi-available">
+          <div v-if="availableGlobalExclBooks.length === 0" class="choice-empty-hint">
+            {{ t`无可添加的世界书` }}
+          </div>
+          <div v-for="name in availableGlobalExclBooks" :key="name" class="choice-wi-row available" @click.stop="addGlobalExcl(name)">
+            <span class="choice-wi-name">{{ name }}</span>
+            <button class="choice-wi-enable-btn" @click.stop="addGlobalExcl(name)">{{ t`添加` }}</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -38,7 +48,11 @@
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
-          <div class="choice-wi-row" :class="{ excluded: !isBookChecked(book) }" @click="toggleBookExpand(book.name)">
+          <div
+            class="choice-wi-row"
+            :class="{ excluded: getBookMode(book.name) === 'off' || isBookGloballyExcluded(book.name) }"
+            @click="toggleBookExpand(book.name)"
+          >
             <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
@@ -54,27 +68,33 @@
             >
               {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
             </span>
-            <input
-              type="checkbox"
-              :checked="isBookChecked(book)"
-              :disabled="isBookGloballyExcluded(book)"
-              @click.stop
-              @change="toggleBook(book)"
-            />
-            <span v-if="isBookGloballyExcluded(book)" class="choice-wi-badge badge-global-excl">{{ t`全局排除` }}</span>
+            <span v-if="getBookMode(book.name) === 'custom'" class="choice-wi-badge badge-custom">{{ t`自定义` }}</span>
+            <!-- 三态钩 + 自定义：循环 条目全关 → 条目启用（默认）→ 条目全启用；勾选条目进入自定义 -->
+            <span
+              class="choice-wi-mode"
+              :class="[`mode-${getBookMode(book.name)}`, { 'mode-disabled': isBookGloballyExcluded(book.name) }]"
+              :title="bookModeTitle(book.name)"
+              @click.stop="cycleBookMode(book.name)"
+            >
+              <i v-if="getBookMode(book.name) === 'force'" class="fa-solid fa-check choice-wi-mode-check"></i>
+              <span v-else-if="getBookMode(book.name) !== 'off'" class="choice-wi-mode-block"></span>
+            </span>
+            <span v-if="isBookGloballyExcluded(book.name)" class="choice-wi-badge badge-global-excl">{{ t`全局排除` }}</span>
           </div>
           <div v-if="bookExpanded.has(book.name) && bookEntries[book.name]" class="choice-wi-entries">
             <div
               v-for="entry in bookEntries[book.name]"
               :key="entry.uid"
               class="choice-wi-entry"
-              :class="{ excluded: isEntryExcluded(book.name, entry.uid), disabled: entry.disable }"
+              :class="{ disabled: getBookMode(book.name) === 'follow' && entry.disable }"
             >
               <span class="choice-wi-entry-state">{{ entryStateIcon(entry) }}</span>
               <span class="choice-wi-entry-name">{{ entry.comment || entry.key?.[0] || `#${entry.uid}` }}</span>
+              <!-- 条目勾选跟随书模式联动：全关=全空、启用=按酒馆/覆盖、全启用=全勾；任意模式勾选即进入自定义 -->
               <input
                 type="checkbox"
-                :checked="!isEntryExcluded(book.name, entry.uid)"
+                :checked="isEntryOn(book.name, entry)"
+                :title="t`点击开启/关闭该条目（进入自定义模式）`"
                 @change="toggleEntry(book.name, entry.uid)"
               />
             </div>
@@ -102,7 +122,9 @@
       {{ t`未找到任何世界书` }}
     </div>
 
-    <div class="choice-hint">{{ t`取消勾选可排除书或条目` }}</div>
+    <div class="choice-hint">
+      {{ t`钩子点击循环条目模式：全关 → 启用（默认）→ 全启用（☑️）；直接勾选条目进入自定义模式，逐条开关` }}
+    </div>
   </div>
 </template>
 
@@ -110,8 +132,10 @@
 import { this_chid, eventSource, event_types } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import { loadWorldInfo, selected_world_info, world_names } from '@sillytavern/scripts/world-info';
+import toastr from 'toastr';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import type { WIBookMode } from '@/type/settings';
 
 const chatStore = useChatSettingsStore();
 const globalStore = useGlobalSettingsStore();
@@ -154,7 +178,7 @@ const bookEntries = ref<Record<string, EntryInfo[]>>({});
 const bookExpanded = ref<Set<string>>(new Set());
 const showInactive = ref(false);
 const showGlobalExcl = ref(false);
-const selectedGlobalExcl = ref('');
+const globalExclSearch = ref('');
 
 const activeBooks = computed(() =>
   allBooks.value.filter(b => b.active || chatStore.settings.world_info.enabled_books.includes(b.name)),
@@ -163,26 +187,21 @@ const inactiveBooks = computed(() =>
   allBooks.value.filter(b => !b.active && !chatStore.settings.world_info.enabled_books.includes(b.name)),
 );
 
-const isEntryExcluded = (bookName: string, uid: string | number) =>
-  chatStore.settings.world_info.excluded_entries.includes(`${bookName}::${uid}`);
-
 const globalExcludedBooks = computed(() => globalStore.settings.world_info.global_excluded_books);
 
 const availableGlobalExclBooks = computed(() => {
   const excluded = new Set(globalExcludedBooks.value);
-  return (world_names ?? []).filter(name => !excluded.has(name));
+  const kw = globalExclSearch.value.trim().toLowerCase();
+  return (world_names ?? []).filter(name => !excluded.has(name) && (!kw || name.toLowerCase().includes(kw)));
 });
 
-const isBookGloballyExcluded = (book: BookInfo) =>
-  globalStore.settings.world_info.global_excluded_books.includes(book.name);
+const isBookGloballyExcluded = (name: string) =>
+  globalStore.settings.world_info.global_excluded_books.includes(name);
 
-const addGlobalExcl = () => {
-  if (!selectedGlobalExcl.value) return;
+const addGlobalExcl = (name: string) => {
+  if (!name) return;
   const list = globalStore.settings.world_info.global_excluded_books;
-  if (!list.includes(selectedGlobalExcl.value)) {
-    list.push(selectedGlobalExcl.value);
-  }
-  selectedGlobalExcl.value = '';
+  if (!list.includes(name)) list.push(name);
 };
 
 const removeGlobalExcl = (name: string) => {
@@ -191,31 +210,37 @@ const removeGlobalExcl = (name: string) => {
   if (idx !== -1) list.splice(idx, 1);
 };
 
-const isBookChecked = (book: BookInfo) => {
-  if (globalStore.settings.world_info.global_excluded_books.includes(book.name)) return false;
-  if (chatStore.settings.world_info.excluded_books.includes(book.name)) return false;
-  if (book.active) return true;
-  return chatStore.settings.world_info.enabled_books.includes(book.name);
+// 三态条目模式：无记录按 follow（条目启用）处理
+const getBookMode = (name: string): WIBookMode =>
+  chatStore.settings.world_info.book_entry_modes[name] ?? 'follow';
+
+const cycleBookMode = (name: string) => {
+  if (isBookGloballyExcluded(name)) return;
+  const modes = chatStore.settings.world_info.book_entry_modes;
+  // 循环顺序与用户列举一致：全关 → 启用（默认）→ 全启用 → 全关
+  const next: WIBookMode = getBookMode(name) === 'off' ? 'follow' : getBookMode(name) === 'follow' ? 'force' : 'off';
+  modes[name] = next;
 };
 
-const toggleBook = (book: BookInfo) => {
-  if (globalStore.settings.world_info.global_excluded_books.includes(book.name)) return;
-  const enabled = chatStore.settings.world_info.enabled_books;
-  const excluded = chatStore.settings.world_info.excluded_books;
-  const wasChecked = isBookChecked(book);
+const bookModeTitle = (name: string) => {
+  const mode = getBookMode(name);
+  if (mode === 'off') return t`条目全部关闭（点击：条目启用）`;
+  if (mode === 'force') return t`条目全启用——无视酒馆关闭条目（点击：条目全部关闭）`;
+  if (mode === 'custom') return t`自定义条目开关（点击：条目全部关闭）`;
+  return t`条目启用——酒馆里关闭的条目也关闭（默认；点击：条目全启用）`;
+};
 
-  const removeFrom = (arr: string[], name: string) => {
-    const i = arr.indexOf(name);
-    if (i !== -1) arr.splice(i, 1);
-  };
-
-  if (wasChecked) {
-    removeFrom(enabled, book.name);
-    if (book.active && !excluded.includes(book.name)) excluded.push(book.name);
-  } else {
-    removeFrom(excluded, book.name);
-    if (!book.active && !enabled.includes(book.name)) enabled.push(book.name);
+// 条目勾选框状态跟随书模式联动：全关=全空；条目启用=酒馆原生 disable（纯酒馆态）；
+// 全启用=全勾；自定义=按覆盖逐条（覆盖仅自定义模式生效，切换模式即脱离自定义）
+const isEntryOn = (bookName: string, entry: EntryInfo) => {
+  const mode = getBookMode(bookName);
+  if (mode === 'off') return false;
+  if (mode === 'force') return true;
+  if (mode === 'custom') {
+    const ov = chatStore.settings.world_info.book_entry_overrides[bookName]?.[String(entry.uid)];
+    return typeof ov === 'boolean' ? ov : !entry.disable;
   }
+  return !entry.disable;
 };
 
 const enableBook = async (name: string) => {
@@ -250,12 +275,23 @@ const toggleBookExpand = (name: string) => {
   else bookExpanded.value.add(name);
 };
 
+/** 任意模式下手动勾选条目：非 custom 先快照当前显示态（该书全部条目的勾选显示）进 overrides
+ *  并切入 custom（toastr 提醒），再翻转所点条目；custom 下直接翻转对应覆盖位。 */
 const toggleEntry = (bookName: string, uid: string | number) => {
-  const excluded = chatStore.settings.world_info.excluded_entries;
-  const key = `${bookName}::${uid}`;
-  const idx = excluded.indexOf(key);
-  if (idx !== -1) excluded.splice(idx, 1);
-  else excluded.push(key);
+  const wi = chatStore.settings.world_info;
+  const uidKey = String(uid);
+  if (getBookMode(bookName) !== 'custom') {
+    const snap: Record<string, boolean> = {};
+    for (const e of bookEntries.value[bookName] ?? []) {
+      snap[String(e.uid)] = isEntryOn(bookName, e);
+    }
+    wi.book_entry_overrides[bookName] = snap;
+    wi.book_entry_modes[bookName] = 'custom';
+    toastr.info(t`已进入自定义模式：「${bookName}」条目按手动开关逐条生效`);
+  }
+  const bookOverrides = wi.book_entry_overrides[bookName] ?? {};
+  const cur = bookOverrides[uidKey] ?? (isEntryOn(bookName, { uid: uid } as EntryInfo) as boolean);
+  wi.book_entry_overrides[bookName] = { ...bookOverrides, [uidKey]: !cur };
 };
 
 const bookLightClass = (book: BookInfo) => {
@@ -307,18 +343,9 @@ const refreshAll = async () => {
     }
   }
   bookEntries.value = entries;
-
-  const currentExcluded = new Set(chatStore.settings.world_info.excluded_entries);
-  for (const [bookName, entryList] of Object.entries(entries)) {
-    for (const entry of entryList) {
-      if (entry.disable) {
-        const key = `${bookName}::${entry.uid}`;
-        if (!currentExcluded.has(key)) {
-          chatStore.settings.world_info.excluded_entries.push(key);
-        }
-      }
-    }
-  }
+  // v22 起不再把酒馆 disable 的条目自动复制进 excluded_entries：ST 关闭状态由三态模式的
+  // follow 档直接承担，excluded_entries 只存用户在本扩展里的显式条目排除（否则 force
+  // 档"无视酒馆关闭条目"会被自动复制的旧数据破坏）
 };
 
 onMounted(() => {
@@ -535,13 +562,24 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
 }
 
+/* 已排除列表与可添加列表同样限高滚动，防止排除上百本时撑长整页；
+ * 行需 flex-shrink:0——否则 flex 列容器会把全部行压缩进限高内（无滚动条、行不可读） */
+.choice-wi-global-excl-body > .choice-wi-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.choice-wi-global-excl-body .choice-wi-row {
+  flex-shrink: 0;
+}
+
 .choice-wi-row.excluded-global {
   opacity: 0.6;
   background: rgba(255, 100, 100, 0.08);
   border-color: rgba(255, 100, 100, 0.3);
 }
 
-.choice-wi-global-excl-select {
+.choice-wi-search {
   width: 100%;
   padding: var(--choice-space-1) var(--choice-space-2);
   border: 1px solid var(--choice-border);
@@ -549,6 +587,71 @@ onUnmounted(() => {
   background: var(--choice-bg-card);
   color: var(--choice-text-secondary);
   font-size: var(--choice-text-sm);
+}
+
+.choice-wi-available {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  padding: var(--choice-space-1);
+}
+
+.choice-wi-row.available {
+  cursor: pointer;
+}
+
+/* 三态钩自绘指示器：空框（off）→ 内嵌块留间隔（follow，默认）→ 框内 ☑️ 打勾（force）；横杠（custom） */
+.choice-wi-mode {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--choice-border-strong);
+  border-radius: 2px;
+  background: var(--choice-bg-card);
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.choice-wi-mode.mode-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.choice-wi-mode-block {
+  position: absolute;
+  display: none;
+}
+
+.choice-wi-mode.mode-follow .choice-wi-mode-block {
+  display: block;
+  inset: 3px;
+  background: var(--choice-text-secondary);
+}
+
+/* custom：横杠（indeterminate 样式） */
+.choice-wi-mode.mode-custom .choice-wi-mode-block {
+  display: block;
+  inset: 5px 3px;
+  background: var(--choice-text-muted);
+}
+
+.choice-wi-mode-check {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--choice-text);
+}
+
+.badge-custom {
+  background: var(--choice-color-warning-bg);
+}
+
+.choice-wi-entry input[type='checkbox']:disabled {
+  cursor: not-allowed;
 }
 
 .badge-global-excl {

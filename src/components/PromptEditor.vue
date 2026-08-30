@@ -332,6 +332,7 @@
 
     <CreateConfigDialog
       :open="showCreatePromptConfig"
+      :existing-names="promptConfigs.map(c => c.name)"
       @close="showCreatePromptConfig = false"
       @create="onCreatePromptConfig"
     />
@@ -339,6 +340,7 @@
     <PromptImportDialog
       :open="showImportDialog"
       :summary="importSummary"
+      :existing-names="promptConfigs.map(c => c.name)"
       @close="showImportDialog = false"
       @confirm="onImportConfirm"
     />
@@ -462,9 +464,14 @@ function startRenamePromptConfig() {
   const cfg = selectedPromptConfig.value;
   if (!cfg) return;
   const name = prompt(t`请输入新名称`, cfg.name);
-  if (name && name.trim() && name.trim() !== cfg.name) {
-    globalStore.renamePromptConfig(cfg.id, name.trim());
+  const trimmed = name?.trim();
+  if (!trimmed || trimmed === cfg.name) return;
+  // 重名检测：与其他提示词配置同名会让下拉歧义，提醒后放弃修改
+  if (promptConfigs.value.some(c => c.id !== cfg.id && c.name === trimmed)) {
+    toastr.warning(t`配置名「${trimmed}」已存在`);
+    return;
   }
+  globalStore.renamePromptConfig(cfg.id, trimmed);
 }
 
 function setPromptDefault() {
@@ -520,18 +527,35 @@ const resetPromptToDefaults = () => {
 };
 
 function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
-  let modules = globalStore.settings.prompt_rules.modules;
+  const pr = globalStore.settings.prompt_rules;
+  let modules = pr.modules;
   if (mode === 'option') {
     modules = modules.filter(m => !m.enrich_only);
   } else if (mode === 'enrich') {
     modules = modules.filter(m => !m.option_only);
   }
+  // v3：携带配置级字段，使「作为新建配置导入」能得到完整配置；v2 导入方只读 modules，向前兼容
   const json = JSON.stringify(
     {
-      version: 2,
+      version: 3,
       mode,
       exportedAt: new Date().toISOString(),
       modules,
+      config: {
+        person_style: pr.person_style,
+        option_rules: pr.option_rules,
+        option_person: pr.option_person,
+        enrich_person: pr.enrich_person,
+        enrich_person_style: pr.enrich_person_style,
+        option_min_chars: pr.option_min_chars,
+        option_max_chars: pr.option_max_chars,
+        enrich_min_chars: pr.enrich_min_chars,
+        enrich_max_chars: pr.enrich_max_chars,
+        context_rounds: pr.context_rounds,
+        context_mode: pr.context_mode,
+        prefill_enabled: pr.prefill_enabled,
+        baibai_enabled: pr.baibai_enabled,
+      },
     },
     null,
     2,
@@ -553,6 +577,9 @@ const importSummary = ref<{
   fileName: string;
   mode: ImportFileMode;
   scoped: PromptModule[];
+  totalCount: number;
+  /** v3 文件携带的配置级字段（白名单校验后）；v2 文件为空对象，导入新配置时逐字段回退当前值 */
+  fileConfig: Record<string, string | number | boolean>;
   overwriteCount: number;
   addCount: number;
   keptCount: number;
@@ -591,10 +618,36 @@ function importPrompts() {
       // 计数为合并模式的预览值：id 命中 → 覆盖，未命中 → 新增，现有中未被导入覆盖的 → 保留
       const existingIds = new Set(existingModules.map(m => m.id));
       const overwriteCount = scoped.filter(m => existingIds.has(m.id)).length;
+      // v3 文件携带配置级字段：白名单 + 类型校验逐字段提取，非法/缺失忽略（新建配置时回退当前值）
+      const rawConfig = data.config && typeof data.config === 'object' ? (data.config as Record<string, unknown>) : {};
+      const s = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+      const n = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+      const b = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+      const fileConfig: Record<string, string | number | boolean> = {};
+      const cfgEntries: Array<[string, string | number | boolean | undefined]> = [
+        ['person_style', s(rawConfig.person_style)],
+        ['option_rules', s(rawConfig.option_rules)],
+        ['option_person', s(rawConfig.option_person)],
+        ['enrich_person', s(rawConfig.enrich_person)],
+        ['enrich_person_style', s(rawConfig.enrich_person_style)],
+        ['option_min_chars', n(rawConfig.option_min_chars)],
+        ['option_max_chars', n(rawConfig.option_max_chars)],
+        ['enrich_min_chars', n(rawConfig.enrich_min_chars)],
+        ['enrich_max_chars', n(rawConfig.enrich_max_chars)],
+        ['context_rounds', n(rawConfig.context_rounds)],
+        ['context_mode', rawConfig.context_mode === 'rounds' || rawConfig.context_mode === 'visible_only' ? rawConfig.context_mode : undefined],
+        ['prefill_enabled', b(rawConfig.prefill_enabled)],
+        ['baibai_enabled', b(rawConfig.baibai_enabled)],
+      ];
+      for (const [k, v] of cfgEntries) {
+        if (v !== undefined) fileConfig[k] = v;
+      }
       importSummary.value = {
         fileName: file.name,
         mode,
         scoped,
+        totalCount: scoped.length,
+        fileConfig,
         overwriteCount,
         addCount: scoped.length - overwriteCount,
         keptCount: existingModules.length - overwriteCount,
@@ -607,10 +660,30 @@ function importPrompts() {
   input.click();
 }
 
-const onImportConfirm = (importMode: 'merge' | 'replace') => {
-  if (!importSummary.value) return;
-  const { overwritten, added } = globalStore.importPromptModules(importSummary.value.scoped, {
-    replaceAll: importMode === 'replace',
+const onImportConfirm = (payload: { mode: 'merge' | 'replace' | 'new'; newName?: string }) => {
+  const summary = importSummary.value;
+  if (!summary) return;
+  if (payload.mode === 'new') {
+    // 兜底重名检测（对话框内已有行内拦截）
+    const trimmed = payload.newName?.trim() || t`导入配置`;
+    if (promptConfigs.value.some(c => c.name === trimmed)) {
+      toastr.warning(t`配置名「${trimmed}」已存在`);
+      return;
+    }
+    // 作为新建配置导入：不动当前配置与工作副本；切换 selectedPromptConfigId 由 watch
+    // 触发 switchPromptConfig——导入路径未触碰工作副本，旧配置回写无损
+    const cfg = globalStore.importPromptModulesAsNewConfig(summary.scoped, {
+      name: trimmed,
+      config: summary.fileConfig,
+    });
+    showImportDialog.value = false;
+    importSummary.value = null;
+    selectedPromptConfigId.value = cfg.id;
+    toastr.success(t`已导入为新配置「${cfg.name}」：导入 ${summary.scoped.length} 个模块，补齐 ${summary.keptCount} 个`);
+    return;
+  }
+  const { overwritten, added } = globalStore.importPromptModules(summary.scoped, {
+    replaceAll: payload.mode === 'replace',
     // 落盘到正在编辑（下拉选中）的配置快照；无配置时为 null，仅写工作副本
     configId: selectedPromptConfigId.value,
   });

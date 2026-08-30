@@ -1,7 +1,7 @@
 import { substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import toastr from 'toastr';
-import { getWorldInfoPrompt, selected_world_info } from '@sillytavern/scripts/world-info';
+import { getWorldInfoPrompt, loadWorldInfo, selected_world_info, worldInfoCache } from '@sillytavern/scripts/world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
@@ -11,7 +11,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PromptModule, SecondaryApi, WorldInfoGlobalSettings } from '@/type/settings';
+import type { PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
 import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -342,30 +342,93 @@ const buildWI = async (): Promise<WIBuckets> => {
 };
 
 type Restore = { restore: () => void } | null;
-export const applyWIExcl = (excl: string[], enabled: string[]): Restore => {
+
+/** 世界书注入的临时改写（选项/润色两条生成链路共用）：
+ *  1. 书级：临时重写 selected_world_info（移除排除书/off 模式书、追加启用书），restore 恢复；
+ *  2. 条目级：force/follow/custom 模式下经 loadWorldInfo 取 worldInfoCache 缓存引用（world-info.js:2041
+ *     返回缓存对象本身，已核实），临时变异条目 disable 标志，restore 逐条还原——
+ *     checkWorldInfo 对 disable==true 的条目跳过（world-info.js:4689），变异即控制注入。
+  *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，
+ *  切换模式即脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条
+ *  生效（快照未覆盖的条目保持酒馆原状）。
+ *  异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt 之前完成，
+ *  故调用方需 await 本函数。 */
+export const applyWIExcl = async (
+  excl: string[],
+  enabled: string[],
+  bookModes?: Record<string, WIBookMode>,
+  bookEntryOverrides?: Record<string, Record<string, boolean>>,
+): Promise<Restore> => {
   const saved = [...(selected_world_info ?? [])];
-  const hasExcl = excl.length > 0;
+  const modes = bookModes ?? {};
+  const modeOf = (name: string): WIBookMode => modes[name] ?? 'follow';
+  // off 书并入临时排除：整本不注入（等价"条目全关"的生成结果，且无需条目级变异）
+  const allExcl = [...new Set([...excl, ...enabled.filter(name => modeOf(name) === 'off')])];
+  const hasExcl = allExcl.length > 0;
   const hasEnabled = enabled.length > 0;
   if (!hasExcl && !hasEnabled) return null;
 
   selected_world_info.length = 0;
-  let newList = hasExcl ? saved.filter(n => !excl.includes(n)) : [...saved];
+  let newList = hasExcl ? saved.filter(n => !allExcl.includes(n)) : [...saved];
   if (hasEnabled) {
     for (const name of enabled) {
       // excluded_books 优先于 enabled_books：被排除的书即使仍在 enabled 列表里也不注入
-      if (!newList.includes(name) && !excl.includes(name)) newList.push(name);
+      if (!newList.includes(name) && !allExcl.includes(name)) newList.push(name);
     }
   }
   selected_world_info.push(...newList);
   const ch = getStCharacter(this_chid);
   const cw = ch?.data?.extensions?.world;
-  const cwEx = cw ? excl.includes(cw) : false;
+  const cwEx = cw ? allExcl.includes(cw) : false;
   if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
+
+  // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
+  // （world-info.js:882，已核实）——loadWorldInfo 返回的是深拷贝，直接变异拷贝无法影响
+  // 生成（getGlobalLore 从缓存原始数据取条目）。必须先 loadWorldInfo 确保书已进缓存，
+  // 再经 Map.prototype.get 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
+  type MutableEntry = { uid?: number | string; disable?: boolean };
+  const mutated: Array<{ entry: MutableEntry; value: boolean }> = [];
+  const overrides = bookEntryOverrides ?? {};
+  for (const name of enabled) {
+    const mode = modeOf(name);
+    if (mode === 'off') continue;
+    try {
+      await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
+      const data = Map.prototype.get.call(worldInfoCache, name) as { entries?: Record<string, MutableEntry> } | undefined;
+      if (!data?.entries) continue;
+      const bookOverrides = overrides[name] ?? {};
+      for (const entry of Object.values(data.entries)) {
+        if (!entry || typeof entry.disable !== 'boolean') continue;
+        const uidKey = `${entry.uid}`;
+        if (mode === 'force') {
+          // force 全启用：覆盖不生效（条目勾选框显示与生成一致）
+          if (entry.disable) {
+            mutated.push({ entry, value: entry.disable });
+            entry.disable = false;
+          }
+        } else if (mode === 'custom') {
+          // custom：按覆盖逐条；快照未覆盖的条目保持酒馆原状
+          const ov = bookOverrides[uidKey];
+          if (typeof ov !== 'boolean') continue;
+          if (entry.disable === ov) {
+            mutated.push({ entry, value: entry.disable });
+            entry.disable = !ov;
+          }
+        } else {
+          // follow：纯酒馆原生 disable（覆盖仅 custom 模式生效，切换模式即脱离自定义）
+        }
+      }
+    } catch (err) {
+      console.warn('[Choice] applyWIExcl 条目变异失败（保持酒馆原状）:', name, err);
+    }
+  }
+
   return {
     restore: () => {
       selected_world_info.length = 0;
       selected_world_info.push(...saved);
       if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
+      for (const m of mutated) m.entry.disable = m.value;
     },
   };
 };
@@ -489,7 +552,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
   const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
-  const restore = gwi.enabled ? applyWIExcl(allExcl, cwi.enabled_books) : null;
+  const restore = gwi.enabled
+    ? await applyWIExcl(allExcl, cwi.enabled_books, cwi.book_entry_modes, cwi.book_entry_overrides)
+    : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
     // ?? 兜底：无命中 config（effectiveConfig 为 null）时用 schema 默认生成参数，
@@ -503,25 +568,19 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       pinnedOverflow: gen.pinned_overflow,
     });
     const pinnedCount = pool.pinned.length;
-    const poolSelectedText = pool.drawn
-      .map(e => {
-        let line = e.type;
-        if (e.content.trim()) line += ': ' + e.content.trim();
-        if (e.condition.trim()) line = `[条件: ${e.condition.trim()}] ${line}`;
-        if (e.rule.trim()) line += ` [规则: ${e.rule.trim()}]`;
-        return line;
-      })
-      .join('\n');
+    // rule 在固定/候选两个分区都只作写作约束（v21 起不再是跳过条目的触发条件，
+    // 候选条目必须全部使用），渲染不做分区差异，分区语义由提示词文本的说明承担
+    const renderEntryLine = (e: PoolEntry): string => {
+      let line = e.type;
+      if (e.content.trim()) line += ': ' + e.content.trim();
+      if (e.rule.trim()) line += ` [规则: ${e.rule.trim()}]`;
+      return line;
+    };
+    const poolSelectedText = pool.drawn.map(renderEntryLine).join('\n');
     const c: Ctx = {
       count,
       pinnedCount,
-      pinned: pool.pinned
-        .map(e => {
-          let line = e.type;
-          if (e.content.trim()) line += ': ' + e.content.trim();
-          return line;
-        })
-        .join('\n'),
+      pinned: pool.pinned.map(renderEntryLine).join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
       minChars: 30,
@@ -581,8 +640,9 @@ export function cancelGeneration() {
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
  *  与行动选项生成提示词刻意分离：输出契约是 JSON 数组（type/content/rule/replace），
  *  与行动选项输出改 JSON 的决策同向，但结构不同，故不复用 parseOptions。
- *  条目种类跟随用户要求而非写死"行动方向"——条目库重构后 type/rule 是一等字段，
- *  生成结果必须能落进这两个字段，否则类型标签会被塞回 content（UI 的"AI 生成指令"框）。
+ *  输出格式在此钉死（四字类型/纯文本指令/可选规则），条目种类语义由弹窗自由输入并经
+ *  poolGenKindBlock 注入；条目库重构后 type/rule 是一等字段，生成结果必须能落进这两个字段，
+ *  否则类型标签会被塞回 content（UI 的"AI 生成指令"框）。
  *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 replace 字段提替换建议。 */
 const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
 
@@ -590,9 +650,9 @@ const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为
 
 【输出格式（严格 JSON）】
 只输出一个 JSON 数组，每个元素为一个对象：
-- "type"：条目类型短标签（如"选项指导"、"行动"、"氛围"），根据条目内容与用户要求判断，不得留空。
-- "content"：条目正文。字数与写法跟随用户要求；用户未指明条目种类时，默认输出简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。
-- "rule"：该条目的补充规则（使用约束、适用时机，如"仅战斗场景使用"），没有则写空字符串 ""。
+- "type"：条目类型，必须为四字中文标签（如"顺势而为"、"选项指导"），概括条目定位，逐条独立判断，不得留空。
+- "content"：AI生成指令。纯文本，直接写指令/指引/行动方向本身，禁止任何符号装饰——不得带类型前缀（如"[针锋相对]"）、序号、引号包裹、表情；类型只能写在 "type" 字段。字数与写法跟随条目种类与用户要求；未指明时默认简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。
+- "rule"：规则指导（可选）——生成对应选项时的补充约束，没有则写空字符串 ""。
 - "replace"：仅替换建议填写：要替换的【当前层已有条目】序号（数字，1-based）；新增条目必须省略此字段。
 
 【生成要求】
@@ -673,23 +733,56 @@ export function parsePoolGenItems(text: string, count: number): ParsedPoolGenIte
   // JSON 主路径：取首个 [ 到最后一个 ]，修尾随逗号后解析；字符串元素整条落 content
   const arrStart = c.indexOf('[');
   const arrEnd = c.lastIndexOf(']');
+  // 主路径与抢救路径共用的数组落地：字符串元素整条落 content，对象取字段
+  const pushFromArray = (p: unknown[]): boolean => {
+    for (const x of p) {
+      if (typeof x === 'string') {
+        const s = x.trim();
+        if (s) push({ type: '', content: s, rule: '' });
+      } else {
+        push(pickPoolGenFields(x));
+      }
+      if (items.length >= count) break;
+    }
+    return items.length > 0;
+  };
   if (arrStart !== -1 && arrEnd > arrStart) {
     try {
       const p = JSON.parse(stripTrailingCommas(c.slice(arrStart, arrEnd + 1)));
       if (Array.isArray(p)) {
-        for (const x of p) {
-          if (typeof x === 'string') {
-            const s = x.trim();
-            if (s) push({ type: '', content: s, rule: '' });
-          } else {
-            push(pickPoolGenFields(x));
-          }
-          if (items.length >= count) break;
-        }
-        if (items.length) return items;
+        if (pushFromArray(p)) return items;
       }
     } catch {
-      /* 非 JSON，走回退 */
+      /* 非 JSON，走截断抢救/回退 */
+    }
+  }
+
+  // 截断抢救：流式代理可能在 JSON 中途以 finish_reason=length 掐断输出（实测假流式代理
+  // 163 token 即截断），数组没有闭合的 ']'，主路径必然失败，而按行回退解析对 JSON 碎片
+  // 只会产出垃圾条目。找字符串感知的最后一个完整对象结尾 '}'，截断到该处补 ']' 再解析——
+  // 能救回多少条算多少，救回条数少于请求数属可接受降级；仍失败才落入按行回退解析。
+  if (arrStart !== -1) {
+    let lastBrace = -1;
+    let inStr = false;
+    let esc = false;
+    for (let i = arrStart; i < c.length; i++) {
+      const ch = c[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '}') lastBrace = i;
+    }
+    if (lastBrace > arrStart) {
+      try {
+        const p = JSON.parse(stripTrailingCommas(c.slice(arrStart, lastBrace + 1) + ']'));
+        if (Array.isArray(p) && pushFromArray(p)) return items;
+      } catch {
+        /* 抢救失败，走回退 */
+      }
     }
   }
 
@@ -757,16 +850,42 @@ const renderPoolEntryLine = (e: { type: string; content: string }): string => {
   return t ? `[${t}] ${c}` : c;
 };
 
+/** 条目种类注入块：条目库 AI 生成的种类由弹窗自由输入（预设：选项指导/行动方向/由AI判断，
+ *  其他任意文本=自定义种类），不再依赖提示词兜底猜测。
+ *  guide=指导AI生成选项的条目（content 是给选项生成 AI 的要求，不是具体行动），type 由 AI 逐条判断四字标签；
+ *  action=简洁行动方向；由AI判断=不注入，沿用系统提示词的"跟随用户要求"兜底；
+ *  自定义种类=把种类名嵌进语义块，content 按该种类定位撰写。
+ *  与【生成要求】冲突时以本块为准——自由文本要求无法可靠传达种类语义，这正是本功能的由来。 */
+const poolGenKindBlock = (kind: string): string => {
+  const k = kind.trim();
+  if (k === '行动方向') {
+    return `\n\n【条目种类：行动方向】本次所有条目的 "content" 为简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。`;
+  }
+  if (k === '由AI判断') {
+    return '';
+  }
+  if (k === '' || k === '选项指导') {
+    return `\n\n【条目种类：选项指导】本次所有条目都是写给"生成选项的AI"的指导，不是具体行动方向：
+- "content" 必须是对选项生成的要求/约束/取舍指引（如"每批选项中至少一条推进当前事件"、"涉及对白的选项对白不超过两句"、"出现危险情境时必须有可回避的选项"），不得是"下一步做什么"的具体行动。
+- "rule" 通常留空 ""（content 本身就是约束），确有补充约束时才写。
+本块与用户消息【生成要求】中关于条目种类的描述冲突时，以本块为准。`;
+  }
+  return `\n\n【条目种类：${k}】本次所有条目属于「${k}」类：content 按该种类的定位撰写，并结合用户消息中的生成要求；输出格式要求（四字类型、纯文本指令、可选规则指导）不变。`;
+};
+
 /** 条目池 AI 生成：复用活动 API（与 generateOptions 同一套 resolveCustomApi），
  *  始终带角色描述/性格/场景以贴合角色语气；includeContext 时纳入近 N 轮聊天历史。
- *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（如"选项指导"），
- *  留空则由 AI 按生成要求自行判断；不做生成后改写标签——那会给不匹配的内容错挂类型。
+ *  kind 为弹窗自由输入的条目种类（空串=选项指导；"行动方向"/"由AI判断"=专用预设；
+ *  其他文本=自定义种类，语义块见 poolGenKindBlock）。
+ *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（显式覆盖，优先于四字判断），
+ *  留空则 type 由 AI 逐条判断四字标签；不做生成后改写标签——那会给不匹配的内容错挂类型。
  *  不走思维链预填充（区别于行动选项生成），stream 由 api.stream 决定。 */
 export async function generatePoolEntries(params: {
   count: number;
   requirements: string;
   includeContext: boolean;
   targetType: string;
+  kind: string;
 }): Promise<PoolGenItem[]> {
   if (poolGenState.loading) {
     toastr.info(t`条目生成中,请稍候`);
@@ -788,10 +907,13 @@ export async function generatePoolEntries(params: {
       ? existing.map((e, i) => `${i + 1}. ${renderPoolEntryLine(e)}`).join('\n')
       : '（无）';
     const forceType = params.targetType.trim();
+    // type 一律由 AI 逐条判断四字标签（与默认条目库的四字惯例一致）；guide 不再强制统一
+    // "选项指导"——种类语义由 poolGenKindBlock 承担，手填目标类型仍是显式覆盖
     // 强制类型双路下发（system + user）：只改 user 或只改 system 时，部分模型会忽略较弱一侧
-    const systemPrompt = forceType
-      ? `${POOL_GEN_SYSTEM_PROMPT}\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。`
-      : POOL_GEN_SYSTEM_PROMPT;
+    const systemPrompt =
+      POOL_GEN_SYSTEM_PROMPT +
+      poolGenKindBlock(params.kind) +
+      (forceType ? `\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。` : '');
     const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }];
     // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
     const ch = getStCharacter(this_chid);

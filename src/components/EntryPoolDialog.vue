@@ -143,7 +143,7 @@
                       :placeholder="t`AI 生成指令`"
                       rows="2"
                     ></textarea>
-                    <input v-model="entry.rule" class="text_pole" :placeholder="t`规则(可选)`" />
+                    <input v-model="entry.rule" class="text_pole" :placeholder="t`规则(适用时机/写作约束，可选)`" />
                     <div class="choice-epool-entry-fields">
                       <label class="choice-check">
                         <input v-model="entry.pinned" type="checkbox" />
@@ -156,7 +156,6 @@
                         min="0"
                         :title="t`权重(加权随机)`"
                       />
-                      <input v-model="entry.condition" class="text_pole" :placeholder="t`如:战斗场景、关系亲密时`" />
                     </div>
                   </div>
                 </div>
@@ -572,7 +571,6 @@ const addEntryToGroup = (groupKey: string) => {
     pinned: false,
     weight: 1,
     category: groupKey,
-    condition: '',
   };
   masterPool.value.push(entry);
   expanded.value.add(entry.id);

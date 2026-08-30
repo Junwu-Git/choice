@@ -277,12 +277,15 @@ const confirmSelection = () => {
 
 const createGroup = () => {
   const name = prompt(t`请输入分组名称`);
-  if (!name || !name.trim()) return;
-  const cat = name.trim();
+  const cat = name?.trim();
+  if (!cat) return;
   const groups = gs.settings.filter_settings.library_groups ?? [];
-  if (!groups.includes(cat)) {
-    groups.push(cat);
+  // 重名检测：同名分组会让条目归类歧义，提醒后放弃创建
+  if (groups.includes(cat)) {
+    toastr.warning(t`分组「${cat}」已存在`);
+    return;
   }
+  groups.push(cat);
   expandedGroups.value.add(cat);
 };
 
@@ -303,7 +306,12 @@ const startGroupRename = (key: string) => {
 const finishGroupRename = (oldKey: string) => {
   const newKey = groupRenameText.value.trim();
   if (newKey && newKey !== oldKey) {
-    gs.renameRegexLibraryGroup(oldKey, newKey);
+    // 重名检测：与其他分组同名会让条目归类歧义，提醒后放弃修改
+    if ((gs.settings.filter_settings.library_groups ?? []).includes(newKey)) {
+      toastr.warning(t`分组「${newKey}」已存在`);
+    } else {
+      gs.renameRegexLibraryGroup(oldKey, newKey);
+    }
   }
   groupRenameId.value = null;
 };

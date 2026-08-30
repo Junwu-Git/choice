@@ -31,7 +31,9 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
       .filter(e => entryMap.has(e.id))
       .map(e => {
         const cfg = entryMap.get(e.id)!;
-        return { ...e, pinned: cfg.pinned, weight: cfg.weight, condition: cfg.condition ?? '' };
+        // content/type/rule/category 只读 master_pool（内容层唯一真相源）；
+        // pinned/weight 是配置层覆盖项。v20 起 condition 已随 schema 删除
+        return { ...e, pinned: cfg.pinned, weight: cfg.weight };
       });
   });
 

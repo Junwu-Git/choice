@@ -33,15 +33,29 @@
                 v-model="requirements"
                 class="text_pole"
                 rows="4"
-                :placeholder="
-                  t`写明条目种类/主题/字数/适用场景，如：生成一批「选项指导」条目，每条 20 字以内；留空则默认生成简洁行动方向`
-                "
+                :placeholder="t`写明主题/字数/风格等要求，条目种类由上方下拉决定`"
               ></textarea>
             </label>
             <div class="choice-poolgen-options">
               <label class="choice-poolgen-check">
                 <input v-model="includeContext" type="checkbox" />
                 {{ t`结合近期对话` }}
+              </label>
+              <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
+                <span>{{ t`条目种类` }}</span>
+                <input
+                  v-model="kind"
+                  class="text_pole"
+                  style="width: 130px"
+                  list="choice-poolgen-kinds"
+                  :placeholder="t`选项指导（默认），可输入自定义种类`"
+                />
+                <datalist id="choice-poolgen-kinds">
+                  <!-- option value 是 generatePoolEntries 的语义匹配键，保持字面中文，不走 i18n -->
+                  <option value="选项指导"></option>
+                  <option value="行动方向"></option>
+                  <option value="由AI判断"></option>
+                </datalist>
               </label>
               <label class="choice-poolgen-field" style="flex-direction: row; align-items: center; gap: 6px">
                 <span>{{ t`目标类型` }}</span>
@@ -136,7 +150,10 @@ const count = ref(6);
 const requirements = ref('');
 const includeContext = ref(true);
 const targetCategory = ref('');
-// 强制类型：非空时写进提示词约束 AI 的 type 字段（如"选项指导"），留空由 AI 按生成要求判断
+// 条目种类自由输入：空串=默认按"选项指导"语义；"行动方向"/"由AI判断"为专用预设；
+// 其他任意文本走自定义种类块（generatePoolEntries 内做精确匹配分发）
+const kind = ref('');
+// 强制类型：非空时写进提示词约束 AI 的 type 字段（如"选项指导"），留空由 AI 判断
 const targetType = ref('');
 const results = ref<PoolGenItem[]>([]);
 const selected = ref<Set<number>>(new Set());
@@ -145,7 +162,9 @@ const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
 const guideHtml = `<p><strong>作用</strong>：让 AI 根据你的要求自动生成一批条目（含类型标签与补充规则），省去手动输入的麻烦。</p>
-<p><strong>参数</strong>：条目数控制生成数量；生成要求描述你想要什么条目，写明种类才不会跑偏（如"生成 8 条选项指导，每条 20 字以内"，不写明则默认生成简洁行动方向）；目标分组决定生成后放到哪个分组；目标类型可强制所有生成条目使用同一类型标签（留空则由 AI 按要求自行判断）。</p>
+<p><strong>条目种类</strong>：可用预设或自行输入任意种类名（如"氛围渲染"）。「选项指导」（默认）生成写给选项生成 AI 的指导；「行动方向」生成简洁的具体行动；「由AI判断」按生成要求里的描述决定；自定义种类按其名称语义生成。</p>
+<p><strong>输出格式</strong>：类型为四字中文标签，内容为纯文本指令（不带方括号等符号装饰），规则可选。</p>
+<p><strong>参数</strong>：条目数控制生成数量；生成要求描述主题/字数/风格等；目标分组决定生成后放到哪个分组；目标类型可强制所有生成条目使用同一类型标签（留空则由 AI 逐条判断四字标签）。</p>
 <p><strong>结合近期对话</strong>：勾选后 AI 会参考最近的聊天内容生成更贴合场景的条目。</p>
 <p><strong>生成后</strong>：勾选需要的条目，点击"注入"将它们加入条目库。类型/内容/规则可直接在结果行修改，注入以修改后为准。若 AI 建议替换已有条目，会显示"替换"标记与原文。未勾选的条目会被丢弃。</p>`;
 
@@ -158,6 +177,7 @@ watch(
       attempted.value = false;
       targetCategory.value = '';
       targetType.value = '';
+      kind.value = '';
     } else {
       cancelPoolGen();
     }
@@ -175,6 +195,7 @@ const doGenerate = async () => {
     requirements: requirements.value,
     includeContext: includeContext.value,
     targetType: targetType.value,
+    kind: kind.value,
   });
   if (items.length) {
     results.value = items;
@@ -221,7 +242,6 @@ const onInject = () => {
         pinned: false,
         weight: 1,
         category: targetCategory.value,
-        condition: '',
       });
     }
   }

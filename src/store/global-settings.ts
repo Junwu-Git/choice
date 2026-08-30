@@ -13,6 +13,7 @@ import {
   DEFAULT_PERSON_STYLE,
   DEFAULT_OPTION_RULES,
   USER_INSTRUCTION_DEFAULT,
+  PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
 } from '@/type/settings';
 // chat/character store 不反向依赖 global-settings，无循环导入；
@@ -33,7 +34,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -43,7 +43,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: true,
       weight: 1,
       category: '',
-      condition: '',
       rule: '此项固定生成，不参与随机抽取',
     },
     {
@@ -53,7 +52,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -63,7 +61,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -73,7 +70,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -83,7 +79,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -93,7 +88,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -103,7 +97,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '此项不涉及对白，纯粹依靠动作与内心活动',
     },
     {
@@ -113,7 +106,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
     {
@@ -123,7 +115,6 @@ function buildDefaultEntries(): PoolEntry[] {
       pinned: false,
       weight: 1,
       category: '',
-      condition: '',
       rule: '',
     },
   ];
@@ -573,7 +564,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     const configs: PoolConfig[] = [];
     const makeEntries = (pool: PoolEntry[]): PoolConfigEntry[] =>
-      pool.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight, condition: e.condition }));
+      pool.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight }));
 
     if (oldGlobalPool.length > 0) {
       configs.push({
@@ -657,7 +648,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           entry_id: e.id,
           pinned: e.pinned,
           weight: e.weight,
-          condition: e.condition,
         })),
         is_default: true,
         generation: {
@@ -719,7 +709,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
             entry_id: e.id,
             pinned: e.pinned,
             weight: e.weight,
-            condition: e.condition,
           })),
           is_default: true,
           generation: {
@@ -739,6 +728,32 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const oldTheme = (validated.ui as any).theme;
     if (oldTheme && (validated.ui as any).theme_mode === undefined) {
       (validated.ui as any).theme_mode = oldTheme;
+    }
+  }
+
+  // v20/v21 提示词文本迁移：v20 删除 condition 字段后 [条件: xxx] 标记不再生成，老存档
+  // 引用该标记的段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束，把 v20 产出的
+  // "适用时机不符则跳过"措辞收敛为约束措辞。精确子串替换、幂等，匹配不到即跳过
+  // （更早版本措辞不同的旧文本保留原样，指令惰性失效，见 PROMPT_TEXT_MIGRATIONS 注释）
+  if ((validated.schema_version ?? 0) < 21) {
+    const migratePromptText = (text: string): string => {
+      let out = text;
+      for (const [from, to] of PROMPT_TEXT_MIGRATIONS) {
+        if (out.includes(from)) out = out.split(from).join(to);
+      }
+      return out;
+    };
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      // PromptConfig.option_rules 是切换配置时换入 prompt_rules 的快照（见 config 切换逻辑），
+      // 漏掉它会导致"切换提示词配置后旧 [条件] 文本复活"
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
     }
   }
 
@@ -772,7 +787,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
             entry_id: id,
             pinned: src?.pinned ?? false,
             weight: src?.weight ?? 1,
-            condition: src?.condition ?? '',
           };
         });
         delete cfg.entry_ids;
@@ -1275,6 +1289,50 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     return { overwritten, added };
   }
 
+  /** 导入提示词模块为「新建配置」：当前配置与工作副本完全不受影响。
+   *  新配置构成：createPromptConfig 快照继承当前非模块字段（导入文件 v2 不携带这些字段，
+   *  v3 携带的字段随后逐字段覆盖、缺省/非法回退快照继承值）→ modules 覆盖为
+   *  「导入模块（按文件顺序 order 0..n-1）+ 文件未覆盖的现有模块补齐（保持相对顺序，order 续排）」。
+   *  补齐的原因：option/enrich 范围文件会产出缺润色模块的残缺配置，补齐使新配置恒为可用超集；
+   *  导入后由调用方切换 selectedPromptConfigId 触发 switchPromptConfig（此时工作副本未被触碰，
+   *  旧配置回写无损）。 */
+  function importPromptModulesAsNewConfig(
+    imported: PromptModuleType[],
+    opts: { name: string; config?: Record<string, unknown> },
+  ): PromptConfig {
+    const cfg = createPromptConfig(opts.name, false);
+    const importedIds = new Set(imported.map(m => m.id));
+    cfg.modules = [
+      ...imported.map((m, i) => ({ ...klona(m), order: i })),
+      ...cfg.modules.filter(m => !importedIds.has(m.id)).map((m, i) => ({ ...klona(m), order: imported.length + i })),
+    ];
+    // v3 文件的配置级字段白名单覆盖：类型不匹配/缺失的字段静默回退快照继承值
+    const fc = opts.config ?? {};
+    const s = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+    const n = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const b = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+    const patch: Record<string, string | number | boolean | undefined> = {
+      person_style: s(fc.person_style),
+      option_rules: s(fc.option_rules),
+      option_person: s(fc.option_person),
+      enrich_person: s(fc.enrich_person),
+      enrich_person_style: s(fc.enrich_person_style),
+      option_min_chars: n(fc.option_min_chars),
+      option_max_chars: n(fc.option_max_chars),
+      enrich_min_chars: n(fc.enrich_min_chars),
+      enrich_max_chars: n(fc.enrich_max_chars),
+      context_rounds: n(fc.context_rounds),
+      context_mode: fc.context_mode === 'rounds' || fc.context_mode === 'visible_only' ? fc.context_mode : undefined,
+      prefill_enabled: b(fc.prefill_enabled),
+      baibai_enabled: b(fc.baibai_enabled),
+    };
+    // 键名来自上方硬编码白名单，与 PromptConfig 字段一一对应，这里集中收窄一次
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (cfg as unknown as Record<string, unknown>)[key] = value;
+    }
+    return cfg;
+  }
+
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
@@ -1302,7 +1360,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
           entry_id: e.id,
           pinned: e.pinned,
           weight: e.weight,
-          condition: e.condition,
         })),
         is_default: true,
         generation: {
@@ -1395,6 +1452,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     renamePromptConfig,
     setDefaultPromptConfig,
     importPromptModules,
+    importPromptModulesAsNewConfig,
     factoryReset,
     addFilterGroup,
     removeFilterGroup,

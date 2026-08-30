@@ -16,7 +16,7 @@ SillyTavern 第三方扩展，基于 `tavern_extension_template` 二次开发。
 - **技术栈边界**：严格用 TS + Vue 3 SFC + Pinia + Zod，不允许手写jQuery/直接DOM操作（`document.createElement`、`.innerHTML`拼接这类）。参考模板自带的Vue+Pinia+Zod示例风格。不引入 Tailwind/UnoCSS 等原子化 CSS 框架（样式方案为原生 CSS custom property，`src/theme.css` 定义全部 `--choice-*` 变量；`@tailwindcss/postcss` 等 devDep 为未接线残留，vite 配置无 postcss 插件，CSS 入口无 `@import "tailwindcss"`，勿引入 Tailwind）。
 - **设置一律走 Pinia store**：组件内不允许直接读写 `extension_settings`/`chat_metadata`/`character.data.extensions`，必须经过对应的 `useXxxStore()`。
 - **`@sillytavern` 导入的隔离原则**：这类导入（直接摸真实酒馆源码，不是npm包）只允许出现在 `src/core/` 下的文件里，不允许散落进Vue组件——酒馆升级导致导出改名时，改动范围收窄在这几个文件。
-- **禁止把TavernHelper/酒馆变量系统当作对第三方插件（柏宝书等）的硬依赖**：条件表达式统一走ST原生变量（`getvar`/`setvar`/`chat_metadata.variables`），不直接读取任何第三方插件内部数据结构。后续如需联动柏宝书摘要/总结，做成可选的、检测式的桥接模块，不影响主体功能可用性。
+- **禁止把TavernHelper/酒馆变量系统当作对第三方插件（柏宝书等）的硬依赖**：不直接读取任何第三方插件内部数据结构。后续如需联动柏宝书摘要/总结，做成可选的、检测式的桥接模块（`baibai-bridge.ts`），不影响主体功能可用性。
 - **提示词组装必须走角色结构，不允许拼成一整段字符串塞进单条user消息**：
   - `system`（或`systemPrompt`）＝ 提示词编辑区设置的规则（第几人称、格式、字数等）
   - `user`（或`prompt`）＝ 抽中的固定/随机条目素材 + 按轮数截取的上下文
@@ -24,9 +24,9 @@ SillyTavern 第三方扩展，基于 `tavern_extension_template` 二次开发。
   - 优先用 `TavernHelper` 的 `generate`/`generateRaw`（`RolePrompt[]` / `overrides` / `injects`），或酒馆原生 `generateRaw({systemPrompt, prompt, prefill})`；不允许自己拼一整段字符串再整体当prompt参数传。
 - **条目池是 master_pool + PoolConfig 两层结构，不是三层覆盖**：
   - **内容层**：`master_pool`（`PoolEntry[]`，全局 settings 唯一条目来源）— 条目内容（`id/type/content/rule/category`）只存在于 master_pool。
-  - **配置层**：多个 `PoolConfig`（`configs[]`），每个 config 决定"用哪些条目 + per-entry 覆盖 `pinned/weight/condition`"。
+  - **配置层**：多个 `PoolConfig`（`configs[]`），每个 config 决定"用哪些条目 + per-entry 覆盖 `pinned/weight`"。
   - **config 选择是覆盖式**：`chat.config_id > character.config_id > default`，命中即用该 config，不要把多个 config 的 entries 合并。
-  - **条目内容是合并式**：`effectivePool` = master_pool 中被选中 config 引用的条目，叠加 config 的 `pinned/weight/condition` 覆盖项。`content/type/rule/category` 只读 master_pool，config 不持有这些字段——不要从 config 读 content，会丢字段。
+  - **条目内容是合并式**：`effectivePool` = master_pool 中被选中 config 引用的条目，叠加 config 的 `pinned/weight` 覆盖项。`content/type/rule/category` 只读 master_pool，config 不持有这些字段——不要从 config 读 content，会丢字段。
   - **常见 footgun**：① 把多个 config 的 entries 合并；② 从 config 而非 master_pool 读条目内容；③ 忘记 master_pool 是内容唯一真相源。
 - **楼层持久化挂在消息对象上**：生成结果存进对应AI消息的 `message.extra['asyncActionOptions']`，按 `swipe_id` 再分一层（类似swipe机制），保证切楼层/切swipe时选项历史不串。同楼层多次生成走 `generations[]` + `currentIndex` 翻页，不跨楼层保留。
 - **聊天生成支持两种模式**：聊天内模式（与角色卡绑定，读取世界书和聊天记录）和全局模式（全局持久化，不读取世界书和聊天记录）。用户可手动切换。
@@ -92,15 +92,15 @@ export function useCompactLayout(target: Ref<HTMLElement | null>) {
 
 ## 目录（按实际文件结构，注意与早期规划稿的差异）
 
-- `src/core/` — `generator.ts`（单独调用API生成选项/条目池，结构化role prompt，支持取消，含 `resolveCustomApi` API 校验）、`pool-resolver.ts`（条件过滤+分组加权抽取，纯函数，接收已解析的 effectivePool）、`options-store.ts`（`message.extra`存取，含swipe维度、翻页）、`floating-state.ts`（悬浮球/悬浮面板共享状态）、`enrich-input.ts`（输入润色模式）、`api-client.ts`（API 请求封装）、`baibai-bridge.ts`（柏宝书可选桥接）、`panel-mount.ts`（面板挂载逻辑）、`theme-detector.ts`（主题检测）、`variable-bridge.ts`（ST 原生变量桥接）、`wand-menu.ts`（魔杖菜单集成）。
+- `src/core/` — `generator.ts`（单独调用API生成选项/条目池，结构化role prompt，支持取消，含 `resolveCustomApi` API 校验）、`pool-resolver.ts`（分组加权抽取，纯函数，接收已解析的 effectivePool）、`options-store.ts`（`message.extra`存取，含swipe维度、翻页）、`floating-state.ts`（悬浮球/悬浮面板共享状态）、`enrich-input.ts`（输入润色模式）、`api-client.ts`（API 请求封装）、`baibai-bridge.ts`（柏宝书可选桥接）、`panel-mount.ts`（面板挂载逻辑）、`theme-detector.ts`（主题检测）、`wand-menu.ts`（魔杖菜单集成）。
 - `src/store/` — `global-settings.ts`（对应`extension_settings`）、`character-settings.ts`（对应角色卡`data.extensions`）、`chat-settings.ts`（对应`chat_metadata`）、`pool-selector.ts`（组合三个store，解析 master_pool + config 覆盖后的 `effectivePool`/`effectiveConfig`）、`prompt-config-selector.ts`（提示词配置选择，`prompt_config_id` 的 chat>character>default 解析）、`panel-state.ts`（面板展开/折叠、当前楼层/swipe追踪）。
 - `src/components/` — 主形态 `ActionOptionsPanel.vue`；悬浮形态 `FloatingBubble.vue` + `FloatingRoot.vue` + `FloatingSettings.vue` + `FloatingContextMenu.vue`；设置区 `SettingsPanel.vue` + 7 个 tab 组件（`GenerationSettings.vue`/`PromptEditor.vue`/`ApiEditor.vue`/`WorldInfoEditor.vue`/`AppearanceSettings.vue`/`DebugSettings.vue` 等）；条目池管理 `PoolEditor.vue`/`EntryPoolDialog.vue`/`PoolGenDialog.vue`/`SelectEntriesDialog.vue`/`ImportPoolDialog.vue`/`FilterEditor.vue`/`FilterGroupPanel.vue`；通用 `ConfirmDialog.vue`/`CreateConfigDialog.vue`/`GuidePopover.vue`/`PageGuide.vue`/`RegexLibraryDialog.vue`；`shared/`（设计系统基础组件，见上节）。
 - `docs/` — 技术方案文档（`async-action-options-spec.md`）与早期MVP原型，作为背景参考，不是当前实现标准；UI 重构方案见另外维护的 `choice-ui-redesign-spec.md`（主体页面）与 `choice-floating-bubble-design.md`（悬浮球专项），本文件是二者的执行摘要，细节推理以那两份为准。
 
 ## 条目池模型 & 抽取算法要点
 
-- 条目字段（`PoolEntry`）：`id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`、`condition`（表达式格式如`变量名 运算符 值`，例：`地点 == 医院`）。其中 `pinned`/`weight`/`condition` 可被 `PoolConfigEntry` 覆盖。
-- 抽取顺序：解析 effectivePool（config 选择 + 条目合并）→ 条件过滤（含固定条目，默认遵守过滤，可配开关）→ 拆分固定/非固定，处理溢出（默认固定条目不砍，全发）→ 按category分组，处理下溢（默认有多少抽多少，不跨层兜底；`cross_layer_fallback` 为历史遗留字段，已无实际层级可兜底）→ 分组轮询+组内加权无放回抽取（Efraimidis-Spirakis算法：`key = random()^(1/weight)`，降序取）→ 送入prompt前整体shuffle一次（默认开启，避免固定条目位置固定造成AI顺序偏好）。
+- 条目字段（`PoolEntry`）：`id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`。其中 `pinned`/`weight` 可被 `PoolConfigEntry` 覆盖；`rule` 语义 = 写作约束（v20 起删除 `condition` 字段；v21 起规则不再作为选用门槛——候选条目必须全部交给 AI 生成选项，`[规则: xxx]` 标记只约束该选项怎么写，不是跳过条目的理由）。
+- 抽取顺序：解析 effectivePool（config 选择 + 条目合并）→ 拆分固定/非固定，处理溢出（默认固定条目不砍，全发）→ 按category分组，处理下溢（默认有多少抽多少，不跨层兜底；`cross_layer_fallback` 为历史遗留字段，已无实际层级可兜底）→ 分组轮询+组内加权无放回抽取（Efraimidis-Spirakis算法：`key = random()^(1/weight)`，降序取）→ 送入prompt前整体shuffle一次（默认开启，避免固定条目位置固定造成AI顺序偏好）。
 - 详细算法与各开关的默认值见 `docs/async-action-options-spec.md` 第3节。
 
 ## 构建与验证
