@@ -25,6 +25,7 @@
             <button class="choice-icon-btn" :title="t`导出文件`" @click="onExportPool">
               <i class="fa-solid fa-file-export"></i>
             </button>
+            <span class="choice-epool-header-divider"></span>
             <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
               <i class="fa-solid fa-wand-magic-sparkles"></i>
             </button>
@@ -878,7 +879,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--choice-space-3) var(--choice-space-3);
+  /* 纵向 8px 与正则库头部严格同高（两库并排对比时头部高度一致） */
+  padding: var(--choice-space-2) var(--choice-space-3);
   background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
 }
@@ -902,6 +904,15 @@ onUnmounted(() => {
   display: inline-flex;
   gap: var(--choice-space-1);
   align-items: center;
+}
+
+/* 分组分隔线：与正则库头部的分隔线同款，把"文件操作"与"AI 生成"分组 */
+.choice-epool-header-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--choice-border-strong);
+  flex-shrink: 0;
 }
 
 /* 头部按钮尺寸显式约定 28px（与正则库头部一致）。此前 global 40px 触控规则

@@ -682,10 +682,12 @@ onUnmounted(() => {
   flex-direction: column;
   gap: var(--choice-space-2);
 }
+/* 分组结构与条目库对齐：分组头是独立描边卡片、条目各自成卡、容器本身无描边——
+   此前容器整体描边在折叠时于分组头下描出一圈 4px 细框（用户看到的"黑框"），
+   两库观感也割裂 */
 .choice-regexlib-group {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 .choice-regexlib-group-head {
   display: flex;
@@ -693,6 +695,9 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
   padding: var(--choice-space-1) var(--choice-space-2);
   background: var(--choice-bg-card);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
   cursor: pointer;
   font-size: var(--choice-text-sm);
   user-select: none;
@@ -702,7 +707,7 @@ onUnmounted(() => {
 }
 .choice-regexlib-group-name {
   flex: 1;
-  font-weight: 600;
+  font-weight: bold;
   color: var(--choice-text-secondary);
 }
 .choice-regexlib-group-count {
@@ -710,10 +715,10 @@ onUnmounted(() => {
   color: var(--choice-text-muted);
 }
 /* 折叠用 max-height 而非 display:none：body 仍占 4px 高度留在布局中，
-   SortableJS 才能把它识别为 drop target（拖入折叠分组后 onEnd 自动展开） */
+   SortableJS 才能把它识别为 drop target（拖入折叠分组后 onEnd 自动展开）。
+   body 无描边、折叠时 padding 清零——配合无描边容器，折叠后头下不再出现细框 */
 .choice-regexlib-group-body {
-  border-top: 1px solid var(--choice-border);
-  padding: var(--choice-space-2);
+  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-1);
@@ -730,11 +735,16 @@ onUnmounted(() => {
   padding: 0;
   opacity: 0;
 }
-/* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽（把手样式统一由 shared/DragHandle.vue 提供） */
+/* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽（把手样式统一由 shared/DragHandle.vue 提供）。
+   条目各自成描边卡片，与条目库的条目卡视觉对齐 */
 .choice-regexlib-entry {
   display: flex;
   align-items: center;
   gap: var(--choice-space-1);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-card);
+  padding: 2px 4px;
 }
 .choice-regexlib-entry input {
   font-size: var(--choice-text-sm);

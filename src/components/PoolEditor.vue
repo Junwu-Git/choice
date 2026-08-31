@@ -113,13 +113,19 @@
                 {{ entrySummary(cfgEntry.entry_id) }}
               </span>
               <div class="choice-inline-entry-fields">
-                <label class="choice-check">
+                <label class="choice-check" :title="t`固定：勾选后该条目固定生成`">
                   <input v-model="cfgEntry.pinned" type="checkbox" />
-                  {{ t`固定` }}
+                  <span class="choice-check-text">{{ t`固定` }}</span>
                 </label>
                 <label class="choice-inline-field-item">
                   <span class="choice-inline-field-label">{{ t`权重` }}</span>
-                  <input v-model.number="cfgEntry.weight" class="text_pole choice-small-input" type="number" min="0" />
+                  <input
+                    v-model.number="cfgEntry.weight"
+                    class="text_pole choice-small-input"
+                    type="number"
+                    min="0"
+                    :title="t`权重`"
+                  />
                 </label>
                 <button
                   class="choice-icon-btn choice-delete-btn"
@@ -501,20 +507,46 @@ onUnmounted(() => {
   gap: 0;
 }
 
-/* 手机小屏：字段区（固定/权重/移除）换到第二行整行排布，把第一行整个让给
-   条目类型标题——否则 40px 触控按钮 + 把手会把标题挤到只剩十几像素看不见。
-   桌面宽度下字段放得下，保持单行不变 */
+/* 手机小屏单行压缩：不换行，靠收窄固定元素给条目类型标题让位。
+   隐藏的元素都保留语义出口——固定 checkbox 有 label title、权重输入有 input title、
+   展开靠点击标题本身（箭头是纯视觉冗余）。桌面宽度下全部原样显示 */
 @media (pointer: coarse) and (max-width: 480px) {
-  .choice-inline-entry-row {
-    flex-wrap: wrap;
+  .choice-inline-entry-row .choice-drag-handle {
+    width: 32px;
+  }
+
+  .choice-inline-expand {
+    display: none;
+  }
+
+  .choice-inline-entry-fields .choice-check-text {
+    display: none;
+  }
+
+  .choice-inline-entry-fields .choice-inline-field-label {
+    display: none;
+  }
+
+  .choice-inline-entry-fields .choice-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .choice-inline-field-item .choice-small-input {
+    width: 48px;
   }
 
   .choice-inline-entry-fields {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    border-left: none;
-    border-top: 1px solid var(--choice-border);
-    padding-left: var(--choice-space-2);
+    gap: var(--choice-space-1);
+    padding-right: var(--choice-space-1);
+  }
+
+  .choice-inline-entry-text {
+    padding: var(--choice-space-1) var(--choice-space-1) var(--choice-space-1) 0;
+  }
+
+  .choice-inline-cat-badge {
+    padding: 1px 4px;
   }
 }
 
