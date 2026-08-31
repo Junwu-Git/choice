@@ -1,7 +1,10 @@
 <template>
   <Teleport to="body">
     <div v-if="open" class="choice-dialog-overlay" @click.self="$emit('close')">
-      <div class="choice-dialog" :style="{ width: width, maxHeight: maxHeight }">
+      <div
+        class="choice-dialog"
+        :style="{ '--choice-dialog-width': width, '--choice-dialog-max-height': maxHeight }"
+      >
         <div class="choice-dialog-header">
           <span class="choice-dialog-title">
             <i v-if="icon" :class="icon"></i>
@@ -60,9 +63,11 @@ defineEmits<{
 }
 
 .choice-dialog {
-  width: 560px;
+  /* width/maxHeight prop 经内联 CSS 变量注入：不能用内联 width/max-height——
+     内联样式优先级高于任何规则，下面的窄屏媒体查询将永远无法覆盖 */
+  width: var(--choice-dialog-width, 560px);
   max-width: 92vw;
-  max-height: 85vh;
+  max-height: var(--choice-dialog-max-height, 85vh);
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -72,6 +77,17 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 窄视口（手机）下弹窗近全屏：信息密集弹窗按 560px 设计，92vw 也放不下几行内容，
+   直接给足宽高减少内部横向挤压。max-width 必须同步放宽，否则基础规则的 92vw
+   会把 width: 96vw 钳回去（实测 390px 视口下弹窗只有 92vw） */
+@media (max-width: 480px) {
+  .choice-dialog {
+    width: 96vw;
+    max-width: 96vw;
+    max-height: 92vh;
+  }
 }
 
 .choice-dialog-header {
@@ -120,6 +136,13 @@ defineEmits<{
 .choice-dialog-close:hover {
   background: var(--choice-bg-hover);
   color: var(--choice-text);
+}
+
+@media (pointer: coarse) {
+  .choice-dialog-close {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
 }
 
 .choice-dialog-body {

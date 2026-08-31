@@ -36,6 +36,7 @@
           <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">
             <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
               <div class="choice-regexlib-group-head" @click="toggleGroup(group.key)">
+                <DragHandle class="choice-drag-handle--group" :title="t`拖动排序`" @click.stop />
                 <label class="choice-check" @click.stop v-if="selectable">
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
@@ -93,7 +94,7 @@
                   class="choice-regexlib-entry"
                   :data-entry-id="entry.id"
                 >
-                  <i class="fa-solid fa-grip-vertical choice-regexlib-drag-handle" :title="t`拖动排序/换组`"></i>
+                  <DragHandle :title="t`拖动排序/换组`" />
                   <label class="choice-check" v-if="selectable">
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
                   </label>
@@ -168,11 +169,12 @@
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import DragHandle from '@/components/shared/DragHandle.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
 import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { draggableFilterOptions } from '@/util/sortable';
+import { DRAG_HANDLE_GROUP_SELECTOR, DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -472,9 +474,9 @@ function setupSortables() {
           group: 'regex-lib-entries',
           draggable: '.choice-regexlib-entry',
           // 行内几乎全是 input/select，原生拖拽无法从表单控件发起——限定从左侧把手发起。
-          // delay 区分点击与拖拽：100ms 内松手 = 点击控件，按住再移动 = 拖拽
-          handle: '.choice-regexlib-drag-handle',
-          delay: 100,
+          // 触屏防误触由共享配置的 delay/delayOnTouchOnly/touchStartThreshold 兜底：
+          // 按住把手 120ms 且几乎不动才进入拖拽，碰到把手立即滑动交给原生滚动
+          handle: DRAG_HANDLE_SELECTOR,
           onStart: attachHoverExpand,
           onEnd: evt => {
             detachHoverExpand();
@@ -513,7 +515,7 @@ function setupSortables() {
       Sortable.create(listEl, {
         ...draggableFilterOptions,
         draggable: '.choice-regexlib-group',
-        delay: 100,
+        handle: DRAG_HANDLE_GROUP_SELECTOR,
         animation: 150,
         onStart: attachHoverExpand,
         onEnd: evt => {
@@ -611,6 +613,13 @@ onUnmounted(() => {
   background: var(--choice-bg-hover);
   color: var(--choice-text);
 }
+
+@media (pointer: coarse) {
+  .choice-regexlib-close {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
+}
 .choice-regexlib-body {
   flex: 1;
   overflow-y: auto;
@@ -671,21 +680,11 @@ onUnmounted(() => {
   padding: 0;
   opacity: 0;
 }
-/* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽 */
+/* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽（把手样式统一由 shared/DragHandle.vue 提供） */
 .choice-regexlib-entry {
   display: flex;
   align-items: center;
   gap: var(--choice-space-1);
-}
-.choice-regexlib-drag-handle {
-  cursor: grab;
-  color: var(--choice-text-muted);
-  flex-shrink: 0;
-  font-size: var(--choice-text-sm);
-  padding: var(--choice-space-1) 2px;
-}
-.choice-regexlib-drag-handle:hover {
-  color: var(--choice-text);
 }
 .choice-regexlib-entry input {
   font-size: var(--choice-text-sm);

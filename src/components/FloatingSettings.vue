@@ -121,10 +121,15 @@ watch(isSettingsOpen, open => {
 });
 onMounted(() => nextTick(scrollActiveTabIntoStrip));
 
-const posX = useStorage('choice_floating_settings_x', (window.innerWidth - 680) / 2);
-const posY = useStorage('choice_floating_settings_y', (window.innerHeight - 500) / 2);
-const dialogWidth = useStorage('choice_floating_settings_w', 680);
-const dialogHeight = useStorage('choice_floating_settings_h', 500);
+// 手机首次打开近全屏：窄视口下 680x500 的桌面默认尺寸既放不下也没多少可视内容。
+// 只影响无 localStorage 存档的首次打开；老用户已持久化的尺寸不动（打开时有 clamp 兜底）
+const IS_NARROW_VIEWPORT = window.innerWidth < 720;
+const defaultDialogWidth = IS_NARROW_VIEWPORT ? Math.round(window.innerWidth * 0.96) : 680;
+const defaultDialogHeight = IS_NARROW_VIEWPORT ? Math.round(window.innerHeight * 0.9) : 500;
+const posX = useStorage('choice_floating_settings_x', (window.innerWidth - defaultDialogWidth) / 2);
+const posY = useStorage('choice_floating_settings_y', (window.innerHeight - defaultDialogHeight) / 2);
+const dialogWidth = useStorage('choice_floating_settings_w', defaultDialogWidth);
+const dialogHeight = useStorage('choice_floating_settings_h', defaultDialogHeight);
 
 const dialogEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
@@ -381,5 +386,29 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   border-left: 8px solid transparent;
   border-bottom: 8px solid var(--choice-border-strong);
   transition: border-bottom-color var(--choice-transition);
+}
+
+/* ===== 触摸设备（手机）适配 =====
+   以电容触屏为主指针时：拖动标题栏/角落缩放把手对近全屏面板无意义，
+   隐藏以免误导；header 本体拖拽保留（pointer 事件实现，仍可微调位置，clamp 防出界）。
+   tab 与关闭键是高频触控目标，抬到 --choice-tap-min */
+@media (hover: none) and (pointer: coarse) {
+  .choice-floating-resize {
+    display: none;
+  }
+
+  .choice-grip-icon {
+    display: none;
+  }
+
+  .choice-tab {
+    min-height: var(--choice-tap-min);
+    padding: var(--choice-space-2) var(--choice-space-4);
+  }
+
+  .choice-floating-close {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
 }
 </style>

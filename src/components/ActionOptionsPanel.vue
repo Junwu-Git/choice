@@ -580,4 +580,17 @@ const onSelect = async (option: ChoiceOption) => {
   line-height: 1.4;
   font-size: var(--choice-text-base);
 }
+
+/* 触屏触控目标：分页/生成/收起与行为切换是面板最高频点击点，窄高度按钮在手机上极难点中。
+   pointer:coarse 只命中触屏主指针，桌面不受影响 */
+@media (pointer: coarse) {
+  .choice-panel-btn {
+    min-height: var(--choice-tap-min);
+    padding: var(--choice-space-2) var(--choice-space-3);
+  }
+
+  .choice-behavior-btn {
+    min-height: var(--choice-tap-min);
+  }
+}
 </style>

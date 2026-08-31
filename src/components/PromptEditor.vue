@@ -224,14 +224,21 @@
             'choice-module-card-dragging': dragIndex === idx,
             'choice-module-card-drag-over': dragOverIndex === idx && dragIndex !== idx,
           }"
-          :draggable="true"
-          @dragstart="onDragStart($event, idx)"
           @dragover.prevent="onDragOver($event, idx)"
           @dragleave="onDragLeave(idx)"
           @drop.prevent="onDrop(idx)"
-          @dragend="onDragEnd"
         >
-          <span class="choice-module-drag" :draggable="true">☰</span>
+          <!-- draggable 只挂在 ☰ 把手上：整卡 draggable 时手机长按卡片文本会触发系统级
+               文本选择/原生拖拽抢事件，桌面也容易误从正文发起拖拽。dragend 必须同挂在把手上——
+               它只派发到拖拽源元素（span），挂在卡片上收不到，dragIndex 会永远清不掉 -->
+          <span
+            class="choice-module-drag"
+            :draggable="true"
+            title="拖动排序"
+            @dragstart="onDragStart($event, idx)"
+            @dragend="onDragEnd"
+            >☰</span
+          >
 
           <div class="choice-module-body">
             <div class="choice-module-header">
@@ -761,6 +768,9 @@ const onDragStart = (e: DragEvent, idx: number) => {
   dragIndex.value = idx;
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
+    // 拖拽源是 ☰ 把手本身，默认拖影只有一个小图标；用整张卡片做拖影保持视觉反馈
+    const card = (e.currentTarget as HTMLElement).closest('.choice-module-card');
+    if (card) e.dataTransfer.setDragImage(card, 0, 0);
   }
 };
 

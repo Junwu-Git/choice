@@ -149,7 +149,7 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
 import { this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
-import { draggableFilterOptions } from '@/util/sortable';
+import { DRAG_HANDLE_GROUP_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import type { FilterGroup } from '@/type/settings';
 import Sortable from 'sortablejs';
 
@@ -362,6 +362,7 @@ function createSortable(el: HTMLElement) {
     ...draggableFilterOptions,
     animation: 150,
     group: 'filter-groups',
+    handle: DRAG_HANDLE_GROUP_SELECTOR,
     onMove: evt => {
       const toArea = (evt.to as HTMLElement).dataset.area;
       // 未绑定角色卡时禁止拖入 character 区；其余路径显式 return true（SortableJS 约定非 false 即放行）

@@ -117,6 +117,44 @@ function buildDefaultEntries(): PoolEntry[] {
       category: '',
       rule: '',
     },
+    ...buildTimeJumpEntries(),
+  ];
+}
+
+/**
+ * 「时间跳跃」分组：6 条不同跨度和叙事手法的时间跳跃条目，彼此风格互斥互补。
+ * 独立成组是因为分组轮询抽取（drawByCategories）按 category 分桶——单独成组后
+ * 该组会与其他组轮流出候选，时间跳跃类选项获得稳定但不过分的出场占比；
+ * 若并入未分组，6 条会与既有条目完全平权混合，"时间跳跃"的特色占比无从谈起。
+ * 全部非固定（pinned:false），是否参与抽取由各 PoolConfig 的条目引用决定。
+ */
+function buildTimeJumpEntries(): PoolEntry[] {
+  const jump = (type: string, content: string, rule = ''): PoolEntry => ({
+    id: uuidv4(),
+    type,
+    content,
+    pinned: false,
+    weight: 1,
+    category: '时间跳跃',
+    rule,
+  });
+  return [
+    jump(
+      '须臾之间',
+      '只推进几分钟到半小时的微小时间，用茶凉、雨停、天色暗下一格这类细节完成对话间隙的自然过渡',
+    ),
+    jump('翌日清晨', '跳到第二天早晨，以晨间光线、声音或身体感受开场，昨夜的事件沉淀为余韵'),
+    jump(
+      '数日之后',
+      '跳过两三天到一周，用新习惯、将愈未愈的伤、来往的消息等细节交代这段时间留下的痕迹',
+    ),
+    jump('季节更迭', '大幅推进到换季时节，环境物候明显变化，人物关系与心境随时间产生微妙位移'),
+    jump('多年以后', '跨度数年到数十年，外貌、身份、关系发生显著变化，带一丝物是人非的怅然'),
+    jump(
+      '回溯闪回',
+      '反向跳跃：插入一段过去的回忆场景，与当下形成呼应或对照，结尾回到当前时间点',
+      '此项为回忆插叙，需明确时间线标记，结尾必须落回当前时间点',
+    ),
   ];
 }
 
@@ -753,6 +791,27 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       cfg.option_rules = migratePromptText(cfg.option_rules);
       for (const m of cfg.modules) {
         m.content = migratePromptText(m.content);
+      }
+    }
+  }
+
+  // v22: 新增「时间跳跃」分组（6 条特色条目）。已有存档按 type 去重后补入 master_pool，
+  // 并把引用追加进默认配置——只动默认配置：其他 PoolConfig 是用户显式挑选的结果，
+  // 擅自往里塞条目等于改用户配置；用户想在别的配置启用可自行到条目库勾选。
+  // group_order 末尾补新分组名，不打乱用户既有排序
+  if ((validated.schema_version ?? 0) < 22) {
+    const existingTypes = new Set(validated.master_pool.map(e => e.type));
+    const jumpEntries = buildTimeJumpEntries().filter(e => !existingTypes.has(e.type));
+    if (jumpEntries.length > 0) {
+      validated.master_pool.push(...jumpEntries);
+      const defaultConfig = validated.configs.find(c => c.is_default);
+      if (defaultConfig) {
+        for (const e of jumpEntries) {
+          defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+        }
+      }
+      if (!validated.group_order.includes('时间跳跃')) {
+        validated.group_order.push('时间跳跃');
       }
     }
   }

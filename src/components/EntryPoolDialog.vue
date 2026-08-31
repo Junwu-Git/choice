@@ -44,6 +44,7 @@
               :data-group-key="group.key"
             >
               <div class="choice-epool-group-head" @click="toggleGroup(group.key)">
+                <DragHandle :title="t`拖动排序`" @click.stop />
                 <label class="choice-check" @click.stop>
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
@@ -105,6 +106,7 @@
                   :data-entry-id="entry.id"
                 >
                   <div class="choice-epool-entry-head">
+                    <DragHandle :title="t`拖动排序/换组`" />
                     <label class="choice-check" @click.stop>
                       <input type="checkbox" :checked="selected.has(entry.id)" @change="toggleSelectEntry(entry.id)" />
                     </label>
@@ -244,9 +246,10 @@ import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportPoolDialog from '@/components/ImportPoolDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
+import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
-import { draggableFilterOptions } from '@/util/sortable';
+import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = defineProps<{ open: boolean }>();
@@ -760,8 +763,8 @@ const initGroupSortable = () => {
   groupSortable = Sortable.create(groupList.value, {
     ...draggableFilterOptions,
     draggable: '.choice-epool-group',
+    handle: DRAG_HANDLE_SELECTOR,
     animation: 150,
-    delay: 100,
     onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
       const keys = groupedEntries.value.map(g => g.key);
@@ -782,7 +785,7 @@ const initEntrySortables = () => {
       ...draggableFilterOptions,
       group: 'entries',
       draggable: '.choice-epool-entry',
-      delay: 100,
+      handle: DRAG_HANDLE_SELECTOR,
       animation: 150,
       onEnd: evt => {
         const entryId = evt.item.dataset.entryId;
@@ -923,6 +926,13 @@ onUnmounted(() => {
 .choice-epool-close:hover {
   background: var(--choice-bg-hover);
   color: var(--choice-text);
+}
+
+@media (pointer: coarse) {
+  .choice-epool-close {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
 }
 
 .choice-epool-body {

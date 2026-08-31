@@ -97,6 +97,7 @@
         <div v-if="selectedEntries.length > 0" ref="entriesContainer" class="choice-inline-entries">
           <div v-for="cfgEntry in selectedEntries" :key="cfgEntry.entry_id" class="choice-inline-entry">
             <div class="choice-inline-entry-row">
+              <DragHandle :title="t`拖动排序`" />
               <i
                 class="fa-solid choice-inline-expand"
                 :class="expandedEntries.has(cfgEntry.entry_id) ? 'fa-chevron-down' : 'fa-chevron-right'"
@@ -198,7 +199,8 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
 import { GenerationSettings } from '@/type/settings';
-import { draggableFilterOptions } from '@/util/sortable';
+import DragHandle from '@/components/shared/DragHandle.vue';
+import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const globalStore = useGlobalSettingsStore();
@@ -392,6 +394,7 @@ onMounted(() => {
       if (!el || !selectedConfig.value) return;
       sortable = Sortable.create(el, {
         ...draggableFilterOptions,
+        handle: DRAG_HANDLE_SELECTOR,
         animation: 150,
         onEnd: evt => {
           if (evt.oldIndex === undefined || evt.newIndex === undefined) return;

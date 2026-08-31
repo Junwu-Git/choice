@@ -363,3 +363,25 @@
   border-color: rgba(180, 180, 180, 0.15);
   color: var(--choice-text-muted);
 }
+
+/* ===== 触摸屏触控目标强化 =====
+   手机上主要靠手指点击，24px 的图标按钮经常点偏、误触相邻按钮。
+   pointer:coarse 以电容触屏为主指针（手机/平板）时生效，桌面鼠标不受影响；
+   只抬命中区尺寸，不改字号与布局节奏。触控目标下限见 --choice-tap-min */
+@media (pointer: coarse) {
+  .choice-icon-btn {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
+
+  .choice-btn-sm {
+    min-height: var(--choice-tap-min);
+    padding: var(--choice-space-2) var(--choice-space-3);
+  }
+
+  /* 40px 化后「配置选择 + 一排操作按钮」在 ~390px 视口放不下（新建按钮被截断），
+     允许换行：select 独占一行，按钮流到下一行，不再横向溢出 */
+  .choice-config-row {
+    flex-wrap: wrap;
+  }
+}

@@ -13,6 +13,7 @@
         'choice-floating-bubble--pressed': isPressed,
         'choice-floating-bubble--press-left': isPressed && pressSide === 'left',
         'choice-floating-bubble--press-right': isPressed && pressSide === 'right',
+        'choice-floating-bubble--above-overlay': isSettingsOpen,
       }"
       :style="{
         '--choice-x': x + 'px',
@@ -38,7 +39,7 @@ import { resolveCustomApi } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { generatorState } from '@/core/generator';
-import { openSettings, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
+import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 
 const BUBBLE_SIZE = 60;
@@ -85,7 +86,9 @@ const handleClick = () => {
   isBubbleContextMenuOpen.value = false;
   bubbleX.value = posX.value;
   bubbleY.value = posY.value;
-  openSettings();
+  // 单击切换开/关：面板开着时点气泡应关闭，而不是反复置 true。
+  // 前提是气泡在遮罩之上（见 --above-overlay 的 z-index 提升），否则第二次点击被遮罩吞掉
+  toggleSettings();
 };
 
 const { x, y, isDragging } = useDraggable(bubbleEl, {
@@ -270,6 +273,12 @@ onUnmounted(() => {
 
 .choice-floating-bubble--dragging {
   will-change: transform;
+}
+
+/* 面板打开时把气泡提到遮罩(9000,含其子级对话框)之上：否则第二次点击气泡关闭面板时，
+   点击被全屏遮罩吞掉，气泡永远收不到 click */
+.choice-floating-bubble--above-overlay {
+  z-index: calc(var(--choice-z-floating) + 1);
 }
 
 .choice-floating-bubble:hover {

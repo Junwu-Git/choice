@@ -1,6 +1,7 @@
 <template>
   <div v-if="group" class="choice-filter-group-card" :class="{ 'choice-filter-group-dimmed': dimmed }">
     <div class="choice-filter-group-header" @click="expanded = !expanded">
+      <DragHandle class="choice-drag-handle--group" :title="t`拖动排序/换区`" @click.stop />
       <i class="fa-solid choice-filter-group-caret" :class="expanded ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
       <span v-if="renamingId !== groupId" class="choice-filter-group-name">{{ group.name }}</span>
       <input
@@ -91,6 +92,7 @@
         :class="{ 'choice-filter-row--duplicate': duplicateIndices.has(idx) }"
         :data-entry-idx="idx"
       >
+        <DragHandle :title="t`拖动排序`" />
         <template v-if="entry.library_entry_id">
           <span class="choice-inline-cat-badge">
             <i class="fa-solid fa-bookmark"></i>
@@ -151,7 +153,8 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { draggableFilterOptions } from '@/util/sortable';
+import DragHandle from '@/components/shared/DragHandle.vue';
+import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -256,8 +259,8 @@ onMounted(() => {
       if (!el) return;
       sortable = Sortable.create(el, {
         ...draggableFilterOptions,
+        handle: DRAG_HANDLE_SELECTOR,
         animation: 150,
-        handle: '.choice-filter-row',
         onEnd: evt => {
           if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
           const g = group.value;
