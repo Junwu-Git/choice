@@ -165,47 +165,13 @@
               </div>
             </div>
           </div>
-          <div v-else class="choice-empty-hint">
-            <i class="fa-solid fa-database"></i>
-            <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
-          </div>
+        <div v-else class="choice-empty-hint">
+          <i class="fa-solid fa-database"></i>
+          <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
         </div>
+      </div>
 
-        <div v-if="selected.size > 0" class="choice-epool-batch-bar">
-          <span class="choice-epool-batch-count">{{ t`已选 ${selected.size} 条` }}</span>
-          <button class="choice-btn-sm" :title="t`复制选中的条目`" @click="copySelected">
-            <i class="fa-solid fa-copy"></i> {{ t`复制` }}
-          </button>
-          <button class="choice-btn-sm" :title="t`移动到分组`" @click="moveSelected = !moveSelected">
-            <i class="fa-solid fa-arrow-right"></i> {{ t`移动` }}
-          </button>
-          <select v-if="moveSelected" v-model="moveTargetCat" class="text_pole choice-cat-select" @click.stop>
-            <option value="">{{ t`未分组` }}</option>
-            <option v-for="cat in categoryNames" :key="cat" :value="cat">{{ cat }}</option>
-          </select>
-          <button v-if="moveSelected" class="choice-btn-sm" :title="t`确认移动到目标分组`" @click="moveSelectedEntries">
-            {{ t`确认移动` }}
-          </button>
-          <button
-            class="choice-btn-sm choice-btn-del"
-            :title="t`删除选中的条目`"
-            @click="deleteTarget = { type: 'batch', count: selected.size }"
-          >
-            <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
-          </button>
-          <button
-            class="choice-btn-sm"
-            :title="t`取消选择`"
-            @click="
-              selected.clear();
-              deleteTarget = null;
-            "
-          >
-            {{ t`取消` }}
-          </button>
-        </div>
-
-        <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
+      <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
 
         <ImportPoolDialog
           :open="showImportPool"
@@ -285,16 +251,13 @@ const guideBtn = ref<HTMLElement | null>(null);
 
 const guideHtml = `<p><strong>条目库</strong> 是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。</p>
 <p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
-<p><strong>操作</strong>：左侧勾选复选框批量选中，顶部工具栏支持全部展开/收起、新建分组、文件导入/导出、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
+<p><strong>操作</strong>：左侧勾选复选框后点「导出文件」可只导出勾选的条目（不勾选则全量导出）。顶部工具栏支持全部展开/收起、新建分组、文件导入/导出、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
 const deleteTarget = ref<
   | { type: 'entry'; id: string; summary: string }
   | { type: 'group'; key: string; count: number }
-  | { type: 'batch'; count: number }
   | null
 >(null);
 const selected = ref<Set<string>>(new Set());
-const moveSelected = ref(false);
-const moveTargetCat = ref('');
 const pendingGroups = computed({
   get: () => new Set(globalStore.settings.empty_groups),
   set: val => {
@@ -320,7 +283,6 @@ watch(
     if (!val) {
       deleteTarget.value = null;
       selected.value = new Set();
-      moveSelected.value = false;
       groupRenameId.value = null;
     }
   },
@@ -454,77 +416,6 @@ const toggleSelectGroup = (group: EntryGroup) => {
     for (const e of group.entries) selected.value.delete(e.id);
   } else {
     for (const e of group.entries) selected.value.add(e.id);
-  }
-};
-
-const copySelected = () => {
-  const texts = masterPool.value
-    .filter(e => selected.value.has(e.id))
-    .map(e => (e.content.trim() ? `${e.type}: ${e.content}` : e.type))
-    .filter(t => t.trim())
-    .join('\n');
-  if (!texts) {
-    toastr.warning(t`没有可复制的内容`);
-    return;
-  }
-  navigator.clipboard
-    .writeText(texts)
-    .then(() => {
-      toastr.success(t`已复制到剪贴板`);
-    })
-    .catch(() => {
-      const ta = document.createElement('textarea');
-      ta.value = texts;
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand('copy');
-        toastr.success(t`已复制到剪贴板`);
-      } catch {
-        toastr.error(t`复制失败`);
-      }
-      document.body.removeChild(ta);
-    });
-};
-
-const moveSelectedEntries = () => {
-  const target = moveTargetCat.value;
-  const sourceCats = new Set<string>();
-  for (const e of masterPool.value) {
-    if (selected.value.has(e.id)) {
-      sourceCats.add(e.category.trim() || '');
-      e.category = target;
-    }
-  }
-  for (const cat of sourceCats) {
-    if (cat !== target && !masterPool.value.some(e => (e.category.trim() || '') === cat)) {
-      addPendingGroup(cat);
-    }
-  }
-  selected.value = new Set();
-  moveSelected.value = false;
-  moveTargetCat.value = '';
-  expandedGroups.value.add(target);
-};
-
-const deleteSelected = () => {
-  const ids = new Set(selected.value);
-  for (let i = masterPool.value.length - 1; i >= 0; i--) {
-    if (ids.has(masterPool.value[i].id)) {
-      masterPool.value.splice(i, 1);
-    }
-  }
-  for (const id of ids) {
-    expanded.value.delete(id);
-  }
-  selected.value = new Set();
-  deleteTarget.value = null;
-  for (const cfg of configs.value) {
-    for (let i = cfg.entries.length - 1; i >= 0; i--) {
-      if (ids.has(cfg.entries[i].entry_id)) {
-        cfg.entries.splice(i, 1);
-      }
-    }
   }
 };
 
@@ -817,8 +708,6 @@ const deleteDialogTitle = computed(() => {
       return t`删除条目`;
     case 'group':
       return t`删除分组`;
-    case 'batch':
-      return t`批量删除`;
   }
 });
 
@@ -829,8 +718,6 @@ const deleteDialogMessage = computed(() => {
       return t`确定要删除条目「${deleteTarget.value.summary}」吗？此操作不可撤销。`;
     case 'group':
       return t`确定要删除分组「${deleteTarget.value.key || t`未分组`}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
-    case 'batch':
-      return t`确定要删除选中的 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
   }
 });
 
@@ -846,10 +733,6 @@ const onDeleteConfirm = () => {
       if (!target || target.type !== 'group') break;
       const group = groupedEntries.value.find(g => g.key === target.key);
       if (group) removeGroup(group);
-      break;
-    }
-    case 'batch': {
-      deleteSelected();
       break;
     }
   }
@@ -1296,24 +1179,6 @@ onUnmounted(() => {
 
 .choice-empty-hint i {
   font-size: var(--choice-text-xl);
-}
-
-/* 批量操作栏 */
-.choice-epool-batch-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  border-top: 1px solid var(--choice-border);
-  background: rgba(var(--choice-primary-rgb), 0.06);
-  flex-shrink: 0;
-}
-
-.choice-epool-batch-count {
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text);
-  font-weight: bold;
-  margin-right: var(--choice-space-2);
 }
 
 .choice-btn-sm {
