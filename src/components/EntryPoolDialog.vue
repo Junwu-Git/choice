@@ -214,10 +214,6 @@
           @confirm="onImportPoolConfirm"
         />
 
-        <!-- 不要用 display:none 隐藏 file input：部分 Chromium 版本/套壳内核会静默拦截
-             display:none 元素的文件选择器（点击导入无任何反应）。可视隐藏（1px+透明）则两端都正常 -->
-        <input type="file" accept=".json" ref="fileInput" class="choice-file-input-hidden" @change="onFileSelected" />
-
         <ConfirmDialog
           :open="deleteTarget !== null"
           :title="deleteDialogTitle"
@@ -270,7 +266,6 @@ const groupRenameText = ref('');
 const showGen = ref(false);
 const showImportPool = ref(false);
 const importFileData = ref<any>(null);
-const fileInput = ref<HTMLInputElement | null>(null);
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
@@ -677,24 +672,31 @@ const exportBtnTitle = computed(() =>
   selected.value.size > 0 ? t`导出文件（仅导出选中的 ${selected.value.size} 条）` : t`导出文件`,
 );
 
-const onImportFile = () => fileInput.value?.click();
-
-const onFileSelected = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    if (data?.type !== 'choice-pool-export') {
-      toastr.error(t`文件格式不正确`);
-      return;
+// 导入用动态分离 input（不进 DOM，与正则库/PromptEditor 同款模式）：
+// 模板内隐藏 input 会被 ST 全局 input[type=file]{display:none} 命中，
+// 部分内核对 display:none 元素静默拦截文件选择器，导致"点击导入毫无反应"；
+// 分离的 input 不受任何 CSS 与可见性规则影响，兼容性最稳
+const onImportFile = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async e => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data?.type !== 'choice-pool-export') {
+        toastr.error(t`文件格式不正确`);
+        return;
+      }
+      importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
+      showImportPool.value = true;
+    } catch {
+      toastr.error(t`文件解析失败`);
     }
-    importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
-    showImportPool.value = true;
-  } catch {
-    toastr.error(t`文件解析失败`);
-  }
-  (e.target as HTMLInputElement).value = '';
+  };
+  input.click();
 };
 
 const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
@@ -1009,7 +1011,24 @@ onUnmounted(() => {
   border: 1px solid var(--choice-border);
   font-size: var(--choice-text-sm);
   color: var(--choice-text);
-  flex-wrap: wrap;
+}
+
+/* 手机窄屏：分组头单行紧凑——按钮 28px、把手 28px、隐藏计数，
+   不换行（此前 flex-wrap 让整排按钮折到分组名下方，看起来像"点击分组跳出菜单"）。
+   分组名 flex:1 省略号兜底 */
+@media (pointer: coarse) and (max-width: 480px) {
+  .choice-epool-group-head .choice-icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .choice-epool-group-head .choice-drag-handle {
+    width: 28px;
+  }
+
+  .choice-epool-group-head .choice-epool-group-count {
+    display: none;
+  }
 }
 
 .choice-epool-group-head:hover {

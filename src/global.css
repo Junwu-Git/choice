@@ -364,20 +364,6 @@
   color: var(--choice-text-muted);
 }
 
-/* 文件选择 input 的可视隐藏：ST 全局样式把所有 input[type=file] 设为 display:none，
-   而 display:none 的 file input 在部分 Chromium 版本/套壳内核里 .click() 会被静默拦截
-   （点击"导入"毫无反应）。必须显式 display:block 覆盖——选择器带 input[type=file]
-   提高特异性（ST 的规则是 (0,1,1)，单类名 (0,1,0) 会输），再用 1px+透明+clip 视觉隐藏 */
-input[type="file"].choice-file-input-hidden {
-  display: block;
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
 /* ===== 触摸屏触控目标强化 =====
    手机上主要靠手指点击，24px 的图标按钮经常点偏、误触相邻按钮。
    pointer:coarse 以电容触屏为主指针（手机/平板）时生效，桌面鼠标不受影响；

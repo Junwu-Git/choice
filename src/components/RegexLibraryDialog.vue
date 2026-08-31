@@ -663,12 +663,23 @@ onUnmounted(() => {
   color: var(--choice-text);
 }
 
-/* 窄屏（手机）：头部横向内边距收窄 + 隐藏计数，保证 8 个元素单行放下 */
+/* 窄屏（手机）：头部横向内边距收窄 + 隐藏计数，保证 8 个元素单行放下；
+   分组头同样单行紧凑（按钮/把手 28px、隐藏计数）——与条目库分组头一致 */
 @media (pointer: coarse) and (max-width: 480px) {
   .choice-regexlib-header {
     padding-inline: var(--choice-space-2);
   }
   .choice-regexlib-count {
+    display: none;
+  }
+  .choice-regexlib-group-head .choice-icon-btn {
+    width: 28px;
+    height: 28px;
+  }
+  .choice-regexlib-group-head .choice-drag-handle--group {
+    width: 28px;
+  }
+  .choice-regexlib-group-head .choice-regexlib-group-count {
     display: none;
   }
 }
