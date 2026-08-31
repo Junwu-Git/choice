@@ -18,9 +18,9 @@ export async function pickJsonFile(): Promise<File | null> {
       });
       return (await handle.getFile()) as File;
     } catch (err: any) {
-      // 用户在原生选择器里点取消：静默返回
+      // 用户在原生选择器点取消：直接返回（不要回退再弹一次）
       if (err?.name === 'AbortError') return null;
-      // 其他异常（权限/策略）落到底部 input 回退
+      // SecurityError/NotAllowedError 等（无激活、策略限制）→ 落到底部 input 回退
     }
   }
 
