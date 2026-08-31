@@ -11,14 +11,16 @@
         'choice-floating-bubble--snapped-left': isSnappedLeft && !isDragging,
         'choice-floating-bubble--snapped-right': isSnappedRight && !isDragging,
         'choice-floating-bubble--pressed': isPressed,
-        'choice-floating-bubble--press-left': isPressed && pressSide === 'left',
-        'choice-floating-bubble--press-right': isPressed && pressSide === 'right',
         'choice-floating-bubble--above-overlay': isSettingsOpen,
       }"
       :style="{
         '--choice-x': x + 'px',
         '--choice-y': y + 'px',
-        transition: isDragging || isResizing ? 'none' : 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transition: isDragging || isResizing
+          ? 'none'
+          : isPressed
+            ? 'transform 0.12s ease-out'
+            : 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }"
       title="行动选项设置"
     >
@@ -45,6 +47,8 @@ import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 const BUBBLE_SIZE = 60;
 const SNAP_EXPOSED = 40;
 const SNAP_OFFSET = BUBBLE_SIZE - SNAP_EXPOSED;
+// 点击/长按共用的指针净位移阈值：松手时位移小于它视为点击，大于它视为拖拽意图（取消长按）
+const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
 const STORAGE_KEY_Y = 'choice_floating_bubble_y';
 
@@ -72,15 +76,15 @@ const bubbleState = computed(() => {
 
 const bubbleEl = ref<HTMLElement | null>(null);
 
-// 按压态：pointerdown 期间保持贴边弹出位移不变，消除"先缩回再弹出"的两段跳。
-// pressSide 记录贴边方向，使拖拽类被摘除后 pressed 仍能补上同样的 translateX。
+// 按压态只做整体 scale 反馈。禁止给容器加任何会改变 getBoundingClientRect 的位移效果
+// （比如曾经的"贴边弹出 translateX(20px)"）：useDraggable 的拖拽锚点取自 pointerdown 时
+// 的视觉矩形（VueUse 13.9.0 实现为 e.clientX - targetRect.left，getBoundingClientRect
+// 含 CSS transform），容器一带位移锚点就偏离逻辑坐标——点击时 1px 指针抖动会让
+// position 突跳 ~20px，松手被误判成拖拽，即"贴边球点一下弹一下、面板打不开"的根因。
+// 位移类视觉提示只能放在子元素上（子元素 transform 不影响容器矩形），见样式里
+// snapped:hover 的图标 nudge。按压缩放本身安全：锚点在 VueUse 的 capture 阶段采集，
+// 早于 pressed 类生效；且 scale 不改 translate，残余偏差 ≤2.4px 不可见。
 const isPressed = ref(false);
-const pressSide = ref<'left' | 'right' | null>(null);
-
-const clearPressed = () => {
-  isPressed.value = false;
-  pressSide.value = null;
-};
 
 const handleClick = () => {
   isBubbleContextMenuOpen.value = false;
@@ -93,9 +97,19 @@ const handleClick = () => {
 
 const { x, y, isDragging } = useDraggable(bubbleEl, {
   initialValue: { x: posX.value, y: posY.value },
-  onEnd: (finalPos, _e) => {
-    const dx = Math.abs(finalPos.x - posX.value);
-    const dy = Math.abs(finalPos.y - posY.value);
+  // 按压期间指针净位移超过 TAP_SLOP 即转入拖拽意图：取消长按计时、撤掉按压缩放，
+  // 让球以完整尺寸跟手。onMove 由 VueUse 接在 window 上，不怕指针滑出气泡范围
+  onMove: (_pos, e) => {
+    if (Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y) > TAP_SLOP) {
+      clearLongPressTimer();
+      isPressed.value = false;
+    }
+  },
+  onEnd: (finalPos, e) => {
+    // window 级 pointerup 必达，在这里兜底清长按计时器：元素级监听可能因指针滑出
+    // 气泡收不到 up，漏清会形成"幽灵长按"——面板刚被点开，500ms 后菜单又自己弹出
+    clearLongPressTimer();
+    isPressed.value = false;
 
     const SNAP_THRESHOLD = 100;
     const centerX = finalPos.x + BUBBLE_SIZE / 2;
@@ -125,14 +139,13 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
     bubbleX.value = snappedX;
     bubbleY.value = posY.value;
 
-    if (dx < 3 && dy < 3) {
-      if (!longPressTriggered) {
-        handleClick();
-      }
-      longPressTriggered = false;
+    // 点击判定用指针净位移而非元素位置差：元素位置被视觉位移污染（见 isPressed 注释），
+    // 指针位移才是"点击意图"的正确度量。8px 容忍触摸抖动，与长按取消共用同一阈值
+    const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+    if (moved < TAP_SLOP && !longPressTriggered) {
+      handleClick();
     }
-    // 点击/拖拽收尾后延迟清除按压态：此时 hover 已接管弹出位移，切换无跳变
-    setTimeout(clearPressed, 250);
+    longPressTriggered = false;
   },
 });
 
@@ -140,39 +153,45 @@ let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let longPressTriggered = false;
 let pointerDownPos = { x: 0, y: 0 };
 
-const onPointerDown = (e: PointerEvent) => {
-  longPressTriggered = false;
-  pointerDownPos = { x: e.clientX, y: e.clientY };
-  // 按下即记录贴边方向：贴边球在 isDragging 摘类的瞬间由 pressed 类接管相同位移
-  pressSide.value = isSnappedLeft.value ? 'left' : isSnappedRight.value ? 'right' : null;
-  isPressed.value = true;
-  longPressTimer = setTimeout(() => {
-    longPressTriggered = true;
-    clearPressed();
-    bubbleX.value = posX.value;
-    bubbleY.value = posY.value;
-    isBubbleContextMenuOpen.value = true;
-  }, 500);
-};
-
-const onPointerMove = (e: PointerEvent) => {
-  if (longPressTimer !== null) {
-    const dx = Math.abs(e.clientX - pointerDownPos.x);
-    const dy = Math.abs(e.clientY - pointerDownPos.y);
-    if (dx > 5 || dy > 5) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-      // 位移超过阈值即转入拖拽意图，撤销按压位移补偿，让球跟手
-      clearPressed();
-    }
-  }
-};
-
-const onPointerUp = () => {
+const clearLongPressTimer = () => {
   if (longPressTimer !== null) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
   }
+};
+
+const onPointerDown = (e: PointerEvent) => {
+  // 右键交给 contextmenu 处理，与 useDraggable 默认 buttons:[0] 对齐
+  if (e.button !== 0) return;
+  longPressTriggered = false;
+  pointerDownPos = { x: e.clientX, y: e.clientY };
+  isPressed.value = true;
+  // 长按菜单仅触屏/笔生效：鼠标按住半秒是常见误操作（原本会吞掉点击），鼠标改用右键
+  if (e.pointerType !== 'mouse') {
+    longPressTimer = setTimeout(() => {
+      longPressTriggered = true;
+      isPressed.value = false;
+      bubbleX.value = posX.value;
+      bubbleY.value = posY.value;
+      isBubbleContextMenuOpen.value = true;
+    }, 500);
+  }
+};
+
+// touch-action:none 已阻断滚动接管，pointercancel 罕见；VueUse 只监听 pointerup，
+// cancel 不会走 onEnd，这里兜底清理按压态与计时器
+const onPointerCancel = () => {
+  clearLongPressTimer();
+  isPressed.value = false;
+};
+
+// 鼠标右键呼出应用菜单（触屏长按的等价物）。FloatingContextMenu 的 document 级
+// pointerdown 关闭逻辑忽略气泡来源的点击，不会被同一次右键的 pointerdown 立即关掉
+const onContextMenu = (e: MouseEvent) => {
+  e.preventDefault();
+  bubbleX.value = posX.value;
+  bubbleY.value = posY.value;
+  isBubbleContextMenuOpen.value = true;
 };
 
 // 初始位置判断：如果存储的 x 靠左或靠右，初始化吸附状态
@@ -219,17 +238,17 @@ const handleResize = () => {
 
 onMounted(() => {
   bubbleEl.value?.addEventListener('pointerdown', onPointerDown);
-  bubbleEl.value?.addEventListener('pointermove', onPointerMove);
-  bubbleEl.value?.addEventListener('pointerup', onPointerUp);
+  bubbleEl.value?.addEventListener('pointercancel', onPointerCancel);
+  bubbleEl.value?.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('resize', handleResize);
 });
 onUnmounted(() => {
   bubbleEl.value?.removeEventListener('pointerdown', onPointerDown);
-  bubbleEl.value?.removeEventListener('pointermove', onPointerMove);
-  bubbleEl.value?.removeEventListener('pointerup', onPointerUp);
+  bubbleEl.value?.removeEventListener('pointercancel', onPointerCancel);
+  bubbleEl.value?.removeEventListener('contextmenu', onContextMenu);
   window.removeEventListener('resize', handleResize);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
-  if (longPressTimer !== null) clearTimeout(longPressTimer);
+  clearLongPressTimer();
 });
 </script>
 
@@ -286,29 +305,26 @@ onUnmounted(() => {
   box-shadow: 0 0 28px rgba(var(--choice-primary-rgb), 0.45);
 }
 
-.choice-floating-bubble--snapped-left:hover {
-  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(20px) scale(1.08);
+/* 贴边态悬停禁止容器位移弹出（peek）：容器 transform 会改变 getBoundingClientRect，
+   污染 useDraggable 拖拽锚点、把点击抖动放大成瞬移（根因见 script 内 isPressed 注释）。
+   悬停提示改为图标向屏幕内侧多探出几 px——子元素 transform 不影响容器矩形 */
+.choice-floating-bubble--snapped-left:hover .choice-bubble-icon {
+  transform: translateX(14px);
 }
 
-.choice-floating-bubble--snapped-right:hover {
-  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(-20px) scale(1.08);
+.choice-floating-bubble--snapped-right:hover .choice-bubble-icon {
+  transform: translateX(-14px);
 }
 
-.choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):hover {
+/* 悬停放大排除按压态：否则此规则(0,4,0)特异性压过 pressed(0,1,0)，
+   鼠标按下时收缩反馈永远不生效（按住时球必然处于 hover 中） */
+.choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):not(.choice-floating-bubble--pressed):hover {
   transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(1.08);
 }
 
-/* 按压态：pointerdown 后 isDragging 会摘掉贴边类导致球瞬缩，
-   pressed 类在此期间补上与 hover 完全相同的位移，使视觉连续无跳变 */
-.choice-floating-bubble--press-left {
-  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(20px) scale(1.08);
-}
-
-.choice-floating-bubble--press-right {
-  transform: translate3d(var(--choice-x), var(--choice-y), 0) translateX(-20px) scale(1.08);
-}
-
-.choice-floating-bubble--pressed:not(.choice-floating-bubble--press-left):not(.choice-floating-bubble--press-right) {
+/* 按压态：整体轻微收缩作反馈，不加任何位移（根因见 script 内 isPressed 注释）。
+   松手后由内联 transition 的回弹缓动放回，与拖拽吸附共用同一份缓动 */
+.choice-floating-bubble--pressed {
   transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(0.94);
 }
 
