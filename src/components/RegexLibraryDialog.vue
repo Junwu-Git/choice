@@ -185,6 +185,7 @@ import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
 import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { DRAG_HANDLE_GROUP_SELECTOR, DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
+import { pickJsonFile } from '@/util/file-picker';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -366,15 +367,12 @@ const onExport = () => {
   toastr.success(partial ? t`已导出选中的 ${entries.length} 条正则` : t`已导出全部 ${entries.length} 条正则`);
 };
 
-const onImportFile = () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = async e => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
+// 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，见 util/file-picker.ts）
+const onImportFile = async () => {
+  const file = await pickJsonFile();
+  if (!file) return;
+  try {
+    const text = await file.text();
       const data = JSON.parse(text);
       const fs = gs.settings.filter_settings;
       const existingIds = new Set(fs.regex_library.map(e => e.id));
@@ -439,8 +437,6 @@ const onImportFile = () => {
     } catch (err) {
       toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效文件'}`);
     }
-  };
-  input.click();
 };
 
 watch(

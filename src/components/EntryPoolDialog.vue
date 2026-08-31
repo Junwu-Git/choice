@@ -249,6 +249,7 @@ import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
+import { pickJsonFile } from '@/util/file-picker';
 import Sortable from 'sortablejs';
 
 const props = defineProps<{ open: boolean }>();
@@ -672,31 +673,23 @@ const exportBtnTitle = computed(() =>
   selected.value.size > 0 ? t`导出文件（仅导出选中的 ${selected.value.size} 条）` : t`导出文件`,
 );
 
-// 导入用动态分离 input（不进 DOM，与正则库/PromptEditor 同款模式）：
-// 模板内隐藏 input 会被 ST 全局 input[type=file]{display:none} 命中，
-// 部分内核对 display:none 元素静默拦截文件选择器，导致"点击导入毫无反应"；
-// 分离的 input 不受任何 CSS 与可见性规则影响，兼容性最稳
-const onImportFile = () => {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.json';
-  input.onchange = async e => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (data?.type !== 'choice-pool-export') {
-        toastr.error(t`文件格式不正确`);
-        return;
-      }
-      importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
-      showImportPool.value = true;
-    } catch {
-      toastr.error(t`文件解析失败`);
+// 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，
+// 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）
+const onImportFile = async () => {
+  const file = await pickJsonFile();
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (data?.type !== 'choice-pool-export') {
+      toastr.error(t`文件格式不正确`);
+      return;
     }
-  };
-  input.click();
+    importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
+    showImportPool.value = true;
+  } catch {
+    toastr.error(t`文件解析失败`);
+  }
 };
 
 const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
