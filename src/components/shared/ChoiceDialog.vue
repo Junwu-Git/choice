@@ -1,10 +1,7 @@
 <template>
   <Teleport to="body">
     <div v-if="open" class="choice-dialog-overlay" @click.self="$emit('close')">
-      <div
-        class="choice-dialog"
-        :style="{ '--choice-dialog-width': width, '--choice-dialog-max-height': maxHeight }"
-      >
+      <div class="choice-dialog" :style="{ '--choice-dialog-width': width, '--choice-dialog-max-height': maxHeight }">
         <div class="choice-dialog-header">
           <span class="choice-dialog-title">
             <i v-if="icon" :class="icon"></i>

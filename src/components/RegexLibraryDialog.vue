@@ -178,7 +178,13 @@
     @merge="onImportSource"
   />
 
-  <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" icon="fa-solid fa-code" title="正则库是什么" @close="showGuide = false">
+  <GuidePopover
+    :visible="open && showGuide"
+    :anchor-el="guideBtn"
+    icon="fa-solid fa-code"
+    title="正则库是什么"
+    @close="showGuide = false"
+  >
     <div v-html="guideHtml"></div>
   </GuidePopover>
 </template>

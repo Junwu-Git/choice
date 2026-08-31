@@ -165,13 +165,13 @@
               </div>
             </div>
           </div>
-        <div v-else class="choice-empty-hint">
-          <i class="fa-solid fa-database"></i>
-          <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
+          <div v-else class="choice-empty-hint">
+            <i class="fa-solid fa-database"></i>
+            <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
+          </div>
         </div>
-      </div>
 
-      <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
+        <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
 
         <ImportPoolDialog
           :open="showImportPool"
@@ -253,9 +253,7 @@ const guideHtml = `<p><strong>条目库</strong> 是所有行动选项条目的�
 <p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
 <p><strong>操作</strong>：左侧勾选复选框后点「导出文件」可只导出勾选的条目（不勾选则全量导出）。顶部工具栏支持全部展开/收起、新建分组、文件导入/导出、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
 const deleteTarget = ref<
-  | { type: 'entry'; id: string; summary: string }
-  | { type: 'group'; key: string; count: number }
-  | null
+  { type: 'entry'; id: string; summary: string } | { type: 'group'; key: string; count: number } | null
 >(null);
 const selected = ref<Set<string>>(new Set());
 const pendingGroups = computed({
