@@ -649,6 +649,11 @@ const onGenConfirm = ({
 const onExportPool = () => {
   const partial = selected.value.size > 0;
   const pool = partial ? masterPool.value.filter(e => selected.value.has(e.id)) : masterPool.value;
+  // 空库导出防护：空文件导回去再导入会把库清空却提示"成功"（死亡循环），直接阻止
+  if (pool.length === 0) {
+    toastr.warning(t`条目库为空，没有可导出的条目`);
+    return;
+  }
   const groupOrder = partial
     ? globalStore.settings.group_order.filter(g => pool.some(e => (e.category || '') === g))
     : globalStore.settings.group_order;
@@ -713,6 +718,12 @@ const onImportSource = ({ text, fileName }: { text: string; fileName: string }) 
 const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
   if (!importFileData.value) return;
   const { master_pool, configs, group_order } = importFileData.value;
+  // 空条目文件防护：空库时期导出的文件、或内容为空的文件，导入只会把库清空/保持为空，
+  // 却提示"成功"——这正是"导入成功但条目库还是空的"体验事故的来源。直接取消导入
+  if (!master_pool?.length) {
+    toastr.warning(t`该文件不包含任何条目，已取消导入。请检查是否选错了导出文件`);
+    return;
+  }
   // 防御：部分导出没有完整 configs，替换会清空现有配置——UI 已禁用，此处兜底按合并处理
   if (mode === 'replace' && importFileData.value.partial) {
     mode = 'merge';

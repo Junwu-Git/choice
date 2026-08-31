@@ -365,6 +365,11 @@ const exportTitle = computed(() =>
 const onExport = () => {
   const partial = selectedIds.value.size > 0;
   const entries = partial ? library.value.filter(e => selectedIds.value.has(e.id)) : library.value;
+  // 空库/空勾选防护：空文件导回去再导入会"成功"却什么都不加（死亡循环），直接阻止
+  if (entries.length === 0) {
+    toastr.warning(t`没有可导出的正则（库为空或未勾选任何条目）`);
+    return;
+  }
   const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), partial, entries }, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
