@@ -676,18 +676,23 @@ const exportBtnTitle = computed(() =>
 // 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，
 // 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）
 const onImportFile = async () => {
-  const file = await pickJsonFile();
-  if (!file) return;
+  // TODO(临时诊断，定位后移除)：区分"处理器未触发（旧构建/点击被吞）"与"选择器异常"
+  alert('[诊断1] 导入处理器已触发，即将尝试弹出选择器');
   try {
+    const file = await pickJsonFile();
+    alert('[诊断2] pickJsonFile 返回：' + (file ? `文件 ${file.name}（${file.size} 字节）` : 'null（用户取消或选择器未弹出）'));
+    if (!file) return;
     const text = await file.text();
     const data = JSON.parse(text);
     if (data?.type !== 'choice-pool-export') {
+      alert('[诊断3] 文件格式不正确：type=' + (data?.type ?? '无'));
       toastr.error(t`文件格式不正确`);
       return;
     }
     importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
     showImportPool.value = true;
-  } catch {
+  } catch (err: any) {
+    alert('[诊断4] 导入流程异常：' + (err?.name ?? '?') + '：' + (err?.message ?? err));
     toastr.error(t`文件解析失败`);
   }
 };
