@@ -22,7 +22,7 @@
             <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
               <i class="fa-solid fa-file-import"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`导出文件`" @click="onExport">
+            <button class="choice-icon-btn" :title="exportTitle" @click="onExport">
               <i class="fa-solid fa-file-export"></i>
             </button>
             <span class="choice-regexlib-header-divider"></span>
@@ -37,8 +37,7 @@
         </div>
 
         <div ref="listBody" class="choice-regexlib-body choice-scrollbar">
-          <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">
-            <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
+          <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">            <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
               <div class="choice-regexlib-group-head" @click="toggleGroup(group.key)">
                 <DragHandle class="choice-drag-handle--group" :title="t`拖动排序`" @click.stop />
                 <label class="choice-check" @click.stop v-if="selectable">
@@ -345,8 +344,18 @@ const onDeleteGroupConfirm = () => {
   }
 };
 
+// 部分导出：勾选模式下仅导出勾选的正则（条目自带 category 字段，分组归属随条目走）；
+// 无勾选则全量导出。按钮 title 随勾选数动态提示
+const exportTitle = computed(() =>
+  props.selectable && selectedIds.value.size > 0
+    ? t`导出文件（仅导出选中的 ${selectedIds.value.size} 条）`
+    : t`导出文件`,
+);
+
 const onExport = () => {
-  const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), entries: library.value }, null, 2);
+  const partial = props.selectable && selectedIds.value.size > 0;
+  const entries = partial ? library.value.filter(e => selectedIds.value.has(e.id)) : library.value;
+  const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), partial, entries }, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -354,6 +363,7 @@ const onExport = () => {
   a.download = `choice-regex-library-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  toastr.success(partial ? t`已导出选中的 ${entries.length} 条正则` : t`已导出全部 ${entries.length} 条正则`);
 };
 
 const onImportFile = () => {
@@ -438,8 +448,9 @@ watch(
   isOpen => {
     if (isOpen) {
       selectedIds.value = new Set(props.alreadyReferencedIds);
-      // 全部分组展开：条目行为单行输入区，展开即可见全部正则
-      expandedGroups.value = new Set(groupedEntries.value.map(g => g.key));
+      // 分组默认折叠，与条目库一致（此前每次打开都强制全展开，与条目库行为割裂）；
+      // 拖拽悬停自动展开（onDragHoverExpand）不受影响，折叠分组仍可作为投放目标
+      expandedGroups.value = new Set();
       setupSortables();
     }
   },
@@ -718,7 +729,7 @@ onUnmounted(() => {
    SortableJS 才能把它识别为 drop target（拖入折叠分组后 onEnd 自动展开）。
    body 无描边、折叠时 padding 清零——配合无描边容器，折叠后头下不再出现细框 */
 .choice-regexlib-group-body {
-  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-3);
+  padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-1);

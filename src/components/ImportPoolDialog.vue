@@ -36,11 +36,15 @@
               <td class="import-dlg-label">{{ t`导出时间` }}</td>
               <td class="import-dlg-value">{{ formatDate(data?.exportedAt) }}</td>
             </tr>
+            <tr v-if="data?.partial">
+              <td class="import-dlg-label">{{ t`范围` }}</td>
+              <td class="import-dlg-value">{{ t`部分导出（仅勾选的条目）` }}</td>
+            </tr>
             <tr>
               <td class="import-dlg-label">{{ t`条目数` }}</td>
               <td class="import-dlg-value">{{ (data?.master_pool ?? []).length }} {{ t`条` }}</td>
             </tr>
-            <tr>
+            <tr v-if="!data?.partial">
               <td class="import-dlg-label">{{ t`配置数` }}</td>
               <td class="import-dlg-value">{{ (data?.configs ?? []).length }} {{ t`个` }}</td>
             </tr>
@@ -55,8 +59,12 @@
               <input v-model="mode" type="radio" value="merge" />
               <span>{{ t`合并到现有条目库` }}</span>
             </label>
-            <label class="import-dlg-radio">
-              <input v-model="mode" type="radio" value="replace" />
+            <label
+              class="import-dlg-radio"
+              :class="{ 'import-dlg-radio--disabled': data?.partial }"
+              :title="data?.partial ? t`部分导出没有完整配置，仅支持合并` : ''"
+            >
+              <input v-model="mode" type="radio" value="replace" :disabled="data?.partial" />
               <span class="import-dlg-replace-label">{{ t`替换现有条目库（⚠ 不可撤销）` }}</span>
             </label>
           </div>
@@ -87,6 +95,8 @@ const props = defineProps<{
   data: {
     fileName: string;
     exportedAt: string;
+    /** 部分导出标记：仅含勾选条目、无完整 configs——替换导入被禁用 */
+    partial?: boolean;
     master_pool: any[];
     configs: any[];
     group_order: string[];
@@ -150,6 +160,15 @@ const formatDate = (iso: string | undefined) => {
 
 .import-dlg-radio:hover {
   background: var(--choice-bg-hover);
+}
+
+.import-dlg-radio--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.import-dlg-radio--disabled:hover {
+  background: none;
 }
 
 .import-dlg-replace-label {

@@ -22,7 +22,7 @@
             <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
               <i class="fa-solid fa-file-import"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`导出文件`" @click="onExportPool">
+            <button class="choice-icon-btn" :title="exportBtnTitle" @click="onExportPool">
               <i class="fa-solid fa-file-export"></i>
             </button>
             <span class="choice-epool-header-divider"></span>
@@ -636,16 +636,25 @@ const onGenConfirm = ({
   showGen.value = false;
 };
 
+// 部分导出：勾选模式下仅导出勾选的条目与其所属分组；无勾选则全量导出。
+// partial 时 configs 置空并带标记——配置按 entry_id 引用条目，部分条目无法还原完整配置，
+// 导入端据此禁用"替换"选项，防止替换导入清空现有配置
 const onExportPool = () => {
+  const partial = selected.value.size > 0;
+  const pool = partial ? masterPool.value.filter(e => selected.value.has(e.id)) : masterPool.value;
+  const groupOrder = partial
+    ? globalStore.settings.group_order.filter(g => pool.some(e => (e.category || '') === g))
+    : globalStore.settings.group_order;
   const json = JSON.stringify(
     {
       version: 1,
       type: 'choice-pool-export',
       exportedAt: new Date().toISOString(),
+      partial,
       data: {
-        master_pool: globalStore.settings.master_pool,
-        configs: globalStore.settings.configs,
-        group_order: globalStore.settings.group_order,
+        master_pool: pool,
+        configs: partial ? [] : globalStore.settings.configs,
+        group_order: groupOrder,
       },
     },
     null,
@@ -658,7 +667,13 @@ const onExportPool = () => {
   a.download = `choice-pool-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  toastr.success(partial ? t`已导出选中的 ${pool.length} 条` : t`已导出全部 ${pool.length} 条`);
 };
+
+// 头部"导出文件"按钮 title 随勾选数动态提示部分导出
+const exportBtnTitle = computed(() =>
+  selected.value.size > 0 ? t`导出文件（仅导出选中的 ${selected.value.size} 条）` : t`导出文件`,
+);
 
 const onImportFile = () => fileInput.value?.click();
 
@@ -672,7 +687,7 @@ const onFileSelected = async (e: Event) => {
       toastr.error(t`文件格式不正确`);
       return;
     }
-    importFileData.value = { ...data.data, fileName: file.name, exportedAt: data.exportedAt };
+    importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
     showImportPool.value = true;
   } catch {
     toastr.error(t`文件解析失败`);
@@ -683,6 +698,10 @@ const onFileSelected = async (e: Event) => {
 const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
   if (!importFileData.value) return;
   const { master_pool, configs, group_order } = importFileData.value;
+  // 防御：部分导出没有完整 configs，替换会清空现有配置——UI 已禁用，此处兜底按合并处理
+  if (mode === 'replace' && importFileData.value.partial) {
+    mode = 'merge';
+  }
   if (mode === 'replace') {
     globalStore.settings.master_pool = master_pool ?? [];
     globalStore.settings.configs = configs ?? [];
