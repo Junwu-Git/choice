@@ -37,10 +37,12 @@
         </div>
 
         <div ref="listBody" class="choice-regexlib-body choice-scrollbar">
-          <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">            <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
+          <div v-if="groupedEntries.length > 0" ref="groupListEl" class="choice-regexlib-list">
+            <div v-for="group in groupedEntries" :key="group.key" class="choice-regexlib-group">
               <div class="choice-regexlib-group-head" @click="toggleGroup(group.key)">
                 <DragHandle class="choice-drag-handle--group" :title="t`拖动排序`" @click.stop />
-                <label class="choice-check" @click.stop v-if="selectable">
+                <!-- 勾选列始终显示：普通视图下勾选分组/条目即可部分导出（selectable 模式另作过滤配置勾选） -->
+                <label class="choice-check" @click.stop>
                   <input type="checkbox" :checked="isGroupAllSelected(group)" @change="toggleSelectGroup(group)" />
                 </label>
                 <i class="fa-solid" :class="expandedGroups.has(group.key) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
@@ -98,7 +100,7 @@
                   :data-entry-id="entry.id"
                 >
                   <DragHandle :title="t`拖动排序/换组`" />
-                  <label class="choice-check" v-if="selectable">
+                  <label class="choice-check">
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
                   </label>
                   <select v-model="entry.type" class="text_pole" style="width: 90px; flex-shrink: 0">
@@ -344,16 +346,14 @@ const onDeleteGroupConfirm = () => {
   }
 };
 
-// 部分导出：勾选模式下仅导出勾选的正则（条目自带 category 字段，分组归属随条目走）；
+// 部分导出：勾选了分组/条目即仅导出勾选的正则（条目自带 category 字段，分组归属随条目走）；
 // 无勾选则全量导出。按钮 title 随勾选数动态提示
 const exportTitle = computed(() =>
-  props.selectable && selectedIds.value.size > 0
-    ? t`导出文件（仅导出选中的 ${selectedIds.value.size} 条）`
-    : t`导出文件`,
+  selectedIds.value.size > 0 ? t`导出文件（仅导出选中的 ${selectedIds.value.size} 条）` : t`导出文件`,
 );
 
 const onExport = () => {
-  const partial = props.selectable && selectedIds.value.size > 0;
+  const partial = selectedIds.value.size > 0;
   const entries = partial ? library.value.filter(e => selectedIds.value.has(e.id)) : library.value;
   const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), partial, entries }, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
@@ -447,7 +447,8 @@ watch(
   () => props.open,
   isOpen => {
     if (isOpen) {
-      selectedIds.value = new Set(props.alreadyReferencedIds);
+      // selectable 模式（过滤配置勾选）预勾选已被引用的正则；普通视图从空选开始
+      selectedIds.value = new Set(props.selectable ? props.alreadyReferencedIds : []);
       // 分组默认折叠，与条目库一致（此前每次打开都强制全展开，与条目库行为割裂）；
       // 拖拽悬停自动展开（onDragHoverExpand）不受影响，折叠分组仍可作为投放目标
       expandedGroups.value = new Set();

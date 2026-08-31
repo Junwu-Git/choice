@@ -214,7 +214,9 @@
           @confirm="onImportPoolConfirm"
         />
 
-        <input type="file" accept=".json" ref="fileInput" style="display: none" @change="onFileSelected" />
+        <!-- 不要用 display:none 隐藏 file input：部分 Chromium 版本/套壳内核会静默拦截
+             display:none 元素的文件选择器（点击导入无任何反应）。可视隐藏（1px+透明）则两端都正常 -->
+        <input type="file" accept=".json" ref="fileInput" class="choice-file-input-hidden" @change="onFileSelected" />
 
         <ConfirmDialog
           :open="deleteTarget !== null"
