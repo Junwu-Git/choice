@@ -19,6 +19,7 @@
         rows="8"
         spellcheck="false"
       ></textarea>
+      <div v-if="error" class="choice-importsrc-error">{{ error }}</div>
     </div>
     <template #footer>
       <button class="menu_button" @click="onClose">
@@ -44,6 +45,8 @@ import { pickJsonFile } from '@/util/file-picker';
 const props = defineProps<{
   open: boolean;
   title: string;
+  /** 解析/导入失败原因：红字显示在文本框下方，不随 toast 消失 */
+  error?: string;
 }>();
 
 const emit = defineEmits<{
@@ -95,6 +98,14 @@ const onClose = () => emit('close');
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   line-height: 1.5;
+}
+
+.choice-importsrc-error {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-color-error, #e5615e);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .choice-importsrc-textarea {

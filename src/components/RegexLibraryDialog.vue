@@ -173,6 +173,7 @@
   <ImportSourceDialog
     :open="open && showImportSource"
     :title="t`导入正则库`"
+    :error="importSourceError"
     @close="showImportSource = false"
     @confirm="onImportSource"
   />
@@ -376,12 +377,23 @@ const onExport = () => {
 };
 
 // 导入入口改为 ImportSourceDialog（文件/粘贴双路径）：粘贴不经过文件选择器，
-// 是选择器受限环境（套壳/旧 WebView）下的兜底可用路径
+// 是选择器受限环境（套壳/旧 WebView）下的兜底可用路径。
+// 失败保持源弹窗打开并在框内红字显示原因：粘贴内容不丢失，用户可直接修改后重试
 const showImportSource = ref(false);
+const importSourceError = ref('');
 
 const onImportSource = ({ text }: { text: string; fileName: string }) => {
+  importSourceError.value = '';
+  let data: any;
   try {
-    const data = JSON.parse(text);
+    // 去 BOM 与首尾杂质
+    const clean = text.replace(/^\uFEFF/, '').trim();
+    data = JSON.parse(clean);
+  } catch (err: any) {
+    importSourceError.value = t`JSON 解析失败：${err?.message ?? err}。请确认粘贴的是导出文件的完整内容（从 { 到 }）`;
+    return;
+  }
+  try {
     const fs = gs.settings.filter_settings;
     const existingIds = new Set(fs.regex_library.map(e => e.id));
     const imported: RegexLibraryEntry[] = [];
@@ -445,8 +457,8 @@ const onImportSource = ({ text }: { text: string; fileName: string }) => {
     toastr.success(parts.join('，'));
     showImportSource.value = false; // 落库成功才关源弹窗
   } catch (err) {
-    // 失败保持源弹窗打开：粘贴内容不丢失，用户可直接修改后重试
-    toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效文件'}`);
+    // 失败保持源弹窗打开：粘贴内容不丢失，红字显示具体原因供用户处理
+    importSourceError.value = t`导入失败：${err instanceof Error ? err.message : '无效文件'}`;
   }
 };
 

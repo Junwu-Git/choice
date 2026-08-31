@@ -218,6 +218,7 @@
         <ImportSourceDialog
           :open="showImportSource"
           :title="t`导入条目库`"
+          :error="importSourceError"
           @close="showImportSource = false"
           @confirm="onImportSource"
         />
@@ -685,22 +686,28 @@ const exportBtnTitle = computed(() =>
 // 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）
 // 导入入口改为 ImportSourceDialog（文件/粘贴双路径）：
 // 纯文件选择器方案在部分环境（套壳/旧 WebView）点击毫无反应，粘贴是兜底可用路径。
-// 解析成功才关源弹窗，失败保留粘贴内容供修改
+// 解析成功才关源弹窗，失败保留粘贴内容并在框内红字显示原因
 const showImportSource = ref(false);
+const importSourceError = ref('');
 
 const onImportSource = ({ text, fileName }: { text: string; fileName: string }) => {
+  importSourceError.value = '';
+  let data: any;
   try {
-    const data = JSON.parse(text);
-    if (data?.type !== 'choice-pool-export') {
-      toastr.error(t`文件格式不正确（type=${data?.type ?? '无'}，需要 choice-pool-export）`);
-      return;
-    }
-    importFileData.value = { ...data.data, partial: !!data.partial, fileName, exportedAt: data.exportedAt };
-    showImportSource.value = false;
-    showImportPool.value = true;
+    // 去 BOM（Windows 记事本 UTF-8 常见）与首尾杂质——这会让 JSON.parse 报难懂的语法错误
+    const clean = text.replace(/^\uFEFF/, '').trim();
+    data = JSON.parse(clean);
   } catch (err: any) {
-    toastr.error(t`文件解析失败：${err?.message ?? err}`);
+    importSourceError.value = t`JSON 解析失败：${err?.message ?? err}。请确认粘贴的是导出文件的完整内容（从 { 到 }）`;
+    return;
   }
+  if (data?.type !== 'choice-pool-export') {
+    importSourceError.value = t`文件格式不正确：type=${data?.type ?? '无'}，需要 choice-pool-export（条目库导出的文件）。正则库导出的文件不能导入条目库`;
+    return;
+  }
+  importFileData.value = { ...data.data, partial: !!data.partial, fileName, exportedAt: data.exportedAt };
+  showImportSource.value = false;
+  showImportPool.value = true;
 };
 
 const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
