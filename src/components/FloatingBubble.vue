@@ -16,11 +16,12 @@
       :style="{
         '--choice-x': x + 'px',
         '--choice-y': y + 'px',
-        transition: isDragging || isResizing
-          ? 'none'
-          : isPressed
-            ? 'transform 0.12s ease-out'
-            : 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transition:
+          isDragging || isResizing
+            ? 'none'
+            : isPressed
+              ? 'transform 0.12s ease-out'
+              : 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }"
       title="行动选项设置"
     >
@@ -318,7 +319,9 @@ onUnmounted(() => {
 
 /* 悬停放大排除按压态：否则此规则(0,4,0)特异性压过 pressed(0,1,0)，
    鼠标按下时收缩反馈永远不生效（按住时球必然处于 hover 中） */
-.choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):not(.choice-floating-bubble--pressed):hover {
+.choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):not(
+    .choice-floating-bubble--pressed
+  ):hover {
   transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(1.08);
 }
 
