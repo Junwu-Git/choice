@@ -210,17 +210,21 @@
         <ImportPoolDialog
           :open="showImportPool"
           :data="importFileData"
+          :initial-mode="'replace'"
           @close="showImportPool = false"
           @confirm="onImportPoolConfirm"
         />
 
-        <!-- 导入源对话框：文件/粘贴双路径，拿到 JSON 文本后走下方预览弹窗 -->
+        <!-- 导入源对话框：粘贴/选文件 → 「解析并合并导入」直接落库（一步到位）；
+             「替换整个条目库」走预览确认（危险操作）。失败红字显示在对话框内 -->
         <ImportSourceDialog
           :open="showImportSource"
           :title="t`导入条目库`"
           :error="importSourceError"
+          :show-replace="true"
           @close="showImportSource = false"
-          @confirm="onImportSource"
+          @merge="onImportMerge"
+          @replace="onImportReplace"
         />
 
         <ConfirmDialog
@@ -689,25 +693,74 @@ const exportBtnTitle = computed(() =>
 
 // 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，
 // 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）
-// 导入入口改为 ImportSourceDialog（文件/粘贴双路径）：
-// 纯文件选择器方案在部分环境（套壳/旧 WebView）点击毫无反应，粘贴是兜底可用路径。
-// 解析成功才关源弹窗，失败保留粘贴内容并在框内红字显示原因
+// 导入入口改为 ImportSourceDialog：
+// 「解析并合并导入」直接落库（粘贴后一步到位，条目立刻出现在库里）；
+// 「替换整个条目库」走预览确认（危险操作）。
+// 解析失败红字显示在对话框内，粘贴内容不丢失
 const showImportSource = ref(false);
 const importSourceError = ref('');
 
-const onImportSource = ({ text, fileName }: { text: string; fileName: string }) => {
-  importSourceError.value = '';
+// 公共解析：去 BOM/首尾杂质 + type 校验，失败时写红字并返回 null
+const parseImportText = (text: string): any | null => {
   let data: any;
   try {
-    // 去 BOM（Windows 记事本 UTF-8 常见）与首尾杂质——这会让 JSON.parse 报难懂的语法错误
     const clean = text.replace(/^\uFEFF/, '').trim();
     data = JSON.parse(clean);
   } catch (err: any) {
     importSourceError.value = t`JSON 解析失败：${err?.message ?? err}。请确认粘贴的是导出文件的完整内容（从 { 到 }）`;
-    return;
+    return null;
   }
   if (data?.type !== 'choice-pool-export') {
     importSourceError.value = t`文件格式不正确：type=${data?.type ?? '无'}，需要 choice-pool-export（条目库导出的文件）。正则库导出的文件不能导入条目库`;
+    return null;
+  }
+  return data;
+};
+
+// 合并导入：直接落库，条目立刻出现（按 id 去重，重复文件不会产生重复条目）
+const onImportMerge = ({ text }: { text: string; fileName: string }) => {
+  importSourceError.value = '';
+  const data = parseImportText(text);
+  if (!data) return;
+  const { master_pool, configs, group_order } = data.data ?? {};
+  // 空条目文件防护：空库时期导出的文件导入后"成功"却什么都没有（死亡循环），直接阻止
+  if (!master_pool?.length) {
+    importSourceError.value = t`该文件不包含任何条目（master_pool 为空），无法导入`;
+    return;
+  }
+  const existingIds = new Set(globalStore.settings.master_pool.map(e => e.id));
+  const newEntries = master_pool.filter((e: PoolEntry) => !existingIds.has(e.id));
+  if (newEntries.length) globalStore.settings.master_pool.push(...newEntries);
+  if (configs?.length) {
+    for (const cfg of configs) {
+      if (!globalStore.settings.configs.some(c => c.name === cfg.name)) {
+        globalStore.settings.configs.push(cfg);
+      }
+    }
+  }
+  if (group_order?.length) {
+    for (const g of group_order) {
+      if (!globalStore.settings.group_order.includes(g)) {
+        globalStore.settings.group_order.push(g);
+      }
+    }
+  }
+  showImportSource.value = false;
+  toastr.success(
+    newEntries.length
+      ? t`已导入 ${newEntries.length} 条${master_pool.length - newEntries.length > 0 ? `（${master_pool.length - newEntries.length} 条已存在，跳过）` : ''}`
+      : t`全部 ${master_pool.length} 条均已存在，未重复导入`,
+  );
+};
+
+// 替换导入：走预览确认弹窗（ImportPoolDialog），由用户最终确认
+const onImportReplace = ({ text, fileName }: { text: string; fileName: string }) => {
+  importSourceError.value = '';
+  const data = parseImportText(text);
+  if (!data) return;
+  const { master_pool } = data.data ?? {};
+  if (!master_pool?.length) {
+    importSourceError.value = t`该文件不包含任何条目（master_pool 为空），无法导入`;
     return;
   }
   importFileData.value = { ...data.data, partial: !!data.partial, fileName, exportedAt: data.exportedAt };

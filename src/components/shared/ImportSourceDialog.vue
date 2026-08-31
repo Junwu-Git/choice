@@ -8,7 +8,7 @@
       <div class="choice-importsrc-hint">
         {{
           pickedName
-            ? t`已选择文件：${pickedName}，点下方「解析导入」`
+            ? t`已选择文件：${pickedName}`
             : t`若上方点击无反应（部分浏览器/套壳会限制文件选择器），可直接把导出的 JSON 文件内容原样粘贴到下面`
         }}
       </div>
@@ -25,8 +25,11 @@
       <button class="menu_button" @click="onClose">
         {{ t`取消` }}
       </button>
-      <button class="menu_button menu_button_default" :disabled="!text.trim()" @click="onConfirm">
-        {{ t`解析导入` }}
+      <button v-if="showReplace" class="menu_button choice-importsrc-replace-btn" @click="onReplace">
+        {{ t`替换整个条目库…` }}
+      </button>
+      <button class="menu_button menu_button_default" :disabled="!text.trim()" @click="onMerge">
+        {{ t`解析并合并导入` }}
       </button>
     </template>
   </ChoiceDialog>
@@ -34,10 +37,11 @@
 
 <script setup lang="ts">
 // 导入源对话框：文件选择 + 粘贴文本双路径。
-// 粘贴路径的存在是因为文件选择器在部分环境（Tauri 套壳/旧 WebView/被全局 CSS 隐藏的
-// input）下点击毫无反应——粘贴不经过任何选择器，是兜底可用性最高的导入方式。
+// 「解析并合并导入」直接落库（合并带 id 去重，安全）——用户粘贴后一步到位看到条目，
+// 不再经过第二个确认弹窗（旧的两步流程被用户视为"点了没反应"）。
+// 「替换整个条目库」是危险操作：走父级的预览确认弹窗，且仅在条目库场景提供（showReplace）。
 // 本组件只负责拿到「JSON 文本」，格式校验与落库由父级完成（失败时保持本弹窗打开，
-// 用户粘贴的内容不丢失）。
+// 用户粘贴的内容不丢失，错误以红字显示在文本框下方）。
 import { ref, watch } from 'vue';
 import ChoiceDialog from '@/components/shared/ChoiceDialog.vue';
 import { pickJsonFile } from '@/util/file-picker';
@@ -47,11 +51,14 @@ const props = defineProps<{
   title: string;
   /** 解析/导入失败原因：红字显示在文本框下方，不随 toast 消失 */
   error?: string;
+  /** 是否提供"替换整个条目库"入口（仅条目库场景；正则库只有合并语义） */
+  showReplace?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  confirm: [{ text: string; fileName: string }];
+  merge: [{ text: string; fileName: string }];
+  replace: [{ text: string; fileName: string }];
 }>();
 
 const text = ref('');
@@ -74,10 +81,16 @@ const onPickFile = async () => {
   pickedName.value = file.name;
 };
 
-const onConfirm = () => {
+const onMerge = () => {
   const content = text.value.trim();
   if (!content) return;
-  emit('confirm', { text: content, fileName: pickedName.value || '粘贴内容' });
+  emit('merge', { text: content, fileName: pickedName.value || '粘贴内容' });
+};
+
+const onReplace = () => {
+  const content = text.value.trim();
+  if (!content) return;
+  emit('replace', { text: content, fileName: pickedName.value || '粘贴内容' });
 };
 
 const onClose = () => emit('close');
@@ -117,5 +130,10 @@ const onClose = () => emit('close');
   white-space: pre;
   overflow-wrap: normal;
   overflow-x: auto;
+}
+
+.choice-importsrc-replace-btn {
+  color: var(--choice-color-error, #e5615e);
+  border-color: var(--choice-color-error, #e5615e);
 }
 </style>

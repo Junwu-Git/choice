@@ -169,13 +169,13 @@
   <!-- 从酒馆三区（全局/预设/角色卡）勾选导入：入口在正则库头部，条目写入正则库的目标分组（category） -->
   <StRegexImportDialog :open="open && showStImport" @close="showStImport = false" />
 
-  <!-- 导入源对话框：文件/粘贴双路径（粘贴是文件选择器受限环境下的兜底可用路径） -->
+  <!-- 导入源对话框：粘贴/选文件 → 解析并合并直接落库（正则库只有合并语义，无替换） -->
   <ImportSourceDialog
     :open="open && showImportSource"
     :title="t`导入正则库`"
     :error="importSourceError"
     @close="showImportSource = false"
-    @confirm="onImportSource"
+    @merge="onImportSource"
   />
 
   <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" icon="fa-solid fa-code" title="正则库是什么" @close="showGuide = false">

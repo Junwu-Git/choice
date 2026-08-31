@@ -101,6 +101,8 @@ const props = defineProps<{
     configs: any[];
     group_order: string[];
   } | null;
+  /** 预选的导入模式：替换导入流程打开时预选 replace（合并导入不走预览，直接落库） */
+  initialMode?: 'merge' | 'replace';
 }>();
 
 const emit = defineEmits<{
@@ -108,10 +110,15 @@ const emit = defineEmits<{
   confirm: [mode: 'merge' | 'replace'];
 }>();
 
-// 默认预选"合并"：合并是安全操作。此前 mode 初始为 null 且确认按钮在未选择时禁用，
-// 但 ST 的 menu_button 禁用态视觉不明显——用户直接点"确认导入"毫无反应，被感知为"导入没反应"。
-// "替换"是危险操作，必须用户主动改选，不预选
 const mode = ref<'merge' | 'replace'>('merge');
+
+watch(
+  () => props.open,
+  open => {
+    if (open) mode.value = props.initialMode ?? 'merge';
+  },
+  { flush: 'post' },
+);
 
 const formatDate = (iso: string | undefined) => {
   if (!iso) return '';
