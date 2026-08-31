@@ -367,7 +367,9 @@
 /* ===== 触摸屏触控目标强化 =====
    手机上主要靠手指点击，24px 的图标按钮经常点偏、误触相邻按钮。
    pointer:coarse 以电容触屏为主指针（手机/平板）时生效，桌面鼠标不受影响；
-   只抬命中区尺寸，不改字号与布局节奏。触控目标下限见 --choice-tap-min */
+   只抬命中区尺寸，不改字号与布局节奏。触控目标下限见 --choice-tap-min。
+   注意：弹窗头部工具条的按钮不适用本规则——各弹窗 scoped 里显式约定 28px
+   （头部按钮多且带标题，40px 会把正则库头部挤出两行，见 RegexLibraryDialog） */
 @media (pointer: coarse) {
   .choice-icon-btn {
     width: var(--choice-tap-min);

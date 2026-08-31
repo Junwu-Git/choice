@@ -22,11 +22,15 @@
             <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
               <i class="fa-solid fa-file-import"></i>
             </button>
+            <button class="choice-icon-btn" :title="t`导出文件`" @click="onExport">
+              <i class="fa-solid fa-file-export"></i>
+            </button>
+            <span class="choice-regexlib-header-divider"></span>
             <button class="choice-icon-btn" :title="t`从酒馆正则导入`" @click="showStImport = true">
               <i class="fa-solid fa-cloud-arrow-down"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`导出文件`" @click="onExport">
-              <i class="fa-solid fa-file-export"></i>
+            <button ref="guideBtn" class="choice-icon-btn" :title="t`页面指引`" @click="showGuide = !showGuide">
+              <i class="fa-solid fa-circle-question"></i>
             </button>
             <button class="choice-regexlib-close" :title="t`关闭`" @click="emit('close')">&times;</button>
           </div>
@@ -163,6 +167,10 @@
 
   <!-- 从酒馆三区（全局/预设/角色卡）勾选导入：入口在正则库头部，条目写入正则库的目标分组（category） -->
   <StRegexImportDialog :open="open && showStImport" @close="showStImport = false" />
+
+  <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" icon="fa-solid fa-code" title="正则库是什么" @close="showGuide = false">
+    <div v-html="guideHtml"></div>
+  </GuidePopover>
 </template>
 
 <script setup lang="ts">
@@ -170,6 +178,7 @@ import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DragHandle from '@/components/shared/DragHandle.vue';
+import GuidePopover from '@/components/GuidePopover.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
 import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
@@ -204,6 +213,13 @@ const deleteGroupTarget = ref<string | null>(null);
 const selectedIds = ref<Set<string>>(new Set());
 // 从酒馆正则导入弹窗（随本弹窗关闭而关闭：open 由父级 open && showStImport 联合控制）
 const showStImport = ref(false);
+
+const showGuide = ref(false);
+const guideBtn = ref<HTMLElement | null>(null);
+
+const guideHtml = `<p><strong>正则库</strong> 是所有正则脚本的统一存放处，按分组管理；脚本本体通过「正则」设置页生效，这里负责集中管理与跨配置复用。</p>
+<p><strong>分组</strong>：点击分组名展开/折叠，拖拽左侧把手可排序分组或把条目拖入其他分组。点击分组名旁的 + 添加条目。</p>
+<p><strong>操作</strong>：顶部工具栏支持全部展开/收起、新建分组、文件导入/导出；「从酒馆正则导入」可从酒馆全局/预设/角色卡三区勾选导入。左侧勾选复选框批量选中后，由过滤配置引用。</p>`;
 
 const allGroupsExpanded = computed(() => {
   const groups = new Set(groupedEntries.value.map(g => g.key));
@@ -565,7 +581,10 @@ onUnmounted(() => {
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
-  box-shadow: var(--choice-shadow-lg);
+  /* 磨砂高光与条目库弹窗一致（此前缺 inset 高光导致两库观感不同） */
+  box-shadow:
+    inset 0 1px 0 var(--choice-frost-line),
+    var(--choice-shadow-lg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -578,8 +597,16 @@ onUnmounted(() => {
   row-gap: var(--choice-space-1);
   flex-wrap: wrap;
   padding: var(--choice-space-2) var(--choice-space-3);
+  /* 主色渐变头部与条目库统一（此前是纯灰底，观感像两套主题） */
+  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
-  background: var(--choice-bg-card);
+}
+.choice-regexlib-header-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--choice-border-strong);
+  flex-shrink: 0;
 }
 .choice-regexlib-title {
   font-size: var(--choice-text-base);
@@ -599,6 +626,13 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--choice-space-1);
 }
+/* 头部按钮尺寸显式约定 28px：scoped 尺寸必须一致，否则出现"有的 40 有的 28"
+   导致头部一行放不下（此前正则库 40px、条目库 28px 就是混战的结果）。
+   28px 是条目库头部既有尺寸，两库统一 */
+.choice-regexlib-header .choice-icon-btn {
+  width: 28px;
+  height: 28px;
+}
 .choice-regexlib-close {
   background: none;
   border: none;
@@ -617,10 +651,13 @@ onUnmounted(() => {
   color: var(--choice-text);
 }
 
-@media (pointer: coarse) {
-  .choice-regexlib-close {
-    width: var(--choice-tap-min);
-    height: var(--choice-tap-min);
+/* 窄屏（手机）：头部横向内边距收窄 + 隐藏计数，保证 8 个元素单行放下 */
+@media (pointer: coarse) and (max-width: 480px) {
+  .choice-regexlib-header {
+    padding-inline: var(--choice-space-2);
+  }
+  .choice-regexlib-count {
+    display: none;
   }
 }
 

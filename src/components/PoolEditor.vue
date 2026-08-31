@@ -501,6 +501,23 @@ onUnmounted(() => {
   gap: 0;
 }
 
+/* 手机小屏：字段区（固定/权重/移除）换到第二行整行排布，把第一行整个让给
+   条目类型标题——否则 40px 触控按钮 + 把手会把标题挤到只剩十几像素看不见。
+   桌面宽度下字段放得下，保持单行不变 */
+@media (pointer: coarse) and (max-width: 480px) {
+  .choice-inline-entry-row {
+    flex-wrap: wrap;
+  }
+
+  .choice-inline-entry-fields {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    border-left: none;
+    border-top: 1px solid var(--choice-border);
+    padding-left: var(--choice-space-2);
+  }
+}
+
 .choice-inline-entry-text {
   overflow: hidden;
   text-overflow: ellipsis;

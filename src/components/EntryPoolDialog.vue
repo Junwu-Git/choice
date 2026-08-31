@@ -904,6 +904,13 @@ onUnmounted(() => {
   align-items: center;
 }
 
+/* 头部按钮尺寸显式约定 28px（与正则库头部一致）。此前 global 40px 触控规则
+   与各组件 scoped 尺寸互相打架，两库头部一宽一窄观感割裂；头部工具条统一 28 */
+.choice-epool-header .choice-icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
 .choice-epool-close {
   background: none;
   border: none;
@@ -926,13 +933,6 @@ onUnmounted(() => {
 .choice-epool-close:hover {
   background: var(--choice-bg-hover);
   color: var(--choice-text);
-}
-
-@media (pointer: coarse) {
-  .choice-epool-close {
-    width: var(--choice-tap-min);
-    height: var(--choice-tap-min);
-  }
 }
 
 /* 窄屏（手机）下弹窗近全屏：与 shared/ChoiceDialog 的窄屏规则一致，
