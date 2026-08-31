@@ -574,7 +574,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--choice-space-3) var(--choice-space-4);
+  gap: var(--choice-space-2);
+  row-gap: var(--choice-space-1);
+  flex-wrap: wrap;
+  padding: var(--choice-space-2) var(--choice-space-3);
   border-bottom: 1px solid var(--choice-border);
   background: var(--choice-bg-card);
 }
@@ -620,12 +623,22 @@ onUnmounted(() => {
     height: var(--choice-tap-min);
   }
 }
+
+/* 窄屏（手机）下弹窗近全屏：与 shared/ChoiceDialog 的窄屏规则一致，
+   行密度收紧后一屏能看到更多行（max-width 不同步放宽会被基础 92vw 钳住） */
+@media (max-width: 480px) {
+  .choice-regexlib-dialog {
+    width: 96vw;
+    max-width: 96vw;
+    max-height: 92vh;
+  }
+}
 .choice-regexlib-body {
   flex: 1;
   overflow-y: auto;
   /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
   overscroll-behavior: contain;
-  padding: var(--choice-space-3);
+  padding: var(--choice-space-2);
 }
 .choice-regexlib-list {
   display: flex;
@@ -641,7 +654,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
+  padding: var(--choice-space-1) var(--choice-space-2);
   background: var(--choice-bg-card);
   cursor: pointer;
   font-size: var(--choice-text-sm);

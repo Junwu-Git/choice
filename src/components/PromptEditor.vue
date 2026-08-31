@@ -875,7 +875,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-  padding: var(--choice-space-2);
+  /* 纵向略紧于横向：模块多时列表纵向密度优先（52→约 48px/张） */
+  padding: 6px var(--choice-space-2);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);

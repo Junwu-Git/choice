@@ -23,8 +23,9 @@ defineProps<{
   justify-content: center;
   align-self: stretch;
   width: 32px;
-  /* 行高不足 40px 的紧凑行（如过滤规则行）也要保证纵向可命中 */
-  min-height: var(--choice-tap-min);
+  /* 不设 min-height：行高由行自身内容决定（否则把手会把每行强制撑到 40px+，
+     条目多时一屏能看到的行数明显变少）。align-self:stretch 保证把手的
+     纵向命中区铺满整行，常规行高 ≥32px 时触控已可用 */
   color: var(--choice-text-muted);
   cursor: grab;
   user-select: none;

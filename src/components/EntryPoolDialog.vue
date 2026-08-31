@@ -935,18 +935,28 @@ onUnmounted(() => {
   }
 }
 
+/* 窄屏（手机）下弹窗近全屏：与 shared/ChoiceDialog 的窄屏规则一致，
+   条目多时一屏能看到更多行（max-width 不同步放宽会被基础 92vw 钳住） */
+@media (max-width: 480px) {
+  .choice-epool-dialog {
+    width: 96vw;
+    max-width: 96vw;
+    max-height: 92vh;
+  }
+}
+
 .choice-epool-body {
   overflow-y: auto;
   /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
   overscroll-behavior: contain;
-  padding: var(--choice-space-3);
+  padding: var(--choice-space-2);
   flex: 1;
 }
 
 .choice-epool-list {
   display: flex;
   flex-direction: column;
-  gap: var(--choice-space-3);
+  gap: var(--choice-space-2);
 }
 
 /* 分组 */
@@ -959,7 +969,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
+  padding: var(--choice-space-1) var(--choice-space-2);
   cursor: pointer;
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
