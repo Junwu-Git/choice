@@ -19,7 +19,7 @@
             <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
               <i class="fa-solid fa-folder-plus"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
+            <button class="choice-icon-btn" :title="t`导入文件`" @click="showImportSource = true">
               <i class="fa-solid fa-file-import"></i>
             </button>
             <button class="choice-icon-btn" :title="exportTitle" @click="onExport">
@@ -169,6 +169,14 @@
   <!-- 从酒馆三区（全局/预设/角色卡）勾选导入：入口在正则库头部，条目写入正则库的目标分组（category） -->
   <StRegexImportDialog :open="open && showStImport" @close="showStImport = false" />
 
+  <!-- 导入源对话框：文件/粘贴双路径（粘贴是文件选择器受限环境下的兜底可用路径） -->
+  <ImportSourceDialog
+    :open="open && showImportSource"
+    :title="t`导入正则库`"
+    @close="showImportSource = false"
+    @confirm="onImportSource"
+  />
+
   <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" icon="fa-solid fa-code" title="正则库是什么" @close="showGuide = false">
     <div v-html="guideHtml"></div>
   </GuidePopover>
@@ -180,12 +188,12 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
+import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
 import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { DRAG_HANDLE_GROUP_SELECTOR, DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
-import { pickJsonFile } from '@/util/file-picker';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -367,76 +375,79 @@ const onExport = () => {
   toastr.success(partial ? t`已导出选中的 ${entries.length} 条正则` : t`已导出全部 ${entries.length} 条正则`);
 };
 
-// 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，见 util/file-picker.ts）
-const onImportFile = async () => {
-  const file = await pickJsonFile();
-  if (!file) return;
+// 导入入口改为 ImportSourceDialog（文件/粘贴双路径）：粘贴不经过文件选择器，
+// 是选择器受限环境（套壳/旧 WebView）下的兜底可用路径
+const showImportSource = ref(false);
+
+const onImportSource = ({ text }: { text: string; fileName: string }) => {
   try {
-    const text = await file.text();
-      const data = JSON.parse(text);
-      const fs = gs.settings.filter_settings;
-      const existingIds = new Set(fs.regex_library.map(e => e.id));
-      const imported: RegexLibraryEntry[] = [];
-      let invalid = 0;
-      let duplicated = 0;
+    const data = JSON.parse(text);
+    const fs = gs.settings.filter_settings;
+    const existingIds = new Set(fs.regex_library.map(e => e.id));
+    const imported: RegexLibraryEntry[] = [];
+    let invalid = 0;
+    let duplicated = 0;
 
-      // ST 原生正则脚本判定（酒馆正则扩展导出格式，字段以酒馆源码为准：scriptName 驼峰 / findRegex / replaceString）。
-      // 映射逻辑（剥 /…/flags、填 replace）与"从酒馆正则区导入"弹窗共享 st-regex-source，避免两处实现漂移。
-      const isStScript = (item: any) => typeof item?.findRegex === 'string';
+    // ST 原生正则脚本判定（酒馆正则扩展导出格式，字段以酒馆源码为准：scriptName 驼峰 / findRegex / replaceString）。
+    // 映射逻辑（剥 /…/flags、填 replace）与"从酒馆正则区导入"弹窗共享 st-regex-source，避免两处实现漂移。
+    const isStScript = (item: any) => typeof item?.findRegex === 'string';
 
-      // 插件自有格式条目（本插件导出文件的 entries 内元素，或裸数组中的同类条目）：
-      // 补默认字段；按原 id 去重——重复导入同一份导出文件时跳过已有条目
-      const importPluginEntry = (raw: any): RegexLibraryEntry | null => {
-        if (!raw || typeof raw !== 'object') return null;
-        if ((raw.type !== 'tag' && raw.type !== 'regex') || typeof raw.pattern !== 'string') return null;
-        const id = typeof raw.id === 'string' && raw.id ? raw.id : uuidv4();
-        return {
-          id,
-          name: raw.name ?? '',
-          type: raw.type,
-          pattern: raw.pattern,
-          replace: raw.replace ?? '',
-          start: raw.start ?? '',
-          end: raw.end ?? '',
-          category: raw.category ?? '',
-        };
+    // 插件自有格式条目（本插件导出文件的 entries 内元素，或裸数组中的同类条目）：
+    // 补默认字段；按原 id 去重——重复导入同一份导出文件时跳过已有条目
+    const importPluginEntry = (raw: any): RegexLibraryEntry | null => {
+      if (!raw || typeof raw !== 'object') return null;
+      if ((raw.type !== 'tag' && raw.type !== 'regex') || typeof raw.pattern !== 'string') return null;
+      const id = typeof raw.id === 'string' && raw.id ? raw.id : uuidv4();
+      return {
+        id,
+        name: raw.name ?? '',
+        type: raw.type,
+        pattern: raw.pattern,
+        replace: raw.replace ?? '',
+        start: raw.start ?? '',
+        end: raw.end ?? '',
+        category: raw.category ?? '',
       };
+    };
 
-      // 归一化为待判定列表：兼容 ST 单对象 / ST 数组 / 插件 { entries } / 插件条目裸数组
-      const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : [data];
-      for (const item of items) {
-        if (isStScript(item)) {
-          imported.push(mapStScriptToLibraryEntry(item));
-          continue;
-        }
-        if (item && typeof item === 'object' && typeof item.id === 'string' && item.id && existingIds.has(item.id)) {
-          duplicated++;
-          continue;
-        }
-        const entry = importPluginEntry(item);
-        if (entry) {
-          existingIds.add(entry.id);
-          imported.push(entry);
-        } else {
-          invalid++;
-        }
+    // 归一化为待判定列表：兼容 ST 单对象 / ST 数组 / 插件 { entries } / 插件条目裸数组
+    const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : [data];
+    for (const item of items) {
+      if (isStScript(item)) {
+        imported.push(mapStScriptToLibraryEntry(item));
+        continue;
       }
-      if (imported.length === 0) {
-        // 全部为重复项不是失败，单独提示，避免误报"导入失败"
-        if (duplicated > 0) {
-          toastr.info(t`${duplicated} 条正则均已存在，未重复导入`);
-          return;
-        }
-        throw new Error('未识别到可导入的正则条目');
+      if (item && typeof item === 'object' && typeof item.id === 'string' && item.id && existingIds.has(item.id)) {
+        duplicated++;
+        continue;
       }
-      fs.regex_library.push(...imported);
-      const parts = [t`已导入 ${imported.length} 条正则`];
-      if (duplicated > 0) parts.push(t`去重 ${duplicated} 条重复项`);
-      if (invalid > 0) parts.push(t`跳过 ${invalid} 条无效项`);
-      toastr.success(parts.join('，'));
-    } catch (err) {
-      toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效文件'}`);
+      const entry = importPluginEntry(item);
+      if (entry) {
+        existingIds.add(entry.id);
+        imported.push(entry);
+      } else {
+        invalid++;
+      }
     }
+    if (imported.length === 0) {
+      // 全部为重复项不是失败，单独提示，避免误报"导入失败"
+      if (duplicated > 0) {
+        toastr.info(t`${duplicated} 条正则均已存在，未重复导入`);
+        showImportSource.value = false;
+        return;
+      }
+      throw new Error('未识别到可导入的正则条目');
+    }
+    fs.regex_library.push(...imported);
+    const parts = [t`已导入 ${imported.length} 条正则`];
+    if (duplicated > 0) parts.push(t`去重 ${duplicated} 条重复项`);
+    if (invalid > 0) parts.push(t`跳过 ${invalid} 条无效项`);
+    toastr.success(parts.join('，'));
+    showImportSource.value = false; // 落库成功才关源弹窗
+  } catch (err) {
+    // 失败保持源弹窗打开：粘贴内容不丢失，用户可直接修改后重试
+    toastr.error(t`导入失败：${err instanceof Error ? err.message : '无效文件'}`);
+  }
 };
 
 watch(

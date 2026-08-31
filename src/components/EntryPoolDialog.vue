@@ -19,7 +19,7 @@
             <button class="choice-icon-btn" :title="t`新建分组`" @click="createGroup">
               <i class="fa-solid fa-folder-plus"></i>
             </button>
-            <button class="choice-icon-btn" :title="t`导入文件`" @click="onImportFile">
+            <button class="choice-icon-btn" :title="t`导入文件`" @click="showImportSource = true">
               <i class="fa-solid fa-file-import"></i>
             </button>
             <button class="choice-icon-btn" :title="exportBtnTitle" @click="onExportPool">
@@ -214,6 +214,14 @@
           @confirm="onImportPoolConfirm"
         />
 
+        <!-- 导入源对话框：文件/粘贴双路径，拿到 JSON 文本后走下方预览弹窗 -->
+        <ImportSourceDialog
+          :open="showImportSource"
+          :title="t`导入条目库`"
+          @close="showImportSource = false"
+          @confirm="onImportSource"
+        />
+
         <ConfirmDialog
           :open="deleteTarget !== null"
           :title="deleteDialogTitle"
@@ -249,7 +257,7 @@ import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
-import { pickJsonFile } from '@/util/file-picker';
+import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
 import Sortable from 'sortablejs';
 
 const props = defineProps<{ open: boolean }>();
@@ -675,21 +683,20 @@ const exportBtnTitle = computed(() =>
 
 // 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，
 // 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）
-// 导入选文件走 pickJsonFile（showOpenFilePicker 优先 + 挂载式 input 回退，
-// 见 util/file-picker.ts 顶注——分离/隐藏 input 在真机会被静默拦截）。
-// 注意：本函数内禁止在弹选择器之前用 alert/confirm——模态弹窗会消耗点击的
-// 用户激活状态，导致 showOpenFilePicker 抛 AbortError 直接返回 null（选择器永远弹不出）
-const onImportFile = async () => {
-  const file = await pickJsonFile();
-  if (!file) return;
+// 导入入口改为 ImportSourceDialog（文件/粘贴双路径）：
+// 纯文件选择器方案在部分环境（套壳/旧 WebView）点击毫无反应，粘贴是兜底可用路径。
+// 解析成功才关源弹窗，失败保留粘贴内容供修改
+const showImportSource = ref(false);
+
+const onImportSource = ({ text, fileName }: { text: string; fileName: string }) => {
   try {
-    const text = await file.text();
     const data = JSON.parse(text);
     if (data?.type !== 'choice-pool-export') {
       toastr.error(t`文件格式不正确（type=${data?.type ?? '无'}，需要 choice-pool-export）`);
       return;
     }
-    importFileData.value = { ...data.data, partial: !!data.partial, fileName: file.name, exportedAt: data.exportedAt };
+    importFileData.value = { ...data.data, partial: !!data.partial, fileName, exportedAt: data.exportedAt };
+    showImportSource.value = false;
     showImportPool.value = true;
   } catch (err: any) {
     toastr.error(t`文件解析失败：${err?.message ?? err}`);
@@ -708,7 +715,10 @@ const onImportPoolConfirm = (mode: 'merge' | 'replace') => {
     globalStore.settings.configs = configs ?? [];
     globalStore.settings.group_order = group_order ?? [];
   } else {
-    if (master_pool?.length) globalStore.settings.master_pool.push(...master_pool);
+    // 合并按 id 去重：同一份文件合并两次不再产生重复条目（与正则库合并行为对齐）
+    const existingIds = new Set(globalStore.settings.master_pool.map(e => e.id));
+    const newEntries = (master_pool ?? []).filter((e: PoolEntry) => !existingIds.has(e.id));
+    if (newEntries.length) globalStore.settings.master_pool.push(...newEntries);
     if (configs?.length) {
       for (const cfg of configs) {
         if (!globalStore.settings.configs.some(c => c.name === cfg.name)) {
