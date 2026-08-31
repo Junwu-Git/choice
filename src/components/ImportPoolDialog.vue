@@ -4,7 +4,7 @@
       v-if="open"
       class="choice-cfdlg-overlay"
       @click.self="
-        mode = null;
+        mode = 'merge';
         emit('close');
       "
     >
@@ -18,7 +18,7 @@
             class="choice-cfdlg-close"
             :title="t`取消`"
             @click="
-              mode = null;
+              mode = 'merge';
               emit('close');
             "
           >
@@ -74,13 +74,13 @@
           <button
             class="menu_button"
             @click="
-              mode = null;
+              mode = 'merge';
               emit('close');
             "
           >
             {{ t`取消` }}
           </button>
-          <button class="menu_button menu_button_default" :disabled="!mode" @click="emit('confirm', mode!)">
+          <button class="menu_button menu_button_default" @click="emit('confirm', mode)">
             {{ t`确认导入` }}
           </button>
         </div>
@@ -108,7 +108,10 @@ const emit = defineEmits<{
   confirm: [mode: 'merge' | 'replace'];
 }>();
 
-const mode = ref<'merge' | 'replace' | null>(null);
+// 默认预选"合并"：合并是安全操作。此前 mode 初始为 null 且确认按钮在未选择时禁用，
+// 但 ST 的 menu_button 禁用态视觉不明显——用户直接点"确认导入"毫无反应，被感知为"导入没反应"。
+// "替换"是危险操作，必须用户主动改选，不预选
+const mode = ref<'merge' | 'replace'>('merge');
 
 const formatDate = (iso: string | undefined) => {
   if (!iso) return '';
