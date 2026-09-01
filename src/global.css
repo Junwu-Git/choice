@@ -232,6 +232,12 @@
 }
 
 .choice-bound-badge {
+  /* 图标与文字垂直居中：默认 inline 布局按基线对齐，FA 图标 line-height:1 会高出
+     文字行盒，视觉上图标偏上（过滤页「当前生效」状态栏真机反馈）；内部无图标的
+     用法（Pool/PromptEditor 的 聊天/角色 徽章）不受影响 */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
@@ -328,8 +334,23 @@
   color: var(--choice-text);
 }
 
+/* FA 字形墨迹在 em 框内偏上（下缘约留 1/8em 空白），flex/inline-flex 按 em 框居中时
+   墨迹视觉偏高——「图标+文字」并排的三类容器统一下沉 0.06em 做光学修正
+   （= FA 官方基线修正 -0.125em 的一半；不同图标墨迹范围略有差异，取通用值）。
+   手机端小字号+高 DPR 缩放下偏移肉眼可见（过滤页徽章/区域标题/tab 真机反馈） */
+.choice-bound-badge i,
+.choice-inline-label i,
+.choice-tab i {
+  transform: translateY(0.06em);
+}
+
 /* 内联编辑区域标签 */
 .choice-inline-label {
+  /* 图标与文字垂直居中：默认 inline 基线对齐会让 FA 图标浮到文字行盒上方
+     （过滤页三个正则区标题真机反馈「图标偏左上角」）；纯文字标签同样适用 */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   font-weight: bold;

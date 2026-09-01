@@ -10,6 +10,10 @@
         'choice-floating-bubble--disabled': bubbleState === 'disabled',
         'choice-floating-bubble--snapped-left': isSnappedLeft && !isDragging,
         'choice-floating-bubble--snapped-right': isSnappedRight && !isDragging,
+        // 方向档不受 isDragging 门控（拖拽中贴边让位要取消，但按住探出仍需知道方向），
+        // 专供按压探出组合使用，见样式 choice-floating-bubble--pressed 段
+        'choice-floating-bubble--snap-left-dir': isSnappedLeft,
+        'choice-floating-bubble--snap-right-dir': isSnappedRight,
         'choice-floating-bubble--pressed': isPressed,
         'choice-floating-bubble--above-overlay': isSettingsOpen,
       }"
@@ -390,6 +394,20 @@ onUnmounted(() => {
    松手后由内联 transition 的回弹缓动放回，与拖拽吸附共用同一份缓动 */
 .choice-floating-bubble--pressed {
   transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(0.94);
+}
+
+/* 触屏的悬停等价物是"按住"：按住贴边球时图标探出、松手回弹——与 PC 端 hover
+   的动效节奏一致（探出量同为 0.7 倍图标尺寸）。方向用不受 isDragging 门控的
+   -snap-*-dir 类：useDraggable 在 pointerdown 即置 isDragging，贴边让位类
+   （snapped-*，绑了 !isDragging）按住期间整体消失，combo 若依赖它们永远不命中。
+   松手随 --pressed 的清理路径（onEnd/pointercancel/onUnmounted）必然回落，
+   拖拽中指针越过 TAP_SLOP 也会撤掉按压态→探出随之取消，不干扰拖拽跟手 */
+.choice-floating-bubble--pressed.choice-floating-bubble--snap-left-dir .choice-bubble-icon {
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * 0.7));
+}
+
+.choice-floating-bubble--pressed.choice-floating-bubble--snap-right-dir .choice-bubble-icon {
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * -0.7));
 }
 
 .choice-bubble-inner-ring {
