@@ -52,6 +52,8 @@ const SNAP_OFFSET = BUBBLE_SIZE - SNAP_EXPOSED;
 const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
 const STORAGE_KEY_Y = 'choice_floating_bubble_y';
+// 按住气泡期间挂在 body 上的禁选类，样式定义在 theme.css（body 级，scoped 写不到）
+const SUPPRESS_SELECT_CLASS = 'choice-suppress-select';
 
 const isGenerating = computed(() => generatorState.loading);
 
@@ -111,6 +113,7 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
     // 气泡收不到 up，漏清会形成"幽灵长按"——面板刚被点开，500ms 后菜单又自己弹出
     clearLongPressTimer();
     isPressed.value = false;
+    document.body.classList.remove(SUPPRESS_SELECT_CLASS);
 
     const SNAP_THRESHOLD = 100;
     const centerX = finalPos.x + BUBBLE_SIZE / 2;
@@ -167,6 +170,17 @@ const onPointerDown = (e: PointerEvent) => {
   longPressTriggered = false;
   pointerDownPos = { x: e.clientX, y: e.clientY };
   isPressed.value = true;
+  // 手机端长按会触发原生文本选择：安卓 Chromium 对 user-select:none 的元素长按，
+  // 仍可能选中附近的聊天文本；iOS 则弹出系统 callout。preventDefault 抑制兼容鼠标
+  // 事件与长按选择手势——useDraggable 用 pointer 事件且监听器照常触发（不阻断传播），
+  // 拖拽不受影响；气泡无 focus/输入依赖，取消默认行为安全
+  if (e.pointerType !== 'mouse') {
+    e.preventDefault();
+  }
+  // 按住期间（直到松手/取消）在 body 级兜底禁选：盖住长按选中"附近文本"的路径。
+  // 必须与清理成对出现（onEnd/pointercancel/onUnmounted 三处兜底）——漏移除会导致
+  // 全站文本无法选中，属于不可见的高危回归
+  document.body.classList.add(SUPPRESS_SELECT_CLASS);
   // 长按菜单仅触屏/笔生效：鼠标按住半秒是常见误操作（原本会吞掉点击），鼠标改用右键
   if (e.pointerType !== 'mouse') {
     longPressTimer = setTimeout(() => {
@@ -184,6 +198,7 @@ const onPointerDown = (e: PointerEvent) => {
 const onPointerCancel = () => {
   clearLongPressTimer();
   isPressed.value = false;
+  document.body.classList.remove(SUPPRESS_SELECT_CLASS);
 };
 
 // 鼠标右键呼出应用菜单（触屏长按的等价物）。FloatingContextMenu 的 document 级
@@ -250,6 +265,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
   clearLongPressTimer();
+  // 组件卸载兜底：按住状态下组件被卸载时，抑制类残留会让全站无法选字
+  document.body.classList.remove(SUPPRESS_SELECT_CLASS);
 });
 </script>
 
@@ -272,7 +289,11 @@ onUnmounted(() => {
   cursor: pointer;
   box-shadow: var(--choice-shadow-glow);
   touch-action: none;
+  /* -webkit- 前缀版缺一不可：老 WebView 内核只认前缀写法；touch-callout 抑制
+     iOS Safari 长按弹出的系统级菜单/放大镜（user-select 管不到它） */
+  -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   transform: translate3d(var(--choice-x), var(--choice-y), 0);
   overflow: hidden;
 }

@@ -9,6 +9,16 @@
           <small>{{ t`AI 回复完成后自动触发选项生成` }}</small>
         </span>
       </label>
+      <!-- 输入润色开关从外观页迁入：它控制的是"生成"行为（润色版本数/字数/人称
+           本就集中在本页），与外观无关；ui 在下方 script 已定义，与 enrich_count 同款写法 -->
+      <label class="choice-check">
+        <input v-model="ui.enrich_enabled" type="checkbox" :title="t`在发送消息前用 AI 改写为多个润色版本`" />
+        <span class="choice-check-custom"></span>
+        <span class="choice-check-label">
+          <strong>{{ t`启用输入润色` }}</strong>
+          <small>{{ t`发送消息前用 AI 改写为多个润色版本` }}</small>
+        </span>
+      </label>
     </div>
 
     <div class="choice-generation-section">

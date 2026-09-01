@@ -15,20 +15,6 @@
     </div>
 
     <div class="choice-appearance-section">
-      <span class="choice-appearance-section-title">{{ t`输入润色` }}</span>
-      <div class="choice-behavior-grid">
-        <label class="choice-check">
-          <input v-model="ui.enrich_enabled" type="checkbox" :title="t`在发送消息前用 AI 改写为多个润色版本`" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
-            <strong>{{ t`启用输入润色` }}</strong>
-            <small>{{ t`发送消息前用 AI 改写为多个润色版本` }}</small>
-          </span>
-        </label>
-      </div>
-    </div>
-
-    <div class="choice-appearance-section">
       <span class="choice-appearance-section-title">{{ t`主题` }}</span>
       <div class="choice-theme-switch">
         <button
@@ -67,6 +53,19 @@
           <i class="fa-solid fa-sun"></i>
           {{ t`亮色` }}
         </button>
+        <!-- 预设主题：独立完整 token 块（theme.css），与面板头部的循环切换按钮共用
+             theme_mode 字段，此处的激活态随面板切换自动同步 -->
+        <button
+          v-for="preset in THEME_PRESETS"
+          :key="preset.id"
+          class="choice-theme-btn"
+          :class="{ active: ui.theme_mode === preset.id }"
+          :title="t`切换到${preset.label}主题`"
+          @click="ui.theme_mode = preset.id"
+        >
+          <span class="choice-theme-swatch" :style="{ background: preset.swatch }"></span>
+          {{ preset.label }}
+        </button>
       </div>
     </div>
 
@@ -90,9 +89,14 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { THEME_OPTIONS } from '@/core/theme-presets';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);
+
+// 预设主题按钮数据源：与面板循环按钮共用注册表，按 kind 过滤——
+// 不能用 swatch 是否为空判断（语义过载），mode 档按钮由上方四个固定按钮承担
+const THEME_PRESETS = THEME_OPTIONS.filter(t => t.kind === 'preset');
 
 const fontSizes = [
   { value: 'small' as const, label: t`小`, tip: t`小号字体，适合紧凑布局` },
@@ -221,6 +225,8 @@ const fontSizes = [
 
 .choice-theme-switch {
   display: inline-flex;
+  /* 8 个主题按钮单行放不下（窄面板尤甚），允许换行成两排 */
+  flex-wrap: wrap;
   gap: 2px;
   background: var(--choice-bg-element);
   border-radius: var(--choice-radius-full);
@@ -253,6 +259,17 @@ const fontSizes = [
   background: var(--choice-primary);
   color: var(--choice-text-on-primary);
   box-shadow: 0 0 8px var(--choice-primary-glow);
+}
+
+/* 预设主题按钮的色点：颜色来自 THEME_OPTIONS.swatch（与 theme.css 主色手工同步），
+   走 Vue :style 绑定而非写死 CSS——注册表增删主题时按钮无需改样式 */
+.choice-theme-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.3);
 }
 
 .choice-opacity-slider {

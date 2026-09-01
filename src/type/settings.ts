@@ -385,8 +385,13 @@ export const UISettings = z
     enrich_count: z.string().default('4'),
     /** @deprecated 已迁移到 theme_mode，保留用于向后兼容迁移 */
     theme: z.enum(['dark', 'light']).optional(),
-    /** 主题模式：auto = 自动检测 ST 亮/暗，st = 完全跟随 ST 配色，dark/light = 手动覆盖 */
-    theme_mode: z.enum(['auto', 'st', 'dark', 'light']).default('auto'),
+    /**
+     * 主题模式。auto = 自动检测 ST 亮/暗，st = 完全跟随 ST 配色，dark/light = 手动覆盖；
+     * dusk/sakura/celadon/honey = 独立预设主题（theme.css 各有一套完整 token 块，
+     * 展示名与循环顺序见 src/core/theme-presets.ts，两处勿各自增删）。
+     * 旧存档值是本枚举子集，直接兼容，无需迁移。
+     */
+    theme_mode: z.enum(['auto', 'st', 'dark', 'light', 'dusk', 'sakura', 'celadon', 'honey']).default('auto'),
     opacity: z.number().min(0.3).max(1).default(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
     /** 行内设置面板内容区高度（px），拖拽手柄可调整 */

@@ -128,6 +128,193 @@
   --choice-bg-active: rgba(56, 114, 180, 0.1);
 }
 
+/* ===== 预设主题（独立完整 token 块，与 dark/light 同构） =====
+   每个 block 必须覆盖 light 块的全量 token 清单（bg/surface/text/primary/状态色/
+   border/frost-line/shadow/overlay/hover），漏项不报错、只会静默回落 :root 的暗色
+   默认值，因此新增主题时逐项对照。radius/spacing/字号/z 继承 :root，不在此重复。
+   展示名与循环顺序见 src/core/theme-presets.ts。 */
+
+/* 暮紫 dusk — 暗极性：深紫夜底 + 紫罗兰主色 */
+:root[data-choice-theme='dusk'] {
+  --choice-bg: #221e2e;
+  --choice-surface: #2d2839;
+  --choice-surface-2: #3a3348;
+
+  --choice-text: #e6e2ee;
+  --choice-text-secondary: #b5aec4;
+  --choice-text-muted: #8d8699;
+  --choice-text-hint: #c9a86a;
+  --choice-text-on-primary: #fff;
+
+  --choice-primary: #9d7ce8;
+  --choice-primary-hover: #b096f0;
+  --choice-primary-active: #7d5cc9;
+  --choice-primary-light: rgba(157, 124, 232, 0.15);
+  --choice-primary-glow: rgba(157, 124, 232, 0.25);
+  --choice-primary-rgb: 157, 124, 232;
+
+  --choice-color-error: #e05555;
+  --choice-color-error-bg: rgba(224, 85, 85, 0.12);
+  --choice-color-success: #4caf50;
+  --choice-color-success-bg: rgba(76, 175, 80, 0.12);
+  --choice-color-warning: #e8a838;
+  --choice-color-warning-bg: rgba(232, 168, 56, 0.12);
+  --choice-color-info: #9d7ce8;
+  --choice-color-info-bg: rgba(157, 124, 232, 0.12);
+
+  --choice-border: rgba(210, 190, 255, 0.08);
+  --choice-border-strong: rgba(210, 190, 255, 0.12);
+  --choice-border-active: rgba(157, 124, 232, 0.4);
+
+  --choice-frost-line: rgba(255, 255, 255, 0.06);
+
+  --choice-shadow-sm: 0 1px 3px rgba(10, 5, 25, 0.3);
+  --choice-shadow-md: 0 4px 12px rgba(10, 5, 25, 0.4);
+  --choice-shadow-lg: 0 8px 28px rgba(10, 5, 25, 0.55);
+  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
+
+  --choice-overlay: rgba(10, 5, 25, 0.5);
+
+  --choice-bg-hover: rgba(210, 190, 255, 0.1);
+  --choice-bg-active: rgba(157, 124, 232, 0.14);
+}
+
+/* 樱粉 sakura — 亮极性：粉白纸底 + 玫瑰粉主色（主色取深玫瑰保证 4.2:1 对比） */
+:root[data-choice-theme='sakura'] {
+  --choice-bg: #f7f0f1;
+  --choice-surface: #fdf9fa;
+  --choice-surface-2: #f0e2e5;
+
+  --choice-text: #3a2529;
+  --choice-text-secondary: #6d5258;
+  --choice-text-muted: #8a6e74;
+  --choice-text-hint: #a05070;
+  --choice-text-on-primary: #fff;
+
+  --choice-primary: #b84f77;
+  --choice-primary-hover: #cd6690;
+  --choice-primary-active: #9a3c60;
+  --choice-primary-light: rgba(184, 79, 119, 0.12);
+  --choice-primary-glow: rgba(184, 79, 119, 0.2);
+  --choice-primary-rgb: 184, 79, 119;
+
+  --choice-color-error: #c84040;
+  --choice-color-error-bg: rgba(200, 64, 64, 0.08);
+  --choice-color-success: #3d8b40;
+  --choice-color-success-bg: rgba(61, 139, 64, 0.08);
+  --choice-color-warning: #b87818;
+  --choice-color-warning-bg: rgba(184, 120, 24, 0.08);
+  --choice-color-info: #b84f77;
+  --choice-color-info-bg: rgba(184, 79, 119, 0.08);
+
+  --choice-border: rgba(120, 70, 85, 0.13);
+  --choice-border-strong: rgba(120, 70, 85, 0.24);
+  --choice-border-active: rgba(184, 79, 119, 0.4);
+
+  --choice-frost-line: rgba(255, 255, 255, 0.85);
+
+  --choice-shadow-sm: 0 1px 2px rgba(95, 55, 70, 0.07);
+  --choice-shadow-md: 0 2px 6px rgba(95, 55, 70, 0.09), 0 1px 2px rgba(95, 55, 70, 0.05);
+  --choice-shadow-lg: 0 8px 24px rgba(95, 55, 70, 0.14), 0 2px 6px rgba(95, 55, 70, 0.07);
+  --choice-shadow-glow: 0 0 20px rgba(184, 79, 119, 0.2);
+
+  --choice-overlay: rgba(70, 40, 50, 0.32);
+
+  --choice-bg-hover: rgba(120, 70, 85, 0.08);
+  --choice-bg-active: rgba(184, 79, 119, 0.1);
+}
+
+/* 青瓷 celadon — 暗极性：墨绿釉底 + 青瓷主色 */
+:root[data-choice-theme='celadon'] {
+  --choice-bg: #1b2422;
+  --choice-surface: #253029;
+  --choice-surface-2: #31403a;
+
+  --choice-text: #e2ebe6;
+  --choice-text-secondary: #aec0b6;
+  --choice-text-muted: #87988e;
+  --choice-text-hint: #cfa952;
+  --choice-text-on-primary: #fff;
+
+  --choice-primary: #4aa8a0;
+  --choice-primary-hover: #5fc0b8;
+  --choice-primary-active: #34857e;
+  --choice-primary-light: rgba(74, 168, 160, 0.15);
+  --choice-primary-glow: rgba(74, 168, 160, 0.25);
+  --choice-primary-rgb: 74, 168, 160;
+
+  --choice-color-error: #e05555;
+  --choice-color-error-bg: rgba(224, 85, 85, 0.12);
+  --choice-color-success: #4caf50;
+  --choice-color-success-bg: rgba(76, 175, 80, 0.12);
+  --choice-color-warning: #e8a838;
+  --choice-color-warning-bg: rgba(232, 168, 56, 0.12);
+  --choice-color-info: #4aa8a0;
+  --choice-color-info-bg: rgba(74, 168, 160, 0.12);
+
+  --choice-border: rgba(200, 235, 220, 0.07);
+  --choice-border-strong: rgba(200, 235, 220, 0.11);
+  --choice-border-active: rgba(74, 168, 160, 0.4);
+
+  --choice-frost-line: rgba(255, 255, 255, 0.06);
+
+  --choice-shadow-sm: 0 1px 3px rgba(5, 15, 12, 0.3);
+  --choice-shadow-md: 0 4px 12px rgba(5, 15, 12, 0.4);
+  --choice-shadow-lg: 0 8px 28px rgba(5, 15, 12, 0.55);
+  --choice-shadow-glow: 0 0 20px var(--choice-primary-glow);
+
+  --choice-overlay: rgba(5, 15, 12, 0.5);
+
+  --choice-bg-hover: rgba(200, 235, 220, 0.09);
+  --choice-bg-active: rgba(74, 168, 160, 0.12);
+}
+
+/* 蜜杏 honey — 亮极性：暖米纸底 + 蜜色主色（琥珀系天生居中亮度，
+   主色取深蜜铜色换足对比，宁可偏铜也不要白字看不清） */
+:root[data-choice-theme='honey'] {
+  --choice-bg: #f6f1e6;
+  --choice-surface: #fdfaf3;
+  --choice-surface-2: #ece1c9;
+
+  --choice-text: #332a1c;
+  --choice-text-secondary: #665942;
+  --choice-text-muted: #837559;
+  --choice-text-hint: #8a6414;
+  --choice-text-on-primary: #fff;
+
+  --choice-primary: #96600f;
+  --choice-primary-hover: #ad7418;
+  --choice-primary-active: #7a4e0a;
+  --choice-primary-light: rgba(150, 96, 15, 0.12);
+  --choice-primary-glow: rgba(150, 96, 15, 0.2);
+  --choice-primary-rgb: 150, 96, 15;
+
+  --choice-color-error: #c84040;
+  --choice-color-error-bg: rgba(200, 64, 64, 0.08);
+  --choice-color-success: #3d8b40;
+  --choice-color-success-bg: rgba(61, 139, 64, 0.08);
+  --choice-color-warning: #b87818;
+  --choice-color-warning-bg: rgba(184, 120, 24, 0.08);
+  --choice-color-info: #96600f;
+  --choice-color-info-bg: rgba(150, 96, 15, 0.08);
+
+  --choice-border: rgba(110, 88, 50, 0.13);
+  --choice-border-strong: rgba(110, 88, 50, 0.24);
+  --choice-border-active: rgba(150, 96, 15, 0.4);
+
+  --choice-frost-line: rgba(255, 255, 255, 0.85);
+
+  --choice-shadow-sm: 0 1px 2px rgba(90, 70, 40, 0.07);
+  --choice-shadow-md: 0 2px 6px rgba(90, 70, 40, 0.09), 0 1px 2px rgba(90, 70, 40, 0.05);
+  --choice-shadow-lg: 0 8px 24px rgba(90, 70, 40, 0.14), 0 2px 6px rgba(90, 70, 40, 0.07);
+  --choice-shadow-glow: 0 0 20px rgba(150, 96, 15, 0.2);
+
+  --choice-overlay: rgba(58, 48, 30, 0.32);
+
+  --choice-bg-hover: rgba(110, 88, 50, 0.08);
+  --choice-bg-active: rgba(150, 96, 15, 0.1);
+}
+
 /* ===== ST 跟随主题 — 极性无关派生 =====
    层级一律向 BodyColor（文字色）方向混合：暗底变得更深、亮底变得更灰，
    对明暗极性天然对称；对比度守卫在 theme-detector.ts 的 JS 层执行。 */
@@ -248,6 +435,18 @@
 
 [data-choice-theme] [class*='choice-'] .menu_button_default:not([class*='choice-']):hover {
   background-color: var(--choice-primary-hover);
+}
+
+/* ===== 悬浮球按压期禁选 =====
+   手机上长按悬浮球时，安卓 Chromium 对 user-select:none 的目标仍可能选中"附近"的
+   聊天文本（选择起点不在目标上，元素级 user-select 管不住）。FloatingBubble 在
+   pointerdown 期间给 body 挂此类、松手/取消/卸载时移除，从全局掐掉选择起点。
+   必须 !important：盖过酒馆自身对 #chat 等区域的 user-select 显式声明；
+   类名 choice- 前缀保持扩展命名空间，不与酒馆样式冲突 */
+body.choice-suppress-select,
+body.choice-suppress-select * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 /* ===== 动画 ===== */

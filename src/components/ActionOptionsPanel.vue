@@ -1,5 +1,10 @@
 <template>
-  <div v-show="visible" class="choice-panel" :class="{ 'choice-panel--compact': compact }">
+  <div
+    v-show="visible"
+    ref="panelEl"
+    class="choice-panel"
+    :class="{ 'choice-panel--compact': compact, 'choice-panel--dense': isDense }"
+  >
     <div class="choice-panel-header" @click="panelStore.setCollapsed(!collapsed)">
       <span class="choice-panel-title" :class="{ 'choice-title--toggleable': hasEnrichHistory }" @click="onTitleClick">
         <i :class="activeView === 'enrich' ? 'fa-solid fa-pen-to-square' : 'fa-solid fa-chess'"></i>
@@ -63,6 +68,11 @@
           <i v-if="isGenerating" class="fa-solid fa-stop"></i>
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
+        </button>
+        <!-- 主题循环切换：每点一次切到 THEME_OPTIONS 中的下一个主题（末尾回绕）。
+             全局生效并持久化（gs.settings.ui.theme_mode），tooltip 明示下一站避免盲切 -->
+        <button class="choice-panel-btn choice-theme-cycle" :title="cycleTitle" @click="onCycleTheme">
+          <i class="fa-solid fa-palette"></i>
         </button>
         <button
           class="choice-panel-btn"
@@ -147,9 +157,16 @@ import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
+import { nextThemeMode, themeLabel } from '@/core/theme-presets';
+import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { sendTextareaMessage } from '@sillytavern/script';
 
 const props = defineProps<{ compact?: boolean }>();
+
+const panelEl = ref<HTMLElement | null>(null);
+// 窄容器（手机聊天区 <420px）时收紧排版并限高滚动。与 compact prop 是两套机制：
+// compact 是悬浮预览的极简形态（连头部管理件都省掉），dense 只压密度不减功能
+const { isCompact: isDense } = useCompactLayout(panelEl);
 
 const panelStore = usePanelStateStore();
 const {
@@ -174,6 +191,17 @@ const behavior = computed({
     gs.settings.behavior = v;
   },
 });
+
+// 主题循环：写入 ui.theme_mode 即全局生效并持久化（store 深度 watch 落盘 +
+// watchEffect 同步 data-choice-theme 属性），整个扩展 UI 即时换色，无需刷新
+const themeMode = computed(() => gs.settings.ui.theme_mode);
+const cycleTitle = computed(() => {
+  const next = nextThemeMode(themeMode.value);
+  return t`切换主题（下一个：${themeLabel(next)}）`;
+});
+const onCycleTheme = () => {
+  gs.settings.ui.theme_mode = nextThemeMode(themeMode.value);
+};
 
 const visible = computed(() => {
   if (props.compact) {
@@ -592,5 +620,77 @@ const onSelect = async (option: ChoiceOption) => {
   .choice-behavior-btn {
     min-height: var(--choice-tap-min);
   }
+}
+
+/* ===== 窄容器密度模式（useCompactLayout，<420px）=====
+   只压密度不减功能：手机聊天区里 4 条选项 × 每条 2-4 行 + 头部 + 行为栏，展开常占半屏。
+   收紧手段按收益排序：字号/行高（每行 -4px）、类型列 88→64px（给内容让宽、少折一行）、
+   padding/间距、最后才是头部 padding。触控按钮保住 40px 最小可点高度（上一段规则），
+   密度让给内容区而不是可点性。限高滚动只在此模式生效——桌面无高度压力，不引入嵌套滚动 */
+.choice-panel--dense .choice-panel-header {
+  padding: var(--choice-space-1) var(--choice-space-2);
+}
+
+.choice-panel--dense .choice-panel-body {
+  max-height: 45vh;
+  overflow-y: auto;
+  /* 触屏上面板内滚动到边缘时禁止滚动链传导，避免把酒馆聊天页一起拖走 */
+  overscroll-behavior: contain;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-2);
+}
+
+.choice-panel--dense .choice-option-btn {
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-sm);
+  line-height: 1.3;
+}
+
+.choice-panel--dense .choice-option-type {
+  width: calc(64px * var(--choice-font-scale));
+  font-size: calc(14px * var(--choice-font-scale));
+}
+
+.choice-panel--dense .choice-option-divider {
+  margin-right: var(--choice-space-2);
+}
+
+.choice-panel--dense .choice-option-content {
+  line-height: 1.3;
+}
+
+.choice-panel--dense .choice-panel-hint {
+  padding-top: 0;
+}
+
+/* 抬头压缩：coarse 规则的 40px 触控高度 + 工具区满编（翻页/生成/调色板/收起）
+   会把"行动选项"标题挤成两行，抬头反而更高。dense 下牺牲部分可点高度（40→32px）
+   换单行抬头；特异性 (0,2,0) 高于 coarse 规则 (0,1,0)，无论书写顺序都由 dense 取胜 */
+.choice-panel--dense .choice-panel-header {
+  gap: var(--choice-space-1);
+}
+
+.choice-panel--dense .choice-panel-title {
+  white-space: nowrap;
+  font-size: var(--choice-text-sm);
+}
+
+.choice-panel--dense .choice-panel-btn {
+  min-height: 32px;
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-xs);
+}
+
+.choice-panel--dense .choice-panel-pager {
+  font-size: var(--choice-text-xs);
+  margin: 0;
+}
+
+/* 行为栏：40px 按钮 + 容器 padding 使整条约 56px，小屏上与选项争高度；
+   dense 下按钮 30px 把整条压到约 38px */
+.choice-panel--dense .choice-behavior-btn {
+  min-height: 30px;
+  padding: 2px var(--choice-space-2);
+  font-size: var(--choice-text-xs);
 }
 </style>

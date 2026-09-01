@@ -1437,9 +1437,11 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // ST 主题自动检测：当 theme_mode 为 'auto' 时，监听 ST 主题变化
   let stopThemeWatcher: (() => void) | null = null;
 
-  function resolveTheme(): 'st' | 'dark' | 'light' {
+  // 非 auto 档（含 dusk/sakura/celadon/honey 预设）原样直通，落到 data-choice-theme
+  // 属性上由 theme.css 的同名 token 块接管；只有 auto 需要 JS 检测 ST 亮暗极性
+  function resolveTheme(): 'st' | 'dark' | 'light' | 'dusk' | 'sakura' | 'celadon' | 'honey' {
     const mode = settings.value.ui.theme_mode;
-    if (mode === 'st' || mode === 'dark' || mode === 'light') return mode;
+    if (mode !== 'auto') return mode;
     return detectSTTheme();
   }
 
