@@ -34,7 +34,6 @@
           isGenerating ? 'fa-solid fa-spinner fa-spin choice-bubble-icon' : 'fa-solid fa-chess choice-bubble-icon'
         "
       ></i>
-      <i v-if="bubbleState === 'disabled'" class="fa-solid fa-exclamation choice-bubble-disabled-badge"></i>
     </div>
     <FloatingContextMenu v-if="isBubbleContextMenuOpen" />
   </Teleport>
@@ -332,6 +331,9 @@ onUnmounted(() => {
   animation: choice-bubble-pulse 3s ease-in-out infinite;
 }
 
+/* 禁用态只靠整体变暗+去色传达（右上角 ⚠ 角标已移除：overflow:hidden 剪裁下
+   悬挂式被剪成豁口、收入界内又喧宾夺主，两版真机都不接受）；禁用原因仍可在
+   悬浮面板/设置里看到，气泡本身保持干净 */
 .choice-floating-bubble--disabled {
   opacity: 0.5;
   filter: grayscale(30%);
@@ -384,6 +386,12 @@ onUnmounted(() => {
   background: conic-gradient(from 0deg, var(--choice-primary), transparent 60%, var(--choice-primary));
   opacity: 0.3;
   pointer-events: none;
+  /* 镂空成环：实心圆锥渐变的所有角度在圆心交汇，会出现一个彩色聚点——平时被
+     居中图标盖住，贴边态图标向内侧让位后恰好露出来（真机反馈"贴边后中间有个点"）。
+     radial mask 只留外圈，扫光变成贴边旋转的弧环；-webkit- 前缀版老内核也要认，
+     两个都不认时整条被忽略，回落为原实心圆盘（仅观感回退，无功能影响） */
+  -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, #0000 calc(100% - 4px), #000 calc(100% - 3px));
 }
 
 .choice-floating-bubble--idle .choice-bubble-inner-ring {
@@ -412,22 +420,5 @@ onUnmounted(() => {
 
 .choice-floating-bubble--snapped-right .choice-bubble-icon {
   transform: translateX(-10px);
-}
-
-.choice-bubble-disabled-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--choice-bg-element);
-  border: 2px solid var(--choice-bg-panel);
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
 }
 </style>
