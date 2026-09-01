@@ -3,10 +3,7 @@
     <div
       v-if="open"
       class="choice-cfdlg-overlay"
-      @click.self="
-        mode = 'merge';
-        emit('close');
-      "
+      @click.self="emit('close')"
     >
       <div class="choice-cfdlg-dialog">
         <div class="choice-cfdlg-header">
@@ -17,10 +14,7 @@
           <button
             class="choice-cfdlg-close"
             :title="t`取消`"
-            @click="
-              mode = 'merge';
-              emit('close');
-            "
+            @click="emit('close')"
           >
             &times;
           </button>
@@ -73,10 +67,7 @@
         <div class="choice-cfdlg-footer">
           <button
             class="menu_button"
-            @click="
-              mode = 'merge';
-              emit('close');
-            "
+            @click="emit('close')"
           >
             {{ t`取消` }}
           </button>

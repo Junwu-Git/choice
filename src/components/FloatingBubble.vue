@@ -53,10 +53,9 @@
 </template>
 
 <script setup lang="ts">
-import { resolveCustomApi } from '@/core/generator';
+import { generatorState, resolveCustomApi } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { generatorState } from '@/core/generator';
 import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 

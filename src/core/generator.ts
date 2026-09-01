@@ -374,7 +374,7 @@ export const applyWIExcl = async (
   if (!hasExcl && !hasEnabled) return null;
 
   selected_world_info.length = 0;
-  let newList = hasExcl ? saved.filter(n => !allExcl.includes(n)) : [...saved];
+  const newList = hasExcl ? saved.filter(n => !allExcl.includes(n)) : [...saved];
   if (hasEnabled) {
     for (const name of enabled) {
       // excluded_books 优先于 enabled_books：被排除的书即使仍在 enabled 列表里也不注入
@@ -619,7 +619,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     if (!enabledModules || enabledModules.length === 0) {
       enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
-    let messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+    const messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
 
     const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
     if (!api) {
@@ -820,7 +820,7 @@ export function parsePoolGenItems(text: string, count: number): ParsedPoolGenIte
   // 半角方括号必须支持：renderPoolEntryLine 喂给 AI 的已有条目格式就是 [type] content，
   // 模型在回退场景模仿该格式输出时类型才能被还原，否则丢失到 content
   const bracketTypeRe = /^【(.{1,10}?)】\s*(.+)$/;
-  const halfBracketTypeRe = /^\[([^\[\]]{1,10})\]\s*(.+)$/;
+  const halfBracketTypeRe = /^\[([^\][]){1,10}\]\s*(.+)$/;
   const colonTypeRe = /^([^：:]{1,6})[：:]\s+(.+)$/;
   for (const raw of c.split(/\r?\n/)) {
     let l = raw.trim();

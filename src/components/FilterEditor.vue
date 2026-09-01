@@ -319,10 +319,8 @@ const activeDuplicateKeys = computed(() => {
           if (entry.inline_rule.start || entry.inline_rule.end) {
             key = `inline:tag:${entry.inline_rule.start}|||${entry.inline_rule.end}`;
           }
-        } else {
-          if (entry.inline_rule.pattern) {
-            key = `inline:regex:${entry.inline_rule.pattern}`;
-          }
+        } else if (entry.inline_rule.pattern) {
+          key = `inline:regex:${entry.inline_rule.pattern}`;
         }
       }
       if (key) {
@@ -394,17 +392,15 @@ function createSortable(el: HTMLElement) {
         } else {
           groups.splice(toIdx + (evt.newIndex > evt.oldIndex ? 1 : 0), 0, moved);
         }
-      } else {
-        if (toArea === 'global') {
-          group.preset_name = null;
-          group.character_id = null;
-        } else if (toArea === 'preset') {
-          group.preset_name = gs.currentPresetName;
-          group.character_id = null;
-        } else if (toArea === 'character') {
-          group.preset_name = null;
-          group.character_id = gs.currentCharacterId ?? null;
-        }
+      } else if (toArea === 'global') {
+        group.preset_name = null;
+        group.character_id = null;
+      } else if (toArea === 'preset') {
+        group.preset_name = gs.currentPresetName;
+        group.character_id = null;
+      } else if (toArea === 'character') {
+        group.preset_name = null;
+        group.character_id = gs.currentCharacterId ?? null;
       }
     },
   });

@@ -15,6 +15,15 @@ import {
   USER_INSTRUCTION_DEFAULT,
   PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
+  type GlobalSettings as GlobalSettingsType,
+  type PoolConfig,
+  type PoolConfigEntry,
+  type PoolEntry,
+  type PromptModule as PromptModuleType,
+  type ChatFilterGroup,
+  type FilterGroup,
+  type RegexLibraryEntry,
+  type FilterGroupEntry,
 } from '@/type/settings';
 // chat/character store 不反向依赖 global-settings，无循环导入；
 // 不能依赖 unplugin-auto-import——它只覆盖 vue/pinia/@vueuse/zod 等预设，
@@ -152,17 +161,6 @@ function buildTimeJumpEntries(): PoolEntry[] {
   ];
 }
 
-import type {
-  GlobalSettings as GlobalSettingsType,
-  PoolConfig,
-  PoolConfigEntry,
-  PoolEntry,
-  PromptModule as PromptModuleType,
-  ChatFilterGroup,
-  FilterGroup,
-  RegexLibraryEntry,
-  FilterGroupEntry,
-} from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
 // 提示词模块化迁移：旧格式(schema_version=0) → 模块化格式(schema_version=1)

@@ -234,7 +234,7 @@
           <span
             class="choice-module-drag"
             :draggable="true"
-            title="拖动排序"
+            :title="t`拖动排序`"
             @dragstart="onDragStart($event, idx)"
             @dragend="onDragEnd"
             >☰</span
