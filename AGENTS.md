@@ -119,6 +119,8 @@ npx vue-tsc --noEmit # 单独跑类型检查，退出码必须为 0（类型债�
 
 ### 用 Chrome DevTools MCP 自行验证，不要只做静态代码审查
 
+**浏览器验证前先暂停询问**：每次改动后不要默认自动开浏览器验证——先暂停询问用户本次是否需要浏览器验证；小改动（文案/样式微调/纯逻辑调整等）通常没必要，由用户决定。用户明确要求验证或改动涉及核心交互链路时再走完整验证流程。
+
 配了 Google 官方的 `chrome-devtools-mcp`（Puppeteer + Chrome DevTools Protocol，仓库 `ChromeDevTools/chrome-devtools-mcp`），改完 UI 相关代码，agent 应该自己打开本地酒馆实例点一遍，而不是"看代码觉得应该没问题"就算完成，也不要指望我去手动刷新确认。
 
 **接入方式**：推荐用 `--autoConnect` 挂到我本地已经开着、已登录的 Chrome 上（而不是每次启动一个全新的无痕实例），这样能保留 SillyTavern 的登录态和已打开的对话，不用每次重新走一遍进入酒馆的流程：
