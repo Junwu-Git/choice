@@ -59,10 +59,10 @@ const onMobileBubbleChange = (e: MediaQueryListEvent) => {
 mobileBubbleMql.addEventListener('change', onMobileBubbleChange);
 
 const BUBBLE_SIZE = computed(() => (isMobilePointer.value ? 48 : 60));
-// 露出量固定 40px：手机 48px 直径贴边仍露出 40px（只藏 8px），抓握面积不缩水，
-// 视觉上是"更完整的圆"而非"更小的残月"，观感协调
-const SNAP_EXPOSED = 40;
-const SNAP_OFFSET = computed(() => BUBBLE_SIZE.value - SNAP_EXPOSED);
+// 贴边隐藏量 = 直径的 1/3（露 2/3）：按比例而非固定 px——桌面 60px 藏 20px 是
+// 长期验证的观感基准；早先手机沿用固定露出 40px，48px 球只藏 8px 几乎全露
+// （真机反馈"露出来太多"）。取 1/3 直径后两档观感一致
+const SNAP_OFFSET = computed(() => Math.round(BUBBLE_SIZE.value / 3));
 // 点击/长按共用的指针净位移阈值：松手时位移小于它视为点击，大于它视为拖拽意图（取消长按）
 const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
@@ -278,6 +278,11 @@ onMounted(() => {
   bubbleEl.value?.addEventListener('pointercancel', onPointerCancel);
   bubbleEl.value?.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('resize', handleResize);
+  // 初始化钳制：位置存档（localStorage）可能是在更宽的窗口/别的设备下写入的，
+  // 首次挂载若超出当前视口，球会整个悬在屏外（真机反馈"有时打开浏览器看不见
+  // 悬浮球"）。resize 事件只在窗口变化时触发，覆盖不了"存档越界 + 视口未变"
+  // 的加载场景，必须挂载时主动钳一次（幂等：贴边态按当前直径重吸附，界内则原样）
+  handleResize();
 });
 onUnmounted(() => {
   bubbleEl.value?.removeEventListener('pointerdown', onPointerDown);
@@ -356,13 +361,14 @@ onUnmounted(() => {
 
 /* 贴边态悬停禁止容器位移弹出（peek）：容器 transform 会改变 getBoundingClientRect，
    污染 useDraggable 拖拽锚点、把点击抖动放大成瞬移（根因见 script 内 isPressed 注释）。
-   悬停提示改为图标向屏幕内侧多探出几 px——子元素 transform 不影响容器矩形 */
+   悬停提示改为图标向屏幕内侧多探出几 px——子元素 transform 不影响容器矩形。
+   让位量随图标尺寸等比（0.7 倍），48px 手机球不再沿用桌面的固定 14px */
 .choice-floating-bubble--snapped-left:hover .choice-bubble-icon {
-  transform: translateX(14px);
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * 0.7));
 }
 
 .choice-floating-bubble--snapped-right:hover .choice-bubble-icon {
-  transform: translateX(-14px);
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * -0.7));
 }
 
 /* 悬停放大排除按压态：否则此规则(0,4,0)特异性压过 pressed(0,1,0)，
@@ -414,11 +420,13 @@ onUnmounted(() => {
   transition: transform 0.3s ease;
 }
 
+/* 贴边态图标向屏幕内侧让位：让位量随图标尺寸等比（0.5 倍图标高），固定 10px
+   在 48px 手机球上占比过大，图标看起来快贴出球缘（真机反馈） */
 .choice-floating-bubble--snapped-left .choice-bubble-icon {
-  transform: translateX(10px);
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * 0.5));
 }
 
 .choice-floating-bubble--snapped-right .choice-bubble-icon {
-  transform: translateX(-10px);
+  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * -0.5));
 }
 </style>
