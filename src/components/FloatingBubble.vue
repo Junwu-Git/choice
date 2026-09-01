@@ -354,29 +354,36 @@ onUnmounted(() => {
   z-index: calc(var(--choice-z-floating) + 1);
 }
 
-.choice-floating-bubble:hover {
-  opacity: 1;
-  box-shadow: 0 0 28px rgba(var(--choice-primary-rgb), 0.45);
-}
+/* —— 悬停类反馈仅对真正支持 hover 的指针（鼠标）启用 ——
+   触屏浏览器的 :hover 在点按后会粘滞（没有 pointerleave 时机）：松手、甚至设置
+   面板关闭后，探出/放大态仍卡住不回弹（真机反馈"点击后棋子固定在内侧光环之外，
+   有时不会回去"——"有时候"取决于浏览器是否保留该次点按的 hover 态）。
+   触屏只保留贴边让位基础态；老内核不认此媒体条件时整块被忽略，仅失去悬停增强 */
+@media (hover: hover) and (pointer: fine) {
+  .choice-floating-bubble:hover {
+    opacity: 1;
+    box-shadow: 0 0 28px rgba(var(--choice-primary-rgb), 0.45);
+  }
 
-/* 贴边态悬停禁止容器位移弹出（peek）：容器 transform 会改变 getBoundingClientRect，
-   污染 useDraggable 拖拽锚点、把点击抖动放大成瞬移（根因见 script 内 isPressed 注释）。
-   悬停提示改为图标向屏幕内侧多探出几 px——子元素 transform 不影响容器矩形。
-   让位量随图标尺寸等比（0.7 倍），48px 手机球不再沿用桌面的固定 14px */
-.choice-floating-bubble--snapped-left:hover .choice-bubble-icon {
-  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * 0.7));
-}
+  /* 贴边态悬停禁止容器位移弹出（peek）：容器 transform 会改变 getBoundingClientRect，
+     污染 useDraggable 拖拽锚点、把点击抖动放大成瞬移（根因见 script 内 isPressed 注释）。
+     悬停提示改为图标向屏幕内侧多探出几 px——子元素 transform 不影响容器矩形。
+     让位量随图标尺寸等比（0.7 倍），48px 手机球不再沿用桌面的固定 14px */
+  .choice-floating-bubble--snapped-left:hover .choice-bubble-icon {
+    transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * 0.7));
+  }
 
-.choice-floating-bubble--snapped-right:hover .choice-bubble-icon {
-  transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * -0.7));
-}
+  .choice-floating-bubble--snapped-right:hover .choice-bubble-icon {
+    transform: translateX(calc(var(--choice-bubble-icon-size, 20px) * -0.7));
+  }
 
-/* 悬停放大排除按压态：否则此规则(0,4,0)特异性压过 pressed(0,1,0)，
-   鼠标按下时收缩反馈永远不生效（按住时球必然处于 hover 中） */
-.choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):not(
-    .choice-floating-bubble--pressed
-  ):hover {
-  transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(1.08);
+  /* 悬停放大排除按压态：否则此规则(0,4,0)特异性压过 pressed(0,1,0)，
+     鼠标按下时收缩反馈永远不生效（按住时球必然处于 hover 中） */
+  .choice-floating-bubble:not(.choice-floating-bubble--snapped-left):not(.choice-floating-bubble--snapped-right):not(
+      .choice-floating-bubble--pressed
+    ):hover {
+    transform: translate3d(var(--choice-x), var(--choice-y), 0) scale(1.08);
+  }
 }
 
 /* 按压态：整体轻微收缩作反馈，不加任何位移（根因见 script 内 isPressed 注释）。
