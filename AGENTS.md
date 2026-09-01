@@ -115,6 +115,8 @@ npx vue-tsc --noEmit # 单独跑类型检查，退出码必须为 0（类型债�
 
 因为`watch`已经在跑，代码改完会自动重新打包，**但浏览器仍然需要手动刷新**才能看到效果（无 HMR）。
 
+**dist 产物与提交约定（牢记，不要反复询问）**：本地`pnpm build`只作打包/类型验证，不是发布流程；`watch`是`--mode development`（内联 sourcemap、不出独立`index.js.map`），随时会覆盖任何 production 产物，属正常状态。推送后远程 GitHub 有 bot action 自动重打包（`[bot] Bundle` 提交，production 产物含独立 map），才是发布产物的最终来源。因此：提交时`dist/`处于任何模式的产物都**直接入库推送**，不要为 map 被删、js 内联 map 这类状态差异询问用户，也不要为提交前重跑 production 构建纠结。
+
 ### 用 Chrome DevTools MCP 自行验证，不要只做静态代码审查
 
 配了 Google 官方的 `chrome-devtools-mcp`（Puppeteer + Chrome DevTools Protocol，仓库 `ChromeDevTools/chrome-devtools-mcp`），改完 UI 相关代码，agent 应该自己打开本地酒馆实例点一遍，而不是"看代码觉得应该没问题"就算完成，也不要指望我去手动刷新确认。
