@@ -85,7 +85,9 @@ const onCreate = () => {
   top: 0;
   left: 0;
   width: 100vw;
+  /* 同 dvh 回退：手机上 100vh 按布局视口取值，大于可视高度 */
   height: 100vh;
+  height: 100dvh;
   z-index: var(--choice-z-dialog);
   background: var(--choice-overlay);
   display: flex;

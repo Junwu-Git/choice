@@ -831,7 +831,11 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   width: 100vw;
+  /* dvh = 动态视口（扣掉手机地址栏/工具栏后的可视高度）。手机上 100vh 按布局视口算，
+     常大于可视高度，弹窗底部会被顶到屏幕外（"条目多时超出屏幕"的真因）。
+     老内核不认识 dvh 时本行非法被忽略，自动回落上一行的 vh，两行必须成对 */
   height: 100vh;
+  height: 100dvh;
   z-index: var(--choice-z-dialog);
   background: var(--choice-overlay);
   display: flex;
@@ -844,7 +848,9 @@ onUnmounted(() => {
 .choice-epool-dialog {
   width: 600px;
   max-width: 92vw;
+  /* 同 dvh 回退：手机上按可视高度封顶，弹窗不再被系统栏顶出屏幕 */
   max-height: 85vh;
+  max-height: 85dvh;
   margin: auto;
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
@@ -934,7 +940,9 @@ onUnmounted(() => {
   .choice-epool-dialog {
     width: 96vw;
     max-width: 96vw;
+    /* 同 dvh 回退 */
     max-height: 92vh;
+    max-height: 92dvh;
   }
 }
 
@@ -972,21 +980,47 @@ onUnmounted(() => {
   color: var(--choice-text);
 }
 
-/* 手机窄屏：分组头单行紧凑——按钮 28px、把手 28px、隐藏计数，
-   不换行（此前 flex-wrap 让整排按钮折到分组名下方，看起来像"点击分组跳出菜单"）。
-   分组名 flex:1 省略号兜底 */
+/* 手机窄屏（<480px 触屏）：紧凑单行——按钮/把手 24px、间距收 4px、缩进收窄；
+   计数恢复显示（此前为塞进单行隐藏过，用户要求可见），用 flex-shrink:0 + nowrap
+   防挤压，分组名 flex:1 + 省略号兜底。特异性高于全局触屏 40px 规则 */
 @media (pointer: coarse) and (max-width: 480px) {
+  .choice-epool-group-head {
+    gap: var(--choice-space-1);
+  }
+
   .choice-epool-group-head .choice-icon-btn {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
   }
 
   .choice-epool-group-head .choice-drag-handle {
-    width: 28px;
+    width: 24px;
   }
 
-  .choice-epool-group-head .choice-epool-group-count {
-    display: none;
+  .choice-epool-group-body {
+    padding-left: var(--choice-space-2);
+  }
+
+  .choice-epool-entry-head {
+    gap: var(--choice-space-1);
+    padding: var(--choice-space-1);
+  }
+
+  .choice-epool-entry-head .choice-drag-handle {
+    width: 24px;
+  }
+
+  .choice-epool-entry-body {
+    gap: var(--choice-space-1);
+  }
+
+  .choice-epool-entry-body .choice-icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+
+  .choice-cat-select {
+    max-width: 64px;
   }
 }
 
@@ -1007,6 +1041,9 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   cursor: pointer;
+  /* 防挤压消失：分组名 flex:1 收缩时，无 shrink:0 的计数会被挤到 0 宽不可见 */
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .choice-epool-group-body {
@@ -1014,13 +1051,22 @@ onUnmounted(() => {
   flex-direction: column;
   gap: var(--choice-space-1);
   padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
-  max-height: 2000px;
+  /* max-height 只为折叠动画存在（2000→4px 过渡），必须有限值；上限给到 20000px
+     ≈ 数百行，实际不会触达。子行必须 flex-shrink:0：flex 列容器在限高下会把行
+     按比例压扁成细条（flex 默认 shrink），条目多时全部叠在一起不可读——
+     WorldInfoEditor 的排除列表注释记录过同一坑。行高恒定后，超出部分由外层
+     .choice-epool-body 滚动呈现，而非压进行内 */
+  max-height: 20000px;
   overflow: hidden;
   transition:
     max-height var(--choice-transition-slow),
     opacity var(--choice-transition-slow),
     padding var(--choice-transition-slow);
   opacity: 1;
+}
+
+.choice-epool-group-body > * {
+  flex-shrink: 0;
 }
 
 .choice-epool-group-body.is-collapsed {

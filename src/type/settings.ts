@@ -394,6 +394,19 @@ export const UISettings = z
     theme_mode: z.enum(['auto', 'st', 'dark', 'light', 'dusk', 'sakura', 'celadon', 'honey']).default('auto'),
     opacity: z.number().min(0.3).max(1).default(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
+    /**
+     * 字体档是否跟随设备：true 时忽略 font_size，触屏（pointer: coarse）默认 small、
+     * 桌面 medium——手机用户对字体档的显式选择（写 font_size 且本字段置 false）
+     * 永远优先。旧存档缺本字段由 default(true) 补齐：存量手机用户立即拿到小字，
+     * 与"手机端字体默认应为小"的需求一致；点一次具体档位即可固定
+     */
+    font_size_auto: z.boolean().default(true),
+    /**
+     * 行动选项面板停靠位置：chat = 跟随最新楼层下方（聊天流内，随聊天滚动）；
+     * input = 固定停靠在输入框上方（不随聊天滚动，展开限高滚动——选项再多也不
+     * 覆盖整屏）。挂载位置由 panel-mount 的 reposition 按 此字段 幂等切换
+     */
+    panel_position: z.enum(['chat', 'input']).default('chat'),
     /** 行内设置面板内容区高度（px），拖拽手柄可调整 */
     panel_height: z.number().min(300).max(800).default(500),
   })

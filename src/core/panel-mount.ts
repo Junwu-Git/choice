@@ -37,10 +37,24 @@ export function initPanelMount() {
 
   const reposition = () => {
     try {
+      // 停靠模式（输入框上方）：面板固定插在 #send_form 之前，不随聊天滚动。
+      // 幂等检查必须做——resync 在聊天事件里高频触发，无脑 insertBefore 会反复搬移
+      // DOM 节点，丢掉面板内滚动位置且徒增布局开销。
+      // 判据是 next 而非 prev：#form_sheld 里 send_form 之前还有 ST 的删除确认条
+      // dialogue_del_mes，插完后 mount.prev() 是它而非 send_form。
+      // store 在此处按需取（外层 gs 常量声明在本函数首次调用之后，闭包直接引用会踩 TDZ）
+      if (useGlobalSettingsStore(pinia).settings.ui.panel_position === 'input') {
+        if (!$container.next().is('#send_form')) {
+          $container.insertBefore('#send_form');
+        }
+        return;
+      }
       const $last = $('#chat .mes.last_mes');
       if ($last.length) {
-        $container.insertAfter($last);
-      } else {
+        if (!$container.prev().is($last)) {
+          $container.insertAfter($last);
+        }
+      } else if (!$container.parent().is('#chat')) {
         $container.appendTo('#chat');
       }
     } catch (error) {
@@ -155,7 +169,12 @@ export function initPanelMount() {
     const val = ($('#send_textarea').val() as string).trim();
     $enrichBtn.toggle(gs.settings.ui.enrich_enabled && val.length > 0);
   };
-  gs.$subscribe(() => updateEnrichBtn());
+  // 设置任何字段变化都触发：enrich 按钮显隐同步 + 面板停靠位置即时迁移
+  // （reposition 自带幂等检查，非位置字段的变更不会造成 DOM 搬移）
+  gs.$subscribe(() => {
+    updateEnrichBtn();
+    reposition();
+  });
 
   $enrichBtn.on('click', async () => {
     if (!gs.settings.ui.enrich_enabled) return;

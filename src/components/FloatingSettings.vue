@@ -15,8 +15,7 @@
       >
         <div class="choice-floating-header" ref="headerEl">
           <span class="choice-floating-title">
-            <i class="fa-solid fa-grip-vertical choice-grip-icon"></i>
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <i class="fa-solid fa-chess"></i>
             {{ t`行动选项` }}
           </span>
           <button class="choice-floating-close" @click="closeSettings">&times;</button>
@@ -204,7 +203,9 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   top: 0;
   left: 0;
   width: 100vw;
+  /* 同 dvh 回退：手机上 100vh 按布局视口取值，常大于扣掉地址栏/工具栏后的可视高度 */
   height: 100vh;
+  height: 100dvh;
   z-index: var(--choice-z-floating);
   background: var(--choice-overlay);
   display: flex;
@@ -222,6 +223,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   min-height: 300px;
   max-width: calc(100vw - 20px);
   max-height: calc(100vh - 20px);
+  /* 同 dvh 回退：防止弹窗底部在手机上被系统栏顶出屏幕外 */
+  max-height: calc(100dvh - 20px);
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -258,12 +261,6 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   border-bottom: 1px solid var(--choice-border);
   cursor: move;
   user-select: none;
-}
-
-.choice-grip-icon {
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  margin-right: 2px;
 }
 
 .choice-floating-title {
@@ -389,15 +386,11 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 }
 
 /* ===== 触摸设备（手机）适配 =====
-   以电容触屏为主指针时：拖动标题栏/角落缩放把手对近全屏面板无意义，
-   隐藏以免误导；header 本体拖拽保留（pointer 事件实现，仍可微调位置，clamp 防出界）。
-   tab 与关闭键是高频触控目标，抬到 --choice-tap-min */
+   以电容触屏为主指针时：角落缩放把手对近全屏面板无意义，隐藏以免误导；
+   header 本体拖拽保留（pointer 事件实现，仍可微调位置，clamp 防出界）。
+   tab 与关闭键是高频触控目标，抬到触控尺寸 */
 @media (hover: none) and (pointer: coarse) {
   .choice-floating-resize {
-    display: none;
-  }
-
-  .choice-grip-icon {
     display: none;
   }
 
@@ -409,6 +402,29 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   .choice-floating-close {
     width: var(--choice-tap-min);
     height: var(--choice-tap-min);
+  }
+}
+
+/* 手机（<480px 触屏）压缩顶部区：全尺寸头部(65px)+tab(44px) 在手机上吃掉近 1/6
+   屏高。关闭键/tab 收到 32/34px 仍是可接受的触控目标；仅窄屏生效，平板触屏保持
+   全尺寸（上-block 的选择器在此被更高特异性覆盖） */
+@media (hover: none) and (pointer: coarse) and (max-width: 480px) {
+  .choice-floating-header {
+    padding: var(--choice-space-1) var(--choice-space-3);
+  }
+
+  .choice-floating-close {
+    width: 32px;
+    height: 32px;
+  }
+
+  .choice-tab {
+    min-height: 34px;
+    padding: var(--choice-space-1) var(--choice-space-3);
+  }
+
+  .choice-floating-body {
+    padding: var(--choice-space-3);
   }
 }
 </style>

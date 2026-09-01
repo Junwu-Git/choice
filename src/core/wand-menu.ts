@@ -28,7 +28,7 @@ function createWandEntry($menu: JQuery<HTMLElement>) {
   const $container = $('<div id="choice_wand_container" class="extension_container">').appendTo($menu);
   const $entry = $(`
     <div class="list-group-item flex-container flexGap5">
-      <div class="fa-solid fa-wand-magic-sparkles extensionsMenuExtensionButton"></div>
+      <div class="fa-solid fa-chess extensionsMenuExtensionButton"></div>
       <span>${t`行动选项`}</span>
     </div>
   `);

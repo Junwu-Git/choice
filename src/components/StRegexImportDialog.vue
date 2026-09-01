@@ -234,7 +234,9 @@ const onCancel = () => {
   top: 0;
   left: 0;
   width: 100vw;
+  /* 同 dvh 回退：手机上 100vh 按布局视口取值，大于可视高度 */
   height: 100vh;
+  height: 100dvh;
   /* 常态从正则库弹窗内打开，需叠在其上 */
   z-index: calc(var(--choice-z-dialog) + 10);
   background: var(--choice-overlay);
@@ -247,7 +249,9 @@ const onCancel = () => {
 .choice-strdlg-dialog {
   width: 560px;
   max-width: 92vw;
+  /* 同 dvh 回退 */
   max-height: 80vh;
+  max-height: 80dvh;
   margin: auto;
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);

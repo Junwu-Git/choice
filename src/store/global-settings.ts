@@ -1480,7 +1480,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     }
 
     const scaleMap = { small: 0.85, medium: 1, large: 1.2 };
-    document.documentElement.style.setProperty('--choice-font-scale', String(scaleMap[ui.font_size]));
+    // 有效字体档：跟随设备时触屏取 small（手机默认小字，见 UISettings.font_size_auto 注释），
+    // 桌面维持 medium；用户显式选档（font_size_auto=false）后以 font_size 为准。
+    // matchMedia 不进响应式系统，但指针类型在会话期内不变，每次 watchEffect 重跑重读即可
+    const isCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    const effectiveFontSize = ui.font_size_auto ? (isCoarsePointer ? 'small' : 'medium') : ui.font_size;
+    document.documentElement.style.setProperty('--choice-font-scale', String(scaleMap[effectiveFontSize]));
   });
 
   return {

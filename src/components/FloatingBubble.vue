@@ -16,6 +16,9 @@
       :style="{
         '--choice-x': x + 'px',
         '--choice-y': y + 'px',
+        width: BUBBLE_SIZE + 'px',
+        height: BUBBLE_SIZE + 'px',
+        '--choice-bubble-icon-size': BUBBLE_SIZE / 3 + 'px',
         transition:
           isDragging || isResizing
             ? 'none'
@@ -28,7 +31,7 @@
       <div class="choice-bubble-inner-ring"></div>
       <i
         :class="
-          isGenerating ? 'fa-solid fa-spinner fa-spin choice-bubble-icon' : 'fa-solid fa-code-branch choice-bubble-icon'
+          isGenerating ? 'fa-solid fa-spinner fa-spin choice-bubble-icon' : 'fa-solid fa-chess choice-bubble-icon'
         "
       ></i>
       <i v-if="bubbleState === 'disabled'" class="fa-solid fa-exclamation choice-bubble-disabled-badge"></i>
@@ -45,9 +48,22 @@ import { generatorState } from '@/core/generator';
 import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 
-const BUBBLE_SIZE = 60;
+// 气泡直径：手机（窄触屏）压到 48px，其余 60px。必须是响应式值——拖拽 clamp、
+// 贴边吸附、初始位置默认值全依赖它；渲染尺寸也由它经 :style 单一来源驱动，
+// CSS 不允许再写一份 width/height（两处常量必然漂移，clamp 用的逻辑尺寸会先失真）
+const MOBILE_BUBBLE_QUERY = '(pointer: coarse) and (max-width: 480px)';
+const mobileBubbleMql = window.matchMedia(MOBILE_BUBBLE_QUERY);
+const isMobilePointer = ref(mobileBubbleMql.matches);
+const onMobileBubbleChange = (e: MediaQueryListEvent) => {
+  isMobilePointer.value = e.matches;
+};
+mobileBubbleMql.addEventListener('change', onMobileBubbleChange);
+
+const BUBBLE_SIZE = computed(() => (isMobilePointer.value ? 48 : 60));
+// 露出量固定 40px：手机 48px 直径贴边仍露出 40px（只藏 8px），抓握面积不缩水，
+// 视觉上是"更完整的圆"而非"更小的残月"，观感协调
 const SNAP_EXPOSED = 40;
-const SNAP_OFFSET = BUBBLE_SIZE - SNAP_EXPOSED;
+const SNAP_OFFSET = computed(() => BUBBLE_SIZE.value - SNAP_EXPOSED);
 // 点击/长按共用的指针净位移阈值：松手时位移小于它视为点击，大于它视为拖拽意图（取消长按）
 const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
@@ -57,8 +73,8 @@ const SUPPRESS_SELECT_CLASS = 'choice-suppress-select';
 
 const isGenerating = computed(() => generatorState.loading);
 
-const posX = useStorage(STORAGE_KEY_X, window.innerWidth - BUBBLE_SIZE - 16);
-const posY = useStorage(STORAGE_KEY_Y, window.innerHeight - BUBBLE_SIZE - 80);
+const posX = useStorage(STORAGE_KEY_X, window.innerWidth - BUBBLE_SIZE.value - 16);
+const posY = useStorage(STORAGE_KEY_Y, window.innerHeight - BUBBLE_SIZE.value - 80);
 
 const isSnappedLeft = ref(false);
 const isSnappedRight = ref(false);
@@ -116,27 +132,27 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
     document.body.classList.remove(SUPPRESS_SELECT_CLASS);
 
     const SNAP_THRESHOLD = 100;
-    const centerX = finalPos.x + BUBBLE_SIZE / 2;
+    const centerX = finalPos.x + BUBBLE_SIZE.value / 2;
     const distToLeft = centerX;
     const distToRight = window.innerWidth - centerX;
 
     let snappedX: number;
     if (distToLeft < SNAP_THRESHOLD) {
-      snappedX = -SNAP_OFFSET;
+      snappedX = -SNAP_OFFSET.value;
       isSnappedLeft.value = true;
       isSnappedRight.value = false;
     } else if (distToRight < SNAP_THRESHOLD) {
-      snappedX = window.innerWidth - BUBBLE_SIZE + SNAP_OFFSET;
+      snappedX = window.innerWidth - BUBBLE_SIZE.value + SNAP_OFFSET.value;
       isSnappedLeft.value = false;
       isSnappedRight.value = true;
     } else {
-      snappedX = Math.max(0, Math.min(finalPos.x, window.innerWidth - BUBBLE_SIZE));
+      snappedX = Math.max(0, Math.min(finalPos.x, window.innerWidth - BUBBLE_SIZE.value));
       isSnappedLeft.value = false;
       isSnappedRight.value = false;
     }
 
     posX.value = snappedX;
-    posY.value = Math.max(0, Math.min(finalPos.y, window.innerHeight - BUBBLE_SIZE));
+    posY.value = Math.max(0, Math.min(finalPos.y, window.innerHeight - BUBBLE_SIZE.value));
     x.value = snappedX;
     y.value = posY.value;
 
@@ -214,11 +230,12 @@ const onContextMenu = (e: MouseEvent) => {
 watch(
   posX,
   val => {
-    const centerX = val + BUBBLE_SIZE / 2;
-    isSnappedLeft.value = centerX < window.innerWidth / 2 && (val === -SNAP_OFFSET || val <= 0);
+    const centerX = val + BUBBLE_SIZE.value / 2;
+    isSnappedLeft.value = centerX < window.innerWidth / 2 && (val === -SNAP_OFFSET.value || val <= 0);
     isSnappedRight.value =
       centerX >= window.innerWidth / 2 &&
-      (val === window.innerWidth - BUBBLE_SIZE + SNAP_OFFSET || val >= window.innerWidth - BUBBLE_SIZE);
+      (val === window.innerWidth - BUBBLE_SIZE.value + SNAP_OFFSET.value ||
+        val >= window.innerWidth - BUBBLE_SIZE.value);
     bubbleX.value = val;
     bubbleY.value = posY.value;
   },
@@ -231,13 +248,13 @@ const handleResize = () => {
   isResizing.value = true;
   let clampedX: number;
   if (isSnappedLeft.value) {
-    clampedX = -SNAP_OFFSET;
+    clampedX = -SNAP_OFFSET.value;
   } else if (isSnappedRight.value) {
-    clampedX = window.innerWidth - BUBBLE_SIZE + SNAP_OFFSET;
+    clampedX = window.innerWidth - BUBBLE_SIZE.value + SNAP_OFFSET.value;
   } else {
-    clampedX = Math.max(0, Math.min(posX.value, window.innerWidth - BUBBLE_SIZE));
+    clampedX = Math.max(0, Math.min(posX.value, window.innerWidth - BUBBLE_SIZE.value));
   }
-  const clampedY = Math.max(0, Math.min(posY.value, window.innerHeight - BUBBLE_SIZE));
+  const clampedY = Math.max(0, Math.min(posY.value, window.innerHeight - BUBBLE_SIZE.value));
   posX.value = clampedX;
   posY.value = clampedY;
   x.value = clampedX;
@@ -252,6 +269,11 @@ const handleResize = () => {
   }, 200);
 };
 
+// 尺寸档切换（旋屏跨过 480px、外接/断开鼠标）不会触发 window resize，
+// 但 clamp 边界变了：必须立即按新直径重夹位置，否则桌面存档位置在切到手机档时
+// 可能超出 innerWidth - 48 的边界悬在屏外
+watch(isMobilePointer, handleResize);
+
 onMounted(() => {
   bubbleEl.value?.addEventListener('pointerdown', onPointerDown);
   bubbleEl.value?.addEventListener('pointercancel', onPointerCancel);
@@ -263,6 +285,7 @@ onUnmounted(() => {
   bubbleEl.value?.removeEventListener('pointercancel', onPointerCancel);
   bubbleEl.value?.removeEventListener('contextmenu', onContextMenu);
   window.removeEventListener('resize', handleResize);
+  mobileBubbleMql.removeEventListener('change', onMobileBubbleChange);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
   clearLongPressTimer();
   // 组件卸载兜底：按住状态下组件被卸载时，抑制类残留会让全站无法选字
@@ -276,8 +299,8 @@ onUnmounted(() => {
   left: 0;
   top: 0;
   z-index: var(--choice-z-floating);
-  width: 60px;
-  height: 60px;
+  /* 尺寸不在此写死：直径是 JS 侧 clamp/吸附计算的一部分（BUBBLE_SIZE computed），
+     由 :style 单一来源驱动，双处常量必然漂移 */
   border-radius: var(--choice-radius-full);
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
@@ -285,7 +308,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--choice-text-xl);
+  /* 图标随直径等比（1/3 直径），且保留字体档缩放联动（原为固定 --choice-text-xl，
+     48px 手机球上 20px 图标偏挤） */
+  font-size: calc(var(--choice-bubble-icon-size, 20px) * var(--choice-font-scale, 1));
   cursor: pointer;
   box-shadow: var(--choice-shadow-glow);
   touch-action: none;

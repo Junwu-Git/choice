@@ -3,7 +3,11 @@
     v-show="visible"
     ref="panelEl"
     class="choice-panel"
-    :class="{ 'choice-panel--compact': compact, 'choice-panel--dense': isDense }"
+    :class="{
+      'choice-panel--compact': compact,
+      'choice-panel--dense': isDense,
+      'choice-panel--docked': isDocked && !compact,
+    }"
   >
     <div class="choice-panel-header" @click="panelStore.setCollapsed(!collapsed)">
       <span class="choice-panel-title" :class="{ 'choice-title--toggleable': hasEnrichHistory }" @click="onTitleClick">
@@ -185,6 +189,12 @@ const {
 
 const isGenerating = computed(() => generatorState.loading);
 const gs = useGlobalSettingsStore();
+
+// 停靠模式：面板固定在输入框上方（settings.ui.panel_position = 'input'，挂载点由
+// panel-mount 切换）。与 dense 正交——dense 由容器宽度触发只压排版，dock 由用户
+// 设置触发换挂载点 + 展开限高；悬浮预览（compact）恒展开小卡，不参与 dock 限高
+const isDocked = computed(() => gs.settings.ui.panel_position === 'input');
+
 const behavior = computed({
   get: () => gs.settings.behavior,
   set: v => {
@@ -202,6 +212,25 @@ const cycleTitle = computed(() => {
 const onCycleTheme = () => {
   gs.settings.ui.theme_mode = nextThemeMode(themeMode.value);
 };
+
+// 面板挂在聊天流末尾，折叠态点展开时高度向下生长，底部常落在视口外（手机尤甚，
+// 用户需上滑内容才能看到选项）。展开后把面板滚回可视区：block:'nearest' 只在
+// 不可见时做最小滚动，不打扰正常浏览位置；不用默认 center——那会强行滚动所有
+// 可滚祖先（SettingsPanel 的 tab 栏注释记录过同一问题）。收起不滚动。
+// 双 rAF + 先做可见性预判：nextTick 后同帧仍有布局变化与未竟的程序滚动，
+// 直接 smooth 会被打断而静默不滚（实测偶发），稳定一帧后再滚并只滚真正不可见的情形
+watch(collapsed, v => {
+  if (v) return;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const el = panelEl.value;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.top >= 0 && rect.bottom <= window.innerHeight) return;
+      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }),
+  );
+});
 
 const visible = computed(() => {
   if (props.compact) {
@@ -473,6 +502,11 @@ const onSelect = async (option: ChoiceOption) => {
   flex-direction: column;
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) var(--choice-space-3) var(--choice-space-3);
+  /* 必须显式恢复 normal：停靠模式下面板挂在 #form_sheld 内，ST 对它声明了
+     white-space:nowrap 并一路继承进选项文本——选项全部单行溢出，body 的
+     overflow-x:auto 冒出横向滚动条（聊天内模式挂在 #chat 下无此继承，从未暴露）。
+     需要 nowrap 的元素（behavior-btn/option-type）在下方均有显式声明，不受影响 */
+  white-space: normal;
 }
 
 .choice-panel-loading {
@@ -565,6 +599,9 @@ const onSelect = async (option: ChoiceOption) => {
   font-size: var(--choice-text-base);
   cursor: pointer;
   line-height: 1.4;
+  /* 列向 flex item 的 min-width:auto 会拿内容 min-content 当下限——长无空格 token
+     （英文串/URL）会把按钮撑出容器宽，body 的 overflow-x:auto 顺势冒横向滚动条 */
+  min-width: 0;
   transition:
     transform var(--choice-transition),
     border-color var(--choice-transition),
@@ -607,6 +644,10 @@ const onSelect = async (option: ChoiceOption) => {
   min-width: 0;
   line-height: 1.4;
   font-size: var(--choice-text-base);
+  /* anywhere（而非 break-word）：词内可断且参与 min-content 计算，flex 链条上
+     每一级真正收窄——长英文 token/URL 在窄面板（停靠限高、手机 dense）里折行
+     显示，而不是把按钮撑出横向滚动条 */
+  overflow-wrap: anywhere;
 }
 
 /* 触屏触控目标：分页/生成/收起与行为切换是面板最高频点击点，窄高度按钮在手机上极难点中。
@@ -632,7 +673,9 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel--dense .choice-panel-body {
+  /* 同 dvh 回退：手机上 vh 按布局视口取值，45vh 可能超出可视高度 */
   max-height: 45vh;
+  max-height: 45dvh;
   overflow-y: auto;
   /* 触屏上面板内滚动到边缘时禁止滚动链传导，避免把酒馆聊天页一起拖走 */
   overscroll-behavior: contain;
@@ -692,5 +735,23 @@ const onSelect = async (option: ChoiceOption) => {
   min-height: 30px;
   padding: 2px var(--choice-space-2);
   font-size: var(--choice-text-xs);
+}
+
+/* ===== 停靠模式（输入框上方，settings.ui.panel_position = 'input'）=====
+   面板由 panel-mount 固定插在 #send_form 之前，脱离聊天流：楼层不被选项推走、
+   面板不随聊天滚动。展开限高滚动是本模式的核心诉求——选项再多也不覆盖整屏，
+   此封顶不分屏宽生效（dense 的 45dvh 仅窄容器命中），桌面同样限高。
+   书写在 dense 块之后：手机停靠时 dense+dock 同时命中，由源码顺序让 dock 的
+   40dvh 接管 body 限高。scrollIntoView 回位无需特判：停靠面板恒在可视区内，
+   可见性预判自然短路 */
+.choice-panel--docked {
+  margin: var(--choice-space-1) var(--choice-space-2);
+}
+
+.choice-panel--docked .choice-panel-body {
+  max-height: 40vh;
+  max-height: 40dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 </style>

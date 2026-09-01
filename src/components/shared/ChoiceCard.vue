@@ -48,7 +48,9 @@ defineEmits<{
   gap: var(--choice-space-2);
   padding: var(--choice-space-2);
   cursor: pointer;
-  min-height: 40px;
+  /* 走触控目标 token 而非写死：窄触屏由 theme.css 手机压缩块下调到 32px，
+     桌面/平板维持 40px 行高 */
+  min-height: var(--choice-tap-min);
 }
 
 .choice-card-summary:hover {

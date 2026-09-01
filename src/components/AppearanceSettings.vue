@@ -12,6 +12,28 @@
           </span>
         </label>
       </div>
+      <!-- 面板停靠位置：切换由 panel-mount 监听设置变更即时迁移挂载点。
+           输入框上方 = 停靠模式，展开限高滚动，选项再多不覆盖整屏 -->
+      <div class="choice-theme-switch choice-position-switch">
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.panel_position === 'chat' }"
+          :title="t`跟随最新楼层下方，随聊天滚动`"
+          @click="ui.panel_position = 'chat'"
+        >
+          <i class="fa-solid fa-layer-group"></i>
+          {{ t`聊天内` }}
+        </button>
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.panel_position === 'input' }"
+          :title="t`固定在输入框上方，不随聊天滚动；展开限高滚动，选项再多不占满屏`"
+          @click="ui.panel_position = 'input'"
+        >
+          <i class="fa-solid fa-anchor"></i>
+          {{ t`输入框上方` }}
+        </button>
+      </div>
     </div>
 
     <div class="choice-appearance-section">
@@ -72,13 +94,24 @@
     <div class="choice-appearance-section">
       <span class="choice-appearance-label">{{ t`字体大小` }}</span>
       <div class="choice-theme-switch">
+        <!-- 跟随设备：有效档在 global-settings 计算（触屏 small / 桌面 medium）。
+             点具体档位即退出跟随并固定，此按钮用于回到自动——不加它，手机用户
+             一旦点过档位就再也回不到"手机默认小字"的状态 -->
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.font_size_auto }"
+          :title="t`跟随设备：触屏默认小号，桌面默认中号；选择具体档位后固定为该档`"
+          @click="ui.font_size_auto = true"
+        >
+          {{ t`自动` }}
+        </button>
         <button
           v-for="size in fontSizes"
           :key="size.value"
           class="choice-theme-btn"
-          :class="{ active: ui.font_size === size.value }"
+          :class="{ active: !ui.font_size_auto && ui.font_size === size.value }"
           :title="size.tip"
-          @click="ui.font_size = size.value"
+          @click="onPickFontSize(size.value)"
         >
           {{ size.label }}
         </button>
@@ -103,6 +136,12 @@ const fontSizes = [
   { value: 'medium' as const, label: t`中`, tip: t`默认字体大小` },
   { value: 'large' as const, label: t`大`, tip: t`大号字体，方便阅读` },
 ];
+
+// 点具体档位 = 退出"跟随设备"并固定（font_size_auto=false 后有效档不再读 matchMedia）
+const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
+  ui.value.font_size = size;
+  ui.value.font_size_auto = false;
+};
 </script>
 
 <style scoped>
@@ -130,6 +169,12 @@ const fontSizes = [
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--choice-space-2);
+}
+
+/* 面板位置切换条：与上方悬浮窗复选框拉开一行间距（复用主题分段按钮样式） */
+.choice-position-switch {
+  margin-top: var(--choice-space-2);
+  flex-wrap: wrap;
 }
 
 .choice-check {

@@ -51,7 +51,9 @@ defineEmits<{
   top: 0;
   left: 0;
   width: 100vw;
+  /* 同 dvh 回退：手机上 100vh 按布局视口取值，大于可视高度 */
   height: 100vh;
+  height: 100dvh;
   z-index: var(--choice-z-dialog);
   background: var(--choice-overlay);
   display: flex;
@@ -65,6 +67,9 @@ defineEmits<{
   width: var(--choice-dialog-width, 560px);
   max-width: 92vw;
   max-height: var(--choice-dialog-max-height, 85vh);
+  /* dvh 兜底：min() 取请求上限与可视高度中较小者，防止手机上底部出屏；
+     老内核不认识 dvh 时本行非法，回落上一行 */
+  max-height: min(var(--choice-dialog-max-height, 85vh), 100dvh);
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -83,7 +88,9 @@ defineEmits<{
   .choice-dialog {
     width: 96vw;
     max-width: 96vw;
+    /* 同 dvh 回退 */
     max-height: 92vh;
+    max-height: 92dvh;
   }
 }
 

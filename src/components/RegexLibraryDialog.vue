@@ -103,7 +103,9 @@
                   <label class="choice-check">
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
                   </label>
-                  <select v-model="entry.type" class="text_pole" style="width: 90px; flex-shrink: 0">
+                  <!-- 类型选择宽度收进 class：内联 style 优先级高于任何媒体查询，
+                       手机上 90px 固定宽会把正则输入挤到不可操作 -->
+                  <select v-model="entry.type" class="text_pole choice-regexlib-type">
                     <option value="tag">{{ t`标签匹配` }}</option>
                     <option value="regex">{{ t`正则表达式` }}</option>
                   </select>
@@ -609,7 +611,9 @@ onUnmounted(() => {
   top: 0;
   left: 0;
   width: 100vw;
+  /* 同 dvh 回退：手机上按可视高度取值，弹窗底部不再被系统栏顶出屏幕外 */
   height: 100vh;
+  height: 100dvh;
   z-index: var(--choice-z-floating);
   background: var(--choice-overlay);
   display: flex;
@@ -619,7 +623,9 @@ onUnmounted(() => {
 .choice-regexlib-dialog {
   width: 600px;
   max-width: 92vw;
+  /* 同 dvh 回退 */
   max-height: 85vh;
+  max-height: 85dvh;
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -693,23 +699,14 @@ onUnmounted(() => {
   color: var(--choice-text);
 }
 
-/* 窄屏（手机）：头部横向内边距收窄 + 隐藏计数，保证 8 个元素单行放下；
-   分组头同样单行紧凑（按钮/把手 28px、隐藏计数）——与条目库分组头一致 */
+/* 窄屏（手机）：头部横向内边距收窄 + 隐藏头部总计数，保证 8 个元素单行放下。
+   分组计数此前在此隐藏，用户要求可见——已移除该规则，分组头计数改由
+   flex-shrink:0 + nowrap 防挤压（见下方 group-count 与文件尾紧凑媒体块） */
 @media (pointer: coarse) and (max-width: 480px) {
   .choice-regexlib-header {
     padding-inline: var(--choice-space-2);
   }
   .choice-regexlib-count {
-    display: none;
-  }
-  .choice-regexlib-group-head .choice-icon-btn {
-    width: 28px;
-    height: 28px;
-  }
-  .choice-regexlib-group-head .choice-drag-handle--group {
-    width: 28px;
-  }
-  .choice-regexlib-group-head .choice-regexlib-group-count {
     display: none;
   }
 }
@@ -720,7 +717,9 @@ onUnmounted(() => {
   .choice-regexlib-dialog {
     width: 96vw;
     max-width: 96vw;
+    /* 同 dvh 回退 */
     max-height: 92vh;
+    max-height: 92dvh;
   }
 }
 .choice-regexlib-body {
@@ -762,20 +761,30 @@ onUnmounted(() => {
   flex: 1;
   font-weight: bold;
   color: var(--choice-text-secondary);
+  /* 对齐条目库：缺 min-width:0 时长分组名会把计数挤到 0 宽（"计数消失"的真因） */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .choice-regexlib-group-count {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 /* 折叠用 max-height 而非 display:none：body 仍占 4px 高度留在布局中，
    SortableJS 才能把它识别为 drop target（拖入折叠分组后 onEnd 自动展开）。
-   body 无描边、折叠时 padding 清零——配合无描边容器，折叠后头下不再出现细框 */
+   body 无描边、折叠时 padding 清零——配合无描边容器，折叠后头下不再出现细框。
+   上限 2000→20000px 且子行 flex-shrink:0：flex 列容器在限高下会把行按比例压扁
+   成细条（flex 默认 shrink），正则多时全部叠在一起不可操作；行高恒定后超出部分
+   由外层 .choice-regexlib-body 滚动呈现。20000px ≈ 数百行，实际不会触达裁剪 */
 .choice-regexlib-group-body {
   padding: var(--choice-space-1) 0 var(--choice-space-1) var(--choice-space-4);
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-1);
-  max-height: 2000px;
+  max-height: 20000px;
   overflow: hidden;
   opacity: 1;
   transition:
@@ -783,10 +792,69 @@ onUnmounted(() => {
     opacity var(--choice-transition-slow, 0.2s ease),
     padding var(--choice-transition-slow, 0.2s ease);
 }
+.choice-regexlib-group-body > * {
+  flex-shrink: 0;
+}
 .choice-regexlib-group-body.is-collapsed {
   max-height: 4px;
   padding: 0;
   opacity: 0;
+}
+
+/* 类型选择：桌面 90px；窄屏由媒体查询收到 64px（原为内联 style，媒体查询压不过）。
+   min-width 必须清零——ST 的 .text_pole 自带 min-width，会把 64px 顶回 90px。
+   注意：这两条基础规则必须排在下方紧凑媒体块之前——同特异性时靠源码顺序取胜，
+   放到媒体块之后会让 90/110px 在手机上压不下去（修复时踩过：被静默覆盖） */
+.choice-regexlib-type {
+  width: 90px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+/* 替换为：导入 ST 正则时承载 replaceString（如 $1 保留内容只去标签壳），留空 = 整段删除 */
+.choice-regexlib-replace {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+/* 手机窄屏（<480px 触屏）：紧凑单行——把手/按钮 24px、间距收 4px、缩进收窄；
+   类型选择/替换输入收窄（56px 明显小于正则框），行宽优先让给正则输入——
+   "正则表达式"是主字段、"替换为"是次要字段，宽度层级必须反映主次。
+   原固定宽 90/110px 在 ~350px 行宽下正则输入只剩 ~40px，挤压到无法操作 */
+@media (pointer: coarse) and (max-width: 480px) {
+  .choice-regexlib-group-head {
+    gap: var(--choice-space-1);
+  }
+  .choice-regexlib-group-head .choice-icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+  .choice-regexlib-group-head .choice-drag-handle--group {
+    width: 24px;
+  }
+  .choice-regexlib-group-body {
+    padding-left: var(--choice-space-2);
+  }
+  .choice-regexlib-entry {
+    gap: var(--choice-space-1);
+    padding: 2px;
+  }
+  .choice-regexlib-entry .choice-drag-handle {
+    width: 24px;
+  }
+  .choice-regexlib-entry .choice-icon-btn {
+    width: 24px;
+    height: 24px;
+  }
+  .choice-regexlib-type {
+    width: 64px;
+    min-width: 0;
+    flex-shrink: 0;
+  }
+  .choice-regexlib-replace {
+    width: 56px;
+    flex-shrink: 1;
+    min-width: 0;
+  }
 }
 /* 条目行：单行布局，输入控件直接可见，从左侧把手拖拽（把手样式统一由 shared/DragHandle.vue 提供）。
    条目各自成描边卡片，与条目库的条目卡视觉对齐 */
@@ -809,11 +877,6 @@ onUnmounted(() => {
 .choice-regexlib-entry input:focus {
   border-color: var(--choice-border-active);
   outline: none;
-}
-/* 替换为：导入 ST 正则时承载 replaceString（如 $1 保留内容只去标签壳），留空 = 整段删除 */
-.choice-regexlib-replace {
-  width: 110px;
-  flex-shrink: 0;
 }
 .choice-regexlib-footer {
   display: flex;
