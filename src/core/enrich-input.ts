@@ -11,7 +11,7 @@ const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个�
 用户输入：
 {{input}}
 
-输出格式：每行一个版本，格式为 "[标题]内容"。严禁在版本内容中使用[]符号。`;
+输出格式：每行一个版本，格式为 "[标题]内容"。严禁在版本内容中使用[]或【】符号。`;
 
 let enrichController: AbortController | null = null;
 

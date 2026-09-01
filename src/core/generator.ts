@@ -504,15 +504,33 @@ export function parseOptions(text: string, count: number): string[] {
     }
 
   // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
+  // 边界判定按提示词契约"每条选项独占一行"做行锚定：只有行首（间隙含换行或正文）的
+  // 括号才开启新选项。同一行内紧邻/仅隔空白的连续括号是"标签堆叠"（如
+  // "[回溯闪回]【三年前·初二暑假】正文"），必须并入同一条——AI 常无视禁令在正文里
+  // 用【】写场景头，若把每个括号都当边界，一条选项会被切成 "[标签]" 和
+  // "【场景头】正文" 两条（实测发生过）
   const bracketTitleRe = /[[【]([^\]】]+?)[\]】]\s*/g;
   const bracketMatches = [...c.matchAll(bracketTitleRe)];
   if (bracketMatches.length > 0) {
     const result: string[] = [];
+    // 上一个匹配里闭合括号之后的位置。match[0] 末尾的 \s* 会吞掉行尾换行，
+    // 必须用 trimEnd 去掉后计算，否则换行被吞、无法判断下个括号是否在行首
+    let prevCloseEnd = 0;
     for (let i = 0; i < bracketMatches.length; i++) {
-      const start = bracketMatches[i].index!;
+      const m = bracketMatches[i];
+      const start = m.index!;
       const end = i + 1 < bracketMatches.length ? bracketMatches[i + 1].index! : c.length;
       const option = c.slice(start, end).replace(/\r?\n/g, '').trim();
-      if (option) result.push(option);
+      // 间隙 = 上个闭合括号到本括号开头之间的文本。无换行的纯空白（含空串）→
+      // 同一行标签堆叠，并入上一条；含换行或正文 → 新选项（保持既有跨行行为）
+      const gap = c.slice(prevCloseEnd, start);
+      const isTagStack = /^[^\S\r\n]*$/.test(gap);
+      if (i > 0 && isTagStack && result.length > 0) {
+        result[result.length - 1] += gap + option;
+      } else if (option) {
+        result.push(option);
+      }
+      prevCloseEnd = start + m[0].trimEnd().length;
     }
     return result.slice(0, count);
   }

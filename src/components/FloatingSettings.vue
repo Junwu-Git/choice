@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="isSettingsOpen" class="choice-floating-overlay" @click.self="closeSettings">
+    <div v-if="isSettingsOpen" class="choice-floating-overlay" @click.self="onOverlayClick">
       <div
         ref="dialogEl"
         class="choice-floating-dialog"
@@ -133,12 +133,23 @@ const dialogHeight = useStorage('choice_floating_settings_h', defaultDialogHeigh
 const dialogEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
 
+// 按住标题栏拖动、在弹窗外松手时，浏览器对按下/抬起目标不同的点击会在最近公共
+// 祖先（恰好是 overlay 自身）派发 click，@click.self 会误判成"点了遮罩"把面板关掉
+// （实测：拖完松手面板直接消失）。onEnd 先于该 click 触发，用时间戳挡掉松手后
+// 一小段窗口内的遮罩点击；250ms 足够覆盖事件派发延迟，不影响正常点遮罩关闭
+let dragJustEndedAt = 0;
+const onOverlayClick = () => {
+  if (Date.now() - dragJustEndedAt < 250) return;
+  closeSettings();
+};
+
 const { x, y, isDragging } = useDraggable(dialogEl, {
   handle: headerEl,
   initialValue: { x: posX.value, y: posY.value },
   onEnd: ({ x, y }) => {
     posX.value = clampPanelX(x);
     posY.value = Math.max(0, Math.min(y, window.innerHeight - 100));
+    dragJustEndedAt = Date.now();
   },
 });
 

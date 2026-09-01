@@ -1,5 +1,6 @@
 import toastr from 'toastr';
 import type { SecondaryApi } from '@/type/settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 
 /** 与酒馆 generate 端点对接的消息格式：system/user/assistant 三态分离。
  *  不拼成单段字符串塞进单条消息，遵循"提示词组装走角色结构"的架构约束。 */
@@ -20,8 +21,19 @@ export function normalizeApiUrl(url: string): string {
 }
 
 /** 统一副 API 调用入口：行动选项生成与条目池生成共用。
- *  直接 fetch 酒馆 generate 端点，绕开 TavernHelper 预设注入，
- *  保证传入的 messages 即最终入参（exclude_params 在此删除指定字段）。 */
+ *  直接 fetch 酒馆 generate 端点，绕开 TavernHelper 事件层的预设注入
+ *  （预设脚本经 CHAT_COMPLETION_PROMPT_READY 改写提示词的路径），
+ *  保证传入的 messages 即最终入参（exclude_params 在此删除指定字段）。
+ *
+ *  但事件层绕不开 fetch 层：酒馆助手预设脚本（如 Aether 防截断）会从 iframe patch
+ *  主窗口 window.fetch，拦截一切 backends generate 端点请求并改写请求体（注入
+ *  工具调用指令）。tool_choice:"none" 是这类脚本 callerControlsTools 的设计内绕过
+ *  信号（"tools-disabled-by-caller" → bypass 原样转发），语义上也正确——本扩展只要
+ *  纯文本不要工具调用。ST 后端仅在 tools 非空数组时才转发 tool_choice
+ *  （chat-completions.js:1481 等），本请求无 tools，该字段到不了上游，对未启用此类
+ *  脚本的场景完全惰性。是否附带由全局开关 api_tool_choice_none 控制（默认开）。
+ *  复查锚点：若脚本改掉该契约（fetch wrapper 标记 __keminiAntiTruncation__、函数
+ *  callerControlsTools），从这段注释重新核实。 */
 export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> {
   const body: Record<string, unknown> = {
     chat_completion_source: 'openai',
@@ -33,6 +45,12 @@ export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, s
     max_tokens: api.max_tokens,
     stream: api.stream,
   };
+
+  // 防 fetch 层预设脚本改写：tool_choice:"none" 触发其 bypass 契约，机制见函数头注释。
+  // 放在 exclude_params 之前，用户仍可用 exclude_params 强制移除该字段。
+  if (useGlobalSettingsStore().settings.api_tool_choice_none) {
+    body.tool_choice = 'none';
+  }
 
   if (api.exclude_params) {
     for (const key of api.exclude_params

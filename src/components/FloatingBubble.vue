@@ -1,5 +1,14 @@
 <template>
   <Teleport to="body">
+    <!-- 按压/拖动期的全屏命中屏蔽层：气泡用 transform 跟手，Vue 异步刷新使位移滞后
+         pointermove 一帧，Chromium 的 hover 重算用更新前的几何，间隙帧命中会穿透到
+         下层的酒馆元素——主界面 .menu_button 的 :hover 白底带过渡，表现为"拖动/点击
+         悬浮球时酒馆按键闪白"。屏蔽层接住间隙帧命中，酒馆元素拿不到 :hover。
+         VueUse 把 pointermove/pointerup 挂在 window 捕获阶段不受影响；屏蔽层在
+         pointerdown 之后才挂载，本次手势的 down/up 都落在气泡上，点击判定无干扰。
+         右键不置 isPressed，长按菜单的 contextmenu 路径不受影响。面板打开时
+         FloatingSettings 的 overlay 本身就是全屏屏蔽层，无需在此叠加处理 -->
+    <div v-if="isPressed || isDragging" class="choice-drag-shield" aria-hidden="true"></div>
     <div
       ref="bubbleEl"
       class="choice-floating-bubble"
@@ -71,8 +80,22 @@ const SNAP_OFFSET = computed(() => Math.round(BUBBLE_SIZE.value / 3));
 const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
 const STORAGE_KEY_Y = 'choice_floating_bubble_y';
-// 按住气泡期间挂在 body 上的禁选类，样式定义在 theme.css（body 级，scoped 写不到）
-const SUPPRESS_SELECT_CLASS = 'choice-suppress-select';
+// 按住气泡期间挂在 body 行内样式上的禁选：盖住长按选中"附近文本"的路径。
+// 不能用 body class 实现（原 choice-suppress-select 类）：theme.css 的限域选择器用
+// [class*='choice-'] 匹配任意祖先，body 一旦挂 choice- 类，body 自己就成了"choice
+// 容器"，[data-choice-theme] [class*='choice-'] .menu_button 等整组规则会泄漏到
+// 全页所有酒馆元素（实测：按压期间整个主界面的 .menu_button 被染成面板元素色，
+// 即"拖动/点击悬浮球时主界面按键变色"的主根因）。行内样式 + important 与原规则
+// 等效，且不产生可被属性选择器误配的痕迹；必须与清理成对出现
+// （onEnd/pointercancel/onUnmounted 三处兜底）——漏清理会导致全站文本无法选中，
+// 属于不可见的高危回归
+const SUPPRESS_SELECT_PROPS = ['user-select', '-webkit-user-select'] as const;
+const applySuppressSelect = () => {
+  for (const prop of SUPPRESS_SELECT_PROPS) document.body.style.setProperty(prop, 'none', 'important');
+};
+const clearSuppressSelect = () => {
+  for (const prop of SUPPRESS_SELECT_PROPS) document.body.style.removeProperty(prop);
+};
 
 const isGenerating = computed(() => generatorState.loading);
 
@@ -132,7 +155,7 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
     // 气泡收不到 up，漏清会形成"幽灵长按"——面板刚被点开，500ms 后菜单又自己弹出
     clearLongPressTimer();
     isPressed.value = false;
-    document.body.classList.remove(SUPPRESS_SELECT_CLASS);
+    clearSuppressSelect();
 
     const SNAP_THRESHOLD = 100;
     const centerX = finalPos.x + BUBBLE_SIZE.value / 2;
@@ -199,7 +222,7 @@ const onPointerDown = (e: PointerEvent) => {
   // 按住期间（直到松手/取消）在 body 级兜底禁选：盖住长按选中"附近文本"的路径。
   // 必须与清理成对出现（onEnd/pointercancel/onUnmounted 三处兜底）——漏移除会导致
   // 全站文本无法选中，属于不可见的高危回归
-  document.body.classList.add(SUPPRESS_SELECT_CLASS);
+  applySuppressSelect();
   // 长按菜单仅触屏/笔生效：鼠标按住半秒是常见误操作（原本会吞掉点击），鼠标改用右键
   if (e.pointerType !== 'mouse') {
     longPressTimer = setTimeout(() => {
@@ -217,7 +240,7 @@ const onPointerDown = (e: PointerEvent) => {
 const onPointerCancel = () => {
   clearLongPressTimer();
   isPressed.value = false;
-  document.body.classList.remove(SUPPRESS_SELECT_CLASS);
+  clearSuppressSelect();
 };
 
 // 鼠标右键呼出应用菜单（触屏长按的等价物）。FloatingContextMenu 的 document 级
@@ -296,8 +319,8 @@ onUnmounted(() => {
   mobileBubbleMql.removeEventListener('change', onMobileBubbleChange);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
   clearLongPressTimer();
-  // 组件卸载兜底：按住状态下组件被卸载时，抑制类残留会让全站无法选字
-  document.body.classList.remove(SUPPRESS_SELECT_CLASS);
+  // 组件卸载兜底：按住状态下组件被卸载时，禁选样式残留会让全站无法选字
+  clearSuppressSelect();
 });
 </script>
 
@@ -348,8 +371,18 @@ onUnmounted(() => {
   filter: grayscale(30%);
 }
 
+/* 命中屏蔽层：与气泡同 z-index，DOM 顺序在气泡之前（同层后者在上），
+   故气泡可命中可见，屏蔽层只兜住气泡之外的整屏命中。完全透明，纯 hit-test 用 */
+.choice-drag-shield {
+  position: fixed;
+  inset: 0;
+  z-index: var(--choice-z-floating);
+  background: transparent;
+}
+
 .choice-floating-bubble--dragging {
   will-change: transform;
+  cursor: grabbing;
 }
 
 /* 面板打开时把气泡提到遮罩(9000,含其子级对话框)之上：否则第二次点击气泡关闭面板时，

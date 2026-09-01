@@ -453,17 +453,14 @@
   background-color: var(--choice-primary-hover);
 }
 
-/* ===== 悬浮球按压期禁选 =====
-   手机上长按悬浮球时，安卓 Chromium 对 user-select:none 的目标仍可能选中"附近"的
-   聊天文本（选择起点不在目标上，元素级 user-select 管不住）。FloatingBubble 在
-   pointerdown 期间给 body 挂此类、松手/取消/卸载时移除，从全局掐掉选择起点。
-   必须 !important：盖过酒馆自身对 #chat 等区域的 user-select 显式声明；
-   类名 choice- 前缀保持扩展命名空间，不与酒馆样式冲突 */
-body.choice-suppress-select,
-body.choice-suppress-select * {
-  -webkit-user-select: none !important;
-  user-select: none !important;
-}
+/* ===== 限域选择器使用纪律（重要，勿删）=====
+   本文件所有 [class*='choice-'] 限域选择器按"任意祖先带 choice- 类"匹配。
+   因此严禁给 html/body 挂任何含 choice- 的类：body 是全页元素的祖先，一旦挂上，
+   body 自己就成了"choice 容器"，下面整组 .text_pole/.menu_button 规则会泄漏到
+   酒馆全部界面（实测：悬浮球按压期给 body 挂 choice-suppress-select 禁选类，
+   主界面所有 .menu_button 被染成面板元素色，即"拖动/点击悬浮球时主界面按键
+   变色"的主根因）。按压期禁选已改为 FloatingBubble 直接写 body 行内样式，
+   不经过 class；今后需要在根节点做标记时一律用 data-* 属性或不含 choice- 的类名 */
 
 /* ===== 动画 ===== */
 @keyframes choice-bubble-pulse {

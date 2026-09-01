@@ -15,6 +15,14 @@
       <span class="choice-retry-hint">{{ t`0 = 不重试；网络错误或 5xx 时自动重试，每次间隔 1 秒` }}</span>
     </div>
 
+    <div class="choice-retry-section">
+      <label class="choice-check">
+        <input v-model="globalStore.settings.api_tool_choice_none" type="checkbox" />
+        {{ t`请求附带 tool_choice:none` }}
+      </label>
+      <span class="choice-retry-hint">{{ t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭` }}</span>
+    </div>
+
     <div class="choice-api-select-row">
       <label class="choice-field" style="flex: 1; min-width: 0">
         <span>{{ t`生成 API` }}</span>

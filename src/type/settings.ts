@@ -74,7 +74,7 @@ export type PoolConfig = z.infer<typeof PoolConfig>;
 /** core_rules 模块中不受新手字段影响的静态部分（输出格式、内容要求、正误示例）。
  *  当 person_style 和 option_rules 都非空时，与它们动态拼接为完整的 core_rules 内容。 */
 export const CORE_RULES_STATIC = `【输出格式】
-必须在回复末尾将选项包裹在 <options> 标签内输出。每条选项独占一行，格式为 "[标题]内容"，标题用[]包裹。每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。严禁在选项内容中使用[]符号。JSON 必须合法，不带尾随逗号，不包裹在代码块中。
+必须在回复末尾将选项包裹在 <options> 标签内输出。每条选项独占一行，格式为 "[标题]内容"，标题用[]包裹。每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。严禁在选项内容中使用[]或【】符号，场景头、时间地点等一律写成正文纯文本。JSON 必须合法，不带尾随逗号，不包裹在代码块中。
 
 【内容要求】
 含言语的选项须包含『……』标注的可朗读对白。纯行动选项需包含与环境的物理交互细节。选项之间在切入点、行动类型、情绪态度上须有清晰差异，严禁同质化。所有选项只写行为过程、动机和期待，把最终反应权留给正文。
@@ -429,6 +429,11 @@ export const GlobalSettings = z
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
     retry_count: z.number().min(0).max(10).default(0),
+    // 请求附带 tool_choice:"none"：酒馆助手预设脚本（如 Aether 防截断）会 patch 主窗口
+    // window.fetch 并改写一切 /generate 请求，"none" 是其设计内绕过信号（详见
+    // api-client.ts 注释）。ST 后端仅在 tools 非空数组时才转发该字段，故它到不了上游，
+    // 对生成行为与未启用此类脚本的场景完全无影响；不用 Kemini 类预设时保持默认开即可
+    api_tool_choice_none: z.boolean().default(true),
     global_count_mode: z.string().default('4'),
     pool_gen_sessions: z.array(PoolGenSession).prefault([]),
     auto_generate: z.boolean().default(true),
