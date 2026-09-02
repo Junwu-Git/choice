@@ -46,6 +46,7 @@
       </label>
       <button
         class="choice-icon-btn"
+        data-tour="filter-group-addlib"
         :disabled="dimmed && locked"
         :title="t`从正则库添加`"
         @click.stop="emit('addFromLibrary')"

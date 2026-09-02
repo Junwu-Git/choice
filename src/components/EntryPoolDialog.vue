@@ -8,7 +8,7 @@
             {{ t`条目库` }}
             <span class="choice-epool-count">({{ masterPool.length }})</span>
           </span>
-          <div class="choice-epool-header-actions">
+          <div class="choice-epool-header-actions" data-tour="entrypool-toolbar">
             <button
               class="choice-icon-btn"
               :title="allGroupsExpanded ? t`全部收起` : t`全部展开`"

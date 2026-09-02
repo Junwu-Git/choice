@@ -1,6 +1,6 @@
 <template>
   <div class="choice-prompt-editor">
-    <div class="choice-page-toolbar">
+    <div class="choice-page-toolbar" data-tour="prompt-toolbar">
       <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
         <select v-model="rules.context_mode" class="text_pole" style="width: auto">
           <option value="rounds">{{ t`轮数模式` }}</option>

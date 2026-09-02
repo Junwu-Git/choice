@@ -20,7 +20,7 @@
         </div>
 
         <div class="choice-sedlg-body choice-scrollbar">
-          <div v-if="masterPool.length > 0" class="choice-sedlg-list">
+          <div v-if="masterPool.length > 0" class="choice-sedlg-list" data-tour="select-entries-list">
             <div v-for="group in groupedEntries" :key="group.key" class="choice-sedlg-group">
               <div class="choice-sedlg-group-head">
                 <label class="choice-check" @click.stop>

@@ -21,7 +21,7 @@
     <hr class="sysHR" />
 
     <!-- 全局正则区 -->
-    <div class="choice-inline-field-head">
+    <div class="choice-inline-field-head" data-tour="filter-global-head">
       <span class="choice-inline-label"> <i class="fa-solid fa-globe"></i> {{ t`全局正则区` }} </span>
       <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('global')">
         <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
@@ -108,7 +108,12 @@
 
     <hr class="sysHR" />
 
-    <button class="choice-entrypool-btn" :title="t`打开正则库管理弹窗`" @click="showLibrary = true">
+    <button
+      class="choice-entrypool-btn"
+      data-tour="filter-library"
+      :title="t`打开正则库管理弹窗`"
+      @click="showLibrary = true"
+    >
       <i class="fa-solid fa-code"></i>
       {{ t`正则库` }} ({{ gs.settings.filter_settings.regex_library.length }})
     </button>
@@ -144,6 +149,7 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { onboardingPendingAction } from '@/core/onboarding';
 import RegexLibraryDialog from '@/components/RegexLibraryDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
@@ -227,6 +233,16 @@ const showLibrary = ref(false);
 const libraryTargetId = ref<string | null>(null);
 const deleteTarget = ref<string | null>(null);
 const showCharWarning = ref(false);
+
+// 新手引导弹窗状态信号：close-all 归零 / filter-library 打开。filter-reference 步
+// 进入时自动关掉正则库——引用流程的锚点（分组按钮）在正则库弹窗之下，弹窗开着时
+// 聚光灯只能照到弹窗面板而非按钮
+watch(onboardingPendingAction, a => {
+  if (a === 'filter-library' || a === 'close-all') {
+    showLibrary.value = a === 'filter-library';
+    onboardingPendingAction.value = null;
+  }
+});
 
 const openLibrary = (groupId: string) => {
   libraryTargetId.value = groupId;

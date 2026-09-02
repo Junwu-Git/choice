@@ -1,12 +1,16 @@
 <template>
   <FloatingSettings />
   <FloatingBubble v-if="ui.floating_enabled" />
+  <!-- 新手引导全局单实例：行内面板常驻挂载，若在面板内各挂一份会让共享 ref
+       驱动两份 Teleport 弹窗/遮罩同时渲染 -->
+  <OnboardingWizard />
 </template>
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import FloatingSettings from '@/components/FloatingSettings.vue';
 import FloatingBubble from '@/components/FloatingBubble.vue';
+import OnboardingWizard from '@/components/OnboardingWizard.vue';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);

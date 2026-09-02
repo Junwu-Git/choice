@@ -13,7 +13,7 @@
           transition: isDragging ? 'none' : 'transform 0.3s ease-out',
         }"
       >
-        <div class="choice-floating-header" ref="headerEl">
+        <div class="choice-floating-header" ref="headerEl" data-tour="settings-header">
           <span class="choice-floating-title">
             <i class="fa-solid fa-chess"></i>
             {{ t`行动选项` }}
@@ -22,14 +22,14 @@
         </div>
 
         <div class="choice-floating-body choice-scrollbar">
-          <div ref="tabsEl" class="choice-tabs">
+          <div ref="tabsEl" class="choice-tabs" data-tour="tab-strip">
             <button
               v-for="tab in FLOATING_TABS"
               :key="tab.id"
               :ref="setTabBtnRef(tab.id)"
               class="choice-tab"
               :class="{ active: activeTab === tab.id }"
-              @click="activeTab = tab.id"
+              @click="onTabClick(tab.id)"
             >
               <i :class="tab.icon"></i>
               {{ tab.label }}
@@ -41,6 +41,9 @@
               @click="showGuide = !showGuide"
             >
               <i class="fa-solid fa-circle-question"></i>
+            </button>
+            <button class="choice-tab choice-guide-btn" :title="t`新手引导`" @click="openOnboarding()">
+              <i class="fa-solid fa-graduation-cap"></i>
             </button>
           </div>
 
@@ -84,10 +87,32 @@ import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
 import { FLOATING_TABS, GUIDE_CONTENTS, type TabId } from '@/components/shared/tab-definitions';
 import { isSettingsOpen, closeSettings } from '@/core/floating-state';
+import { maybeAutoOpenOnboarding, openOnboarding, onboardingPendingTab } from '@/core/onboarding';
 
 const activeTab = ref<TabId>('pool');
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
+
+const onTabClick = (id: TabId) => {
+  // 兜底：抽屉/面板打开后引导仍未完成的场景，首次点 tab 也能触发自动弹出
+  maybeAutoOpenOnboarding();
+  activeTab.value = id;
+};
+
+// 面板打开瞬间触发首次自动弹出（向导实例挂在 FloatingRoot，全局单实例）；
+// maybeAutoOpenOnboarding 内部自判 onboarding_done，重复调用无副作用
+watch(isSettingsOpen, open => {
+  if (open) maybeAutoOpenOnboarding();
+});
+
+// 向导「跳转到某 tab」：pendingTab 由打开中的面板消费后置回 null，
+// 向导是全局单实例，不知道哪个面板开着，只能走这一层间接
+watch(onboardingPendingTab, tab => {
+  if (tab) {
+    activeTab.value = tab;
+    onboardingPendingTab.value = null;
+  }
+});
 
 const currentGuide = computed(() => GUIDE_CONTENTS[activeTab.value]);
 

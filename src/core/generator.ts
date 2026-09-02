@@ -36,6 +36,10 @@ export const generatorState = reactive({ loading: false, generationId: null as s
 let cancelled = false;
 let genController: AbortController | null = null;
 
+/** 最近一次行动选项生成成功的时间戳（0 = 从未成功过）。
+ *  新手引导用它检测"用户已成功生成过第一组选项"，仅在 generateOptions 成功路径置位 */
+export const lastOptionsGeneratedAt = ref(0);
+
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
 export const poolGenState = reactive({ loading: false });
@@ -638,6 +642,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return null;
     }
     const generation = { id: gid, timestamp: Date.now(), count, options };
+    // 新手引导第 8 步"去生成第一组选项"的完成信号：只在选项生成成功时置位，
+    // 润色（enrich-input）与条目生成（generatePoolEntries）不算——引导验证的是主链路
+    lastOptionsGeneratedAt.value = Date.now();
     return generation;
   } catch (e) {
     if (cancelled) return null;

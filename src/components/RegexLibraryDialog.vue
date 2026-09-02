@@ -8,7 +8,7 @@
             {{ t`正则库` }}
             <span class="choice-regexlib-count">({{ library.length }})</span>
           </span>
-          <div class="choice-regexlib-header-actions">
+          <div class="choice-regexlib-header-actions" data-tour="regexlib-toolbar">
             <button
               class="choice-icon-btn"
               :title="allGroupsExpanded ? t`全部收起` : t`全部展开`"
@@ -26,7 +26,7 @@
               <i class="fa-solid fa-file-export"></i>
             </button>
             <span class="choice-regexlib-header-divider"></span>
-            <button class="choice-icon-btn" :title="t`从酒馆正则导入`" @click="showStImport = true">
+            <button class="choice-icon-btn" data-tour="regexlib-st-import" :title="t`从酒馆正则导入`" @click="showStImport = true">
               <i class="fa-solid fa-cloud-arrow-down"></i>
             </button>
             <button ref="guideBtn" class="choice-icon-btn" :title="t`页面指引`" @click="showGuide = !showGuide">

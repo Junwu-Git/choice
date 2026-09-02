@@ -88,6 +88,7 @@
           <label class="choice-inline-label">{{ t`已选条目` }} ({{ selectedCount }})</label>
           <button
             class="choice-btn-sm choice-btn-new"
+            data-tour="pool-add"
             :title="t`从条目库勾选条目添加到当前配置`"
             @click="showSelectDialog = true"
           >
@@ -169,7 +170,12 @@
     <hr class="sysHR" />
 
     <!-- 条目库入口 -->
-    <button class="choice-entrypool-btn" :title="t`打开条目库管理弹窗`" @click="showEntryPool = true">
+    <button
+      class="choice-entrypool-btn"
+      data-tour="pool-library"
+      :title="t`打开条目库管理弹窗`"
+      @click="showEntryPool = true"
+    >
       <i class="fa-solid fa-database"></i>
       {{ t`条目库` }} ({{ masterPool.length }})
     </button>
@@ -203,6 +209,7 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
+import { onboardingPendingAction } from '@/core/onboarding';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
 import { GenerationSettings } from '@/type/settings';
 import DragHandle from '@/components/shared/DragHandle.vue';
@@ -222,6 +229,24 @@ const selectedConfigId = ref<string | null>(null);
 const showEntryPool = ref(false);
 const showCreateDialog = ref(false);
 const showSelectDialog = ref(false);
+
+// 新手引导弹窗状态信号：action 语义 = "本步应有的完整弹窗状态"（含 close-all 归零），
+// 保证上一步/下一步来回走时弹窗开合完整还原，而不是只管开不管关
+watch(onboardingPendingAction, a => {
+  if (a === 'pool-library') {
+    showEntryPool.value = true;
+    showSelectDialog.value = false;
+    onboardingPendingAction.value = null;
+  } else if (a === 'pool-select-entries') {
+    showEntryPool.value = false;
+    showSelectDialog.value = true;
+    onboardingPendingAction.value = null;
+  } else if (a === 'close-all') {
+    showEntryPool.value = false;
+    showSelectDialog.value = false;
+    onboardingPendingAction.value = null;
+  }
+});
 
 watch(
   [configs, effectiveConfig],

@@ -2,7 +2,7 @@
   <div class="choice-appearance-editor">
     <div class="choice-appearance-section">
       <span class="choice-appearance-section-title">{{ t`面板` }}</span>
-      <div class="choice-behavior-grid">
+      <div class="choice-behavior-grid" data-tour="appearance-floating">
         <label class="choice-check">
           <input v-model="ui.floating_enabled" type="checkbox" />
           <span class="choice-check-custom"></span>
@@ -36,7 +36,7 @@
       </div>
     </div>
 
-    <div class="choice-appearance-section">
+    <div class="choice-appearance-section" data-tour="appearance-theme">
       <span class="choice-appearance-section-title">{{ t`主题` }}</span>
       <div class="choice-theme-switch">
         <button

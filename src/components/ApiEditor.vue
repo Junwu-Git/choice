@@ -52,12 +52,12 @@
       </button>
     </div>
 
-    <div class="choice-api-form">
+    <div class="choice-api-form" data-tour="api-form">
       <div class="choice-api-form-body">
         <div class="choice-api-name-row">
           <input v-model="draftForm.name" class="text_pole" :placeholder="t`配置名称`" />
         </div>
-        <div class="choice-api-url-row">
+        <div class="choice-api-url-row" data-tour="api-url">
           <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
         </div>
         <div class="choice-api-key-row">
@@ -128,7 +128,7 @@
     </div>
 
     <div class="choice-api-bottom-actions">
-      <button class="menu_button" @click="save">{{ t`保存` }}</button>
+      <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
       <button class="menu_button" @click="reset">{{ t`取消` }}</button>
     </div>
   </div>

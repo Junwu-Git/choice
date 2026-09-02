@@ -1,6 +1,6 @@
 <template>
   <div class="choice-wi-editor">
-    <div class="choice-wi-checks">
+    <div class="choice-wi-checks" data-tour="wi-checks">
       <label class="choice-check">
         <input v-model="globalStore.settings.world_info.enabled" type="checkbox" />
         {{ t`启用世界书` }}
@@ -11,7 +11,7 @@
       {{ t`刷新列表` }}
     </button>
 
-    <div class="choice-wi-global-excl">
+    <div class="choice-wi-global-excl" data-tour="wi-excl">
       <div class="choice-wi-section-title choice-wi-collapsible" @click="showGlobalExcl = !showGlobalExcl">
         <i class="fa-solid" :class="showGlobalExcl ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
         {{ t`全局排除` }}
@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <div v-if="activeBooks.length > 0">
+    <div v-if="activeBooks.length > 0" data-tour="wi-books">
       <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">

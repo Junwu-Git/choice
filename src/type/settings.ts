@@ -409,6 +409,12 @@ export const UISettings = z
     panel_position: z.enum(['chat', 'input']).default('chat'),
     /** 行内设置面板内容区高度（px），拖拽手柄可调整 */
     panel_height: z.number().min(300).max(800).default(500),
+    /**
+     * 新手引导是否已完成/跳过。首次打开任一设置面板时自动弹出向导至多一次：
+     * 弹出的瞬间就置 true（而非关闭时），防止用户中途刷新页面导致反复打扰；
+     * 恢复出厂后归 false，下次打开会再弹一次，属预期行为
+     */
+    onboarding_done: z.boolean().default(false),
   })
   .prefault({});
 export type UISettings = z.infer<typeof UISettings>;

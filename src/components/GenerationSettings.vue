@@ -1,7 +1,7 @@
 <template>
   <div class="choice-generation-editor">
     <div class="choice-generation-section">
-      <label class="choice-check">
+      <label class="choice-check" data-tour="gen-auto">
         <input v-model="gs.settings.auto_generate" type="checkbox" :title="t`开启后 AI 回复完自动生成选项`" />
         <span class="choice-check-custom"></span>
         <span class="choice-check-label">
@@ -21,7 +21,7 @@
       </label>
     </div>
 
-    <div class="choice-generation-section">
+    <div class="choice-generation-section" data-tour="gen-behavior">
       <div class="choice-field">
         <div class="choice-field-label">
           <label>{{ t`点击行为` }}</label>
@@ -59,7 +59,7 @@
       </div>
     </div>
 
-    <div class="choice-generation-section">
+    <div class="choice-generation-section" data-tour="gen-count">
       <div class="choice-field">
         <div class="choice-field-label">
           <label>{{ t`生成数量` }}</label>
