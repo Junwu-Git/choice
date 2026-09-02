@@ -875,6 +875,25 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v26: 人称免疫——AI 跟着 <history> 正文的人称跑（正文第二人称则选项也"你"）。
+  // 修：person_style 加回人称约束（{{option_person}} 变量）；thinking_prompt 加第 7 步
+  // 人称校准 + 自检点名变量；CORE_RULES_STATIC 内容要求加人称免疫硬声明（代码常量直接改，
+  // 不入存档，无迁移对）。person_style/thinking_prompt 是存档快照，走 PROMPT_TEXT_MIGRATIONS
+  if ((validated.schema_version ?? 0) < 26) {
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
