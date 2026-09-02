@@ -42,7 +42,8 @@ const safeWeight = (entry: PoolEntry): number => {
  *  pct 非有限数时按 0 处理（防御运行时被绕过 zod 的历史对象污染，静默退化而非 NaN 扩散）；
  *  ceil 保证 50% 时奇数 remaining 也至少多抽 1 条（如 remaining=3 → 抽 5 而非 4）。 */
 const drawAmount = (pool: PoolEntry[], remaining: number, oversamplePct: number): number => {
-  const pct = typeof oversamplePct === 'number' && Number.isFinite(oversamplePct) && oversamplePct > 0 ? oversamplePct : 0;
+  const pct =
+    typeof oversamplePct === 'number' && Number.isFinite(oversamplePct) && oversamplePct > 0 ? oversamplePct : 0;
   const overflow = Math.ceil((remaining * pct) / 100);
   return Math.min(remaining + overflow, pool.length);
 };
