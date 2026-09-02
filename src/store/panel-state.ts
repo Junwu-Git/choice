@@ -3,6 +3,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import { getMessageChoiceData, setMessageChoiceData, storeEnrichGeneration } from '@/core/options-store';
 import type { ChoiceGeneration } from '@/core/options-store';
 import { enrichUserInput } from '@/core/enrich-input';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 
 export const usePanelStateStore = defineStore('panel-state', () => {
   const messageId = ref<number | null>(null);
@@ -16,6 +17,16 @@ export const usePanelStateStore = defineStore('panel-state', () => {
   const enrichCurrentIndex = ref(0);
   const enrichLoading = ref(false);
   const collapsed = ref(false);
+
+  const gs = useGlobalSettingsStore();
+  /** 面板状态锁（ui.panel_lock）：open/collapsed 时 4 处自动化点位全部跳过 */
+  const locked = computed(() => gs.settings.ui.panel_lock !== 'off');
+  // 初始恢复：锁定收起的面板在刷新后保持收起（'open' 时 collapsed 本就为 false，无需处理）。
+  // 放在 store setup 里只执行一次——resync/load 高频触发，不能在那条路径上反复强制，
+  // 否则锁定期间的手动切换会被下一次 resync 冲掉
+  if (gs.settings.ui.panel_lock === 'collapsed') {
+    collapsed.value = true;
+  }
 
   /** 面板「生成润色」按钮被点击时设为 true，panel-mount 读取输入框后调用 triggerEnrich */
   const triggerEnrichRequested = ref(false);
@@ -54,7 +65,11 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     enrichCurrentIndex.value = 0;
     enrichLoading.value = false;
     activeView.value = 'options';
-    collapsed.value = false;
+    // 锁定收起时不得重置：clear 发生在空聊天/切聊天，重置为 false 后 load() 不会
+    // 恢复，锁定收起会被静默破坏（面板在下一轮数据到来时闪开）
+    if (!locked.value) {
+      collapsed.value = false;
+    }
   };
 
   const goTo = (index: number) => {
@@ -121,7 +136,21 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     }
   }
 
+  /** 手动切换（面板头部/箭头点击）：锁定期间仍可用，且把锁定状态更新为新状态——
+   *  锁的是「自动化」而非「面板」，用户把面板手动停在哪个状态，锁定就跟随钉在哪个状态 */
   function setCollapsed(v: boolean) {
+    collapsed.value = v;
+    if (locked.value) {
+      gs.settings.ui.panel_lock = v ? 'collapsed' : 'open';
+    }
+  }
+
+  /** 自动化点位专用（生成完成展开/点选项收起/发消息收起等）：锁定时直接拒绝。
+   *  自动化不得改走 setCollapsed——那会回写 panel_lock，把用户钉好的锁定语义悄悄改掉 */
+  function autoSetCollapsed(v: boolean) {
+    if (locked.value) {
+      return;
+    }
     collapsed.value = v;
   }
 
@@ -144,6 +173,8 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     enrichLoading,
     collapsed,
     setCollapsed,
+    locked,
+    autoSetCollapsed,
     triggerEnrichRequested,
     setActiveView,
     enrichGoTo,

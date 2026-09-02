@@ -6,6 +6,15 @@ export type ResolvePoolInput = {
   categoriesEnabled: boolean;
   shuffleFinal: boolean;
   pinnedOverflow: 'send_all' | 'trim';
+  /**
+   * 菜单模式超采样百分比（GenerationSettings.oversample_pct，0-300）。
+   * 非固定条目抽取量 = remaining + ceil(remaining × pct/100)：候选多于所需，
+   * 发给 AI 作为"方向候选菜单"，由 AI 按场景贴合度挑选（挑选语义由提示词承担，
+   * 本函数只负责把菜单变大）。0 = 关闭菜单模式，精确退化为 1:1（v23 前行为）。
+   * 池小于抽取量时 drawByCategories/weightedPick 自然封顶为全发，行为无突变。
+   * 职责分离：weight/category 抽样分布决定"菜单上有什么"，AI 决定"点什么"。
+   */
+  oversamplePct: number;
 };
 
 export type ResolvePoolResult = {
@@ -27,6 +36,15 @@ const shuffled = <T>(list: T[]): T[] => {
 const safeWeight = (entry: PoolEntry): number => {
   const w = entry.weight;
   return typeof w === 'number' && Number.isFinite(w) && w >= 0 ? w : 1;
+};
+
+/** 菜单模式抽取量：remaining + ceil(remaining × pct/100)，再被池大小自然封顶。
+ *  pct 非有限数时按 0 处理（防御运行时被绕过 zod 的历史对象污染，静默退化而非 NaN 扩散）；
+ *  ceil 保证 50% 时奇数 remaining 也至少多抽 1 条（如 remaining=3 → 抽 5 而非 4）。 */
+const drawAmount = (pool: PoolEntry[], remaining: number, oversamplePct: number): number => {
+  const pct = typeof oversamplePct === 'number' && Number.isFinite(oversamplePct) && oversamplePct > 0 ? oversamplePct : 0;
+  const overflow = Math.ceil((remaining * pct) / 100);
+  return Math.min(remaining + overflow, pool.length);
 };
 
 const weightedPick = (entries: PoolEntry[], amount: number): PoolEntry[] => {
@@ -93,7 +111,9 @@ export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
     remaining = Math.max(input.count - pinnedUsed.length, 0);
   }
 
-  const drawn = input.categoriesEnabled ? drawByCategories(pool, remaining) : weightedPick(pool, remaining);
+  const drawn = input.categoriesEnabled
+    ? drawByCategories(pool, drawAmount(pool, remaining, input.oversamplePct))
+    : weightedPick(pool, drawAmount(pool, remaining, input.oversamplePct));
 
   let selected = [...pinnedUsed, ...drawn];
   if (input.shuffleFinal) {

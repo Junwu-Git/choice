@@ -4,6 +4,7 @@ import { eventSource, event_types } from '@sillytavern/scripts/events';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import {
   GlobalSettings,
+  GenerationSettings,
   SCHEMA_VERSION,
   setting_field,
   DEFAULT_MODULES,
@@ -33,101 +34,53 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
 
-/** 构建 10 条默认条目，基于用户定义的选项类型 */
-function buildDefaultEntries(): PoolEntry[] {
+/**
+ * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
+ * v23 迁移据此把默认 config 对这些条目的引用切换为「通用」分组——
+ * 按 type 而非 entry_id 匹配：entry_id 是每份存档独立生成的 uuid，跨存档不可比。
+ */
+const LEGACY_DEFAULT_ENTRY_TYPES = new Set([
+  '顺势而为',
+  '转场推进',
+  '意外走向',
+  '暧昧触碰',
+  '他人视角',
+  '就地取材',
+  '大胆尝试',
+  '悄然旁观',
+  '温暖靠近',
+  '轻松调侃',
+]);
+
+/**
+ * 「通用」分组：4 条跨世界观/背景/场景通用的抽象元引导条目。
+ * 与旧默认条目的本质区别：只给"思考方向/维度"不给具体行为——AI 拿到"风格反差"
+ * 会按当前场景自行想一个反差行动，而非被"把想法说出口"这类预设动作锁定。
+ * 前 2 条 pinned：每轮保证有"稳"（顺承）与"破"（反差）两个自主权锚点；
+ * 后 2 条参与随机抽取补充方向。分组轮询按 category 分桶，「通用」独立成组后
+ * 与「时间跳跃」轮流出候选，锚点占比稳定。
+ */
+function buildGeneralEntries(): PoolEntry[] {
+  const entry = (type: string, content: string, pinned: boolean): PoolEntry => ({
+    id: uuidv4(),
+    type,
+    content,
+    pinned,
+    weight: 1,
+    category: '通用',
+    rule: '',
+  });
   return [
-    {
-      id: uuidv4(),
-      type: '顺势而为',
-      content: '不预设特定策略，让角色顺着当前情境做出最自然的反应，行动与情绪贴合角色既有性格',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '转场推进',
-      content: '用一两句精炼的叙述完成时间跳跃或地点切换，快速进入下一段剧情',
-      pinned: true,
-      weight: 1,
-      category: '',
-      rule: '此项固定生成，不参与随机抽取',
-    },
-    {
-      id: uuidv4(),
-      type: '意外走向',
-      content: '利用当前场景中被忽略的细节或信息差，制造一个意料之外但情理之中的转折',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '暧昧触碰',
-      content: '在不逾越角色关系边界的前提下，通过细微的肢体动作或含蓄的暗示拉近情感距离',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '他人视角',
-      content: '暂时离开当前角色的视线，以在场另一位角色的眼睛观察同一时刻发生的事情',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '就地取材',
-      content: '抓住当前环境中的具体物件或空间特征，做出有目的性的互动行为',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '大胆尝试',
-      content: '当常规手段不足以推动局面时，采取一个带有明显风险但可能改变局势走向的行动',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '悄然旁观',
-      content: '不主动介入对话，通过眼神、姿态或细微情绪变化传递态度，保持沉默但并非无动于衷',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '此项不涉及对白，纯粹依靠动作与内心活动',
-    },
-    {
-      id: uuidv4(),
-      type: '温暖靠近',
-      content: '通过表达理解、分享类似经历或提供实际帮助，缩短与对方的心理距离',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    {
-      id: uuidv4(),
-      type: '轻松调侃',
-      content: '用一句俏皮话、一个自嘲的举动或反差感十足的小动作，冲淡空气中的紧张',
-      pinned: false,
-      weight: 1,
-      category: '',
-      rule: '',
-    },
-    ...buildTimeJumpEntries(),
+    entry('顺势推进', '紧承前文当下的留白，给出情境中最自然顺承的推进方向', true),
+    entry('风格反差', '与近几轮选项的基调或行动类型形成反差，制造新鲜与意外', true),
+    entry('角色本心', '从 {{user}} 的性格核心与当下心境出发，给出贴合其人设的选择', false),
+    entry('开放余地', '给出一个不急于收束、留有后续展开空间的方向', false),
   ];
+}
+
+/** 构建默认条目：「通用」分组 4 条 + 「时间跳跃」分组 6 条（v23 起取代旧 10 条具体行为条目） */
+function buildDefaultEntries(): PoolEntry[] {
+  return [...buildGeneralEntries(), ...buildTimeJumpEntries()];
 }
 
 /**
@@ -602,13 +555,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '全局默认',
         entries: makeEntries(oldGlobalPool),
         is_default: true,
-        generation: (oldGlobalGen as any) ?? {
-          count_mode: '4',
-          categories_enabled: true,
-          shuffle_final: true,
-          pinned_overflow: 'send_all',
-          cross_layer_fallback: false,
-        },
+        // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）
+        generation: (oldGlobalGen as any) ?? GenerationSettings.parse({}),
       });
     }
 
@@ -619,13 +567,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: charName ? `角色 ${charName}` : '角色默认',
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
-        generation: {
-          count_mode: '4',
-          categories_enabled: true,
-          shuffle_final: true,
-          pinned_overflow: 'send_all',
-          cross_layer_fallback: false,
-        },
+        generation: GenerationSettings.parse({}),
       });
       try {
         const ch = getStCharacter(this_chid);
@@ -647,13 +589,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '聊天默认',
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
-        generation: {
-          count_mode: '4',
-          categories_enabled: true,
-          shuffle_final: true,
-          pinned_overflow: 'send_all',
-          cross_layer_fallback: false,
-        },
+        generation: GenerationSettings.parse({}),
       });
       try {
         const cMeta = chat_metadata?.[setting_field];
@@ -680,13 +616,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           weight: e.weight,
         })),
         is_default: true,
-        generation: {
-          count_mode: '4',
-          categories_enabled: true,
-          shuffle_final: true,
-          pinned_overflow: 'send_all',
-          cross_layer_fallback: false,
-        },
+        generation: GenerationSettings.parse({}),
       });
     }
 
@@ -723,6 +653,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         if (e.category.trim()) cats.add(e.category.trim());
       }
       validated.group_order = [...cats].sort();
+      // 「通用」是自主权锚点分组（含 pinned 必发条目），排首展示强调其主锚点地位；
+      // 其余分组维持字母序。仅影响 group_order 为空的存档，不扰动用户既有排序
+      const generalIdx = validated.group_order.indexOf('通用');
+      if (generalIdx > 0) {
+        validated.group_order.splice(generalIdx, 1);
+        validated.group_order.unshift('通用');
+      }
     }
   }
 
@@ -741,13 +678,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
             weight: e.weight,
           })),
           is_default: true,
-          generation: {
-            count_mode: '4',
-            categories_enabled: true,
-            shuffle_final: true,
-            pinned_overflow: 'send_all',
-            cross_layer_fallback: false,
-          },
+          generation: GenerationSettings.parse({}),
         },
       ];
     }
@@ -761,18 +692,22 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // 提示词文本迁移执行器：精确子串替换、幂等，匹配不到即跳过（更早版本措辞不同的
+  // 旧文本保留原样，指令惰性失效，见 PROMPT_TEXT_MIGRATIONS 注释）。
+  // v21 与 v23 两个迁移块共用同一数组：老存档在 <21 块收敛到 v21 态后，<23 块继续
+  // 应用 v23 对；v21/v22 存档跳过 <21 块、直接在 <23 块命中 v23 对——数组按序幂等
+  const migratePromptText = (text: string): string => {
+    let out = text;
+    for (const [from, to] of PROMPT_TEXT_MIGRATIONS) {
+      if (out.includes(from)) out = out.split(from).join(to);
+    }
+    return out;
+  };
+
   // v20/v21 提示词文本迁移：v20 删除 condition 字段后 [条件: xxx] 标记不再生成，老存档
   // 引用该标记的段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束，把 v20 产出的
-  // "适用时机不符则跳过"措辞收敛为约束措辞。精确子串替换、幂等，匹配不到即跳过
-  // （更早版本措辞不同的旧文本保留原样，指令惰性失效，见 PROMPT_TEXT_MIGRATIONS 注释）
+  // "适用时机不符则跳过"措辞收敛为约束措辞。
   if ((validated.schema_version ?? 0) < 21) {
-    const migratePromptText = (text: string): string => {
-      let out = text;
-      for (const [from, to] of PROMPT_TEXT_MIGRATIONS) {
-        if (out.includes(from)) out = out.split(from).join(to);
-      }
-      return out;
-    };
     validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
     for (const m of validated.prompt_rules.modules) {
       m.content = migratePromptText(m.content);
@@ -805,6 +740,138 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       if (!validated.group_order.includes('时间跳跃')) {
         validated.group_order.push('时间跳跃');
       }
+    }
+  }
+
+  // v23: 选项生成"去死板"改造——三件事，全部幂等：
+  // ① 提示词文本迁移：v23 对（去除小说腔文风强制/加 emoji/思维链框架/菜单模式措辞）
+  //    把 v21/v22 时代的默认文本收敛到新态。person_style 此前从未被文本迁移覆盖，
+  //    本版起一并纳入（旧默认文本是小说腔源头，漏掉它用户存档里死板文风不会消失）
+  // ② 字数迁移：option_min/max_chars 未自定义（30/80）→ 10/60，下限 30 是注水成
+  //    描写句的直接原因之一；自定义过则不动
+  // ③ 池迁移：默认 config 引用切换为「通用4 + 时间跳跃6」——追加「通用」分组 4 条
+  //    （2 条 pinned 作每轮必发的自主权锚点），移除旧 10 条具体行为条目的引用
+  //    （条目保留在 master_pool，用户可手动加回）。只动默认 config：
+  //    其他 PoolConfig 是用户显式挑选的结果，擅自增删等于改用户配置
+  if ((validated.schema_version ?? 0) < 23) {
+    // ① 提示词文本
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+    // ② 字数默认值（仅未自定义时）
+    const migrateCharLimit = (min: unknown, max: unknown): { min: number; max: number } | null => {
+      if (min === 30 && max === 80) return { min: 10, max: 60 };
+      return null;
+    };
+    const prLimits = migrateCharLimit(validated.prompt_rules.option_min_chars, validated.prompt_rules.option_max_chars);
+    if (prLimits) {
+      validated.prompt_rules.option_min_chars = prLimits.min;
+      validated.prompt_rules.option_max_chars = prLimits.max;
+    }
+    for (const cfg of validated.prompt_configs) {
+      const cfgLimits = migrateCharLimit(cfg.option_min_chars, cfg.option_max_chars);
+      if (cfgLimits) {
+        cfg.option_min_chars = cfgLimits.min;
+        cfg.option_max_chars = cfgLimits.max;
+      }
+    }
+    // ③ 池迁移：追加「通用」分组 → 移除旧 10 条引用（两步集合不重叠，顺序无干扰）。
+    //    引用移除不能挂在"有新条目可追加"的条件下：用户可能早已自建同名 type 条目
+    //    （generalEntries 为空），此时旧 10 条引用仍需切换，否则迁移半途而废
+    const existingTypes = new Set(validated.master_pool.map(e => e.type));
+    const generalEntries = buildGeneralEntries().filter(e => !existingTypes.has(e.type));
+    validated.master_pool.push(...generalEntries);
+    const defaultConfig = validated.configs.find(c => c.is_default);
+    if (defaultConfig) {
+      for (const e of generalEntries) {
+        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+      }
+      // 移除旧 10 条的引用：entry_id → master_pool type 反查，type 属旧默认集合即移除。
+      // 不删 master_pool 条目本身——用户自定义 config 里的引用与其他用途不受影响
+      const legacyIds = new Set(
+        validated.master_pool.filter(e => LEGACY_DEFAULT_ENTRY_TYPES.has(e.type)).map(e => e.id),
+      );
+      defaultConfig.entries = defaultConfig.entries.filter(e => !legacyIds.has(e.entry_id));
+    }
+    if (!validated.group_order.includes('通用')) {
+      validated.group_order.push('通用');
+    }
+  }
+
+  // v24: 猫娘人格化（喵可）迁移——两件事，全部幂等：
+  // ① 提示词文本迁移：v24 对把 v23 默认文本收敛到猫娘版（system_prompt/思考链/应答/
+  //    user 指令/规则/规格全面转喵可口吻 + ST 术语描述性清洗 + 活人感硬约束）。
+  //    person_style 本版不改，跑一遍幂等无害
+  // ② 新增 reward_prompt 模块补建：老存档 prompt_rules.modules 无此模块（v24 新增），
+  //    按 id 去重后从 DEFAULT_MODULES 取对象插入——prompt_rules.modules 与每个
+  //    prompt_configs[].modules 都要补（配置切换时换入的是 configs 的模块快照，
+  //    漏掉 configs 会导致"切换提示词配置后奖励模块消失"）
+  if ((validated.schema_version ?? 0) < 24) {
+    // ① 提示词文本
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+    // ② reward_prompt 模块补建（content 留空，运行时由 generator case 随机注入奖励文案）
+    const ensureRewardModule = (modules: PromptModuleType[]): void => {
+      if (modules.some(m => m.id === 'reward_prompt')) return;
+      const template = DEFAULT_MODULES.find(m => m.id === 'reward_prompt');
+      if (template) modules.push(klona(template));
+    };
+    ensureRewardModule(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      ensureRewardModule(cfg.modules);
+    }
+  }
+
+  // v25: 猫娘文本修正迁移——v24 落盘的猫娘版收敛到旁白式修正版，三件事，全部幂等：
+  // ① 提示词文本迁移：v25 对（system 层去喵去【】转旁白式、user 层去【】、option_rules
+  //    去喵、thinking/规格文本修正）。person_style 本版不改，跑一遍幂等无害
+  // ② reward_prompt.content 填充：v24 补建时 DEFAULT_MODULES 里该模块 content 为空
+  //    （文案当时藏在 REWARD_PHRASES 常量里），v25 起文案由 content 承载（用户可在
+  //    提示词编辑器直接编辑）——存档里 content 为空的补上默认奖励池
+  // ③ assistant_thinking.content 结构升级：v24 是单句回应+<thinking>，v25 改为多行回应池
+  //    （与 reward_prompt 奖励池逐行配对）——该结构变化由 v25 文本迁移对完成
+  if ((validated.schema_version ?? 0) < 25) {
+    // ① 提示词文本
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+    // ② reward_prompt.content 空则填默认奖励池（用户自己写过内容则不动）
+    const ensureRewardContent = (modules: PromptModuleType[]): void => {
+      const mod = modules.find(m => m.id === 'reward_prompt');
+      const template = DEFAULT_MODULES.find(m => m.id === 'reward_prompt');
+      if (mod && template && !mod.content.trim()) mod.content = klona(template.content);
+    };
+    ensureRewardContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      ensureRewardContent(cfg.modules);
     }
   }
 
@@ -1403,6 +1470,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
+    fresh.group_order = ['通用', '时间跳跃'];
     fresh.configs = [
       {
         id: uuidv4(),
@@ -1413,13 +1481,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
           weight: e.weight,
         })),
         is_default: true,
-        generation: {
-          count_mode: '4',
-          categories_enabled: true,
-          shuffle_final: true,
-          pinned_overflow: 'send_all',
-          cross_layer_fallback: false,
-        },
+        generation: GenerationSettings.parse({}),
       },
     ];
 

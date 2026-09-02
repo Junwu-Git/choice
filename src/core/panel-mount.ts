@@ -101,7 +101,8 @@ export function initPanelMount() {
         return;
       }
       storeGeneration(messageId, swipeId, generation);
-      panelStore.setCollapsed(false);
+      // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
+      panelStore.autoSetCollapsed(false);
       resync();
     } catch (error) {
       console.error('[Choice] onMessageReceived failed', error);
@@ -122,7 +123,8 @@ export function initPanelMount() {
   eventSource.on(event_types.MESSAGE_UPDATED, safeResync);
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
     safeResync();
-    panelStore.setCollapsed(true);
+    // 发消息后自动收起走 autoSetCollapsed：锁定时常开面板不被动收起
+    panelStore.autoSetCollapsed(true);
   });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, safeResync);
   eventSource.on(event_types.CHAT_CHANGED, safeResync);

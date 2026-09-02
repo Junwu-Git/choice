@@ -158,13 +158,15 @@ export const buildMessages = async (
       }
       case 'world_info_after': {
         if (wiBuckets) {
-          const merged = [wiBuckets.after, wiBuckets.anAfter, wiBuckets.atDepth].filter(Boolean).join('\n\n');
+          // v24 起深度条目不再塞末尾（会丢失"按深度插入历史"的定位），改由
+          // buildChatHistory 按 depth 织入——见 chat_history case
+          const merged = [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n');
           if (merged) msgs.push({ role: 'system', content: merged });
         }
         break;
       }
       case 'chat_history': {
-        const history = buildChatHistory(contextRounds);
+        const history = buildChatHistory(contextRounds, wiBuckets?.depthEntries ?? []);
         for (const m of history) {
           msgs.push(prefillEnabled ? m : { ...m, role: 'system' });
         }
@@ -191,16 +193,18 @@ export const buildMessages = async (
         const pr = gs.settings.prompt_rules;
         const personStyle = pr.person_style || '';
         const optionRules = pr.option_rules || '';
-        // person_style 优先（高级用户覆盖），回退到 option_person 自动生成
+        // person_style 优先（高级用户覆盖），回退到 option_person 自动生成。
+        // v23 起去除"绝对主语+微表情+物理交互"的小说腔文风强制：只表达人称 + 场景贴合
+        // 导向，与 DEFAULT_PERSON_STYLE 新默认语义对齐（人称不硬编码，由 option_person 注入）
         let content: string;
         if (optionRules && (personStyle || pr.option_person)) {
           const effectivePersonStyle =
             personStyle ||
-            `选项内容以${pr.option_person || '第三人称'} {{user}} 为绝对主语，融入微表情、肢体语言、语气特征或感官体验，让 {{user}} 看起来是一个鲜活的参与者。例外：他人视角、与此同时、转场推进 三类不受绝对主语约束。鼓励在动作描写中加入与当前环境或道具的物理交互，避免角色像在真空中对话。选项的切入点须紧扣正文末尾其他角色的当前状态。`;
-          content = `【核心规则 - 生成选项时严格遵守】
+            `选项以${pr.option_person || '第三人称'} {{user}} 视角展开，写成 {{user}} 当下可以立刻执行的具体行动，贴合当前场景与 {{user}} 的性格，允许包含 {{user}} 的台词；优先利用场景中真实可用的互动手段，不写脱离情境的抒情或旁白。`;
+          content = `生成选项时要严格遵守以下规则：
 ${optionRules}
 
-【叙述风格】
+叙述风格方面：
 ${effectivePersonStyle}
 
 ${CORE_RULES_STATIC}`;
@@ -243,7 +247,7 @@ ${CORE_RULES_STATIC}`;
   return merged;
 };
 
-const buildChatHistory = (contextRounds: number): ChatMsg[] => {
+const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthEntries'] = []): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -288,6 +292,30 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
     const wrapIdx = lastAssistantIdx >= 0 ? lastAssistantIdx : h.length - 1;
     h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }
+
+  // 世界书 atDepth 条目按深度织入历史（v24）——镜像 ST 主生成的"距末尾 depth 条"语义
+  // （script.js:4609-4613 经 setExtensionPrompt IN_CHAT 注入；openai.js populationInjectionPrompts
+  // 在 newest-first 数组 index=depth 处插入，reverse 后等价于 oldest-first 的 length-depth 处）。
+  // 深度相对实际发送的截断历史 h（插件只发送 h，无法插入未发送消息；与 ST 相对全量 chat 有
+  // 微小差异，极端情况 depth≥h.length 时 clamp 到开头，属可接受取舍）。
+  // 织入在 <current_scene> 包裹之后执行（包裹不改变消息数，length 不变）：
+  // 按目标索引分组，从大索引往小索引 splice——大索引插入不会位移小索引目标，无需回溯补偿；
+  // 同索引多条按 role 顺序 system<user<assistant 排列（与 ST populationInjectionPrompts 的
+  // roles 迭代顺序一致），整组一次性 splice 保证相邻。
+  if (depthEntries.length > 0) {
+    const origLen = h.length;
+    const roleOrder = (r: string) => (r === 'system' ? 0 : r === 'user' ? 1 : 2);
+    const groups = new Map<number, ChatMsg[]>();
+    for (const e of depthEntries) {
+      const idx = Math.max(0, Math.min(origLen, origLen - e.depth));
+      if (!groups.has(idx)) groups.set(idx, []);
+      groups.get(idx)!.push({ role: e.role, content: e.content });
+    }
+    for (const idx of [...groups.keys()].sort((a, b) => b - a)) {
+      const batch = groups.get(idx)!.sort((x, y) => roleOrder(x.role) - roleOrder(y.role));
+      h.splice(idx, 0, ...batch);
+    }
+  }
   return h;
 };
 
@@ -300,11 +328,19 @@ type WIBuckets = {
   anBefore: string;
   anAfter: string;
   em: string;
-  atDepth: string;
+  /** atDepth 世界书条目（v24 起结构化保存，不再拍平塞末尾）：
+   *  depth = 距聊天历史末尾的消息数（0=紧接末尾），织入 buildChatHistory 的对应位置；
+   *  role 来自条目自身的角色设置（system/user/assistant），非固定 system。 */
+  depthEntries: Array<{ depth: number; role: 'system' | 'user' | 'assistant'; content: string }>;
 };
 
+/** ST extension_prompt_roles 数值 → 插件 ChatMsg role 字符串（script.js:493 已核实：
+ *  SYSTEM:0 / USER:1 / ASSISTANT:2）。未知值兜底 'system'（世界书深度条目的绝大多数场景）。 */
+const mapWIRole = (role: unknown): 'system' | 'user' | 'assistant' =>
+  role === 1 || role === '1' ? 'user' : role === 2 || role === '2' ? 'assistant' : 'system';
+
 const buildWI = async (): Promise<WIBuckets> => {
-  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', atDepth: '' };
+  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthEntries: [] };
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const chatArr: any[] = ctx?.chat ?? [];
@@ -339,10 +375,16 @@ const buildWI = async (): Promise<WIBuckets> => {
         .map((e: any) => e?.content ?? '')
         .filter(Boolean)
         .join('\n'),
-      atDepth: (result.worldInfoDepth ?? [])
-        .flatMap((d: any) => d?.entries ?? [])
-        .filter(Boolean)
-        .join('\n'),
+      // worldInfoDepth 结构 = [{depth, entries: string[], role}]（world-info.js:5121-5125 已核实）。
+      // 同 depth+role 的多条目 ST 已 unshift 合并进同一组，组内按 \n 拼接即可；
+      // 不再像旧版那样跨 depth 拍平成一条——那会丢失"按深度插入历史"的定位
+      depthEntries: (result.worldInfoDepth ?? [])
+        .map((d: any) => ({
+          depth: typeof d?.depth === 'number' ? d.depth : 0,
+          role: mapWIRole(d?.role),
+          content: (d?.entries ?? []).filter(Boolean).join('\n'),
+        }))
+        .filter(e => e.content),
     };
   } catch (err) {
     console.error('[Choice] buildWI failed', err);
@@ -547,8 +589,16 @@ export function parseOptions(text: string, count: number): string[] {
     .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l));
   // 标题格式：2-5 个汉字后跟 ": " 或 "： "（\s* 兼容零空格/双空格/制表符等容错）
   const titleRe = /([\u4e00-\u9fff]{2,5})[:：]\s*/g;
+  // 行首 emoji 判定：v23 放开"内容开头可带 emoji"后，模型偶尔违规输出无 [标题] 的
+  // emoji 行（如 "😏 提醒她：该吃饭了"）——"提醒她"命中 titleRe 会被误拆成两条。
+  // 行首为 emoji 时整行保留，跳过标题拆分（纯容错，正常 "[标题]emoji 内容" 走主路径）
+  const leadingEmojiRe = /^\p{Extended_Pictographic}/u;
   const result: string[] = [];
   for (const line of lines) {
+    if (leadingEmojiRe.test(line)) {
+      result.push(line);
+      continue;
+    }
     // 用 matchAll 获取所有标题匹配位置，按相邻匹配区间切片
     // 替换原有的 lastIdx 算法，解决第一个标题在 index 0 时后续选项丢失的 bug
     const matches = [...line.matchAll(titleRe)];
@@ -594,6 +644,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       categoriesEnabled: gen.categories_enabled,
       shuffleFinal: gen.shuffle_final,
       pinnedOverflow: gen.pinned_overflow,
+      // ?? 兜底：防御运行时被绕过 zod 的历史对象（理论上 schema default 已补 50），
+      // 缺失时回退 schema 默认而非 0——静默关闭菜单模式违背本改造意图
+      oversamplePct: gen.oversample_pct ?? GenerationSettings.parse({}).oversample_pct,
     });
     const pinnedCount = pool.pinned.length;
     // rule 在固定/候选两个分区都只作写作约束（v21 起不再是跳过条目的触发条件，

@@ -73,6 +73,16 @@
           <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
           {{ isGenerating ? t`取消` : t`生成` }}
         </button>
+        <!-- 面板状态锁：锁定后自动化（生成后展开/点选项收起/发消息收起）全部跳过，
+             面板常开/常关；手动切换仍有效且锁定跟随新状态。持久化于 ui.panel_lock -->
+        <button
+          class="choice-panel-btn choice-panel-lock"
+          :class="{ active: locked }"
+          :title="locked ? t`解锁面板状态` : t`锁定面板状态（不再自动展开/收起）`"
+          @click="onToggleLock"
+        >
+          <i :class="locked ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i>
+        </button>
         <!-- 主题循环切换：每点一次切到 THEME_OPTIONS 中的下一个主题（末尾回绕）。
              全局生效并持久化（gs.settings.ui.theme_mode），tooltip 明示下一站避免盲切 -->
         <button class="choice-panel-btn choice-theme-cycle" :title="cycleTitle" @click="onCycleTheme">
@@ -195,6 +205,13 @@ const gs = useGlobalSettingsStore();
 // 设置触发换挂载点 + 展开限高；悬浮预览（compact）恒展开小卡，不参与 dock 限高
 const isDocked = computed(() => gs.settings.ui.panel_position === 'input');
 
+// 面板状态锁：锁定瞬间把当前展开/收起状态钉进 panel_lock（collapsed 来自 panelStore）；
+// 锁定期间手动切换由 panel-state.setCollapsed 回写，此处只负责加锁/解锁
+const locked = computed(() => gs.settings.ui.panel_lock !== 'off');
+const onToggleLock = () => {
+  gs.settings.ui.panel_lock = locked.value ? 'off' : collapsed.value ? 'collapsed' : 'open';
+};
+
 const behavior = computed({
   get: () => gs.settings.behavior,
   set: v => {
@@ -265,7 +282,8 @@ const onToggle = async () => {
   }
   storeGeneration(target.messageId, target.swipeId, generation);
   panelStore.load(target.messageId, target.swipeId);
-  panelStore.setCollapsed(false);
+  // 锁定收起时用户手动点生成，完成后仍保持收起（完全遵守锁定，无例外）
+  panelStore.autoSetCollapsed(false);
 };
 
 const onCancelEnrich = () => {
@@ -348,7 +366,8 @@ const onSelect = async (option: ChoiceOption) => {
   if (behavior.value === 'send') {
     await sendTextareaMessage();
   }
-  panelStore.setCollapsed(true);
+  // 锁定展开时点选项后面板不收起（常开）
+  panelStore.autoSetCollapsed(true);
 };
 </script>
 
@@ -475,6 +494,13 @@ const onSelect = async (option: ChoiceOption) => {
 .choice-panel-btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* 状态锁激活高亮：主色描边+文字，不加底色——与 behavior-btn.active 的实色主蓝区分，
+   锁是"状态开关"而非"主操作"，视觉重量应低于生成按钮 */
+.choice-panel-lock.active {
+  color: var(--choice-primary);
+  border-color: var(--choice-primary);
 }
 
 /* 主按钮弃用老式"渐变+发光"，改实色主蓝 + 磨砂高光，与暖白磨砂语言统一；

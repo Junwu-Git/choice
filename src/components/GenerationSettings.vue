@@ -86,6 +86,32 @@
     <div class="choice-generation-section">
       <div class="choice-field">
         <div class="choice-field-label">
+          <label>{{ t`候选冗余` }}</label>
+        </div>
+        <small class="choice-field-hint">{{
+          t`发送给 AI 的候选条目比选项数多出的比例，AI 从中挑选贴合当前场景的方向生成选项；0 表示候选数与选项数一致`
+        }}</small>
+      </div>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`冗余比例` }}</span>
+          <input
+            v-model.number="oversamplePct"
+            class="text_pole"
+            style="width: 70px"
+            type="number"
+            min="0"
+            max="300"
+            :title="t`百分比，默认 50；0 = 候选数与选项数一致`"
+          />
+          <span>%</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="choice-generation-section">
+      <div class="choice-field">
+        <div class="choice-field-label">
           <label>{{ t`每条字数` }}</label>
         </div>
         <small class="choice-field-hint">{{ t`控制每条选项/润色版本的字数区间（中文字符）` }}</small>
@@ -157,10 +183,27 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { usePoolSelectorStore } from '@/store/pool-selector';
+import { GenerationSettings } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 const ui = gs.settings.ui;
 const rules = gs.settings.prompt_rules;
+const ps = usePoolSelectorStore();
+
+// oversample_pct 属 PoolConfig.generation（per-config），而生成路径读的是
+// ps.effectiveConfig（chat > character > default 覆盖解析），本页控件必须作用于同一对象
+// 才能所见即所得；get 侧 ?? schema 默认：effectiveConfig 为 null（无任何 config 的极端态）
+// 或历史对象缺字段时展示默认值，set 侧 clamp 到 schema 允许区间（0-300）防越界值入库
+const oversamplePct = computed({
+  get: () => ps.effectiveConfig?.generation.oversample_pct ?? GenerationSettings.parse({}).oversample_pct,
+  set: v => {
+    const cfg = ps.effectiveConfig;
+    if (!cfg) return;
+    const n = Math.round(Number(v));
+    cfg.generation.oversample_pct = Number.isFinite(n) ? Math.min(300, Math.max(0, n)) : 0;
+  },
+});
 </script>
 
 <style scoped>
