@@ -30,7 +30,11 @@
             <i :class="apiReady ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'"></i>
             <span>{{ apiReady ? t`API 已配置，可以正常生成` : t`尚未配置——完成本步前无法生成选项` }}</span>
           </div>
-          <div v-else-if="step.id === 'pool-select'" class="choice-tour-status" :class="poolReady ? 'is-ok' : 'is-miss'">
+          <div
+            v-else-if="step.id === 'pool-select'"
+            class="choice-tour-status"
+            :class="poolReady ? 'is-ok' : 'is-miss'"
+          >
             <i :class="poolReady ? 'fa-solid fa-circle-check' : 'fa-solid fa-circle-xmark'"></i>
             <span>{{ poolReady ? t`条目池就绪，可正常生成` : t`条目池为空——添加条目后才能生成选项` }}</span>
           </div>
