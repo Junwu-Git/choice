@@ -20,9 +20,6 @@ export function cancelEnrich() {
   enrichController = null;
 }
 
-/** 润色时无需跳过的模块（所有通用模块均参与润色管线） */
-const ENRICH_SKIP_IDS = new Set<string>();
-
 /** 调用副 API 润色用户输入，返回解析后的选项文本数组。
  *  复用 buildMessages 模块管线，包含聊天历史、世界书、角色描述等上下文。
  *  用户输入通过 {{input}} 变量在 enrich_prompt 模块中占位，由 buildMessages 自动替换。 */
@@ -35,7 +32,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   }
 
   const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
-  let modules = sourceModules.filter(m => !ENRICH_SKIP_IDS.has(m.id));
+  let modules = sourceModules;
 
   // 若 enrich_prompt 模块被禁用或不存在，用默认内容临时注入
   if (!modules.some(m => m.id === 'enrich_prompt')) {

@@ -28,7 +28,6 @@ export const GenerationSettings = z
     categories_enabled: z.boolean().default(true),
     shuffle_final: z.boolean().default(true),
     pinned_overflow: z.enum(['send_all', 'trim']).default('send_all'),
-    cross_layer_fallback: z.boolean().default(false),
     // 菜单模式超采样：非固定条目抽样量 = 所需数 + ceil(所需数 × pct/100)。
     // 0 = 关闭菜单模式（抽取数=所需数，精确 1:1，等同 v23 前行为）；上限 300 防误输入巨值。
     // 老存档靠 zod default 自动补 50，无需显式迁移
@@ -36,22 +35,6 @@ export const GenerationSettings = z
   })
   .prefault({});
 export type GenerationSettings = z.infer<typeof GenerationSettings>;
-
-/** AI 条目生成聊天会话：多轮对话记录，聊天内模式存角色卡，全局模式存扩展设置 */
-export const PoolGenMessage = z.object({
-  role: z.enum(['user', 'assistant']),
-  content: z.string(),
-});
-export type PoolGenMessage = z.infer<typeof PoolGenMessage>;
-
-export const PoolGenSession = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.number(),
-  updatedAt: z.number(),
-  messages: z.array(PoolGenMessage).default([]),
-});
-export type PoolGenSession = z.infer<typeof PoolGenSession>;
 
 export const PoolConfigEntry = z
   .object({
@@ -86,7 +69,7 @@ export type PoolConfig = z.infer<typeof PoolConfig>;
  *  v28：内容要求补对白直接引语硬约束，正例由"转述示范"改为"引语示范"——few-shot 正例
  *  教什么 AI 就写什么，"说下一局我陪你"这种转述示范是对白消失的直接推手之一。
  *  代码常量直接改即生效，不入存档、无迁移对（同 v26 人称免疫先例）。 */
-export const CORE_RULES_STATIC = `先说输出格式，这条是硬的：必须在回复末尾将选项包裹在 <options> 标签内输出，每条选项独占一行，格式为 "[标题]内容"，标题用[]包裹；内容开头可用一个 emoji 表达该选项的情绪或意图（可选）。每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。严禁在选项内容中使用[]或【】符号，场景头、时间地点等一律写成正文纯文本。JSON 必须合法，不带尾随逗号，不包裹在代码块中。
+export const CORE_RULES_STATIC = `先说输出格式，这条是硬的：必须在回复末尾将选项包裹在 <options> 标签内输出，每条选项独占一行，格式为 "[标题]内容"，标题用[]包裹；内容开头可用一个 emoji 表达该选项的情绪或意图（可选）。每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。严禁在选项内容中使用[]或【】符号，场景头、时间地点等一律写成正文纯文本。
 
 内容上：每条选项必须是当前场景此刻能干的具体行动，且须点名场景里一个具体可见细节（道具/NPC状态/上一句台词/空间特征），禁用"利用环境""观察四周"这类泛词，不写脱离情境的抒情或旁白。每轮允许 0-1 条「不行动/撤离/改话题」选项；每条带可辨识的情绪立场，整批情绪色板要有跨度；选项集须跨低险→高险赌注跨度，不准全停中等安全区。选项之间在切入点、行动方式、情绪色彩、语域上须有清晰差异，严禁同质化。所有选项只写行为本身，把最终反应权留给正文。含对话的选项，对白必须写成『……』直接引语（完整、可朗读），禁止"说……""问道……"式转述概括；纯动作/观察选项不强制。人称方面：严格按系统规则里叙述风格指定的人称（{{option_person}}）来写，忽略上方 <history> 正文中使用的任何人称——那是那篇小说自己的叙事选择，不是选项该跟随的；选项人称只服从用户设置，不管正文用第几人称。
 
@@ -836,10 +819,6 @@ export const WorldInfoGlobalSettings = z
   .object({
     enabled: z.boolean().default(true),
     global_excluded_books: z.array(z.string()).prefault([]),
-    /** @deprecated 已改用 ST 原生 getWorldInfoPrompt，不再区分 redlight 模式 */
-    redlight_mode: z.boolean().default(true),
-    /** @deprecated 已改用 ST 原生 getWorldInfoPrompt，不再支持 EJS 模板 */
-    ejs_compat: z.boolean().default(false),
   })
   .prefault({});
 export type WorldInfoGlobalSettings = z.infer<typeof WorldInfoGlobalSettings>;
@@ -936,7 +915,6 @@ export const GlobalSettings = z
     // 对生成行为与未启用此类脚本的场景完全无影响；不用 Kemini 类预设时保持默认开即可
     api_tool_choice_none: z.boolean().default(true),
     global_count_mode: z.string().default('4'),
-    pool_gen_sessions: z.array(PoolGenSession).prefault([]),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append']).default('send'),
     empty_groups: z.array(z.string()).default([]),
@@ -948,7 +926,6 @@ export const CharacterSettings = z
   .object({
     config_id: z.string().nullable().default(null),
     prompt_config_id: z.string().nullable().default(null),
-    pool_gen_sessions: z.array(PoolGenSession).prefault([]),
   })
   .prefault({});
 export type CharacterSettings = z.infer<typeof CharacterSettings>;

@@ -21,21 +21,22 @@
 </template>
 
 <script setup lang="ts">
-import { openSettings, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
+import { openSettings, isBubbleContextMenuOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
-const BUBBLE_SIZE = 60;
 const MENU_WIDTH = 140;
 
 const menuEl = ref<HTMLElement | null>(null);
 
 const menuX = computed(() => {
   const bx = bubbleX.value;
-  const centerX = bx + BUBBLE_SIZE / 2;
+  // 菜单锚定实际球体边缘：移动端球 48px，桌面 60px，统一取 bubbleSize 单一来源
+  const size = bubbleSize.value;
+  const centerX = bx + size / 2;
   if (centerX + MENU_WIDTH > window.innerWidth) {
     return bx - MENU_WIDTH - 8;
   }
-  return bx + BUBBLE_SIZE + 8;
+  return bx + size + 8;
 });
 
 const menuY = computed(() => {

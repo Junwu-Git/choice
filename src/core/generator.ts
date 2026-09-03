@@ -1,6 +1,6 @@
 import { substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
-import toastr from 'toastr';
+import * as toastr from 'toastr';
 import {
   getWorldInfoPrompt,
   loadWorldInfo,
@@ -33,6 +33,9 @@ export type PoolGenItem = {
 
 export const generatorState = reactive({ loading: false, generationId: null as string | null });
 
+// 取消标志：模块级单例。generateOptions 串行（generatorState.loading 守卫互斥），
+// cancelGeneration 触发 genController.abort() 使在途 await 立即 reject → finally 紧随复位，
+// 故新一次生成启动时旧生成的 finally 必已完成，共享布尔无实际竞态。
 let cancelled = false;
 let genController: AbortController | null = null;
 
@@ -190,7 +193,6 @@ export const buildMessages = async (
         break;
       }
       case 'core_rules': {
-        const pr = gs.settings.prompt_rules;
         const personStyle = pr.person_style || '';
         const optionRules = pr.option_rules || '';
         // person_style 优先（高级用户覆盖），回退到 option_person 自动生成。
@@ -432,15 +434,19 @@ const buildWI = async (): Promise<WIBuckets> => {
 type Restore = { restore: () => void } | null;
 
 /** 世界书注入的临时改写（选项/润色两条生成链路共用）：
- *  1. 书级：临时重写 selected_world_info（移除排除书/off 模式书、追加启用书），restore 恢复；
- *  2. 条目级：force/follow/custom 模式下经 loadWorldInfo 取 worldInfoCache 缓存引用（world-info.js:2041
- *     返回缓存对象本身，已核实），临时变异条目 disable 标志，restore 逐条还原——
- *     checkWorldInfo 对 disable==true 的条目跳过（world-info.js:4689），变异即控制注入。
- *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，
- *  切换模式即脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条
- *  生效（快照未覆盖的条目保持酒馆原状）。
- *  异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt 之前完成，
- *  故调用方需 await 本函数。 */
+ *  1. 书级：临时重写 selected_world_info（移除排除书/off 模式书、追加启用书），并按需清空角色绑定书，
+ *     restore 恢复；
+ *  2. 条目级：force/custom 模式下经 Map.prototype.get.call 取 worldInfoCache 缓存原始引用，
+ *     临时变异条目 disable 标志，restore 逐条还原——checkWorldInfo 对 disable==true 的条目跳过
+ *     （world-info.js:4689），变异即控制注入。
+ *  处理范围 = 生成时 ST 实际会读取的所有"活动书"：selected_world_info（getGlobalLore，world-info.js:4415）、
+ *  角色绑定书 character.data.extensions.world（getCharacterLore，:4363）、enabled_books（用户显式启用）。
+ *  此前只遍历 enabled_books，导致在角色绑定书 / 全局选中书上设置的 off/force/custom 与逐条覆盖被静默忽略
+ *  （"整本关了仍注入"即此因），现已扩到全集。
+ *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，切换模式即
+ *  脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条生效（快照未覆盖的
+ *  条目保持酒馆原状）。异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt
+ *  之前完成，故调用方需 await 本函数。 */
 export const applyWIExcl = async (
   excl: string[],
   enabled: string[],
@@ -450,36 +456,48 @@ export const applyWIExcl = async (
   const saved = [...(selected_world_info ?? [])];
   const modes = bookModes ?? {};
   const modeOf = (name: string): WIBookMode => modes[name] ?? 'follow';
-  // off 书并入临时排除：整本不注入（等价"条目全关"的生成结果，且无需条目级变异）
-  const allExcl = [...new Set([...excl, ...enabled.filter(name => modeOf(name) === 'off')])];
-  const hasExcl = allExcl.length > 0;
-  const hasEnabled = enabled.length > 0;
-  if (!hasExcl && !hasEnabled) return null;
 
-  selected_world_info.length = 0;
-  const newList = hasExcl ? saved.filter(n => !allExcl.includes(n)) : [...saved];
-  if (hasEnabled) {
-    for (const name of enabled) {
-      // excluded_books 优先于 enabled_books：被排除的书即使仍在 enabled 列表里也不注入
-      if (!newList.includes(name) && !allExcl.includes(name)) newList.push(name);
-    }
-  }
-  selected_world_info.push(...newList);
+  // 处理范围 = ST 生成时实际读取的全部活动书（见上方 JSDoc 出处）。
+  // 角色绑定书与全局选中书不在 enabled_books 里，旧实现只遍历 enabled_books 才是 bug 根源。
   const ch = getStCharacter(this_chid);
   const cw = ch?.data?.extensions?.world;
-  const cwEx = cw ? allExcl.includes(cw) : false;
+  const processSet = new Set<string>([...saved, ...enabled, ...(cw ? [cw] : [])]);
+
+  // off 模式书并入临时排除：整本不注入（等价"条目全关"的生成结果，且无需条目级变异）。
+  // 覆盖全集，不再只筛 enabled_books——否则角色/全局书的 off 模式形同虚设。
+  const offBooks = [...processSet].filter(name => modeOf(name) === 'off');
+  const allExcl = new Set<string>([...excl, ...offBooks]);
+
+  // 仅当确有改写需要时才动 selected_world_info，避免无配置时无谓重写。
+  // hasNewEnabled：用户显式启用的书若尚未在 selected_world_info 中，必须追加以便 getGlobalLore 读取。
+  const hasExcl = allExcl.size > 0;
+  const hasMutation = [...processSet].some(
+    name => modeOf(name) === 'force' || modeOf(name) === 'custom',
+  );
+  const hasNewEnabled = enabled.some(n => !saved.includes(n));
+  if (!hasExcl && !hasMutation && !hasNewEnabled) return null;
+
+  selected_world_info.length = 0;
+  const newList = saved.filter(n => !allExcl.has(n));
+  for (const name of enabled) {
+    // 排除优先于启用：被排除的书即使仍在 enabled 列表里也不注入
+    if (!allExcl.has(name) && !newList.includes(name)) newList.push(name);
+  }
+  selected_world_info.push(...newList);
+  const cwEx = !!cw && allExcl.has(cw);
   if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
 
   // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
-  // （world-info.js:882，已核实）——loadWorldInfo 返回的是深拷贝，直接变异拷贝无法影响
-  // 生成（getGlobalLore 从缓存原始数据取条目）。必须先 loadWorldInfo 确保书已进缓存，
-  // 再经 Map.prototype.get 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
+  // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
+  // （world-info.js:2041），直接变异拷贝无法影响生成。故先 loadWorldInfo 确保书已进缓存，再经
+  // Map.prototype.get.call 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
   type MutableEntry = { uid?: number | string; disable?: boolean };
   const mutated: Array<{ entry: MutableEntry; value: boolean }> = [];
   const overrides = bookEntryOverrides ?? {};
-  for (const name of enabled) {
+  for (const name of processSet) {
+    if (allExcl.has(name)) continue; // off/排除书不注入，无需条目级变异
     const mode = modeOf(name);
-    if (mode === 'off') continue;
+    if (mode === 'follow') continue; // follow：纯酒馆原生 disable，覆盖不生效
     try {
       await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
       const data = Map.prototype.get.call(worldInfoCache, name) as
@@ -503,8 +521,6 @@ export const applyWIExcl = async (
             mutated.push({ entry, value: entry.disable });
             entry.disable = !ov;
           }
-        } else {
-          // follow：纯酒馆原生 disable（覆盖仅 custom 模式生效，切换模式即脱离自定义）
         }
       }
     } catch (err) {

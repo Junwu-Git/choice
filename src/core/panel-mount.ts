@@ -1,4 +1,4 @@
-import toastr from 'toastr';
+import * as toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';

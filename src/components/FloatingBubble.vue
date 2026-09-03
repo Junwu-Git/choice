@@ -56,21 +56,13 @@
 import { generatorState, resolveCustomApi } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY } from '@/core/floating-state';
+import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY, bubbleSize, isMobileBubble } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 
-// 气泡直径：手机（窄触屏）压到 48px，其余 60px。必须是响应式值——拖拽 clamp、
-// 贴边吸附、初始位置默认值全依赖它；渲染尺寸也由它经 :style 单一来源驱动，
-// CSS 不允许再写一份 width/height（两处常量必然漂移，clamp 用的逻辑尺寸会先失真）
-const MOBILE_BUBBLE_QUERY = '(pointer: coarse) and (max-width: 480px)';
-const mobileBubbleMql = window.matchMedia(MOBILE_BUBBLE_QUERY);
-const isMobilePointer = ref(mobileBubbleMql.matches);
-const onMobileBubbleChange = (e: MediaQueryListEvent) => {
-  isMobilePointer.value = e.matches;
-};
-mobileBubbleMql.addEventListener('change', onMobileBubbleChange);
-
-const BUBBLE_SIZE = computed(() => (isMobilePointer.value ? 48 : 60));
+// 气泡直径与移动端判定来自 floating-state 单一来源（详见该模块注释），本组件不再
+// 各自维护 MQL——避免与上下文菜单等处各自硬编码 60 而在移动端漂移
+const BUBBLE_SIZE = bubbleSize;
+const isMobilePointer = isMobileBubble;
 // 贴边隐藏量 = 直径的 1/3（露 2/3）：按比例而非固定 px——桌面 60px 藏 20px 是
 // 长期验证的观感基准；早先手机沿用固定露出 40px，48px 球只藏 8px 几乎全露
 // （真机反馈"露出来太多"）。取 1/3 直径后两档观感一致
@@ -327,7 +319,6 @@ onUnmounted(() => {
   bubbleEl.value?.removeEventListener('pointercancel', onPointerCancel);
   bubbleEl.value?.removeEventListener('contextmenu', onContextMenu);
   window.removeEventListener('resize', handleResize);
-  mobileBubbleMql.removeEventListener('change', onMobileBubbleChange);
   if (resizeTimer !== null) clearTimeout(resizeTimer);
   clearLongPressTimer();
   // 组件卸载兜底：按住状态下组件被卸载时，禁选样式残留会让全站无法选字

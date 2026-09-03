@@ -746,22 +746,35 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     return out;
   };
 
-  // v20/v21 提示词文本迁移：v20 删除 condition 字段后 [条件: xxx] 标记不再生成，老存档
-  // 引用该标记的段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束，把 v20 产出的
-  // "适用时机不符则跳过"措辞收敛为约束措辞。
-  if ((validated.schema_version ?? 0) < 21) {
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+  // 提示词文本批量迁移：v21~v28 各版本块的提示词文本迁移操作同构（option_rules +
+  // person_style + modules + configs 的逐字段 migratePromptText），抽此 helper 消除七处
+  // 重复。v29 仅迁移 modules（不碰 option_rules/person_style），用 opts 关闭。
+  const migrateAllPromptText = (
+    validated: GlobalSettingsType,
+    opts: { rules?: boolean; personStyle?: boolean } = {},
+  ) => {
+    const { rules = true, personStyle = true } = opts;
+    if (rules) validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    if (personStyle) validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
     for (const m of validated.prompt_rules.modules) {
       m.content = migratePromptText(m.content);
     }
     for (const cfg of validated.prompt_configs) {
-      // PromptConfig.option_rules 是切换配置时换入 prompt_rules 的快照（见 config 切换逻辑），
-      // 漏掉它会导致"切换提示词配置后旧 [条件] 文本复活"
-      cfg.option_rules = migratePromptText(cfg.option_rules);
+      if (rules) cfg.option_rules = migratePromptText(cfg.option_rules);
+      if (personStyle) cfg.person_style = migratePromptText(cfg.person_style);
       for (const m of cfg.modules) {
         m.content = migratePromptText(m.content);
       }
     }
+  };
+
+  // v20/v21 提示词文本迁移：v20 删除 condition 字段后 [条件: xxx] 标记不再生成，老存档
+  // 引用该标记的段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束，把 v20 产出的
+  // "适用时机不符则跳过"措辞收敛为约束措辞。
+  if ((validated.schema_version ?? 0) < 21) {
+    // PromptConfig.option_rules 是切换配置时换入 prompt_rules 的快照（见 config 切换逻辑），
+    // 漏掉它会导致"切换提示词配置后旧 [条件] 文本复活"
+    migrateAllPromptText(validated, { personStyle: false });
   }
 
   // v22: 新增「时间跳跃」分组（6 条特色条目）。已有存档按 type 去重后补入 master_pool，
@@ -797,18 +810,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   //    其他 PoolConfig 是用户显式挑选的结果，擅自增删等于改用户配置
   if ((validated.schema_version ?? 0) < 23) {
     // ① 提示词文本
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
     // ② 字数默认值（仅未自定义时）
     const migrateCharLimit = (min: unknown, max: unknown): { min: number; max: number } | null => {
       if (min === 30 && max === 80) return { min: 10, max: 60 };
@@ -859,18 +861,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   //    漏掉 configs 会导致"切换提示词配置后奖励模块消失"）
   if ((validated.schema_version ?? 0) < 24) {
     // ① 提示词文本
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
     // ② reward_prompt 模块补建（content 留空，运行时由 generator case 随机注入奖励文案）
     const ensureRewardModule = (modules: PromptModuleType[]): void => {
       if (modules.some(m => m.id === 'reward_prompt')) return;
@@ -893,18 +884,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   //    （与 reward_prompt 奖励池逐行配对）——该结构变化由 v25 文本迁移对完成
   if ((validated.schema_version ?? 0) < 25) {
     // ① 提示词文本
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
     // ② reward_prompt.content 空则填默认奖励池（用户自己写过内容则不动）
     const ensureRewardContent = (modules: PromptModuleType[]): void => {
       const mod = modules.find(m => m.id === 'reward_prompt');
@@ -922,18 +902,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // 人称校准 + 自检点名变量；CORE_RULES_STATIC 内容要求加人称免疫硬声明（代码常量直接改，
   // 不入存档，无迁移对）。person_style/thinking_prompt 是存档快照，走 PROMPT_TEXT_MIGRATIONS
   if ((validated.schema_version ?? 0) < 26) {
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
   }
 
   // v27: 两件事，全部幂等：
@@ -945,18 +914,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   //    用户配置；迁移块的条目 id 是当场生成的 uuid，只能当场 push + 当场引用
   if ((validated.schema_version ?? 0) < 27) {
     // ① 提示词文本
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
     // ② 「喵可」分组池迁移（与 v23「通用」组同构；existingTypes/defaultConfig 为块级
     //    const，与 v22/v23 块的同名变量互不可见）
     const existingTypes = new Set(validated.master_pool.map(e => e.type));
@@ -980,37 +938,45 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // 对白约束；CORE_RULES_STATIC 是代码常量直接改即生效，不入存档、无迁移对（同 v26
   // 人称免疫先例）。喵可人设模块（system_prompt/应答/user 指令/奖励文案）本版零改动
   if ((validated.schema_version ?? 0) < 28) {
-    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      cfg.option_rules = migratePromptText(cfg.option_rules);
-      cfg.person_style = migratePromptText(cfg.person_style);
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated);
   }
 
   // v29: 润色提示词喵可人设适配——enrich_assistant 起手式喵可化、enrich_thinking 补人称校准与直接引语检查
   // 与 v28 同构：仅跑模块内容文本迁移，无池/结构变更
   if ((validated.schema_version ?? 0) < 29) {
-    for (const m of validated.prompt_rules.modules) {
-      m.content = migratePromptText(m.content);
-    }
-    for (const cfg of validated.prompt_configs) {
-      for (const m of cfg.modules) {
-        m.content = migratePromptText(m.content);
-      }
-    }
+    migrateAllPromptText(validated, { rules: false, personStyle: false });
   }
 
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
   validated.schema_version = SCHEMA_VERSION;
+};
+
+// PromptConfig 与 PromptRules 共有、切换配置时需同步的规则字段集（modules + 13 项标量）。
+// 用 Pick<…['prompt_rules']> 作共享子集类型：PromptConfig 结构上同样具备这些字段，可作 src/dst。
+// 显式逐字段赋值（而非字段名数组 + as any）：新增字段时 vue-tsc 会在此处报缺字段，避免静默丢失
+type PromptRulesSubset = Pick<
+  GlobalSettingsType['prompt_rules'],
+  | 'modules' | 'person_style' | 'option_rules' | 'option_person' | 'enrich_person'
+  | 'enrich_person_style' | 'option_min_chars' | 'option_max_chars' | 'enrich_min_chars'
+  | 'enrich_max_chars' | 'context_rounds' | 'context_mode' | 'prefill_enabled' | 'baibai_enabled'
+>;
+const copyPromptRulesSubset = (src: PromptRulesSubset, dst: PromptRulesSubset) => {
+  dst.modules = klona(src.modules);
+  dst.person_style = src.person_style;
+  dst.option_rules = src.option_rules;
+  dst.option_person = src.option_person;
+  dst.enrich_person = src.enrich_person;
+  dst.enrich_person_style = src.enrich_person_style;
+  dst.option_min_chars = src.option_min_chars;
+  dst.option_max_chars = src.option_max_chars;
+  dst.enrich_min_chars = src.enrich_min_chars;
+  dst.enrich_max_chars = src.enrich_max_chars;
+  dst.context_rounds = src.context_rounds;
+  dst.context_mode = src.context_mode;
+  dst.prefill_enabled = src.prefill_enabled;
+  dst.baibai_enabled = src.baibai_enabled;
 };
 
 export const useGlobalSettingsStore = defineStore('global-settings', () => {
@@ -1464,21 +1430,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   function syncPromptRulesToConfig(config: PromptConfig) {
-    const pr = settings.value.prompt_rules;
-    config.modules = klona(pr.modules);
-    config.person_style = pr.person_style;
-    config.option_rules = pr.option_rules;
-    config.option_person = pr.option_person;
-    config.enrich_person = pr.enrich_person;
-    config.enrich_person_style = pr.enrich_person_style;
-    config.option_min_chars = pr.option_min_chars;
-    config.option_max_chars = pr.option_max_chars;
-    config.enrich_min_chars = pr.enrich_min_chars;
-    config.enrich_max_chars = pr.enrich_max_chars;
-    config.context_rounds = pr.context_rounds;
-    config.context_mode = pr.context_mode;
-    config.prefill_enabled = pr.prefill_enabled;
-    config.baibai_enabled = pr.baibai_enabled;
+    copyPromptRulesSubset(settings.value.prompt_rules, config);
   }
 
   /** 工作副本当前归属的配置 id（最近一次 loadPromptConfig 的加载目标），仅会话内有效。
@@ -1489,21 +1441,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   let promptEditConfigId: string | null = null;
 
   function loadPromptConfig(config: PromptConfig) {
-    const pr = settings.value.prompt_rules;
-    pr.modules = klona(config.modules);
-    pr.person_style = config.person_style;
-    pr.option_rules = config.option_rules;
-    pr.option_person = config.option_person;
-    pr.enrich_person = config.enrich_person;
-    pr.enrich_person_style = config.enrich_person_style;
-    pr.option_min_chars = config.option_min_chars;
-    pr.option_max_chars = config.option_max_chars;
-    pr.enrich_min_chars = config.enrich_min_chars;
-    pr.enrich_max_chars = config.enrich_max_chars;
-    pr.context_rounds = config.context_rounds;
-    pr.context_mode = config.context_mode;
-    pr.prefill_enabled = config.prefill_enabled;
-    pr.baibai_enabled = config.baibai_enabled;
+    copyPromptRulesSubset(config, settings.value.prompt_rules);
     promptEditConfigId = config.id;
   }
 
@@ -1530,25 +1468,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   function createPromptConfig(name: string, isDefault: boolean) {
     const configs = settings.value.prompt_configs;
-    const cfg: PromptConfig = {
+    const cfg = {
       id: uuidv4(),
       name,
       is_default: isDefault || configs.length === 0,
-      modules: klona(settings.value.prompt_rules.modules),
-      person_style: settings.value.prompt_rules.person_style,
-      option_rules: settings.value.prompt_rules.option_rules,
-      option_person: settings.value.prompt_rules.option_person,
-      enrich_person: settings.value.prompt_rules.enrich_person,
-      enrich_person_style: settings.value.prompt_rules.enrich_person_style,
-      option_min_chars: settings.value.prompt_rules.option_min_chars,
-      option_max_chars: settings.value.prompt_rules.option_max_chars,
-      enrich_min_chars: settings.value.prompt_rules.enrich_min_chars,
-      enrich_max_chars: settings.value.prompt_rules.enrich_max_chars,
-      context_rounds: settings.value.prompt_rules.context_rounds,
-      context_mode: settings.value.prompt_rules.context_mode,
-      prefill_enabled: settings.value.prompt_rules.prefill_enabled,
-      baibai_enabled: settings.value.prompt_rules.baibai_enabled,
-    };
+    } as PromptConfig;
+    copyPromptRulesSubset(settings.value.prompt_rules, cfg);
     if (cfg.is_default) {
       for (const c of configs) c.is_default = false;
     }
@@ -1669,7 +1594,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   function factoryReset() {
     const fresh = validateInplace(GlobalSettings, {});
     fresh.schema_version = SCHEMA_VERSION;
-    fresh.prompt_rules.schema_version = 16;
+    fresh.prompt_rules.schema_version = 17;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
     // 不能整体覆盖 filter_settings：validateInplace 产出的对象带 Zod 默认字段，
     // 若覆盖成缺 library_groups 的裸对象，之后 RegexLibraryDialog.createGroup 的 `?? []`

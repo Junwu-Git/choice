@@ -1,4 +1,4 @@
-import toastr from 'toastr';
+import * as toastr from 'toastr';
 import type { SecondaryApi } from '@/type/settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
@@ -109,7 +109,10 @@ export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, s
 }
 
 /** 判断 API 调用错误是否可重试：网络错误（TypeError）和 5xx 服务端错误可重试；
- *  4xx 客户端错误、AbortError、API 级错误（data.error）不重试。 */
+ *  4xx 客户端错误、AbortError、API 级错误（data.error）不重试。
+ *  注意：单次尝试的 api.timeout 超时同样经 attemptController.abort() 抛 AbortError，
+ *  与用户取消共用同一信号无法区分——按既有设计，超时与用户取消均不重试，
+ *  仅 TypeError/5xx 进入重试路径。 */
 export function isRetryableError(e: unknown): boolean {
   if (e instanceof DOMException && e.name === 'AbortError') return false;
   if (e instanceof TypeError) return true;

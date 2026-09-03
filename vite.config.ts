@@ -41,12 +41,10 @@ export default defineConfig(({ mode }) => ({
         { from: 'vue-final-modal', imports: ['useModal'] },
         { from: 'zod', imports: ['z'] },
       ],
-      dirs: [{ glob: './src/panel/composable', types: true }],
     }),
     unpluginVueComponents({
       dts: true,
       syncMode: 'overwrite',
-      // globs: ['src/panel/component/*.vue'],
       resolvers: [VueUseComponentsResolver(), VueUseDirectiveResolver()],
     }),
     {

@@ -20,8 +20,6 @@ export type ResolvePoolInput = {
 export type ResolvePoolResult = {
   pinned: PoolEntry[];
   drawn: PoolEntry[];
-  selected: PoolEntry[];
-  underflow: boolean;
 };
 
 const shuffled = <T>(list: T[]): T[] => {
@@ -116,16 +114,11 @@ export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
     ? drawByCategories(pool, drawAmount(pool, remaining, input.oversamplePct))
     : weightedPick(pool, drawAmount(pool, remaining, input.oversamplePct));
 
-  let selected = [...pinnedUsed, ...drawn];
-  if (input.shuffleFinal) {
-    selected = shuffled(selected);
-  }
-
+  // shuffleFinal 时分别打乱 pinned/drawn，确保发给 AI 的提示词顺序随机。
+  // 不再返回合并的 selected/underflow：唯一消费方 generator 只读 pinned/drawn，
+  // 之前的 selected 合并 + 单独 shuffle 属未被消费的死计算
   return {
-    // 打乱最终结果时也打乱 pinned 和 drawn，确保发给 AI 的提示词顺序随机
     pinned: input.shuffleFinal ? shuffled(pinnedUsed) : pinnedUsed,
     drawn: input.shuffleFinal ? shuffled(drawn) : drawn,
-    selected,
-    underflow: selected.length < input.count,
   };
 }

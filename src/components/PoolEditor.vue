@@ -279,8 +279,6 @@ const selectedConfig = computed(() => configs.value.find(c => c.id === selectedC
 
 const effectiveName = computed(() => {
   if (!effectiveConfig.value) return t`全部条目`;
-  if (chatStore.settings.config_id) return effectiveConfig.value.name;
-  if (characterStore.settings.config_id) return effectiveConfig.value.name;
   return effectiveConfig.value.name;
 });
 

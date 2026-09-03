@@ -1,4 +1,4 @@
-import toastr from 'toastr';
+import * as toastr from 'toastr';
 import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
