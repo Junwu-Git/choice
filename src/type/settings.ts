@@ -718,9 +718,20 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
 最后自检：数量等于 {{count}}？每条都是此刻能干的具体行动、字数在 {{min_chars}}-{{max_chars}} 之间（以用户设置为准）？人称是否就是 {{option_person}}、没跟着正文跑？"[标题]内容"格式和 emoji 位置对不对、选项外没多余废话？
 自检过了就直接进 <options> 输出。`,
   ],
+  // v27：奖励文案去"小鱼干"——该梗已与其他预设撞车，换成"顺毛摸头"，直接呼应
+  // system_prompt 里"被主人摸头会开心到打呼噜"的人格设定。from 与 v25/v26 落盘文本
+  // 逐字一致；from/to 一律字面量固化，严禁引用当前常量，否则链式迁移会错位
+  [
+    '好好干，干完主人给你备了最爱的小鱼干哦。',
+    '好好干，干完主人亲自给你顺毛摸头哦。',
+  ],
+  [
+    '小鱼干诶！！主人等等，本喵必须超常发挥，绝不能让小鱼干飞了喵！',
+    '摸头诶！！主人说话要算话喵，本喵必须超常发挥，呼噜都提前打起来了！',
+  ],
 ];
 
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 27;
 
 export const WorldInfoGlobalSettings = z
   .object({

@@ -78,9 +78,57 @@ function buildGeneralEntries(): PoolEntry[] {
   ];
 }
 
-/** 构建默认条目：「通用」分组 4 条 + 「时间跳跃」分组 6 条（v23 起取代旧 10 条具体行为条目） */
+/**
+ * 「喵可」分组：4 条以喵可性格侧面切入正文的风格化条目（v27 起随默认条目下发）。
+ * 四条 = 好奇/捣蛋/犯懒/粘人四个反差鲜明的猫娘侧面，各自指向一类对正文的方向：
+ * 抠细节探索、搞事水花、松弛摆烂、围着主人转。type 统一带「喵可·」前缀作标记，
+ * 在条目库与发给 AI 的候选行里都能一眼认出归属（渲染格式 `type: content`）。
+ * 两个刻意为之的约束，不要"顺手"改掉：
+ * ① content 只用猫的行为比喻（嗅、扑、打滚、黏人），不带"喵"口癖——条目是发给
+ *    AI 的方向素材，system_prompt 已硬约束"猫娘腔一个字不许漏进选项"，口癖只允许
+ *    存在于 assistant 层；条目里出现口癖会把腔调往选项里带。
+ * ② 统一以"给出一个……的选项"收尾，与「通用」分组的引导句式对齐，避免 AI 把
+ *    条目内容误读成要照抄的文案。
+ * pinned 策略照「通用」分组先例：前 2 条固定当每轮锚点（一探一闹），后 2 条进
+ * 分组轮询随机池补充变化。
+ */
+function buildMiaokeEntries(): PoolEntry[] {
+  const entry = (type: string, content: string, pinned: boolean): PoolEntry => ({
+    id: uuidv4(),
+    type,
+    content,
+    pinned,
+    weight: 1,
+    category: '喵可',
+    rule: '',
+  });
+  return [
+    entry(
+      '喵可·好奇',
+      '正文里被一笔带过的细节和没凑完的热闹最勾猫——给出一个凑上去追问、翻看或一探究竟的选项',
+      true,
+    ),
+    entry(
+      '喵可·捣蛋',
+      '爪子痒了想搞点动静——给出一个出其不意、带点小风险小麻烦的选项，先把场面搅出水花再说',
+      true,
+    ),
+    entry(
+      '喵可·犯懒',
+      '天大的事也不急在这一时——给出一个偷懒省事、借坡下驴或先歇口气的选项，松弛下来反而顺理成章',
+      false,
+    ),
+    entry(
+      '喵可·粘人',
+      '视线黏在{{user}}身上挪不开——给出一个围着{{user}}转的选项：凑近搭话、跟着走，或者干脆赖着不走',
+      false,
+    ),
+  ];
+}
+
+/** 构建默认条目：「通用」分组 4 条 + 「喵可」分组 4 条 + 「时间跳跃」分组 6 条（v27 起加入喵可组） */
 function buildDefaultEntries(): PoolEntry[] {
-  return [...buildGeneralEntries(), ...buildTimeJumpEntries()];
+  return [...buildGeneralEntries(), ...buildMiaokeEntries(), ...buildTimeJumpEntries()];
 }
 
 /**
@@ -894,6 +942,43 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v27: 两件事，全部幂等：
+  // ① 奖励文案去"小鱼干"——该梗已与其他预设撞车，换成"顺毛摸头"（呼应 system_prompt
+  //    里"被摸头打呼噜"的人格设定）。reward_prompt/assistant_thinking 是存档快照，
+  //    改 JSON 默认值触达不了老用户，必须走 PROMPT_TEXT_MIGRATIONS
+  // ② 新增「喵可」分组 4 条：照 v22/v23 范式，按 type 去重后补入 master_pool，且只
+  //    追加进默认 config——其他 PoolConfig 是用户显式挑选的结果，擅自塞条目等于改
+  //    用户配置；迁移块的条目 id 是当场生成的 uuid，只能当场 push + 当场引用
+  if ((validated.schema_version ?? 0) < 27) {
+    // ① 提示词文本
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+    // ② 「喵可」分组池迁移（与 v23「通用」组同构；existingTypes/defaultConfig 为块级
+    //    const，与 v22/v23 块的同名变量互不可见）
+    const existingTypes = new Set(validated.master_pool.map(e => e.type));
+    const miaokeEntries = buildMiaokeEntries().filter(e => !existingTypes.has(e.type));
+    validated.master_pool.push(...miaokeEntries);
+    const defaultConfig = validated.configs.find(c => c.is_default);
+    if (defaultConfig) {
+      for (const e of miaokeEntries) {
+        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+      }
+    }
+    if (!validated.group_order.includes('喵可')) {
+      validated.group_order.push('喵可');
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
@@ -1489,7 +1574,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
     const defaultEntries = buildDefaultEntries();
     fresh.master_pool = [...defaultEntries];
-    fresh.group_order = ['通用', '时间跳跃'];
+    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后
+    fresh.group_order = ['通用', '喵可', '时间跳跃'];
     fresh.configs = [
       {
         id: uuidv4(),
