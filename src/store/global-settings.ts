@@ -994,6 +994,19 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v29: 润色提示词喵可人设适配——enrich_assistant 起手式喵可化、enrich_thinking 补人称校准与直接引语检查
+  // 与 v28 同构：仅跑模块内容文本迁移，无池/结构变更
+  if ((validated.schema_version ?? 0) < 29) {
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 

@@ -208,28 +208,6 @@
       "option_only": true
     },
     {
-      "id": "assistant_thinking",
-      "name": "思维链开头",
-      "role": "assistant",
-      "content": "摸头诶！！主人说话要算话喵，本喵必须超常发挥，呼噜都提前打起来了！\n\n<thinking>\n",
-      "marker": false,
-      "system": false,
-      "enabled": true,
-      "order": 20,
-      "option_only": true
-    },
-    {
-      "id": "reward_prompt",
-      "name": "主人奖励",
-      "role": "user",
-      "content": "好好干，干完主人亲自给你顺毛摸头哦。",
-      "marker": false,
-      "system": false,
-      "enabled": true,
-      "order": 19.5,
-      "option_only": true
-    },
-    {
       "id": "enrich_core_rules",
       "name": "润色规则",
       "role": "system",
@@ -237,7 +215,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 21,
+      "order": 20,
       "enrich_only": true
     },
     {
@@ -248,29 +226,50 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 22,
+      "order": 21,
       "enrich_only": true
     },
     {
       "id": "enrich_thinking",
       "name": "润色自检",
       "role": "system",
-      "content": "【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为\"[标题]内容\"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n完成以上自检后，直接输出润色结果。",
+      "content": "【润色前自检 - 全部内容须包裹在 <thinking> 标签内】\n第一行必须用引号完整复述【用户输入】的原文，确认已正确接收。\n1. 版本数量是否等于 {{count}}？\n2. 格式是否为\"[标题]内容\"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n4. 人称校准：润色后的人称只服从用户设置（{{enrich_person}}）。上方 <history> 正文用的人称是那篇小说自己的叙事选择，跟润色无关——不管正文用什么人称，润色一律按 {{enrich_person}} 写，不许被正文带偏。\n5. 直接引语：含对话的润色版本，对白必须以『……』完整给出、可直接朗读，禁止\"说……\"\"说道……\"式转述概括；纯叙述版本不强制。\n完成以上自检并确认通过后，再执行润色。",
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 23,
+      "order": 22,
       "enrich_only": true
+    },
+    {
+      "id": "reward_prompt",
+      "name": "主人奖励",
+      "role": "user",
+      "content": "好好干，干完主人奖励你一根逗猫棒。",
+      "marker": false,
+      "system": false,
+      "enabled": true,
+      "order": 23
+    },
+    {
+      "id": "assistant_thinking",
+      "name": "思维链开头",
+      "role": "assistant",
+      "content": "逗猫棒诶！！主人说话要算话喵，本喵必须超常发挥，呼噜都提前打起来了！\n\n<thinking>\n",
+      "marker": false,
+      "system": false,
+      "enabled": true,
+      "order": 24,
+      "option_only": true
     },
     {
       "id": "enrich_assistant",
       "name": "润色应答",
       "role": "assistant",
-      "content": "好的，开始处理润色任务，先逐条理解原文并自检人称、字数、忠实度。\n\n<thinking>\n",
+      "content": "收到喵~ 主人要本喵帮忙润色文案，本喵这就开始认真处理喵！先逐条理解原文并自检人称、字数、忠实度喵。\n\n<thinking>\n",
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 24,
+      "order": 25,
       "enrich_only": true
     }
   ]
