@@ -8,7 +8,9 @@
           <span>{{ t`功能课堂` }}</span>
           <button class="choice-tour-menu-close" @click="closeOnboarding">&times;</button>
         </div>
-        <p class="choice-tour-menu-desc">{{ t`「快速上手」带你跑通 配置 API → 生成选项 的核心链路；其余章节按需深入了解各功能。` }}</p>
+        <p class="choice-tour-menu-desc">
+          {{ t`「快速上手」带你跑通 配置 API → 生成选项 的核心链路；其余章节按需深入了解各功能。` }}
+        </p>
         <div class="choice-tour-menu-list choice-scrollbar">
           <button v-for="ch in GUIDE_CHAPTERS" :key="ch.id" class="choice-tour-chapter" @click="openOnboarding(ch.id)">
             <i :class="ch.icon"></i>

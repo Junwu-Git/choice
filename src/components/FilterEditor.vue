@@ -52,7 +52,9 @@
       <div class="choice-extract-preview">
         <span v-if="extractPreviewName">
           {{ t`发送时只保留 ${extractPreviewName} 之间的内容（含标签本身），其余全部丢弃：` }}
-          <code class="choice-extract-preview-tag">&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code>
+          <code class="choice-extract-preview-tag"
+            >&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code
+          >
         </span>
         <span v-else>{{ t`示例：卡里的剧情若包在 &lt;正文&gt;…&lt;/正文&gt; 里，这里就填「正文」` }}</span>
       </div>
@@ -221,7 +223,13 @@ const addExtract = () => {
 };
 // 预览用标签名：与 store 的清洗规则一致（剥掉用户顺手带的尖括号/闭合斜杠），
 // 保证"预览显示的标签对"就是实际会匹配的
-const extractPreviewName = computed(() => extractInput.value.trim().replace(/^<\/?\s*/, '').replace(/\s*>$/, '').trim());
+const extractPreviewName = computed(() =>
+  extractInput.value
+    .trim()
+    .replace(/^<\/?\s*/, '')
+    .replace(/\s*>$/, '')
+    .trim(),
+);
 
 const globalGroups = computed(() =>
   // 提取专用分组不渲染进全局正则区：提取（保留标签内）与过滤（删除）语义不同，混排

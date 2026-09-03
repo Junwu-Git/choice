@@ -122,7 +122,9 @@
                 <!-- 开关形态（区别于「固定」checkbox）：停用后条目保留在配置中，只是不参与生成 -->
                 <ChoiceSwitch
                   v-model="cfgEntry.enabled"
-                  :title="cfgEntry.enabled === false ? t`已停用：条目保留在配置中，但不参与生成` : t`已启用：点击停用该条目`"
+                  :title="
+                    cfgEntry.enabled === false ? t`已停用：条目保留在配置中，但不参与生成` : t`已启用：点击停用该条目`
+                  "
                 />
                 <label class="choice-check" :title="t`固定：勾选后该条目固定生成`">
                   <input v-model="cfgEntry.pinned" type="checkbox" />

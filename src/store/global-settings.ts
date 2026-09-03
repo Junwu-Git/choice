@@ -1262,9 +1262,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   const extractTagNames = computed(() => {
     const g = settings.value.filter_settings.groups.find(g => g.id === EXTRACT_GROUP_ID);
     if (!g) return [] as string[];
-    return g.entries
-      .map(e => (e.inline_rule?.type === 'extract' ? e.inline_rule.tag_name : ''))
-      .filter(Boolean);
+    return g.entries.map(e => (e.inline_rule?.type === 'extract' ? e.inline_rule.tag_name : '')).filter(Boolean);
   });
 
   // 快速区总开关：开 = 确保分组存在且启用；关 = 仅停用（保留规则，刷新不丢）
@@ -1282,7 +1280,11 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   function addExtractRule(rawName: string) {
     // 剥掉用户顺手带的尖括号/闭合斜杠，统一存纯标签名；同名去重
-    const clean = rawName.trim().replace(/^<\/?\s*/, '').replace(/\s*>$/, '').trim();
+    const clean = rawName
+      .trim()
+      .replace(/^<\/?\s*/, '')
+      .replace(/\s*>$/, '')
+      .trim();
     if (!clean) return;
     const g = ensureExtractGroup();
     if (g.entries.some(e => e.inline_rule?.type === 'extract' && e.inline_rule.tag_name === clean)) return;

@@ -66,9 +66,7 @@ const computePosition = () => {
   const spaceAbove = by - gap;
   const spaceBelow = vh - (by + bubbleSize) - gap;
   const top =
-    spaceAbove >= Math.min(h, 200) || spaceAbove >= spaceBelow
-      ? Math.max(8, by - gap - h)
-      : by + bubbleSize + gap;
+    spaceAbove >= Math.min(h, 200) || spaceAbove >= spaceBelow ? Math.max(8, by - gap - h) : by + bubbleSize + gap;
   cardStyle.value = { left: `${left}px`, top: `${top}px`, width: `${w}px` };
 };
 

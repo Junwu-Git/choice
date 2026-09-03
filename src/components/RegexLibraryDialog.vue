@@ -186,7 +186,12 @@
     @merge="onImportSource"
   />
 
-  <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" :hint="DIALOG_HINTS.regexLibrary" @close="showGuide = false" />
+  <GuidePopover
+    :visible="open && showGuide"
+    :anchor-el="guideBtn"
+    :hint="DIALOG_HINTS.regexLibrary"
+    @close="showGuide = false"
+  />
 </template>
 
 <script setup lang="ts">
