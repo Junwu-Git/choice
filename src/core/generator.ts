@@ -471,9 +471,7 @@ export const applyWIExcl = async (
   // 仅当确有改写需要时才动 selected_world_info，避免无配置时无谓重写。
   // hasNewEnabled：用户显式启用的书若尚未在 selected_world_info 中，必须追加以便 getGlobalLore 读取。
   const hasExcl = allExcl.size > 0;
-  const hasMutation = [...processSet].some(
-    name => modeOf(name) === 'force' || modeOf(name) === 'custom',
-  );
+  const hasMutation = [...processSet].some(name => modeOf(name) === 'force' || modeOf(name) === 'custom');
   const hasNewEnabled = enabled.some(n => !saved.includes(n));
   if (!hasExcl && !hasMutation && !hasNewEnabled) return null;
 
