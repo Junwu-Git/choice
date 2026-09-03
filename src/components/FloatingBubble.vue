@@ -56,7 +56,15 @@
 import { generatorState, resolveCustomApi } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { toggleSettings, isSettingsOpen, isBubbleContextMenuOpen, bubbleX, bubbleY, bubbleSize, isMobileBubble } from '@/core/floating-state';
+import {
+  toggleSettings,
+  isSettingsOpen,
+  isBubbleContextMenuOpen,
+  bubbleX,
+  bubbleY,
+  bubbleSize,
+  isMobileBubble,
+} from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 
 // 气泡直径与移动端判定来自 floating-state 单一来源（详见该模块注释），本组件不再

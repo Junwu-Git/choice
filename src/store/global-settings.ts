@@ -958,9 +958,20 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 // 显式逐字段赋值（而非字段名数组 + as any）：新增字段时 vue-tsc 会在此处报缺字段，避免静默丢失
 type PromptRulesSubset = Pick<
   GlobalSettingsType['prompt_rules'],
-  | 'modules' | 'person_style' | 'option_rules' | 'option_person' | 'enrich_person'
-  | 'enrich_person_style' | 'option_min_chars' | 'option_max_chars' | 'enrich_min_chars'
-  | 'enrich_max_chars' | 'context_rounds' | 'context_mode' | 'prefill_enabled' | 'baibai_enabled'
+  | 'modules'
+  | 'person_style'
+  | 'option_rules'
+  | 'option_person'
+  | 'enrich_person'
+  | 'enrich_person_style'
+  | 'option_min_chars'
+  | 'option_max_chars'
+  | 'enrich_min_chars'
+  | 'enrich_max_chars'
+  | 'context_rounds'
+  | 'context_mode'
+  | 'prefill_enabled'
+  | 'baibai_enabled'
 >;
 const copyPromptRulesSubset = (src: PromptRulesSubset, dst: PromptRulesSubset) => {
   dst.modules = klona(src.modules);
