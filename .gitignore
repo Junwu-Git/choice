@@ -21,6 +21,7 @@ screenshot_verify.png
 
 .playwright-mcp/
 .kilo/
+.zcode/
 .vscode/
 tailwind.config.js
 postcss.config.js
