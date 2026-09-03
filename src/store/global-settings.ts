@@ -971,6 +971,27 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v28: 恢复直接引语对白——v23"去死板"重构删掉的"含对话选项必须『……』直接引语"在
+  // 喵可化后长期缺位，含对话选项全面滑向"说……""问道……"式转述。本版只做提示词文本迁移
+  // （无池/结构变更）：option_rules 喵版/去喵两种 7 条各自插入"直接引语"第 2 条（存档
+  // 其余措辞逐字保留）、thinking_prompt 自检行补对白检查、core_rules fallback 第 2 条补
+  // 对白约束；CORE_RULES_STATIC 是代码常量直接改即生效，不入存档、无迁移对（同 v26
+  // 人称免疫先例）。喵可人设模块（system_prompt/应答/user 指令/奖励文案）本版零改动
+  if ((validated.schema_version ?? 0) < 28) {
+    validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
+    validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migratePromptText(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      cfg.option_rules = migratePromptText(cfg.option_rules);
+      cfg.person_style = migratePromptText(cfg.person_style);
+      for (const m of cfg.modules) {
+        m.content = migratePromptText(m.content);
+      }
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
