@@ -1,7 +1,7 @@
 import toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
-import { generateOptions, generatorState } from '@/core/generator';
+import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
 import { pinia } from '@/pinia';
@@ -93,6 +93,13 @@ export function initPanelMount() {
         return;
       }
       if (generatorState.loading) {
+        return;
+      }
+      // 自动生成场景的前置 API 检查：这里不能弹向导/设置面板——AI 刚回复完就抢焦点
+      // 体验极差，只轻提示后跳过；主动召回（弹设置+聚焦 API 步）在用户手动点
+      // 「生成」时由 ActionOptionsPanel.onToggle 触发
+      if (!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) {
+        toastr.warning(t`未配置 API，跳过自动生成选项`);
         return;
       }
       const swipeId = getMessageSwipeId(messageId);

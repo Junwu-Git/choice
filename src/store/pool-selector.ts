@@ -28,7 +28,11 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
     }
     const entryMap = new Map(config.entries.map(e => [e.entry_id, e]));
     return globalStore.settings.master_pool
-      .filter(e => entryMap.has(e.id))
+      .filter(e => {
+        // 只保留 config 引用的条目；enabled === false 为配置层停用，解析层直接剔除
+        const cfg = entryMap.get(e.id);
+        return cfg !== undefined && cfg.enabled !== false;
+      })
       .map(e => {
         const cfg = entryMap.get(e.id)!;
         // content/type/rule/category 只读 master_pool（内容层唯一真相源）；

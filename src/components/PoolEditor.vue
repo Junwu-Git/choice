@@ -96,7 +96,12 @@
           </button>
         </div>
         <div v-if="selectedEntries.length > 0" ref="entriesContainer" class="choice-inline-entries">
-          <div v-for="cfgEntry in selectedEntries" :key="cfgEntry.entry_id" class="choice-inline-entry">
+          <div
+            v-for="cfgEntry in selectedEntries"
+            :key="cfgEntry.entry_id"
+            class="choice-inline-entry"
+            :class="{ 'choice-inline-entry--disabled': cfgEntry.enabled === false }"
+          >
             <div class="choice-inline-entry-row">
               <DragHandle :title="t`拖动排序`" />
               <i
@@ -114,6 +119,11 @@
                 {{ entrySummary(cfgEntry.entry_id) }}
               </span>
               <div class="choice-inline-entry-fields">
+                <!-- 开关形态（区别于「固定」checkbox）：停用后条目保留在配置中，只是不参与生成 -->
+                <ChoiceSwitch
+                  v-model="cfgEntry.enabled"
+                  :title="cfgEntry.enabled === false ? t`已停用：条目保留在配置中，但不参与生成` : t`已启用：点击停用该条目`"
+                />
                 <label class="choice-check" :title="t`固定：勾选后该条目固定生成`">
                   <input v-model="cfgEntry.pinned" type="checkbox" />
                   <span class="choice-check-text">{{ t`固定` }}</span>
@@ -213,6 +223,7 @@ import { onboardingPendingAction } from '@/core/onboarding';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
 import { GenerationSettings } from '@/type/settings';
 import DragHandle from '@/components/shared/DragHandle.vue';
+import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
 
@@ -408,6 +419,7 @@ const handleSelectEntries = (selectedIds: Set<string>) => {
         entry_id: id,
         pinned: src?.pinned ?? false,
         weight: src?.weight ?? 1,
+        enabled: true,
       });
     }
   }
@@ -524,6 +536,12 @@ onUnmounted(() => {
   background: var(--choice-bg-card);
   overflow: hidden;
   flex-shrink: 0;
+}
+
+/* 停用条目：整行半透明+去饱和，与 FilterGroupPanel 非当前生效分组的视觉语言一致 */
+.choice-inline-entry--disabled {
+  opacity: 0.45;
+  filter: grayscale(30%);
 }
 
 .choice-inline-entry-row {

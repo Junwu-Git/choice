@@ -20,6 +20,56 @@
 
     <hr class="sysHR" />
 
+    <!-- 标签提取快速区（新手入口）：不理解分区/分组/正则也能用，填标签名即可。
+         规则存进固定 id 的专用全局分组（见 global-settings ensureExtractGroup），
+         生成时恒定先于下方手动分组的 tag/regex 规则执行（先裁剪后过滤），互不干扰。
+         预览行实时演示"填的名字 → 匹配的标签对"，消除"单框到底填什么"的疑惑 -->
+    <div class="choice-extract-quick" data-tour="filter-extract-quick">
+      <div class="choice-extract-quick-head">
+        <span class="choice-inline-label"><i class="fa-solid fa-bolt"></i> {{ t`标签提取` }}</span>
+        <span class="choice-extract-quick-desc">{{
+          t`新手推荐：只把指定标签对里的内容发给 AI，其余内容全部丢弃`
+        }}</span>
+        <!-- 提取总开关：关 = 规则保留但全部停用（不受下方任何分组开关影响） -->
+        <ChoiceSwitch
+          v-model="gs.extractGroupEnabled"
+          class="choice-extract-quick-switch"
+          :title="gs.extractGroupEnabled ? t`标签提取已启用` : t`标签提取已停用（规则保留）`"
+        />
+      </div>
+      <div class="choice-extract-quick-row">
+        <input
+          v-model="extractInput"
+          class="text_pole choice-extract-input"
+          :placeholder="t`只填标签名，如：正文`"
+          @keydown.enter="addExtract"
+        />
+        <button class="choice-btn-sm choice-btn-new" @click="addExtract">
+          <i class="fa-solid fa-plus"></i> {{ t`提取该标签` }}
+        </button>
+      </div>
+      <!-- 实时预览：填"正文"就展示 <正文>…</正文>，所见即所提取 -->
+      <div class="choice-extract-preview">
+        <span v-if="extractPreviewName">
+          {{ t`发送时只保留 ${extractPreviewName} 之间的内容（含标签本身），其余全部丢弃：` }}
+          <code class="choice-extract-preview-tag">&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code>
+        </span>
+        <span v-else>{{ t`示例：卡里的剧情若包在 &lt;正文&gt;…&lt;/正文&gt; 里，这里就填「正文」` }}</span>
+      </div>
+      <div
+        v-if="gs.extractTagNames.length > 0"
+        class="choice-extract-chips"
+        :class="{ 'choice-extract-chips--off': !gs.extractGroupEnabled }"
+      >
+        <span v-for="name in gs.extractTagNames" :key="name" class="choice-extract-chip">
+          <span class="choice-extract-chip-tag">&lt;{{ name }}&gt;</span>
+          <i class="fa-solid fa-xmark" :title="t`移除该提取标签`" @click="gs.removeExtractRule(name)"></i>
+        </span>
+      </div>
+    </div>
+
+    <hr class="sysHR" />
+
     <!-- 全局正则区 -->
     <div class="choice-inline-field-head" data-tour="filter-global-head">
       <span class="choice-inline-label"> <i class="fa-solid fa-globe"></i> {{ t`全局正则区` }} </span>
@@ -153,6 +203,7 @@ import { onboardingPendingAction } from '@/core/onboarding';
 import RegexLibraryDialog from '@/components/RegexLibraryDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
+import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import { this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import { DRAG_HANDLE_GROUP_SELECTOR, draggableFilterOptions } from '@/util/sortable';
@@ -162,7 +213,21 @@ import Sortable from 'sortablejs';
 const gs = useGlobalSettingsStore();
 const filterGroups = computed(() => gs.settings.filter_settings.groups);
 
-const globalGroups = computed(() => filterGroups.value.filter(g => g.preset_name === null && g.character_id === null));
+// 快速区输入框：回车/点按钮都走 gs.addExtractRule（内部负责去尖括号、去重、重建分组）
+const extractInput = ref('');
+const addExtract = () => {
+  gs.addExtractRule(extractInput.value);
+  extractInput.value = '';
+};
+// 预览用标签名：与 store 的清洗规则一致（剥掉用户顺手带的尖括号/闭合斜杠），
+// 保证"预览显示的标签对"就是实际会匹配的
+const extractPreviewName = computed(() => extractInput.value.trim().replace(/^<\/?\s*/, '').replace(/\s*>$/, '').trim());
+
+const globalGroups = computed(() =>
+  // 提取专用分组不渲染进全局正则区：提取（保留标签内）与过滤（删除）语义不同，混排
+  // 会被当成又一条过滤规则；快速区是提取规则的唯一管理入口（启停/增删都在那里）
+  filterGroups.value.filter(g => g.preset_name === null && g.character_id === null && g.id !== gs.extractGroupId),
+);
 const globalGroupsSorted = computed(() => {
   const groups = [...globalGroups.value];
   return groups.sort((a, b) => {
@@ -331,11 +396,12 @@ const activeDuplicateKeys = computed(() => {
       if (entry.library_entry_id) {
         key = `lib:${entry.library_entry_id}`;
       } else if (entry.inline_rule) {
+        // 三区只有 tag/regex 两种过滤语义（提取只在页顶快速区）；extract 走不进任何分支即不标红
         if (entry.inline_rule.type === 'tag') {
           if (entry.inline_rule.start || entry.inline_rule.end) {
             key = `inline:tag:${entry.inline_rule.start}|||${entry.inline_rule.end}`;
           }
-        } else if (entry.inline_rule.pattern) {
+        } else if (entry.inline_rule.type === 'regex' && entry.inline_rule.pattern) {
           key = `inline:regex:${entry.inline_rule.pattern}`;
         }
       }
@@ -444,5 +510,97 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
+}
+
+/* 标签提取快速区：视觉上比三个分区更轻（虚线边框卡片），传达"这是更简单的另一条路" */
+.choice-extract-quick {
+  border: 1px dashed var(--choice-border-active);
+  border-radius: var(--choice-radius-sm);
+  padding: var(--choice-space-2) var(--choice-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+  background: var(--choice-primary-light);
+}
+
+.choice-extract-quick-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--choice-space-2);
+  flex-wrap: wrap;
+}
+
+/* 总开关对齐标题行：baseline 布局下开关需要自身居中修正 */
+.choice-extract-quick-switch {
+  align-self: center;
+  margin-left: auto;
+}
+
+/* 总开关关闭：chips 灰显但仍可见（规则保留，只是不参与生成） */
+.choice-extract-chips--off {
+  opacity: 0.45;
+}
+
+.choice-extract-quick-desc {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-extract-quick-row {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+}
+
+/* 实时预览行：输入标签名后立即演示实际会保留的标签对，讲清"单框填什么" */
+.choice-extract-preview {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  line-height: 1.5;
+}
+
+.choice-extract-preview-tag {
+  font-family: monospace;
+  color: var(--choice-primary-hover, var(--choice-primary));
+  background: var(--choice-bg-element);
+  border-radius: var(--choice-radius-sm);
+  padding: 0 var(--choice-space-1);
+}
+
+.choice-extract-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--choice-text-sm);
+}
+
+.choice-extract-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--choice-space-1);
+}
+
+.choice-extract-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  padding: 2px var(--choice-space-2);
+  border-radius: var(--choice-radius-full);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  font-size: var(--choice-text-xs);
+}
+
+.choice-extract-chip-tag {
+  font-family: monospace;
+}
+
+.choice-extract-chip i {
+  cursor: pointer;
+  color: var(--choice-text-muted);
+  transition: color var(--choice-transition);
+}
+
+.choice-extract-chip i:hover {
+  color: var(--choice-color-error);
 }
 </style>

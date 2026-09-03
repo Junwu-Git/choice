@@ -3,23 +3,27 @@
     <div v-if="visible" class="choice-guide-popover-backdrop" @click.self="emit('close')"></div>
     <div v-if="visible" ref="popoverEl" class="choice-guide-popover" :style="popoverStyle">
       <div class="choice-guide-popover-header">
-        <i :class="icon"></i>
-        <span class="choice-guide-popover-title">{{ title }}</span>
+        <i :class="hint.icon"></i>
+        <span class="choice-guide-popover-title">{{ hint.title }}</span>
         <button class="choice-guide-popover-close" @click="emit('close')">&times;</button>
       </div>
       <div class="choice-guide-popover-body choice-scrollbar">
-        <slot />
+        <p class="choice-guide-popover-brief">{{ hint.brief }}</p>
+        <ul class="choice-guide-popover-points">
+          <li v-for="(point, i) in hint.points" :key="i">{{ point }}</li>
+        </ul>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
+import type { PageHint } from '@/core/guide-content';
+
 const props = defineProps<{
   visible: boolean;
   anchorEl: HTMLElement | null;
-  icon?: string;
-  title?: string;
+  hint: PageHint;
 }>();
 
 const emit = defineEmits<{
@@ -32,14 +36,29 @@ const popoverStyle = ref<Record<string, string>>({});
 const calcPosition = () => {
   if (!props.anchorEl || !popoverEl.value) return;
   const anchorRect = props.anchorEl.getBoundingClientRect();
-  const popoverWidth = 360;
+  const vh = window.innerHeight;
+  // 窄屏（手机 WebView ~380px）下固定 360px 几乎贴满视口边缘，收进视口内
+  const popoverWidth = Math.min(360, window.innerWidth - 16);
   const gap = 6;
 
   let left = anchorRect.left + anchorRect.width / 2 - popoverWidth / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - popoverWidth - 8));
 
-  const top = anchorRect.bottom + gap;
-  const maxHeight = window.innerHeight - top - 16;
+  // 锚点在屏幕下部（❓按钮在面板底部/tab 栏溢出行）时，若下方空间放不下弹层的
+  // 最低可用高度（180px），翻到锚点上方弹出——否则弹层会被 maxHeight 压成矮条内滚
+  const height = popoverEl.value.offsetHeight;
+  const spaceBelow = vh - anchorRect.bottom - gap - 16;
+  const placeAbove = spaceBelow < Math.min(height, 180) && anchorRect.top > vh / 2;
+
+  let top: number;
+  let maxHeight: number;
+  if (placeAbove) {
+    maxHeight = anchorRect.top - gap - 16;
+    top = Math.max(16, anchorRect.top - gap - Math.min(height, maxHeight));
+  } else {
+    top = anchorRect.bottom + gap;
+    maxHeight = spaceBelow;
+  }
 
   popoverStyle.value = {
     left: `${left}px`,
@@ -79,7 +98,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 .choice-guide-popover {
   position: fixed;
   z-index: var(--choice-z-popover);
-  width: 360px;
+  width: min(360px, calc(100vw - 16px));
   background: var(--choice-bg-panel);
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-lg);
@@ -99,6 +118,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
   border-bottom: 1px solid var(--choice-border);
   user-select: none;
+}
+
+.choice-guide-popover-header i {
+  color: var(--choice-primary);
 }
 
 .choice-guide-popover-title {
@@ -136,30 +159,26 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   overflow-y: auto;
   /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把背后的酒馆页面一起拖走 */
   overscroll-behavior: contain;
-  padding: var(--choice-space-3) var(--choice-space-4) var(--choice-space-3);
+  padding: var(--choice-space-3) var(--choice-space-4);
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
   line-height: 1.7;
 }
 
-.choice-guide-popover-body :deep(p) {
-  margin: 0 0 6px;
-}
-
-.choice-guide-popover-body :deep(ol) {
-  margin: 0;
-  padding-left: var(--choice-space-4);
-  line-height: 1.8;
-}
-
-.choice-guide-popover-body :deep(strong) {
+.choice-guide-popover-brief {
+  margin: 0 0 var(--choice-space-2);
   color: var(--choice-text);
 }
 
-.choice-guide-popover-body :deep(code) {
-  background: var(--choice-bg-element);
-  padding: 1px var(--choice-space-1);
-  border-radius: 3px;
-  font-size: var(--choice-text-xs);
+.choice-guide-popover-points {
+  margin: 0;
+  padding-left: var(--choice-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-guide-popover-points li::marker {
+  color: var(--choice-primary);
 }
 </style>

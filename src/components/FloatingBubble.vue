@@ -39,7 +39,7 @@
               ? 'transform 0.12s ease-out'
               : 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
       }"
-      title="行动选项设置"
+      :title="bubbleTitle"
     >
       <div class="choice-bubble-inner-ring"></div>
       <i
@@ -109,6 +109,18 @@ const isDisabled = computed(() => {
   const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
   const pool = usePoolSelectorStore().effectivePool;
   return !api || pool.length === 0;
+});
+
+// disabled 态此前只是变暗，没有任何文字解释"为什么点它没用"。title 把具体缺什么
+// 说清楚（未配 API / 池空 / 都缺），点击行为不变（仍打开设置面板）
+const bubbleTitle = computed(() => {
+  const gs = useGlobalSettingsStore();
+  const noApi = !resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
+  const noPool = usePoolSelectorStore().effectivePool.length === 0;
+  if (noApi && noPool) return t`未配置 API 且条目池为空——点击打开设置`;
+  if (noApi) return t`未配置 API——点击打开设置`;
+  if (noPool) return t`条目池为空——点击打开设置`;
+  return t`行动选项设置`;
 });
 
 const bubbleState = computed(() => {

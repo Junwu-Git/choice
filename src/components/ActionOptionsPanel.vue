@@ -151,7 +151,12 @@
           {{ t`点击"生成润色"按钮或在输入框中输入文字后点击润色图标` }}
         </template>
         <template v-else>
-          {{ t`点击生成按钮获取选项` }}
+          <div>{{ t`点击生成按钮获取选项` }}</div>
+          <!-- API 未解析到时把空状态升级成解决入口：直达设置面板的 API 配置步 -->
+          <button v-if="!apiReady" class="menu_button choice-panel-empty-action" @click="openApiOnboarding">
+            <i class="fa-solid fa-plug"></i>
+            {{ t`去配置 API` }}
+          </button>
         </template>
       </div>
       <div
@@ -165,7 +170,8 @@
 </template>
 
 <script setup lang="ts">
-import { cancelGeneration, generateOptions, generatorState } from '@/core/generator';
+import toastr from 'toastr';
+import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { cancelEnrich } from '@/core/enrich-input';
 import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
@@ -173,6 +179,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { nextThemeMode, themeLabel } from '@/core/theme-presets';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
+import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { sendTextareaMessage } from '@sillytavern/script';
 
 const props = defineProps<{ compact?: boolean }>();
@@ -198,6 +205,10 @@ const {
 } = storeToRefs(panelStore);
 
 const isGenerating = computed(() => generatorState.loading);
+
+// 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
+// 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂
+const apiReady = computed(() => !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis));
 const gs = useGlobalSettingsStore();
 
 // 停靠模式：面板固定在输入框上方（settings.ui.panel_position = 'input'，挂载点由
@@ -273,6 +284,14 @@ const onToggle = async () => {
     return;
   }
   if (panelStore.messageId === null) {
+    return;
+  }
+  // 前置拦截而非等 generateOptions 内部报错：API 未配置时请求注定失败，
+  // 与其让用户看一条孤零零的 toastr，不如直接把设置面板+向导送到配置路径
+  // （autoOpenApiOnboarding 每会话只自动弹一次，之后仅报错不再抢焦点）
+  if (!apiReady.value) {
+    toastr.error(t`请先在设置中配置 API（API 地址 + 模型）`);
+    autoOpenApiOnboarding();
     return;
   }
   const target = { messageId: panelStore.messageId, swipeId: panelStore.swipeId };
@@ -570,6 +589,11 @@ const onSelect = async (option: ChoiceOption) => {
   color: var(--choice-text-muted);
   font-size: var(--choice-text-sm);
   padding: var(--choice-space-1) 0;
+}
+
+.choice-panel-empty-action {
+  margin-top: var(--choice-space-2);
+  font-size: var(--choice-text-sm);
 }
 
 .choice-panel-hint {

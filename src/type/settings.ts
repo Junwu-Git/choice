@@ -58,6 +58,10 @@ export const PoolConfigEntry = z
     entry_id: z.string(),
     pinned: z.boolean().default(false),
     weight: z.number().min(0).default(1),
+    // 配置层停用开关：false = 条目保留在配置中但不参与生成（在 pool-selector 解析层剔除，
+    // 抽取算法无感知）。与 pinned 的 checkbox 用不同控件（滑动开关），避免两种"勾选"语义混淆。
+    // 老存档缺字段由 default(true) 自动补齐（同 panel_lock 先例），无需 bump schema_version
+    enabled: z.boolean().default(true),
     // v20 删除了 condition 字段：条件职责并入条目库层 rule（v21 起作为写作约束，不作为选用门槛），
     // 配置层不再单独设条件；旧存档里的 condition 键由 zod 剥离
   })
@@ -184,7 +188,10 @@ export const SIMPLE_MODULE_CONTENTS: Readonly<Record<string, string>> = Object.f
 /** 柏宝书模块 ID 集合，供 PromptEditor 按总开关过滤显示 */
 export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 
-// 聊天记录过滤规则：标签匹配（字面量头/尾）或正则匹配，二者可混用
+// 聊天记录过滤规则：标签匹配（字面量头/尾）、正则匹配、标签提取，三者可混用。
+// 执行语义（generator.buildChatHistory）：extract 恒定先于 tag/regex 执行（先裁剪后过滤），
+// 顺序不依赖规则排列——提取规则保留 <标签>…</标签> 整段并舍弃其余，之后现有 tag/regex
+// 规则继续在提取结果上运行，形成"提取后再二次过滤"的新手友好管线
 export const ChatFilterRule = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tag'),
@@ -197,6 +204,14 @@ export const ChatFilterRule = z.discriminatedUnion('type', [
     // 匹配段替换为此字符串（JS replace 语法，支持 $1 等分组引用）；空串 = 整段删除。
     // 不放 tag 变体：标签规则语义固定为"剥掉标签对"，不存在保留内容的需求
     replace: z.string().default(''),
+  }),
+  z.object({
+    type: z.literal('extract'),
+    // 纯标签名（如"正文"，不带尖括号）：执行时按 <tag_name>…</tag_name> 字面量配对提取。
+    // 只支持完整标签对（不给头/尾分离），刻意保持新手单输入框的最简形态。
+    // 归属约束：extract 只由过滤页顶部的标签提取快速区产生（专用全局分组），三区
+    // （全局/预设/角色卡）与正则库的 UI 不提供该类型——三区是纯"过滤"（删除/替换）语义
+    tag_name: z.string().default(''),
   }),
 ]);
 export type ChatFilterRule = z.infer<typeof ChatFilterRule>;
@@ -219,12 +234,15 @@ export type ChatFilterGroup = z.infer<typeof ChatFilterGroup>;
 export const RegexLibraryEntry = z.object({
   id: z.string(),
   name: z.string().default(''),
-  type: z.enum(['tag', 'regex']),
+  // UI 只创建 tag/regex；'extract' 仅为导入外部文件的数据兼容（快速区分组不经过正则库）
+  type: z.enum(['tag', 'regex', 'extract']),
   pattern: z.string().default(''),
   // 仅 regex 类型生效：匹配段替换为此字符串（兼容 ST replaceString 的 $1 语法），空串 = 整段删除
   replace: z.string().default(''),
   start: z.string().default(''),
   end: z.string().default(''),
+  // 仅 extract 类型生效：纯标签名，不带尖括号
+  tag_name: z.string().default(''),
   category: z.string().default(''),
 });
 export type RegexLibraryEntry = z.infer<typeof RegexLibraryEntry>;
@@ -853,9 +871,11 @@ export const UISettings = z
     /** 行内设置面板内容区高度（px），拖拽手柄可调整 */
     panel_height: z.number().min(300).max(800).default(500),
     /**
-     * 新手引导是否已完成/跳过。首次打开任一设置面板时自动弹出向导至多一次：
-     * 弹出的瞬间就置 true（而非关闭时），防止用户中途刷新页面导致反复打扰；
-     * 恢复出厂后归 false，下次打开会再弹一次，属预期行为
+     * 新手引导是否已完成/跳过。三个触发方共享这一个开关：首启欢迎卡（启动 3s 后）、
+     * 首次打开设置面板（maybeAutoOpenOnboarding）、生成遇 API 未配置的自动召回
+     * （openApiOnboarding）。任一弹出瞬间就置 true（而非关闭时），防止用户中途刷新
+     * 页面导致反复打扰；重看走设置面板 tab 栏 🎓 功能课堂，不受本字段限制。
+     * 恢复出厂后归 false，下次会再弹一次，属预期行为
      */
     onboarding_done: z.boolean().default(false),
     /**

@@ -1,5 +1,36 @@
 <template>
   <Teleport to="body">
+    <!-- 章节菜单（🎓 入口）：按章学习，不再强制从全局第 1 步重放 -->
+    <div v-if="onboardingMenuVisible" class="choice-tour-menu-backdrop" @click.self="closeOnboarding">
+      <div class="choice-tour-card choice-tour-menu">
+        <div class="choice-tour-menu-header">
+          <i class="fa-solid fa-graduation-cap"></i>
+          <span>{{ t`功能课堂` }}</span>
+          <button class="choice-tour-menu-close" @click="closeOnboarding">&times;</button>
+        </div>
+        <p class="choice-tour-menu-desc">{{ t`「快速上手」带你跑通 配置 API → 生成选项 的核心链路；其余章节按需深入了解各功能。` }}</p>
+        <div class="choice-tour-menu-list choice-scrollbar">
+          <button v-for="ch in GUIDE_CHAPTERS" :key="ch.id" class="choice-tour-chapter" @click="openOnboarding(ch.id)">
+            <i :class="ch.icon"></i>
+            <span class="choice-tour-chapter-text">
+              <span class="choice-tour-chapter-title">{{ ch.title }}</span>
+              <span class="choice-tour-chapter-brief">{{ ch.brief }}</span>
+            </span>
+            <span class="choice-tour-chapter-meta">
+              <span
+                v-if="ch.id === 'quick-start'"
+                class="choice-tour-chapter-badge"
+                :class="quickStartDone ? 'is-ok' : 'is-miss'"
+              >
+                {{ quickStartDone ? t`已完成` : t`未完成` }}
+              </span>
+              <span class="choice-tour-chapter-steps">{{ ch.steps.length }} {{ t`步` }}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <template v-if="onboardingVisible">
       <!-- 无可聚焦目标时的整体调暗层；有目标时由 hole 的巨型 box-shadow 兼任调暗 -->
       <div v-if="!holeStyle" class="choice-tour-dim"></div>
@@ -8,12 +39,14 @@
       <div ref="cardEl" class="choice-tour-card" :class="{ 'is-centered': !holeStyle }" :style="cardStyle">
         <div class="choice-tour-progress">
           <span
-            v-for="(s, i) in ONBOARDING_STEPS"
+            v-for="(s, i) in onboardingChapter.steps"
             :key="s.id"
             class="choice-tour-dot"
             :class="{ 'is-active': i === onboardingStepIndex, 'is-done': i < onboardingStepIndex }"
           ></span>
-          <span class="choice-tour-progress-text">{{ onboardingStepIndex + 1 }} / {{ ONBOARDING_STEPS.length }}</span>
+          <span class="choice-tour-progress-text"
+            >{{ onboardingStepIndex + 1 }} / {{ onboardingChapter.steps.length }}</span
+          >
         </div>
 
         <div class="choice-tour-step-header">
@@ -31,7 +64,7 @@
             <span>{{ apiReady ? t`API 已配置，可以正常生成` : t`尚未配置——完成本步前无法生成选项` }}</span>
           </div>
           <div
-            v-else-if="step.id === 'pool-select'"
+            v-else-if="step.id === 'pool-select' || step.id === 'pool-ready'"
             class="choice-tour-status"
             :class="poolReady ? 'is-ok' : 'is-miss'"
           >
@@ -55,7 +88,7 @@
               {{ t`上一步` }}
             </button>
             <button class="menu_button menu_button_default" @click="onNext">
-              {{ onboardingStepIndex === ONBOARDING_STEPS.length - 1 ? t`开始使用` : t`下一步` }}
+              {{ onboardingStepIndex === onboardingChapter.steps.length - 1 ? t`完成` : t`下一步` }}
             </button>
           </div>
         </div>
@@ -67,13 +100,16 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { resolveCustomApi } from '@/core/generator';
+import { resolveCustomApi, lastOptionsGeneratedAt } from '@/core/generator';
+import { GUIDE_CHAPTERS } from '@/core/guide-content';
 import {
-  ONBOARDING_STEPS,
+  onboardingChapter,
+  onboardingMenuVisible,
   onboardingStepIndex,
   onboardingVisible,
   onboardingPendingAction,
   closeOnboarding,
+  openOnboarding,
   requestOnboardingTab,
 } from '@/core/onboarding';
 
@@ -87,7 +123,17 @@ const apiReady = computed(() => !!resolveCustomApi(gs.settings.active_api_id, gs
 // 非空即代表抽取算法拿得到素材
 const poolReady = computed(() => poolStore.effectivePool.length > 0);
 
-const step = computed(() => ONBOARDING_STEPS[onboardingStepIndex.value]);
+// 功能课堂里「快速上手」章的就绪徽章：完成标志与向导 run-generate 步的 done
+// 信号同源——生成过第一组选项才算跑通核心链路，不引入第二套判定
+const quickStartDone = computed(() => lastOptionsGeneratedAt.value > 0);
+
+// 防御越界：章切换与 stepIndex 重置在 startChapter 里同步完成，正常不会越界；
+// 但 computed 求值顺序上 chapterId/stepIndex 是两个 ref，极端时序下先读后写会
+// 短暂不一致，clamp 一下避免 steps[idx] 为 undefined 炸掉模板
+const step = computed(() => {
+  const steps = onboardingChapter.value.steps;
+  return steps[Math.min(onboardingStepIndex.value, steps.length - 1)];
+});
 
 const cardEl = ref<HTMLElement | null>(null);
 const holeStyle = ref<Record<string, string> | null>(null);
@@ -130,7 +176,8 @@ const doneHint = computed<'auto' | 'already' | null>(() => {
 
 const onNext = () => {
   cancelAutoAdvance();
-  if (onboardingStepIndex.value >= ONBOARDING_STEPS.length - 1) {
+  // 章内末步即向导终点：完成后直接关闭（不回菜单——用户刚学完这章，回菜单是打扰）
+  if (onboardingStepIndex.value >= onboardingChapter.value.steps.length - 1) {
     closeOnboarding();
   } else {
     onboardingStepIndex.value++;
@@ -181,7 +228,7 @@ const syncPosition = (scroll: boolean) => {
   if (!onboardingVisible.value) return;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  const s = ONBOARDING_STEPS[onboardingStepIndex.value];
+  const s = step.value;
 
   let el: HTMLElement | null = null;
   if (s.target) {
@@ -238,7 +285,7 @@ const activateStep = async () => {
   // 直接同步快照即可）；同时清掉上一步可能遗留的自动前进计时器
   doneBaseline.value = stepDone.value;
   cancelAutoAdvance();
-  const s = ONBOARDING_STEPS[onboardingStepIndex.value];
+  const s = step.value;
   if (s.tab) requestOnboardingTab(s.tab);
   // 自动开/关弹窗：条目库、选择条目、正则库的开关状态在 PoolEditor/FilterEditor
   // 本地，由它们 watch onboardingPendingAction 消费
@@ -335,6 +382,159 @@ onUnmounted(() => {
   pointer-events: auto;
   max-height: calc(100vh - 16px);
   max-height: calc(100dvh - 16px);
+}
+
+/* 章节菜单：backdrop flex 居中，卡片不再用 fixed 定位坐标 */
+.choice-tour-menu-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: var(--choice-z-popover);
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.choice-tour-menu {
+  position: relative;
+  width: min(380px, calc(100vw - 16px));
+}
+
+.choice-tour-menu-header {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-lg);
+  font-weight: bold;
+  color: var(--choice-text);
+  margin-bottom: var(--choice-space-1);
+}
+
+.choice-tour-menu-header i {
+  color: var(--choice-primary);
+}
+
+.choice-tour-menu-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xl);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 var(--choice-space-1);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-tour-menu-close:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-tour-menu-desc {
+  margin: 0 0 var(--choice-space-3);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+  line-height: 1.6;
+}
+
+.choice-tour-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.choice-tour-chapter {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-3);
+  padding: var(--choice-space-2) var(--choice-space-3);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-md);
+  cursor: pointer;
+  text-align: left;
+  color: var(--choice-text);
+  transition:
+    border-color var(--choice-transition),
+    background var(--choice-transition);
+}
+
+.choice-tour-chapter:hover {
+  border-color: var(--choice-primary);
+  background: rgba(var(--choice-primary-rgb), 0.06);
+}
+
+.choice-tour-chapter > i {
+  color: var(--choice-primary);
+  font-size: var(--choice-text-lg);
+  flex-shrink: 0;
+}
+
+.choice-tour-chapter-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.choice-tour-chapter-title {
+  font-size: var(--choice-text-sm);
+  font-weight: bold;
+}
+
+.choice-tour-chapter-brief {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  line-height: 1.5;
+}
+
+.choice-tour-chapter-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.choice-tour-chapter-badge {
+  font-size: var(--choice-text-xs);
+  padding: 0 var(--choice-space-2);
+  border-radius: var(--choice-radius-full);
+  border: 1px solid var(--choice-border);
+}
+
+.choice-tour-chapter-badge.is-ok {
+  color: var(--choice-primary);
+  border-color: var(--choice-primary);
+  background: rgba(var(--choice-primary-rgb), 0.08);
+}
+
+.choice-tour-chapter-badge.is-miss {
+  color: var(--choice-warning);
+  border-style: dashed;
+  border-color: var(--choice-border-strong);
+}
+
+.choice-tour-chapter-steps {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
 }
 
 .choice-tour-progress {

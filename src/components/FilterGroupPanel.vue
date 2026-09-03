@@ -107,11 +107,14 @@
           </button>
         </template>
         <template v-else>
+          <!-- 三区只提供"过滤"语义（删除/替换）；"提取"（保留标签内、舍弃其余）只在页顶
+               标签提取快速区，两种语义不混排——混淆入口比混淆实现更让人困惑 -->
           <select
-            v-model="entry.inline_rule!.type"
+            :value="entry.inline_rule!.type"
             class="text_pole"
             style="width: 90px; flex-shrink: 0"
             :disabled="dimmed && locked"
+            @change="changeRuleType(entry, ($event.target as HTMLSelectElement).value)"
           >
             <option value="tag">{{ t`标签匹配` }}</option>
             <option value="regex">{{ t`正则表达式` }}</option>
@@ -132,8 +135,11 @@
               :disabled="dimmed && locked"
             />
           </template>
+          <!-- 显式判 regex 而非 v-else：union 里还留着 extract（数据兼容），v-else 会把
+               extract 也窄进来导致访问 pattern 报类型错；遗留 extract 规则（理论上无）只是
+               不渲染输入框，下拉与删除按钮仍可用 -->
           <input
-            v-else
+            v-else-if="entry.inline_rule!.type === 'regex'"
             v-model="entry.inline_rule!.pattern"
             class="text_pole"
             :placeholder="t`正则表达式`"
@@ -157,6 +163,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import Sortable from 'sortablejs';
+import type { FilterGroupEntry } from '@/type/settings';
 
 const props = withDefaults(
   defineProps<{
@@ -212,7 +219,21 @@ const getLibEntryDisplay = (id: string) => {
   const entry = gs.settings.filter_settings.regex_library.find(e => e.id === id);
   if (!entry) return '';
   if (entry.type === 'tag') return `${entry.start || '...'} ... ${entry.end || '...'}`;
+  if (entry.type === 'extract') return `<${entry.tag_name || '...'}>…</${entry.tag_name || '...'}>`;
   return entry.pattern || '(空)';
+};
+
+// 切换规则类型时重建规则对象而非直接改 type：discriminatedUnion 各分支字段不同，
+// 原地改 type 会留下旧类型的残缺字段（模板也无法在 union 上访问新类型字段）。
+// 仅 tag/regex 互转——extract 只存在于页顶快速区分组，不进三区
+const changeRuleType = (entry: FilterGroupEntry, next: string) => {
+  const rule = entry.inline_rule;
+  if (!rule || rule.type === next) return;
+  if (next === 'tag') {
+    entry.inline_rule = { type: 'tag', start: '', end: '' };
+  } else {
+    entry.inline_rule = { type: 'regex', pattern: '', replace: '' };
+  }
 };
 
 const toggleEnabled = () => {

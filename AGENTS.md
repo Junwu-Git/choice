@@ -92,9 +92,17 @@ export function useCompactLayout(target: Ref<HTMLElement | null>) {
 
 ## 目录（按实际文件结构，注意与早期规划稿的差异）
 
-- `src/core/` — `generator.ts`（单独调用API生成选项/条目池，结构化role prompt，支持取消，含 `resolveCustomApi` API 校验）、`pool-resolver.ts`（分组加权抽取，纯函数，接收已解析的 effectivePool）、`options-store.ts`（`message.extra`存取，含swipe维度、翻页）、`floating-state.ts`（悬浮球/悬浮面板共享状态）、`enrich-input.ts`（输入润色模式）、`api-client.ts`（API 请求封装）、`baibai-bridge.ts`（柏宝书可选桥接）、`panel-mount.ts`（面板挂载逻辑）、`theme-detector.ts`（主题检测）、`wand-menu.ts`（魔杖菜单集成）。
+- `src/core/` — `generator.ts`（单独调用API生成选项/条目池，结构化role prompt，支持取消，含 `resolveCustomApi` API 校验）、`pool-resolver.ts`（分组加权抽取，纯函数，接收已解析的 effectivePool）、`options-store.ts`（`message.extra`存取，含swipe维度、翻页）、`floating-state.ts`（悬浮球/悬浮面板共享状态）、`enrich-input.ts`（输入润色模式）、`api-client.ts`（API 请求封装）、`baibai-bridge.ts`（柏宝书可选桥接）、`panel-mount.ts`（面板挂载逻辑）、`theme-detector.ts`（主题检测）、`wand-menu.ts`（魔杖菜单集成）、`onboarding.ts`（引导状态与触发入口，见下节）、`guide-content.ts`（引导内容单一来源，见下节）。
 - `src/store/` — `global-settings.ts`（对应`extension_settings`）、`character-settings.ts`（对应角色卡`data.extensions`）、`chat-settings.ts`（对应`chat_metadata`）、`pool-selector.ts`（组合三个store，解析 master_pool + config 覆盖后的 `effectivePool`/`effectiveConfig`）、`prompt-config-selector.ts`（提示词配置选择，`prompt_config_id` 的 chat>character>default 解析）、`panel-state.ts`（面板展开/折叠、当前楼层/swipe追踪）。
-- `src/components/` — 主形态 `ActionOptionsPanel.vue`；悬浮形态 `FloatingBubble.vue` + `FloatingRoot.vue` + `FloatingSettings.vue` + `FloatingContextMenu.vue`；设置区 `SettingsPanel.vue` + 7 个 tab 组件（`GenerationSettings.vue`/`PromptEditor.vue`/`ApiEditor.vue`/`WorldInfoEditor.vue`/`AppearanceSettings.vue`/`DebugSettings.vue` 等）；条目池管理 `PoolEditor.vue`/`EntryPoolDialog.vue`/`PoolGenDialog.vue`/`SelectEntriesDialog.vue`/`ImportPoolDialog.vue`/`FilterEditor.vue`/`FilterGroupPanel.vue`；通用 `ConfirmDialog.vue`/`CreateConfigDialog.vue`/`GuidePopover.vue`/`PageGuide.vue`/`RegexLibraryDialog.vue`；`shared/`（设计系统基础组件，见上节）。
+- `src/components/` — 主形态 `ActionOptionsPanel.vue`；悬浮形态 `FloatingBubble.vue` + `FloatingRoot.vue` + `FloatingSettings.vue` + `FloatingContextMenu.vue`；设置区 `FloatingSettings.vue` 内 8 个 tab 组件（`PoolEditor.vue`/`GenerationSettings.vue`/`PromptEditor.vue`/`ApiEditor.vue`/`WorldInfoEditor.vue`/`FilterEditor.vue`/`AppearanceSettings.vue`/`DebugSettings.vue`）；条目池管理 `EntryPoolDialog.vue`/`PoolGenDialog.vue`/`SelectEntriesDialog.vue`/`ImportPoolDialog.vue`/`FilterGroupPanel.vue`；新手引导 `OnboardingWizard.vue`（聚光灯向导+章节菜单）+ `WelcomeCard.vue`（首启欢迎卡）+ `GuidePopover.vue`（❓页内指引弹层）；通用 `ConfirmDialog.vue`/`CreateConfigDialog.vue`/`RegexLibraryDialog.vue`；`shared/`（设计系统基础组件，见上节）。
+
+### 新手引导架构（分层引导，2026-09 重构）
+
+- **内容单一来源 `src/core/guide-content.ts`**：`GUIDE_CHAPTERS`（7 个章节的向导步骤）+ `PAGE_HINTS`（8 个 tab 的 ❓ 指引）+ `DIALOG_HINTS`（3 个弹窗指引）。所有引导文案只改这里——此前步骤/页内指引/弹窗说明三处平行维护出现过说法漂移与与实现相反的描述，禁止再在组件里内嵌引导文案。
+- **章节结构**：`quick-start`（配置API→生成，唯一默认路径，done 自动检测 2 处：API 保存成功、首次生成成功）+ 6 个进阶章（条目池/生成/提示词/世界书/过滤/外观）。`onboardingStepIndex` 是**章内**下标，当前章由 `onboardingChapter` computed 解析。
+- **触发与召回**（都在 `onboarding.ts`）：`maybeAutoOpenOnboarding`（首次打开设置面板→弹 quick-start）；`WelcomeCard`（启动 3s 后未完成引导→轻量欢迎卡）；`autoOpenApiOnboarding`（手动点生成遇 API 未配置→自动弹设置面板聚焦 API 步，**每会话至多一次**）；`openApiOnboarding`（面板空状态「去配置 API」按钮→同上但不节流）。自动生成路径（panel-mount）遇未配置 API 只 toastr 警告跳过，**不弹窗抢焦点**。
+- **入口**：设置面板 tab 栏 🎓 = `openChapterMenu()`（章节菜单，quick-start 章实时显示就绪徽章）；❓ = `GuidePopover` 渲染 `PAGE_HINTS` 结构化数据（brief + 要点列表，无 v-html）。
+- **`onboarding_done` 语义**：弹出瞬间（欢迎卡/向导）即置 true，中途刷新也视为看过；`data-tour` 聚光灯锚点分散在 12 个组件模板里，增删向导步骤时两处要同步。
 - `docs/` — 技术方案文档（`async-action-options-spec.md`）与早期MVP原型，作为背景参考，不是当前实现标准；UI 重构方案见另外维护的 `choice-ui-redesign-spec.md`（主体页面）与 `choice-floating-bubble-design.md`（悬浮球专项），本文件是二者的执行摘要，细节推理以那两份为准。
 
 ## 条目池模型 & 抽取算法要点

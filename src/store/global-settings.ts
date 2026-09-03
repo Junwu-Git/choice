@@ -587,7 +587,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     const configs: PoolConfig[] = [];
     const makeEntries = (pool: PoolEntry[]): PoolConfigEntry[] =>
-      pool.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight }));
+      pool.map(e => ({ entry_id: e.id, pinned: e.pinned, weight: e.weight, enabled: true }));
 
     if (oldGlobalPool.length > 0) {
       configs.push({
@@ -654,6 +654,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           entry_id: e.id,
           pinned: e.pinned,
           weight: e.weight,
+          enabled: true,
         })),
         is_default: true,
         generation: GenerationSettings.parse({}),
@@ -716,6 +717,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
             entry_id: e.id,
             pinned: e.pinned,
             weight: e.weight,
+            enabled: true,
           })),
           is_default: true,
           generation: GenerationSettings.parse({}),
@@ -774,7 +776,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       const defaultConfig = validated.configs.find(c => c.is_default);
       if (defaultConfig) {
         for (const e of jumpEntries) {
-          defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+          defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight, enabled: true });
         }
       }
       if (!validated.group_order.includes('时间跳跃')) {
@@ -833,7 +835,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const defaultConfig = validated.configs.find(c => c.is_default);
     if (defaultConfig) {
       for (const e of generalEntries) {
-        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight, enabled: true });
       }
       // 移除旧 10 条的引用：entry_id → master_pool type 反查，type 属旧默认集合即移除。
       // 不删 master_pool 条目本身——用户自定义 config 里的引用与其他用途不受影响
@@ -963,7 +965,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const defaultConfig = validated.configs.find(c => c.is_default);
     if (defaultConfig) {
       for (const e of miaokeEntries) {
-        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight });
+        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight, enabled: true });
       }
     }
     if (!validated.group_order.includes('喵可')) {
@@ -1022,6 +1024,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
             entry_id: id,
             pinned: src?.pinned ?? false,
             weight: src?.weight ?? 1,
+            enabled: true,
           };
         });
         delete cfg.entry_ids;
@@ -1156,19 +1159,32 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       .flatMap(g =>
         (g.entries ?? [])
           .map(e => {
+            // 库条目与内联规则统一展开为同一形状（tag 用 start/end、regex 用 pattern/replace、
+            // extract 用 tag_name，未用字段补空串）——下游 generator 不需要再对两种来源分叉，
+            // 也不会在 union 类型上访问不存在的字段
             if (e.library_entry_id) {
               const libEntry = libMap.get(e.library_entry_id);
               if (!libEntry) return null;
               return {
                 type: libEntry.type,
                 pattern: libEntry.pattern,
-                // ?? 兜底：老存档/裸 push 的条目可能没有 replace 字段
+                // ?? 兜底：老存档/裸 push 的条目可能没有 replace/tag_name 字段
                 replace: libEntry.replace ?? '',
                 start: libEntry.start,
                 end: libEntry.end,
+                tag_name: libEntry.tag_name ?? '',
               };
             }
-            return e.inline_rule;
+            const inline = e.inline_rule;
+            if (!inline) return null;
+            return {
+              type: inline.type,
+              pattern: inline.type === 'regex' ? inline.pattern : '',
+              replace: inline.type === 'regex' ? inline.replace : '',
+              start: inline.type === 'tag' ? inline.start : '',
+              end: inline.type === 'tag' ? inline.end : '',
+              tag_name: inline.type === 'extract' ? inline.tag_name : '',
+            };
           })
           // filter(Boolean) 不收窄类型：下游（generator 的 tag/regex 判别）需要排除 null 后的联合
           .filter((r): r is NonNullable<typeof r> => r !== null),
@@ -1217,6 +1233,72 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     if (idx !== -1) fs.groups.splice(idx, 1);
   }
 
+  // ── 标签提取快速区（新手入口）────────────────────────────────
+  // 固定 id 的专用全局分组：快速区添加的 extract 规则都收在这里，始终生效。
+  // 固定 id 而非按名字查找——用户重命名分组后快速区仍能找到它；
+  // 用户删掉该分组后，下次快速区添加时会自动重建。
+  // 注意：该分组不渲染进全局正则区列表（FilterEditor 排除），提取规则的唯一管理入口
+  // 是快速区——提取（保留标签内）与过滤（删除）语义不同，混排会让人以为会打架
+  const EXTRACT_GROUP_ID = 'choice-builtin-extract';
+
+  function ensureExtractGroup(): FilterGroup {
+    const fs = settings.value.filter_settings;
+    let g = fs.groups.find(g => g.id === EXTRACT_GROUP_ID);
+    if (!g) {
+      g = {
+        id: EXTRACT_GROUP_ID,
+        name: t`标签提取`,
+        enabled: true,
+        entries: [],
+        preset_name: null,
+        character_id: null,
+      };
+      fs.groups.push(g);
+    }
+    return g;
+  }
+
+  // 快速区展示的标签列表（分组被用户删除后为空；停用仍展示——开关表达"停用"，规则不丢）
+  const extractTagNames = computed(() => {
+    const g = settings.value.filter_settings.groups.find(g => g.id === EXTRACT_GROUP_ID);
+    if (!g) return [] as string[];
+    return g.entries
+      .map(e => (e.inline_rule?.type === 'extract' ? e.inline_rule.tag_name : ''))
+      .filter(Boolean);
+  });
+
+  // 快速区总开关：开 = 确保分组存在且启用；关 = 仅停用（保留规则，刷新不丢）
+  const extractGroupEnabled = computed({
+    get: () => settings.value.filter_settings.groups.find(g => g.id === EXTRACT_GROUP_ID)?.enabled ?? false,
+    set: (v: boolean) => {
+      if (v) {
+        ensureExtractGroup();
+        return;
+      }
+      const g = settings.value.filter_settings.groups.find(g => g.id === EXTRACT_GROUP_ID);
+      if (g) g.enabled = false;
+    },
+  });
+
+  function addExtractRule(rawName: string) {
+    // 剥掉用户顺手带的尖括号/闭合斜杠，统一存纯标签名；同名去重
+    const clean = rawName.trim().replace(/^<\/?\s*/, '').replace(/\s*>$/, '').trim();
+    if (!clean) return;
+    const g = ensureExtractGroup();
+    if (g.entries.some(e => e.inline_rule?.type === 'extract' && e.inline_rule.tag_name === clean)) return;
+    g.entries.push({ library_entry_id: null, inline_rule: { type: 'extract', tag_name: clean } });
+  }
+
+  function removeExtractRule(tagName: string) {
+    const fs = settings.value.filter_settings;
+    const g = fs.groups.find(g => g.id === EXTRACT_GROUP_ID);
+    if (!g) return;
+    const idx = g.entries.findIndex(e => e.inline_rule?.type === 'extract' && e.inline_rule.tag_name === tagName);
+    if (idx !== -1) g.entries.splice(idx, 1);
+    // 空分组直接回收；下次添加自动重建
+    if (g.entries.length === 0) removeFilterGroup(EXTRACT_GROUP_ID);
+  }
+
   function addFilterGroupEntry(groupId: string, entry: FilterGroupEntry) {
     const fs = settings.value.filter_settings;
     const group = fs.groups.find(g => g.id === groupId);
@@ -1239,6 +1321,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       replace: '',
       start: '',
       end: '',
+      tag_name: '',
       category,
     };
     fs.regex_library.push(entry);
@@ -1597,6 +1680,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
           entry_id: e.id,
           pinned: e.pinned,
           weight: e.weight,
+          enabled: true,
         })),
         is_default: true,
         generation: GenerationSettings.parse({}),
@@ -1671,6 +1755,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     sortedEnabledModules,
     allModules,
     sortedEnabledFilterRules,
+    extractGroupId: EXTRACT_GROUP_ID,
+    extractTagNames,
+    extractGroupEnabled,
     currentPresetName,
     currentCharacterId,
     syncPresetName,
@@ -1696,6 +1783,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     removeFilterGroup,
     addFilterGroupEntry,
     removeFilterGroupEntry,
+    addExtractRule,
+    removeExtractRule,
     addRegexLibraryEntry,
     removeRegexLibraryEntry,
     updateRegexLibraryEntry,

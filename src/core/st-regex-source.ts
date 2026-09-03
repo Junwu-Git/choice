@@ -41,6 +41,7 @@ export function mapStScriptToLibraryEntry(script: StRegexScript): RegexLibraryEn
     replace: script.replaceString ?? '',
     start: '',
     end: '',
+    tag_name: '',
     category: '',
   };
 }

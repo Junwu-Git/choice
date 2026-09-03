@@ -206,12 +206,9 @@
         <GuidePopover
           :visible="showGuide"
           :anchor-el="guideBtn"
-          icon="fa-solid fa-database"
-          title="条目库是什么"
+          :hint="DIALOG_HINTS.entryPool"
           @close="showGuide = false"
-        >
-          <div v-html="guideHtml"></div>
-        </GuidePopover>
+        />
       </div>
     </div>
   </Teleport>
@@ -224,6 +221,7 @@ import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportPoolDialog from '@/components/ImportPoolDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
+import { DIALOG_HINTS } from '@/core/guide-content';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
@@ -249,9 +247,6 @@ const importFileData = ref<any>(null);
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
-const guideHtml = `<p><strong>条目库</strong> 是所有行动选项条目的总仓库，按分组管理。配置中的条目都是从这里勾选引用的，修改条目库会同步影响所有使用该条目的配置。</p>
-<p><strong>分组</strong>：点击分组名可展开/折叠，支持跨分组拖拽条目。空分组在关闭弹窗时会自动清理。点击分组名旁的 + 添加条目，📋 复制整组。</p>
-<p><strong>操作</strong>：左侧勾选复选框后点「导出文件」可只导出勾选的条目（不勾选则全量导出）。顶部工具栏支持全部展开/收起、新建分组、文件导入/导出、AI 批量生成。拖拽 ☰ 可调整条目顺序。</p>`;
 const deleteTarget = ref<
   { type: 'entry'; id: string; summary: string } | { type: 'group'; key: string; count: number } | null
 >(null);

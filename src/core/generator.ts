@@ -258,12 +258,22 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   let lastAssistantIdx = -1;
+  // 提取遍恒定先于 tag/regex 遍执行（顺序固定、与规则排列无关）：提取是"保留哪些"的负向语义，
+  // 必须先把消息裁剪到只剩标签区间，之后现有 tag/regex 规则在裁剪结果上继续跑——
+  // 这样"提取后再用标签过滤滤掉提取内容里的子标签"天然成立，且无提取规则的用户行为零变化
+  const extractRules = rules.filter(r => r.type === 'extract');
   for (const m of msgs) {
     if (m.is_system) continue;
     let content = m.mes ?? '';
     if (!content) continue;
+    if (extractRules.length > 0) {
+      content = extractTagContents(content, extractRules);
+      // 没有任何目标标签 → 该消息没有可保留的内容，整条丢弃（与"过滤后为空丢弃"一致）
+      if (!content.trim()) continue;
+    }
     for (const rule of rules) {
       try {
+        if (rule.type === 'extract') continue; // 已由提取遍整段处理
         if (rule.type === 'tag') {
           if (!rule.start && !rule.end) continue;
           const startPat = rule.start ? escapeRegExp(rule.start) : '';
@@ -321,6 +331,33 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
 
 // 将标签头/尾按字面量转义，避免 <思考>、[小剧场] 等含正则特殊字符的标签被误解析
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 标签提取：收集所有 extract 规则的 <标签>…</标签> 字面量区间（并集，含标签壳），按原文
+// 顺序拼接保留、舍弃其余。为什么不用逐规则 replace 实现：提取是负向语义（保留命中的、
+// 删除没命中的），逐规则独立 replace 会互相吃掉对方尚未处理的匹配区间，多标签并集无法表达。
+// lazy（*?）配对与现有 tag 删除规则一致；同名标签嵌套/畸形交错属边角输入，重叠区间只保留
+// 最先命中的完整对，不重复输出
+const extractTagContents = (content: string, rules: Array<{ tag_name: string }>): string => {
+  const ranges: Array<[number, number]> = [];
+  for (const rule of rules) {
+    const name = rule.tag_name.trim();
+    if (!name) continue;
+    const re = new RegExp(escapeRegExp(`<${name}>`) + '[\\s\\S]*?' + escapeRegExp(`</${name}>`), 'g');
+    for (const match of content.matchAll(re)) {
+      ranges.push([match.index ?? 0, (match.index ?? 0) + match[0].length]);
+    }
+  }
+  if (ranges.length === 0) return '';
+  ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  let out = '';
+  let keptEnd = -1;
+  for (const [start, end] of ranges) {
+    if (start < keptEnd) continue;
+    out += content.slice(start, end);
+    keptEnd = end;
+  }
+  return out;
+};
 
 type WIBuckets = {
   before: string;
@@ -491,6 +528,18 @@ export const applyWIExcl = async (
 export const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
+/** 标签堆叠间隙判定：标题括号闭合后到同一下一个括号之间，仅含空白和/或 emoji 才算堆叠。
+ *  输出契约是 "[标题]emoji 内容"，emoji 紧跟标题括号，AI 无视禁令在正文开头再加场景头
+ *  括号时间隙就是"emoji+空白"（实测："[回溯闪回]🎞️ [记忆片段·三年前] 正文"曾被切成
+ *  "[回溯闪回]🎞️" 和 "[记忆片段·三年前] 正文" 两条）。emoji 用 Unicode
+ *  Extended_Pictographic 属性类 + 变体选择符/ZWJ/肤色修饰符，不枚举具体码位（新 emoji
+ *  不断新增，枚举必漏）。关键取舍：间隙里出现任何正文文字仍判为新选项——AI 把两条选项
+ *  挤在一行（"[A]内容A [B]内容B"）必须拆开，两种情况的区分依据是位置：场景头只会出现在
+ *  任何正文之前（紧跟标题的 emoji 是格式的一部分），正文都写完了才出现的括号只可能是
+ *  下一条选项的标题，哪怕内容以 emoji 收尾（"内容A🎞️ [B]…"）也按新选项拆 */
+const TAG_STACK_GAP_RE =
+  /^(?:[^\S\r\n]|\p{Extended_Pictographic}[\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\u20E3]*)*$/u;
+
 export function parseOptions(text: string, count: number): string[] {
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
   // 原因：AI 可能在思维链中以文本形式提到 <options>（如"格式：<options> 标签内..."），
@@ -551,10 +600,11 @@ export function parseOptions(text: string, count: number): string[] {
 
   // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
   // 边界判定按提示词契约"每条选项独占一行"做行锚定：只有行首（间隙含换行或正文）的
-  // 括号才开启新选项。同一行内紧邻/仅隔空白的连续括号是"标签堆叠"（如
-  // "[回溯闪回]【三年前·初二暑假】正文"），必须并入同一条——AI 常无视禁令在正文里
-  // 用【】写场景头，若把每个括号都当边界，一条选项会被切成 "[标签]" 和
-  // "【场景头】正文" 两条（实测发生过）
+  // 括号才开启新选项。同一行内紧邻/仅隔空白或 emoji 的连续括号是"标签堆叠"（如
+  // "[回溯闪回]🎞️ [记忆片段·三年前] 正文"、"[回溯闪回]【三年前·初二暑假】正文"），
+  // 必须并入同一条——AI 常无视禁令在正文里用【】/[]写场景头，若把每个括号都当边界，
+  // 一条选项会被切成 "[标签]" 和 "[场景头]正文" 两条（实测发生过，emoji 变体亦然）。
+  // 间隙含正文文字则仍拆分（AI 挤行的两条选项），见 TAG_STACK_GAP_RE 注释
   const bracketTitleRe = /[[【]([^\]】]+?)[\]】]\s*/g;
   const bracketMatches = [...c.matchAll(bracketTitleRe)];
   if (bracketMatches.length > 0) {
@@ -562,19 +612,25 @@ export function parseOptions(text: string, count: number): string[] {
     // 上一个匹配里闭合括号之后的位置。match[0] 末尾的 \s* 会吞掉行尾换行，
     // 必须用 trimEnd 去掉后计算，否则换行被吞、无法判断下个括号是否在行首
     let prevCloseEnd = 0;
+    // 最后一条已入列选项的括号起始位置：堆叠合并时从它整体重切片。不能用
+    // "result[last] += gap + option" 拼接——那是纯空白间隙时代的写法，依赖"option 尾部被
+    // trim 掉的空白恰好等于 gap"才不出错；emoji 间隙下 option 尾部带着 emoji、gap 又拼一遍，
+    // 会产出 "[回溯闪回]🎞️🎞️ …" 这种 emoji 重复（实测发生过）
+    let lastOptStart = 0;
     for (let i = 0; i < bracketMatches.length; i++) {
       const m = bracketMatches[i];
       const start = m.index!;
       const end = i + 1 < bracketMatches.length ? bracketMatches[i + 1].index! : c.length;
       const option = c.slice(start, end).replace(/\r?\n/g, '').trim();
-      // 间隙 = 上个闭合括号到本括号开头之间的文本。无换行的纯空白（含空串）→
+      // 间隙 = 上个闭合括号到本括号开头之间的文本。空白/emoji（含空串）→
       // 同一行标签堆叠，并入上一条；含换行或正文 → 新选项（保持既有跨行行为）
       const gap = c.slice(prevCloseEnd, start);
-      const isTagStack = /^[^\S\r\n]*$/.test(gap);
+      const isTagStack = TAG_STACK_GAP_RE.test(gap);
       if (i > 0 && isTagStack && result.length > 0) {
-        result[result.length - 1] += gap + option;
+        result[result.length - 1] = c.slice(lastOptStart, end).replace(/\r?\n/g, '').trim();
       } else if (option) {
         result.push(option);
+        lastOptStart = start;
       }
       prevCloseEnd = start + m[0].trimEnd().length;
     }

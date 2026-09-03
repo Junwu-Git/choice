@@ -109,7 +109,8 @@
                     <input type="checkbox" :checked="selectedIds.has(entry.id)" @change="toggleSelect(entry.id)" />
                   </label>
                   <!-- 类型选择宽度收进 class：内联 style 优先级高于任何媒体查询，
-                       手机上 90px 固定宽会把正则输入挤到不可操作 -->
+                       手机上 90px 固定宽会把正则输入挤到不可操作。
+                       只提供"过滤"语义（删除/替换）；"提取"只在过滤页顶部的标签提取快速区 -->
                   <select v-model="entry.type" class="text_pole choice-regexlib-type">
                     <option value="tag">{{ t`标签匹配` }}</option>
                     <option value="regex">{{ t`正则表达式` }}</option>
@@ -185,15 +186,7 @@
     @merge="onImportSource"
   />
 
-  <GuidePopover
-    :visible="open && showGuide"
-    :anchor-el="guideBtn"
-    icon="fa-solid fa-code"
-    :title="t`正则库是什么`"
-    @close="showGuide = false"
-  >
-    <div v-html="guideHtml"></div>
-  </GuidePopover>
+  <GuidePopover :visible="open && showGuide" :anchor-el="guideBtn" :hint="DIALOG_HINTS.regexLibrary" @close="showGuide = false" />
 </template>
 
 <script setup lang="ts">
@@ -202,6 +195,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
+import { DIALOG_HINTS } from '@/core/guide-content';
 import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
 import type { RegexLibraryEntry } from '@/type/settings';
 import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
@@ -240,10 +234,6 @@ const showStImport = ref(false);
 
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
-
-const guideHtml = `<p><strong>正则库</strong> 是所有正则脚本的统一存放处，按分组管理；脚本本体通过「正则」设置页生效，这里负责集中管理与跨配置复用。</p>
-<p><strong>分组</strong>：点击分组名展开/折叠，拖拽左侧把手可排序分组或把条目拖入其他分组。点击分组名旁的 + 添加条目。</p>
-<p><strong>操作</strong>：顶部工具栏支持全部展开/收起、新建分组、文件导入/导出；「从酒馆正则导入」可从酒馆全局/预设/角色卡三区勾选导入。左侧勾选复选框批量选中后，由过滤配置引用。</p>`;
 
 const allGroupsExpanded = computed(() => {
   const groups = new Set(groupedEntries.value.map(g => g.key));
@@ -426,7 +416,8 @@ const onImportSource = ({ text }: { text: string; fileName: string }) => {
     // 补默认字段；按原 id 去重——重复导入同一份导出文件时跳过已有条目
     const importPluginEntry = (raw: any): RegexLibraryEntry | null => {
       if (!raw || typeof raw !== 'object') return null;
-      if ((raw.type !== 'tag' && raw.type !== 'regex') || typeof raw.pattern !== 'string') return null;
+      if ((raw.type !== 'tag' && raw.type !== 'regex' && raw.type !== 'extract') || typeof raw.pattern !== 'string')
+        return null;
       const id = typeof raw.id === 'string' && raw.id ? raw.id : uuidv4();
       return {
         id,
@@ -436,6 +427,7 @@ const onImportSource = ({ text }: { text: string; fileName: string }) => {
         replace: raw.replace ?? '',
         start: raw.start ?? '',
         end: raw.end ?? '',
+        tag_name: raw.tag_name ?? '',
         category: raw.category ?? '',
       };
     };

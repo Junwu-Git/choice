@@ -121,12 +121,9 @@
         <GuidePopover
           :visible="showGuide"
           :anchor-el="guideBtn"
-          icon="fa-solid fa-wand-magic-sparkles"
-          title="AI 生成条目"
+          :hint="DIALOG_HINTS.poolGen"
           @close="showGuide = false"
-        >
-          <div v-html="guideHtml"></div>
-        </GuidePopover>
+        />
       </div>
     </div>
   </Teleport>
@@ -137,6 +134,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import { cancelPoolGen, generatePoolEntries, poolGenState, type PoolGenItem } from '@/core/generator';
 import type { PoolEntry } from '@/type/settings';
 import GuidePopover from '@/components/GuidePopover.vue';
+import { DIALOG_HINTS } from '@/core/guide-content';
 
 const props = defineProps<{ open: boolean; categories: string[] }>();
 const emit = defineEmits<{
@@ -160,13 +158,6 @@ const selected = ref<Set<number>>(new Set());
 const attempted = ref(false);
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
-
-const guideHtml = `<p><strong>作用</strong>：让 AI 根据你的要求自动生成一批条目（含类型标签与补充规则），省去手动输入的麻烦。</p>
-<p><strong>条目种类</strong>：可用预设或自行输入任意种类名（如"氛围渲染"）。「选项指导」（默认）生成写给选项生成 AI 的指导；「行动方向」生成简洁的具体行动；「由AI判断」按生成要求里的描述决定；自定义种类按其名称语义生成。</p>
-<p><strong>输出格式</strong>：类型为四字中文标签，内容为纯文本指令（不带方括号等符号装饰），规则可选。</p>
-<p><strong>参数</strong>：条目数控制生成数量；生成要求描述主题/字数/风格等；目标分组决定生成后放到哪个分组；目标类型可强制所有生成条目使用同一类型标签（留空则由 AI 逐条判断四字标签）。</p>
-<p><strong>结合近期对话</strong>：勾选后 AI 会参考最近的聊天内容生成更贴合场景的条目。</p>
-<p><strong>生成后</strong>：勾选需要的条目，点击"注入"将它们加入条目库。类型/内容/规则可直接在结果行修改，注入以修改后为准。若 AI 建议替换已有条目，会显示"替换"标记与原文。未勾选的条目会被丢弃。</p>`;
 
 watch(
   () => props.open,

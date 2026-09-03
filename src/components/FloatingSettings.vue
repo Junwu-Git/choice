@@ -42,20 +42,12 @@
             >
               <i class="fa-solid fa-circle-question"></i>
             </button>
-            <button class="choice-tab choice-guide-btn" :title="t`新手引导`" @click="openOnboarding()">
+            <button class="choice-tab choice-guide-btn" :title="t`新手引导 / 功能课堂`" @click="openChapterMenu">
               <i class="fa-solid fa-graduation-cap"></i>
             </button>
           </div>
 
-          <GuidePopover
-            :visible="showGuide"
-            :anchor-el="guideBtn"
-            :icon="currentGuide.icon"
-            :title="currentGuide.title"
-            @close="showGuide = false"
-          >
-            <div v-html="currentGuide.html"></div>
-          </GuidePopover>
+          <GuidePopover :visible="showGuide" :anchor-el="guideBtn" :hint="currentHint" @close="showGuide = false" />
 
           <PoolEditor v-if="activeTab === 'pool'" />
           <GenerationSettings v-else-if="activeTab === 'generation'" />
@@ -85,9 +77,10 @@ import FilterEditor from '@/components/FilterEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
-import { FLOATING_TABS, GUIDE_CONTENTS, type TabId } from '@/components/shared/tab-definitions';
+import { FLOATING_TABS, type TabId } from '@/components/shared/tab-definitions';
+import { PAGE_HINTS } from '@/core/guide-content';
 import { isSettingsOpen, closeSettings } from '@/core/floating-state';
-import { maybeAutoOpenOnboarding, openOnboarding, onboardingPendingTab } from '@/core/onboarding';
+import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
 
 const activeTab = ref<TabId>('pool');
 const showGuide = ref(false);
@@ -114,7 +107,7 @@ watch(onboardingPendingTab, tab => {
   }
 });
 
-const currentGuide = computed(() => GUIDE_CONTENTS[activeTab.value]);
+const currentHint = computed(() => PAGE_HINTS[activeTab.value]);
 
 // 手机视口下 tab 栏横向滚动、滚动条被隐藏，溢出的激活 tab 需手动滚回可视区，
 // 否则用户感知不到"后面还有 tab"
