@@ -192,6 +192,7 @@
   "当前生效": "Active",
   "全部条目": "All Entries",
   "抽取参数": "Generation Params",
+  "抽取参数（全局）": "Generation Params (Global)",
   "数量": "Count",
   "如 4 或 3-6": "e.g. 4 or 3-6",
   "按条目分类分组轮流抽取，避免同组扎堆": "Sample by category in round-robin to avoid clustering",

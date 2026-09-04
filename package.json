@@ -1,6 +1,6 @@
 {
   "name": "Choice",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "scripts": {
     "build": "vite build",
     "watch": "vite build --watch --mode development",
