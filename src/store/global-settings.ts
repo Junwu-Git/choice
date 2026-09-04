@@ -15,6 +15,11 @@ import {
   DEFAULT_OPTION_RULES,
   USER_INSTRUCTION_DEFAULT,
   PROMPT_TEXT_MIGRATIONS,
+  OPEN_CONFIG_NAME,
+  OPEN_GROUP_NAMES,
+  OPEN_PERSON_STYLE,
+  OPEN_OPTION_RULES,
+  OPEN_MODULE_CONTENTS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
   type PoolConfig,
@@ -197,6 +202,103 @@ function buildNsfwEntries(): PoolEntry[] {
     entry('NSFW·事后温存', '给出一个亲近过后依偎温存的选项——喘息未定时的耳语与轻抚别有滋味'),
     entry('NSFW·大胆尝试', '给出一个以前没试过、此刻却心血来潮想试试的选项——把「要不要」抛给对方'),
   ];
+}
+
+/**
+ * 「全向」模式新增的 6 个条目分组，共 18 条。与「通用」「喵可」「时间跳跃」「NSFW」
+ * 四组的关键差异在两点，不要"顺手"合并或改 pinned：
+ * ① 6 组各自成组（category 各异）——分组轮询（drawByCategories）按 category 分桶、
+ *   组间轮询各抽 1 条，组数即各方向占比。合并成一组会让 user/char/剧情/关系/日常
+ *   五方向坍缩成平权混合、"聚焦什么"无从谈起。各自成组才能让每轮从不同方向各抽一条。
+ * ② 全部 pinned:false——全向池不设每轮必发锚点，构成完全随机（默认「通用」组有 2 条
+ *   pinned 作自主权锚点，那是 user 锁主体模式的产物；全向的主体应由条目随机决定，
+ *   pinned 会把某个方向焊死成每轮必发）。文案照 NSFW 组先例：方向级"给出一个……的选项"
+ *   句式，只给思考方向不给具体动作脚本；聚焦·char 三条显式带"只写行动本身、其他各方
+ *   反应留给正文"的防越权边界句——角色主语选项本身即某角色的行动，旧防越权"不许替演
+ *   别人反应"会与之冲突，需在条目层也把边界交代清楚，配合 OPEN_OPTION_RULES 规则 2。
+ * type 不带统一前缀：候选行格式为 "type: content"，分组（category）不发送给 AI，
+ *   type 自身需可辨——故 18 条 type 两两不同且语义自明，不依赖前缀做归属标记
+ *   （NSFW/喵可 用前缀是因其与"通用"组在默认池同台，前缀防混；全向池只含这 6 组，
+ *   不存在跨组混辨的需求）。
+ */
+function buildOpenEntries(): PoolEntry[] {
+  const entry = (type: string, content: string, category: string): PoolEntry => ({
+    id: uuidv4(),
+    type,
+    content,
+    pinned: false,
+    weight: 1,
+    category,
+    rule: '',
+  });
+  return [
+    // 聚焦·user：明确 {{user}} 主体 + 行动类型维度，与「通用」组（元引导：顺承/反差/本心/开放）互补
+    entry('本色而行', '给出一个以 {{user}} 为行动主体的选项——写 {{user}} 此刻能做、想做的具体行动，贴合其性格与当下心境，可包含台词', '聚焦·user'),
+    entry('破格一试', '给出一个以 {{user}} 为主语、略出其常规性格的选项——做平时不太会做的事，让人物立起来，但不脱离当前场景', '聚焦·user'),
+    entry('心声直陈', '给出一个让 {{user}} 把此刻的情绪或想法说出口、写出来的选项——以 {{user}} 为主语，可含台词', '聚焦·user'),
+    // 聚焦·char：角色主语。三条显式带防越权边界句，兼容"选项本身即某角色行动"的语义
+    entry('角色主动', '给出一个以 {{char}} 或在场角色为主语的选项——直接写该角色此刻主动会做的行动，可包含其台词；把镜头交给角色，只写行动本身，其他各方的反应留给正文', '聚焦·char'),
+    entry('角色回应', '给出一个以在场角色为主语、回应眼下局面的选项——该角色对刚才发生的事做出自己的举动或表态，可包含其台词', '聚焦·char'),
+    entry('角色张力', '给出一个以角色为主语、与 {{user}} 制造张力或拉近距离的选项——该角色的主动举动让局面更有戏，可包含其台词', '聚焦·char'),
+    // 剧情演化：不以单一角色行动呈现，事件/环境/第三方自然推进
+    entry('事件异动', '给出一个让剧情自己往前走的选项——新事件、突发状况或局面突变自然发生，留出各方反应的余地', '剧情演化'),
+    entry('环境变化', '给出一个由环境推动剧情的选项——天色、天气、声响、场合变动等环境因素自然改变当下局面', '剧情演化'),
+    entry('第三方介入', '给出一个由第三方搅动局面的选项——消息传来、他人到场或场外因素介入，剧情推进一步', '剧情演化'),
+    // 剧情规划：主动安排剧情走向，与剧情演化（被动推进）互补
+    entry('布局铺垫', '给出一个为后续埋线的选项——角色或剧情此刻定下计划、许下约定或留下伏笔，效果在之后的正文里展开', '剧情规划'),
+    entry('导演推进', '给出一个导演式的走向选择——切换场景、引入新事件或新角色、推进某条暗线；只定走向，不写具体展开', '剧情规划'),
+    entry('收束归线', '给出一个往回收的选项——把散开的支线、悬而未决的事往主线收拢，让剧情有个阶段性的落点', '剧情规划'),
+    // 关系推进：聚焦 {{user}} 与对方关系的双向维度，主语仍含 {{user}}
+    entry('关系靠近', '给出一个让 {{user}} 与对方关系更进一步的选项——一次靠近、一次牵手或一句掏心话，由当下氛围决定火候', '关系推进'),
+    entry('关系试探', '给出一个试探对方态度的选项——旁敲侧击、欲言又止或抛个话头，看对方怎么接', '关系推进'),
+    entry('关系袒露', '给出一个袒露真心的选项——说出平时不会说的话、承认平时不承认的事，赌一把对方的回应', '关系推进'),
+    // 日常闲趣：松弛日常向，给剧情喘息
+    entry('闲话消遣', '给出一个松弛的日常选项——闲聊八卦、打发时间、找点乐子，给剧情一段喘息', '日常闲趣'),
+    entry('小嗜好', '给出一个围绕 {{user}} 或对方小嗜好的选项——分享、参与或围观一件与主线无关但鲜活的小事', '日常闲趣'),
+    entry('即兴玩乐', '给出一个即兴起意的玩乐选项——玩个游戏、打个赌、来场说走就走的小冒险', '日常闲趣'),
+  ];
+}
+
+/**
+ * 构建「全向」提示词配置：klona DEFAULT_MODULES 后按 OPEN_MODULE_CONTENTS 按 id 覆盖三个
+ * 模块内容（system_prompt/user_instruction/thinking_prompt），其余模块照默认。
+ * person_style/option_rules 走 OPEN 版（主体跟随条目 + 重写防越权）——generator 的
+ * core_rules case 在 option_rules 非空时走"option_rules + person_style + CORE_RULES_STATIC"
+ * 组合路径，故 core_rules 模块内容不被用到，无需覆盖。enrich 模块与 enrich_* 字段
+ * 沿用默认（润色链路与主体模式无关）。is_default:false——简洁保持出厂默认。
+ */
+function buildOpenPromptConfig(): PromptConfig {
+  const modules = klona(DEFAULT_MODULES).map((m: PromptModuleType) => {
+    const override = OPEN_MODULE_CONTENTS[m.id];
+    return override !== undefined ? { ...m, content: override } : m;
+  });
+  return {
+    id: uuidv4(),
+    name: OPEN_CONFIG_NAME,
+    is_default: false,
+    modules,
+    person_style: OPEN_PERSON_STYLE,
+    option_rules: OPEN_OPTION_RULES,
+    // builtin:'open' 让"恢复默认"识别该配置有专属出厂态（OPEN_*），不会被洗成简洁。
+    // 经典/简洁/用户自建不带本字段，"恢复默认"回退全局默认——简洁本就是全局默认。
+    builtin: 'open',
+    option_person: '第三人称',
+    enrich_person: '第三人称',
+    enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
+    // 字数与简洁默认（schema default，v23 字数迁移后的 10/60）逐字对齐——提示词配置是全量
+    // 快照，切换时会连带换掉字数（copyPromptRulesSubset），这里若写成别的值，用户切到全向
+    // 时生成界面的字数会凭空跳变（实测踩过：曾误写 30/80，切配置字数 10-60→30-80）。
+    // 全向与简洁的语义差异只应在主体（person_style/option_rules/三个模块内容），其余字段
+    // 必须与简洁默认一致，改这里前先想清楚是否真的要让切换产生副作用。
+    option_min_chars: 10,
+    option_max_chars: 60,
+    enrich_min_chars: 30,
+    enrich_max_chars: 80,
+    context_rounds: 10,
+    context_mode: 'visible_only',
+    prefill_enabled: true,
+    baibai_enabled: false,
+  };
 }
 
 import { validateInplace } from '@/util/zod';
@@ -589,6 +691,59 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
       baibai_enabled: pr.baibai_enabled ?? false,
     },
   ];
+};
+
+/** v33 全向去重自愈的回写工具：把指向"被删重复份"的 chat/character 绑定重指到保留份。
+ *  照 v9 迁移范式：chat_metadata + getStCharacter(this_chid) + save*Debounced。
+ *  局限：仅愈合当前已加载的 chat/character 绑定（迁移在 store init 期跑，此时只有当前
+ *  会话的 chat_metadata/角色可用）；其余 chat/character 的悬空绑定在加载该会话时由
+ *  effectiveConfig 解析落空→回退默认（不崩溃），且 v31 幂等守卫已杜绝新增悬空。 */
+const rebindConfigId = (removedIds: Set<string>, keptId: string) => {
+  try {
+    const cMeta = chat_metadata?.[setting_field];
+    if (cMeta && typeof cMeta.config_id === 'string' && removedIds.has(cMeta.config_id)) {
+      cMeta.config_id = keptId;
+      saveMetadataDebounced();
+    }
+  } catch {
+    /* chat_metadata 不可用时跳过 */
+  }
+  try {
+    const ch = getStCharacter(this_chid);
+    if (ch) {
+      const cur = _.get(ch, ['data', 'extensions', setting_field, 'config_id']);
+      if (typeof cur === 'string' && removedIds.has(cur)) {
+        _.set(ch, ['data', 'extensions', setting_field, 'config_id'], keptId);
+        saveCharacterDebounced();
+      }
+    }
+  } catch {
+    /* 角色数据不可用时跳过 */
+  }
+};
+
+const rebindPromptConfigId = (removedIds: Set<string>, keptId: string) => {
+  try {
+    const cMeta = chat_metadata?.[setting_field];
+    if (cMeta && typeof cMeta.prompt_config_id === 'string' && removedIds.has(cMeta.prompt_config_id)) {
+      cMeta.prompt_config_id = keptId;
+      saveMetadataDebounced();
+    }
+  } catch {
+    /* chat_metadata 不可用时跳过 */
+  }
+  try {
+    const ch = getStCharacter(this_chid);
+    if (ch) {
+      const cur = _.get(ch, ['data', 'extensions', setting_field, 'prompt_config_id']);
+      if (typeof cur === 'string' && removedIds.has(cur)) {
+        _.set(ch, ['data', 'extensions', setting_field, 'prompt_config_id'], keptId);
+        saveCharacterDebounced();
+      }
+    }
+  } catch {
+    /* 角色数据不可用时跳过 */
+  }
 };
 
 const applyDefaults = (validated: GlobalSettingsType) => {
@@ -1008,6 +1163,124 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v31: 新增「全向」多主体模式——6 个新条目分组（18 条）+ 配套「全向」条目池配置 +
+  // 「全向」提示词配置。与 v22/v27（加默认池）/ v30（仅条目库）的差异：本版三件套，
+  // 且条目池配置只引用新 6 组（不含通用/喵可/时间跳跃，用户明确选择）。
+  // 提示词配置的补建分两路：prompt_configs 非空时本块直接 push；为空时（pre-v19 存档
+  // 即将被 ensureBuiltinPromptConfigs 整体重建为[经典,简洁]、全新档晚于 ensureDefaultPromptConfig
+  // 建）交给 init 的 wasPreV19 后置步，否则会被覆盖或漏掉简洁。条目池配置对所有路径都在本块建
+  // （条目池配置 pre-v19 也存在，无重建抹除问题）。
+  if ((validated.schema_version ?? 0) < 31) {
+    // ① 6 组条目按 type 去重后入 master_pool；group_order 按 OPEN_GROUP_NAMES 序追加
+    const existingTypes = new Set(validated.master_pool.map(e => e.type));
+    const openEntries = buildOpenEntries().filter(e => !existingTypes.has(e.type));
+    validated.master_pool.push(...openEntries);
+    for (const name of OPEN_GROUP_NAMES) {
+      if (!validated.group_order.includes(name)) {
+        validated.group_order.push(name);
+      }
+    }
+
+    // ② 配套「全向」条目池配置：仅引用新 6 组条目（用户明确选择，不含通用/喵可/时间跳跃）。
+    // 全部 pinned:false——全向池不设每轮必发锚点，主体由随机抽取的条目决定。
+    // 幂等（关键）：按 name 去重，已存在则不重建——否则迁移若重跑会造出空 entries 的新全向
+    // 配置（重跑时 openEntries 因 type 去重为空、entries 引用空数组），且新 uuid 使已绑定的
+    // config_id 悬空 → 生效配置回退默认配置（用户报"恢复到简洁配置"的根因之一）。
+    // entries 引用 master_pool 中当前全部新 6 组条目（非仅本次新增）：重跑或预存档已有同 type
+    // 条目时，仍能引用到正确的条目集合，而非空集。
+    if (!validated.configs.some(c => c.name === OPEN_CONFIG_NAME)) {
+      const openCats = new Set<string>(OPEN_GROUP_NAMES);
+      const allOpenEntries = validated.master_pool.filter(e => openCats.has(e.category));
+      validated.configs.push({
+        id: uuidv4(),
+        name: OPEN_CONFIG_NAME,
+        entries: allOpenEntries.map(e => ({
+          entry_id: e.id,
+          pinned: e.pinned,
+          weight: e.weight,
+          enabled: true,
+        })),
+        is_default: false,
+        generation: GenerationSettings.parse({}),
+      });
+    }
+
+    // ③ 「全向」提示词配置：prompt_configs 非空且尚无全向时才建（空路径交给 init 后置步；
+    // 已有全向则跳过——幂等，防重跑造重复 uuid 悬空已绑定的 prompt_config_id）
+    if (
+      validated.prompt_configs.length > 0 &&
+      !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)
+    ) {
+      validated.prompt_configs.push(buildOpenPromptConfig());
+    }
+  }
+
+  // v32: 给 v31 首版（buildOpenPromptConfig 尚未带 builtin 字段时）创建的全向配置补打标记。
+  // builtin:'open' 是 resolveOwnerDefaults 识别"该配置有专属出厂态"的依据——缺标记会让
+  // 全向配置的"恢复默认"回退到全局默认（简洁），把全向内容洗成简洁。v31 块改 buildOpenPromptConfig
+  // 加 builtin 后，新建的全向配置已带标记；本块只补历史存档里已存在、尚无标记的全向配置。
+  // 按 name===OPEN_CONFIG_NAME 且 builtin 缺失匹配——用户极少自建同名配置，即便撞名也是
+  // 把它当全向处理（"恢复默认"回退 OPEN 默认），影响可忽略。幂等：已有标记的跳过。
+  if ((validated.schema_version ?? 0) < 32) {
+    for (const cfg of validated.prompt_configs) {
+      if (cfg.name === OPEN_CONFIG_NAME && cfg.builtin === undefined) {
+        cfg.builtin = 'open';
+      }
+    }
+  }
+
+  // v33: 全向配置去重自愈——v31 首版无幂等守卫，迁移若重跑（schema_version 未及时落盘到
+  // 下次加载即重跑，或手编设置致 schema 回退）会造出重复的全向配置（pool + prompt 各自
+  // 多份、uuid 不同）。已绑定 config_id/prompt_config_id 指向的若是被删的重复份，生效配置
+  // 解析落空 → 回退默认（简洁/默认配置），即用户报"界面切换/关闭 UI 后恢复到简洁配置"的根因。
+  // 修复：保留首个全向、删除其余重复份；chat/character 的 config_id 与 prompt_config_id 若
+  // 指向被删重复份则重绑到保留份。幂等：无重复时 no-op。照 v9 迁移的 chat/character 回写范式
+  // （chat_metadata + getStCharacter + saveMetadataDebounced/saveCharacterDebounced）。
+  if ((validated.schema_version ?? 0) < 33) {
+    // 条目池配置去重（configs：PoolConfig）
+    const poolKept = validated.configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
+    if (poolKept) {
+      const poolRemovedIds = new Set(
+        validated.configs
+          .filter(c => c.name === OPEN_CONFIG_NAME && c.id !== poolKept.id)
+          .map(c => c.id),
+      );
+      if (poolRemovedIds.size > 0) {
+        validated.configs = validated.configs.filter(c => !poolRemovedIds.has(c.id));
+        rebindConfigId(poolRemovedIds, poolKept.id);
+      }
+    }
+
+    // 提示词配置去重（prompt_configs：PromptConfig）
+    const promptKept = validated.prompt_configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
+    if (promptKept) {
+      const promptRemovedIds = new Set(
+        validated.prompt_configs
+          .filter(c => c.name === OPEN_CONFIG_NAME && c.id !== promptKept.id)
+          .map(c => c.id),
+      );
+      if (promptRemovedIds.size > 0) {
+        validated.prompt_configs = validated.prompt_configs.filter(c => !promptRemovedIds.has(c.id));
+        rebindPromptConfigId(promptRemovedIds, promptKept.id);
+      }
+    }
+  }
+
+  // v34: 修正 v31 首版 buildOpenPromptConfig 误写的选项字数——该版把全向配置的
+  // option_min/max_chars 硬编码成 30/80（简洁默认是 v23 字数迁移后的 10/60），而提示词配置
+  // 切换会全量换入字数（copyPromptRulesSubset），导致用户切到全向时生成界面字数凭空
+  // 10-60 跳成 30-80。builder 已改正，本块只修历史存档里已按错误值落盘的全向配置。
+  // 签名 = builtin:'open' 且字数恰为 30/80（错误 builder 的唯一指纹），用户后续手动改过的
+  // 其他值不受影响。enrich 30/80 与简洁默认一致，无需处理。幂等：修正后签名不再命中。
+  if ((validated.schema_version ?? 0) < 34) {
+    for (const cfg of validated.prompt_configs) {
+      if (cfg.builtin === 'open' && cfg.option_min_chars === 30 && cfg.option_max_chars === 80) {
+        cfg.option_min_chars = 10;
+        cfg.option_max_chars = 60;
+      }
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
@@ -1140,6 +1413,14 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       ensureBuiltinPromptConfigs(validated);
     } else {
       ensureDefaultPromptConfig(validated);
+    }
+    // v31「全向」提示词配置补建：v31 块对 prompt_configs 为空的路径（pre-v19 存档即将被
+    // ensureBuiltinPromptConfigs 整体重建为[经典,简洁]、全新档晚于 ensureDefaultPromptConfig
+    // 建）跳过了提示词配置的 push，在此补建。wasPreV19 一次性（此后 schema 已置最新，
+    // 分支不再进入），用户删除全向后不会被复活——与 v19/v22/v27/v30 各迁移块的一次性语义一致。
+    // 幂等：按 name 去重，防 wasPreV19 分支在异常重入时造重复全向（悬空 prompt_config_id）。
+    if (!validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
+      validated.prompt_configs.push(buildOpenPromptConfig());
     }
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
@@ -1477,28 +1758,30 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     const modules = settings.value.prompt_rules.modules;
     const mod = modules.find(m => m.id === id);
     if (!mod || mod.marker) return;
-    const defaults = klona(DEFAULT_MODULES);
-    const defaultMod = defaults.find(m => m.id === id);
+    // 按当前归属配置的出厂默认取该模块内容（全向配置走 OPEN_MODULE_CONTENTS 覆盖）
+    const defaults = resolveOwnerDefaults();
+    const defaultMod = defaults.modules.find(m => m.id === id);
     if (!defaultMod) return;
     mod.content = defaultMod.content;
-    // core_rules 模块内容恢复时，同步重置新手字段，保持一致性
+    // core_rules 模块内容恢复时，同步重置新手字段，保持一致性（全向配置用 OPEN 版）
     if (id === 'core_rules') {
-      settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
-      settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+      settings.value.prompt_rules.person_style = defaults.person_style;
+      settings.value.prompt_rules.option_rules = defaults.option_rules;
     }
   }
 
   function resetAllPromptContents() {
     const modules = settings.value.prompt_rules.modules;
-    const defaults = klona(DEFAULT_MODULES);
-    const defaultMap = new Map(defaults.map(m => [m.id, m]));
+    // 按当前归属配置的出厂默认重置（全向配置恢复其专属内容，而非简洁默认）
+    const defaults = resolveOwnerDefaults();
+    const defaultMap = new Map(defaults.modules.map(m => [m.id, m]));
     for (const mod of modules) {
       if (mod.marker) continue;
       const d = defaultMap.get(mod.id);
       if (d) mod.content = d.content;
     }
-    settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
-    settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+    settings.value.prompt_rules.person_style = defaults.person_style;
+    settings.value.prompt_rules.option_rules = defaults.option_rules;
   }
 
   function syncPromptRulesToConfig(config: PromptConfig) {
@@ -1515,6 +1798,34 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   function loadPromptConfig(config: PromptConfig) {
     copyPromptRulesSubset(config, settings.value.prompt_rules);
     promptEditConfigId = config.id;
+  }
+
+  /** 解析当前工作副本归属配置的"出厂默认"——供三个 reset 函数共用。
+   *  全向配置（owner.builtin === 'open'）返回 OPEN 版本：模块内容按 OPEN_MODULE_CONTENTS
+   *  覆盖 DEFAULT_MODULES、person_style/option_rules 用 OPEN 常量。其余配置（简洁/经典/
+   *  用户自建/无归属）返回全局默认——简洁本就是全局默认，经典/自建没有专属出厂态，
+   *  回退全局默认与改动前行为一致。归属判断靠 promptEditConfigId（PromptEditor 切换
+   *  配置时由 switchPromptConfig→loadPromptConfig 设置；boot 时 PromptEditor 的
+   *  selectedPromptConfigId watch 也会触发 switchPromptConfig，故首次进入即有归属）。 */
+  function resolveOwnerDefaults(): {
+    modules: PromptModuleType[];
+    person_style: string;
+    option_rules: string;
+  } {
+    const configs = settings.value.prompt_configs;
+    const owner = promptEditConfigId ? configs.find(c => c.id === promptEditConfigId) : null;
+    const isOpen = owner?.builtin === 'open';
+    const modules = isOpen
+      ? klona(DEFAULT_MODULES).map((m: PromptModuleType) => {
+          const ov = OPEN_MODULE_CONTENTS[m.id];
+          return ov !== undefined ? { ...m, content: ov } : m;
+        })
+      : klona(DEFAULT_MODULES);
+    return {
+      modules,
+      person_style: isOpen ? OPEN_PERSON_STYLE : DEFAULT_PERSON_STYLE,
+      option_rules: isOpen ? OPEN_OPTION_RULES : DEFAULT_OPTION_RULES,
+    };
   }
 
   function switchPromptConfig(configId: string) {
@@ -1679,19 +1990,25 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     // 工作副本加载简洁。schema_version 已置为最新，applyDefaults 不会跑，必须显式调用。
     // 用户确认弹窗已明示"删除所有提示词配置"，此处不再把当前提示词存档为经典
     ensureDefaultPromptConfig(fresh);
+    // v31「全向」提示词配置：恢复出厂终态与全新首载一致（v31 块 + wasPreV19 后置步的产物）
+    fresh.prompt_configs.push(buildOpenPromptConfig());
 
     const defaultEntries = buildDefaultEntries();
     // NSFW 是 opt-in：进 master_pool（条目库可见可选）但不进默认 config 引用——
     // 全新首载终态与 v30 迁移块（schema<30 时跑）对老存档的处理保持一致
     const nsfwEntries = buildNsfwEntries();
-    fresh.master_pool = [...defaultEntries, ...nsfwEntries];
-    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后、「NSFW」收尾
-    fresh.group_order = ['通用', '喵可', '时间跳跃', 'NSFW'];
+    // 「全向」6 组条目进 master_pool（条目库可见），配套「全向」池配置引用它们——
+    // 与 v31 迁移块对老存档的处理保持一致
+    const openEntries = buildOpenEntries();
+    fresh.master_pool = [...defaultEntries, ...openEntries, ...nsfwEntries];
+    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后、
+    // 6 个新组居中（OPEN_GROUP_NAMES 序）、「NSFW」收尾
+    fresh.group_order = ['通用', '喵可', '时间跳跃', ...OPEN_GROUP_NAMES, 'NSFW'];
     fresh.configs = [
       {
         id: uuidv4(),
         name: '默认配置',
-        // 仅引用 defaultEntries（通用+喵可+时间跳跃），NSFW 留给用户自行勾选启用
+        // 仅引用 defaultEntries（通用+喵可+时间跳跃），NSFW/全向留给用户自行勾选启用
         entries: defaultEntries.map(e => ({
           entry_id: e.id,
           pinned: e.pinned,
@@ -1701,15 +2018,30 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         is_default: true,
         generation: GenerationSettings.parse({}),
       },
+      {
+        id: uuidv4(),
+        name: OPEN_CONFIG_NAME,
+        // 仅引用新 6 组条目（用户明确选择，不含通用/喵可/时间跳跃）
+        entries: openEntries.map(e => ({
+          entry_id: e.id,
+          pinned: e.pinned,
+          weight: e.weight,
+          enabled: true,
+        })),
+        is_default: false,
+        generation: GenerationSettings.parse({}),
+      },
     ];
 
     settings.value = fresh;
   }
 
   function resetPromptToDefaults() {
-    settings.value.prompt_rules.modules = klona(DEFAULT_MODULES);
-    settings.value.prompt_rules.person_style = DEFAULT_PERSON_STYLE;
-    settings.value.prompt_rules.option_rules = DEFAULT_OPTION_RULES;
+    // 按当前归属配置的出厂默认重置（全向配置恢复其专属模块与规则，而非简洁默认）
+    const defaults = resolveOwnerDefaults();
+    settings.value.prompt_rules.modules = defaults.modules;
+    settings.value.prompt_rules.person_style = defaults.person_style;
+    settings.value.prompt_rules.option_rules = defaults.option_rules;
   }
 
   // ST 主题自动检测：当 theme_mode 为 'auto' 时，监听 ST 主题变化
