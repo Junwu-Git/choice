@@ -1,9 +1,15 @@
 import toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
+import UserStatusBar from '@/components/UserStatusBar.vue';
 import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
+import {
+  updateUserStatus,
+  refreshStatusInjection,
+} from '@/core/status-tracker';
+import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -16,6 +22,13 @@ export function initPanelMount() {
   app.use(pinia);
   app.config.globalProperties.t = t;
   app.mount($container[0]);
+
+  // 状态栏：楼层内嵌组件，独立 mount 节点（与选项面板分离，互不干扰）
+  const $statusContainer = $('<div id="choice-status-bar-mount"></div>').appendTo('#chat');
+  const statusApp = createApp(UserStatusBar);
+  statusApp.use(pinia);
+  statusApp.config.globalProperties.t = t;
+  statusApp.mount($statusContainer[0]);
 
   const panelStore = usePanelStateStore(pinia);
 
@@ -37,7 +50,17 @@ export function initPanelMount() {
 
   const reposition = () => {
     try {
-      // 停靠模式（输入框上方）：面板固定插在 #send_form 之前，不随聊天滚动。
+      // 状态栏始终楼层内嵌（插在 last_mes 之后），不受选项面板停靠模式影响
+      const $last = $('#chat .mes.last_mes');
+      if ($last.length) {
+        if (!$statusContainer.prev().is($last)) {
+          $statusContainer.insertAfter($last);
+        }
+      } else if (!$statusContainer.parent().is('#chat')) {
+        $statusContainer.appendTo('#chat');
+      }
+
+      // 选项面板停靠模式（输入框上方）：面板固定插在 #send_form 之前，不随聊天滚动。
       // 幂等检查必须做——resync 在聊天事件里高频触发，无脑 insertBefore 会反复搬移
       // DOM 节点，丢掉面板内滚动位置且徒增布局开销。
       // 判据是 next 而非 prev：#form_sheld 里 send_form 之前还有 ST 的删除确认条
@@ -49,10 +72,10 @@ export function initPanelMount() {
         }
         return;
       }
-      const $last = $('#chat .mes.last_mes');
+      // 聊天模式：选项面板插在状态栏之后（楼层 → 状态栏 → 选项面板）
       if ($last.length) {
-        if (!$container.prev().is($last)) {
-          $container.insertAfter($last);
+        if (!$container.prev().is($statusContainer)) {
+          $container.insertAfter($statusContainer);
         }
       } else if (!$container.parent().is('#chat')) {
         $container.appendTo('#chat');
@@ -98,6 +121,23 @@ export function initPanelMount() {
         return;
       }
       const gs = useGlobalSettingsStore(pinia);
+      const cs = useChatSettingsStore(pinia);
+      const stConfig = cs.settings.status_tracking;
+
+      // 被动状态自动更新：独立于选项 auto_generate，各自开关互不阻塞。
+      // 与选项生成并行 fire-and-forget（两者各自 loading 守卫互斥，API 调用独立）。
+      // 前置 API 检查同选项生成——不弹窗抢焦点，只 toastr 警告跳过
+      if (stConfig.enabled && stConfig.auto_update) {
+        if (resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) {
+          const swipeId = getMessageSwipeId(messageId);
+          void (async () => {
+            await updateUserStatus(messageId, swipeId);
+          })().catch(error => console.error('[Choice] status auto-update failed', error));
+        } else {
+          toastr.warning(t`未配置 API，跳过状态更新`);
+        }
+      }
+
       if (!gs.settings.auto_generate) {
         return;
       }
@@ -149,6 +189,16 @@ export function initPanelMount() {
   eventSource.on(event_types.MORE_MESSAGES_LOADED, safeResync);
   eventSource.on(event_types.APP_READY, safeResync);
   eventSource.on(event_types.GENERATION_ENDED, safeResync);
+  // 正文生成开始前刷新状态注入：确保 extension_prompts 拿到最新被动状态快照。
+  // setExtensionPrompt 写入全局 extension_prompts 对象，ST 在 buildFinalPrompt 时读取——
+  // GENERATION_STARTED 早于 prompt 组装，时序上保证注入生效
+  eventSource.on(event_types.GENERATION_STARTED, () => {
+    try {
+      refreshStatusInjection();
+    } catch (error) {
+      console.warn('[Choice] refreshStatusInjection on GENERATION_STARTED failed', error);
+    }
+  });
 
   resync();
   let pollCount = 0;

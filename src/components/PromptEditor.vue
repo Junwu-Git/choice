@@ -1,6 +1,6 @@
 <template>
   <div class="choice-prompt-editor">
-    <div class="choice-page-toolbar" data-tour="prompt-toolbar">
+    <div v-if="!statusOnly" class="choice-page-toolbar" data-tour="prompt-toolbar">
       <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
         <select v-model="rules.context_mode" class="text_pole" style="width: auto">
           <option value="rounds">{{ t`轮数模式` }}</option>
@@ -25,7 +25,7 @@
       </label>
     </div>
 
-    <div class="choice-config-bar">
+    <div v-if="!statusOnly" class="choice-config-bar">
       <div class="choice-config-row">
         <label class="choice-config-label">{{ t`提示词配置` }}</label>
         <select v-model="selectedPromptConfigId" class="text_pole choice-config-select">
@@ -257,6 +257,7 @@
               <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
               <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
               <span v-if="mod.option_only" class="choice-option-badge-sm">{{ t`选项` }}</span>
+              <span v-if="mod.status_only" class="choice-status-badge-sm">{{ t`状态` }}</span>
               <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
             </div>
             <div class="choice-module-preview">
@@ -373,6 +374,9 @@ const chatStore = useChatSettingsStore();
 const promptConfigSelector = usePromptConfigSelectorStore();
 const rules = globalStore.settings.prompt_rules;
 
+// 被动状态大页传入：true 时仅显示 status_only 模块，隐藏配置栏/工具栏/模式切换
+const props = defineProps<{ statusOnly?: boolean }>();
+
 /** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
 const READONLY_MODULE_IDS = new Set([
   'world_info_before',
@@ -391,6 +395,10 @@ const allModules = computed(() => {
   if (!rules.baibai_enabled) {
     modules = modules.filter(m => !BAIBAI_MODULE_IDS.has(m.id));
   }
+  // 状态大页模式：只显示 status_only 模块，跳过选项/润色过滤
+  if (props.statusOnly) {
+    return modules.filter(m => m.status_only);
+  }
   // 润色关闭时强制隐藏所有 enrich_only 模块，忽略 promptMode
   if (!globalStore.settings.ui.enrich_enabled) {
     modules = modules.filter(m => !m.enrich_only);
@@ -399,7 +407,8 @@ const allModules = computed(() => {
   } else if (promptMode.value === 'enrich') {
     modules = modules.filter(m => !m.option_only);
   }
-  return modules;
+  // 选项/润色大页隐藏 status_only 模块（状态专属，不属于选项/润色链路）
+  return modules.filter(m => !m.status_only);
 });
 
 type PromptMode = 'all' | 'option' | 'enrich';
@@ -1104,6 +1113,16 @@ onUnmounted(() => {
   border-radius: var(--choice-radius-full);
   background: rgba(217, 144, 74, 0.18);
   color: #e0a06a;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.choice-status-badge-sm {
+  font-size: var(--choice-text-xs);
+  padding: 1px var(--choice-space-2);
+  border-radius: var(--choice-radius-full);
+  background: var(--choice-color-warning-bg);
+  color: var(--choice-color-warning);
   font-weight: 500;
   flex-shrink: 0;
 }

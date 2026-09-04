@@ -75,6 +75,10 @@ export type Ctx = {
   enrichPersonStyle: string;
   optionPerson: string;
   enrichPerson: string;
+  // 被动状态追踪：当前状态快照的 JSON 文本（状态更新链路用，选项/润色链路为空串）
+  statusJson: string;
+  // 状态条数上限（状态更新链路用，供 status_rules 模块的 {{max_entries}} 占位）
+  maxEntries: number;
 };
 const sub = (t: string, c: Ctx) =>
   t
@@ -88,7 +92,9 @@ const sub = (t: string, c: Ctx) =>
     .replaceAll('{{max_chars}}', String(c.maxChars))
     .replaceAll('{{enrich_person_style}}', c.enrichPersonStyle)
     .replaceAll('{{option_person}}', c.optionPerson)
-    .replaceAll('{{enrich_person}}', c.enrichPerson);
+    .replaceAll('{{enrich_person}}', c.enrichPerson)
+    .replaceAll('{{status}}', c.statusJson)
+    .replaceAll('{{max_entries}}', String(c.maxEntries));
 
 export const buildMessages = async (
   modules: PromptModule[],
@@ -96,6 +102,7 @@ export const buildMessages = async (
   wi: WorldInfoGlobalSettings,
   contextRounds: number,
   isEnrich = false,
+  isStatus = false,
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
   const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
@@ -118,6 +125,16 @@ export const buildMessages = async (
     if (!mod.enabled) continue;
     if (!prefillEnabled && mod.role === 'assistant') continue;
     if (isEnrich && mod.option_only) continue;
+    // 状态更新链路复用完整上下文管线，但只保留两类模块：
+    // ① status_only 模块（状态规则/指令）；② marker 标记的只读上下文模块（世界书/角色卡/
+    // persona/聊天历史/柏宝书）。跳过选项/润色专属的任务指令模块（option_only/enrich_only）
+    // 及无 marker 的选项人格模块（system_prompt/assistant_ack/reward_prompt 等）——状态观察员
+    // 不需要喵可人格，status_rules 模块自带角色定义。选项/润色链路则跳过所有 status_only 模块
+    if (isStatus) {
+      if (!mod.status_only && !mod.marker) continue;
+    } else if (mod.status_only) {
+      continue;
+    }
 
     switch (mod.id) {
       case 'system_prompt': {
@@ -773,6 +790,8 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       enrichPersonStyle: '',
       optionPerson: '第三人称',
       enrichPerson: '第三人称',
+      statusJson: '',
+      maxEntries: 0,
     };
     const rules = gs.settings.prompt_rules;
 

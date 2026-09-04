@@ -488,6 +488,7 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
         order: 3,
         enrich_only: true,
         option_only: false,
+        status_only: false,
       });
     }
 
@@ -1351,6 +1352,59 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v36: 被动状态追踪——新增 status_rules / status_instruction 两个 status_only 模块。
+  // 与 enrich_only/option_only 正交：仅状态更新链路（buildMessages isStatus）发送。
+  // 参照 v12/v16 先例：从 DEFAULT_MODULES 取新模块 push 进老存档，重置只读标志位 + order。
+  // PromptModule.status_only 字段由 zod default(false) 自动补齐老存档已有模块，无需逐条赋值。
+  // 幂等：existingIds 守卫保证已有同 id 模块不重复 push。prompt_configs 里的 modules 快照
+  // 不在此迁移（配置层 modules 是用户快照，新增系统模块不自动同步进去——状态更新链路
+  // 读的是 prompt_rules.modules 全局副本，与选项/润色一致，配置切换不影响 status_only 模块）
+  if ((validated.schema_version ?? 0) < 36) {
+    const defaults36 = klona(DEFAULT_MODULES);
+    const existingIds36 = new Set(validated.prompt_rules.modules.map(m => m.id));
+    const STATUS_IDS = new Set(['status_rules', 'status_instruction']);
+    for (const d of defaults36) {
+      if (STATUS_IDS.has(d.id) && !existingIds36.has(d.id)) {
+        validated.prompt_rules.modules.push(d);
+      }
+    }
+    // 重置只读/系统标志位，确保新增模块被正确标记
+    const READONLY_IDS_36 = new Set(['status_rules']);
+    for (const m of validated.prompt_rules.modules) {
+      if (READONLY_IDS_36.has(m.id)) {
+        m.marker = true;
+        m.system = true;
+      }
+    }
+    resetOrderFromDefaults(validated);
+  }
+
+  // v37: 充实状态提示词——强制刷新 prompt_rules.modules 和所有 prompt_configs 快照中
+  // status_rules / status_instruction 的 content，确保已合入模块（v36）的用户拿到新文本。
+  // 参照 v14 thinking_prompt 内容强制同步先例。幂等：仅 id 匹配的模块覆盖 content，
+  // 不影响其他模块；同 id 不存在的存档（极端缺失）无副作用。
+  if ((validated.schema_version ?? 0) < 37) {
+    const defaults37 = klona(DEFAULT_MODULES);
+    const statusIds37 = new Set(['status_rules', 'status_instruction']);
+    const refreshMap = new Map(
+      defaults37.filter(d => statusIds37.has(d.id)).map(d => [d.id, d.content] as const),
+    );
+    for (const m of validated.prompt_rules.modules) {
+      if (statusIds37.has(m.id) && refreshMap.has(m.id)) {
+        m.content = refreshMap.get(m.id)!;
+      }
+    }
+    // prompt_configs 快照也可能携带旧文本（copyPromptRulesSubset 全量复制 modules），
+    // 一并刷新防止切配置时读到 v36 旧内容
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        if (statusIds37.has(m.id) && refreshMap.has(m.id)) {
+          m.content = refreshMap.get(m.id)!;
+        }
+      }
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
@@ -1598,6 +1652,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       order: maxOrder + 1,
       enrich_only: enrichOnly,
       option_only: optionOnly,
+      status_only: false,
     };
     modules.push(newModule);
     return newModule;

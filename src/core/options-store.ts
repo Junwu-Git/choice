@@ -18,6 +18,12 @@ export type MessageChoiceData = {
   currentIndex: number;
   enrichGenerations: ChoiceGeneration[];
   enrichCurrentIndex: number;
+  // 被动状态追踪：楼层级状态快照（message.extra['choice'][swipeId].userStatus）。
+  // 可选：options/enrich 数据可能无此字段；状态追踪通过 status-tracker.ts 读写
+  userStatus?: {
+    entries: Array<{ id: string; label: string; description: string; source: 'auto' | 'manual'; updatedAt: number }>;
+    updatedAt: number;
+  } | null;
 };
 
 const getMessage = (messageId: number): StChatMessage | undefined => chat[messageId] as StChatMessage | undefined;

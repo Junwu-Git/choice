@@ -150,6 +150,10 @@ export const PromptModule = z.object({
   order: z.number().min(0),
   enrich_only: z.boolean().default(false),
   option_only: z.boolean().default(false),
+  // 被动状态追踪专用模块标记：status_only=true 的模块仅在状态更新链路（buildMessages
+  // isStatus=true）发送，选项/润色链路跳过。与 enrich_only/option_only 三者正交，
+  // 老存档缺字段由 default(false) 自动补齐，无需 bump schema_version 专程迁移
+  status_only: z.boolean().default(false),
 });
 export type PromptModule = z.infer<typeof PromptModule>;
 
@@ -981,7 +985,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 35;
+export const SCHEMA_VERSION = 37;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1119,6 +1123,45 @@ export const ChatSettings = z
     config_id: z.string().nullable().default(null),
     prompt_config_id: z.string().nullable().default(null),
     world_info: WorldInfoChatSettings.prefault({}),
+    // 被动状态追踪设置（聊天级）：跟随当前会话持久化在 chat_metadata。
+    // 与楼层快照（message.extra）正交：本字段是"追踪行为开关"，状态内容本身存楼层
+    status_tracking: z
+      .object({
+        enabled: z.boolean().default(false),
+        // AI 回复后自动更新状态（独立于选项 auto_generate，各自开关互不阻塞）
+        auto_update: z.boolean().default(true),
+        // 注入正文 AI：关闭则状态栏只展示、不发给正文生成
+        inject_enabled: z.boolean().default(true),
+        // 注入深度（距聊天历史末尾的消息数），默认 2 贴近最新消息
+        injection_depth: z.number().min(0).max(20).default(2).catch(2),
+        // 状态更新读取的上下文轮数（独立于 prompt_rules.context_rounds）
+        context_rounds: z.number().min(0).default(10).catch(10),
+        // 状态条数上限，AI 输出超限时截断保留最新 N 条
+        max_entries: z.number().min(1).max(20).default(8).catch(8),
+      })
+      .prefault({}),
   })
   .prefault({});
 export type ChatSettings = z.infer<typeof ChatSettings>;
+
+/** 被动状态追踪设置类型（从 ChatSettings 派生） */
+export type UserStatusSettings = ChatSettings['status_tracking'];
+
+/** 单条 user 被动状态（楼层快照里的一条）。
+ *  source: 'auto' = AI 自动提取更新、'manual' = 用户手动编辑增删。
+ *  updatedAt 用于区分新旧条目（手动改后 AI 再更新会保留用户的 label/description 并覆盖）。 */
+export interface UserStatusEntry {
+  id: string;
+  label: string;
+  description: string;
+  source: 'auto' | 'manual';
+  updatedAt: number;
+}
+
+/** 楼层级状态快照（挂在 message.extra['choice'][swipeId].userStatus 上）。
+ *  entries = 当前有效的被动状态条目；updatedAt = 本次快照更新时间。
+ *  null = 该楼层无状态快照（功能未开启时的老楼层、user 消息楼层等）。 */
+export interface UserStatusSnapshot {
+  entries: UserStatusEntry[];
+  updatedAt: number;
+}

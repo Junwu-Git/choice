@@ -9,7 +9,7 @@
  * 结构上只依赖 onboarding.ts 的 OnboardingStep 类型（type-only import，
  * 不构成运行时循环）；onboarding.ts 反向 import 本模块的章节数据。
  */
-import type { TabId } from '@/components/shared/tab-definitions';
+
 import type { OnboardingStep } from '@/core/onboarding';
 import { resolveCustomApi, lastOptionsGeneratedAt } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -307,7 +307,7 @@ export interface PageHint {
   points: string[];
 }
 
-export const PAGE_HINTS: Record<TabId, PageHint> = {
+export const PAGE_HINTS: Record<string, PageHint> = {
   pool: {
     icon: 'fa-solid fa-layer-group',
     title: '条目池',
@@ -397,6 +397,28 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
     points: [
       '显示当前数据版本和模块、条目等统计信息。',
       '恢复出厂会删除所有设置并回到插件初始状态，⚠️ 不可撤销，执行前请先导出提示词备份。',
+    ],
+  },
+  status_settings: {
+    icon: 'fa-solid fa-sliders',
+    title: '状态设置',
+    brief: '控制被动状态追踪的总开关、自动更新频率与注入正文方式。',
+    points: [
+      '总开关：关闭后状态栏消失、API 停止调用，已存楼层快照不受影响。',
+      '自动更新：开启后每次 AI 回复自动调用 API 提取状态；关闭后仅保留手动编辑。',
+      '注入正文：将当前状态以扩展提示词形式注入正文生成，让 AI 在写作时参考。',
+      '注入深度：控制提示词插入聊天历史的深度（0=紧接末尾）。',
+      '状态条数上限：AI 每次输出最多记录 N 条状态，超过截断。',
+    ],
+  },
+  status_prompt: {
+    icon: 'fa-solid fa-align-left',
+    title: '状态提示词',
+    brief: '状态更新的 AI 指令与规则模块，决定追踪器看什么、输出什么。',
+    points: [
+      '「状态规则」是只读系统模块：定义标签体系、推断边界、状态生命周期规则。',
+      '「状态指令」是用户任务模块：给 AI 的具体操作指令，可自定义。',
+      '状态链路走完整管线（世界书/角色卡/聊天历史），提示词模块在此切换。',
     ],
   },
 };

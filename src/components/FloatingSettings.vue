@@ -14,17 +14,31 @@
         }"
       >
         <div class="choice-floating-header" ref="headerEl" data-tour="settings-header">
-          <span class="choice-floating-title">
-            <i class="fa-solid fa-chess"></i>
-            {{ t`行动选项` }}
-          </span>
+          <div class="choice-mode-switch">
+            <button
+              class="choice-mode-btn"
+              :class="{ active: activeMode === 'options' }"
+              @click="switchMode('options')"
+            >
+              <i class="fa-solid fa-chess"></i>
+              {{ t`行动选项` }}
+            </button>
+            <button
+              class="choice-mode-btn"
+              :class="{ active: activeMode === 'status' }"
+              @click="switchMode('status')"
+            >
+              <i class="fa-solid fa-heart-pulse"></i>
+              {{ t`被动状态` }}
+            </button>
+          </div>
           <button class="choice-floating-close" @click="closeSettings">&times;</button>
         </div>
 
         <div class="choice-floating-body choice-scrollbar">
           <div ref="tabsEl" class="choice-tabs" data-tour="tab-strip">
             <button
-              v-for="tab in FLOATING_TABS"
+              v-for="tab in currentTabs"
               :key="tab.id"
               :ref="setTabBtnRef(tab.id)"
               class="choice-tab"
@@ -49,14 +63,22 @@
 
           <GuidePopover :visible="showGuide" :anchor-el="guideBtn" :hint="currentHint" @close="showGuide = false" />
 
-          <PoolEditor v-if="activeTab === 'pool'" />
-          <GenerationSettings v-else-if="activeTab === 'generation'" />
-          <PromptEditor v-else-if="activeTab === 'prompt'" />
-          <ApiEditor v-else-if="activeTab === 'api'" />
-          <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
-          <FilterEditor v-else-if="activeTab === 'filter'" />
-          <AppearanceSettings v-else-if="activeTab === 'appearance'" />
-          <DebugSettings v-else-if="activeTab === 'debug'" />
+          <!-- 行动选项大页 -->
+          <template v-if="activeMode === 'options'">
+            <PoolEditor v-if="activeTab === 'pool'" />
+            <GenerationSettings v-else-if="activeTab === 'generation'" />
+            <PromptEditor v-else-if="activeTab === 'prompt'" />
+            <ApiEditor v-else-if="activeTab === 'api'" />
+            <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
+            <FilterEditor v-else-if="activeTab === 'filter'" />
+            <AppearanceSettings v-else-if="activeTab === 'appearance'" />
+            <DebugSettings v-else-if="activeTab === 'debug'" />
+          </template>
+          <!-- 被动状态大页：仅状态专属两页，API/世界书/过滤统一在行动选项大页配置 -->
+          <template v-else>
+            <UserStatusSettings v-if="activeTab === 'status_settings'" />
+            <PromptEditor v-else-if="activeTab === 'status_prompt'" status-only />
+          </template>
         </div>
 
         <div class="choice-floating-resize" @mousedown="onResizeStart">
@@ -75,18 +97,30 @@ import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import FilterEditor from '@/components/FilterEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
+import UserStatusSettings from '@/components/UserStatusSettings.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
-import { FLOATING_TABS, type TabId } from '@/components/shared/tab-definitions';
+import { FLOATING_TABS, STATUS_TABS, type TabDefinition } from '@/components/shared/tab-definitions';
 import { PAGE_HINTS } from '@/core/guide-content';
 import { isSettingsOpen, closeSettings } from '@/core/floating-state';
 import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
 
-const activeTab = ref<TabId>('pool');
+type SettingsMode = 'options' | 'status';
+const activeMode = ref<SettingsMode>('options');
+const activeTab = ref<string>('pool');
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
-const onTabClick = (id: TabId) => {
+const currentTabs = computed<TabDefinition[]>(() => (activeMode.value === 'options' ? FLOATING_TABS : STATUS_TABS));
+
+function switchMode(mode: SettingsMode) {
+  if (activeMode.value === mode) return;
+  activeMode.value = mode;
+  // 切换大页时重置到首个子 tab
+  activeTab.value = mode === 'options' ? 'pool' : 'status_settings';
+}
+
+const onTabClick = (id: string) => {
   // 兜底：抽屉/面板打开后引导仍未完成的场景，首次点 tab 也能触发自动弹出
   maybeAutoOpenOnboarding();
   activeTab.value = id;
@@ -107,13 +141,13 @@ watch(onboardingPendingTab, tab => {
   }
 });
 
-const currentHint = computed(() => PAGE_HINTS[activeTab.value]);
+const currentHint = computed(() => (PAGE_HINTS as Record<string, typeof PAGE_HINTS[keyof typeof PAGE_HINTS]>)[activeTab.value]);
 
 // 手机视口下 tab 栏横向滚动、滚动条被隐藏，溢出的激活 tab 需手动滚回可视区，
 // 否则用户感知不到"后面还有 tab"
 const tabsEl = ref<HTMLElement | null>(null);
-const tabBtnEls = new Map<TabId, HTMLElement>();
-const setTabBtnRef = (id: TabId) => (el: unknown) => {
+const tabBtnEls = new Map<string, HTMLElement>();
+const setTabBtnRef = (id: string) => (el: unknown) => {
   if (el instanceof HTMLElement) tabBtnEls.set(id, el);
 };
 
@@ -299,6 +333,39 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: inline-flex;
   align-items: center;
   gap: var(--choice-space-2);
+}
+
+/* 一级双模式切换：行动选项 / 被动状态 */
+.choice-mode-switch {
+  display: inline-flex;
+  gap: var(--choice-space-1);
+  align-items: center;
+}
+
+.choice-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-1) var(--choice-space-3);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  background: transparent;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--choice-transition);
+}
+
+.choice-mode-btn:hover {
+  color: var(--choice-text);
+  border-color: var(--choice-border-strong);
+}
+
+.choice-mode-btn.active {
+  color: var(--choice-text-on-primary);
+  background: var(--choice-primary);
+  border-color: var(--choice-primary);
 }
 
 .choice-floating-close {
