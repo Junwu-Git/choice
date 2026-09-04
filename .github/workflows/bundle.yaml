@@ -2,6 +2,12 @@ name: bundle
 
 on:
   push:
+    # 只对分支触发：tag 推送时 actions/checkout 检出 tag ref 是 detached HEAD，
+    # EndBug/add-and-commit 无法 commit/push（"not currently on a branch"），纯属红叉噪声。
+    # 发布版本号已在 release 提交里写死，tag 路径本就不需要 bundle。
+    branches:
+      - main
+      - test
   workflow_dispatch:
 
 concurrency:
