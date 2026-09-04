@@ -174,7 +174,8 @@ export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 // 聊天记录过滤规则：标签匹配（字面量头/尾）、正则匹配、标签提取，三者可混用。
 // 执行语义（generator.buildChatHistory）：extract 恒定先于 tag/regex 执行（先裁剪后过滤），
 // 顺序不依赖规则排列——提取规则保留 <标签>…</标签> 整段并舍弃其余，之后现有 tag/regex
-// 规则继续在提取结果上运行，形成"提取后再二次过滤"的新手友好管线
+// 规则继续在提取结果上运行，形成"提取后再二次过滤"的新手友好管线。
+// extract 仅对 assistant 消息执行，user 消息跳过（纯文本 user 输入无目标标签会被整条丢弃）
 export const ChatFilterRule = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tag'),
@@ -190,7 +191,7 @@ export const ChatFilterRule = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('extract'),
-    // 纯标签名（如"正文"，不带尖括号）：执行时按 <tag_name>…</tag_name> 字面量配对提取。
+    // 纯标签名（如"正文"，不带尖括号）：执行时仅对 AI 输出按 <tag_name>…</tag_name> 字面量配对提取。
     // 只支持完整标签对（不给头/尾分离），刻意保持新手单输入框的最简形态。
     // 归属约束：extract 只由过滤页顶部的标签提取快速区产生（专用全局分组），三区
     // （全局/预设/角色卡）与正则库的 UI 不提供该类型——三区是纯"过滤"（删除/替换）语义
@@ -819,6 +820,13 @@ export const WorldInfoGlobalSettings = z
   .object({
     enabled: z.boolean().default(true),
     global_excluded_books: z.array(z.string()).prefault([]),
+    // 世界书条目 EJS 渲染开关。开 = 拿到世界书 buckets 后对 content 先展宏 {{}} 再执行
+    // 提示词模板插件暴露的 evalTemplate(<% %>)，让「按好感度切换人设」等动态条目拿到成品。
+    // 默认开：未装提示词模板插件时安全降级为只展宏（substituteParams），不比现状差；
+    // choice 现状连展宏都没做（{{user}} 都不展开），开启顺带修复该 gap。关 = 维持现状不碰。
+    // 注意：choice 只检测 globalThis.EjsTemplate 是否存在（插件装了且加载），不跟随插件
+    // 自己的 enabled 开关——choice 直接调函数、不走它的事件 hook，两开关各管各的语义
+    render_world_info_ejs: z.boolean().default(true),
   })
   .prefault({});
 export type WorldInfoGlobalSettings = z.infer<typeof WorldInfoGlobalSettings>;

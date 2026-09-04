@@ -5,6 +5,13 @@
         <input v-model="globalStore.settings.world_info.enabled" type="checkbox" />
         {{ t`启用世界书` }}
       </label>
+      <label
+        class="choice-check"
+        :title="t`开启后世界书条目先展开 {{宏}}；若装了『提示词模板』插件且条目含 <% %>，会执行其中 JS，让按好感度切换人设等动态条目拿到成品而非原文。未装插件时仅展宏。含写变量（setvar）的 EJS 每次生成会执行并可能改变变量状态，遇到这类世界书可关闭。`"
+      >
+        <input v-model="globalStore.settings.world_info.render_world_info_ejs" type="checkbox" />
+        {{ t`EJS 渲染` }}
+      </label>
     </div>
 
     <button class="menu_button" :title="t`从酒馆重新加载世界书列表和条目`" @click="refreshAll">

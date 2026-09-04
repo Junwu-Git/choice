@@ -12,6 +12,7 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
+import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
@@ -268,7 +269,11 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
     if (m.is_system) continue;
     let content = m.mes ?? '';
     if (!content) continue;
-    if (extractRules.length > 0) {
+    // 标签提取只作用于 AI 输出（assistant）：user 输入多为纯文本/对白，不含待提取的结构化
+    // 标签区间，对其执行 extract 会因无目标标签而整条丢弃，致用户发送内容从提示词消失。
+    // tag/regex 过滤仍对所有消息（含 user）生效——删除语义不整条丢，保留原行为
+    const isUser = m.role === 'user' || m.is_user;
+    if (!isUser && extractRules.length > 0) {
       content = extractTagContents(content, extractRules);
       // 没有任何目标标签 → 该消息没有可保留的内容，整条丢弃（与"过滤后为空丢弃"一致）
       if (!content.trim()) continue;
@@ -294,7 +299,7 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
       }
     }
     if (!content.trim()) continue;
-    const role = m.role === 'user' || m.is_user ? 'user' : 'assistant';
+    const role = isUser ? 'user' : 'assistant'; // 复用上方 isUser，不再重复判定
     h.push({ role, content });
     if (role === 'assistant') lastAssistantIdx = h.length - 1;
   }
@@ -379,6 +384,7 @@ const mapWIRole = (role: unknown): 'system' | 'user' | 'assistant' =>
   role === 1 || role === '1' ? 'user' : role === 2 || role === '2' ? 'assistant' : 'system';
 
 const buildWI = async (): Promise<WIBuckets> => {
+  const gs = useGlobalSettingsStore();
   const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthEntries: [] };
   try {
     const ctx = window.SillyTavern?.getContext?.();
@@ -405,7 +411,7 @@ const buildWI = async (): Promise<WIBuckets> => {
       creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
-    return {
+    const buckets: WIBuckets = {
       before: result.worldInfoBefore ?? '',
       after: result.worldInfoAfter ?? '',
       anBefore: (result.anBefore ?? []).join('\n'),
@@ -425,6 +431,31 @@ const buildWI = async (): Promise<WIBuckets> => {
         }))
         .filter(e => e.content),
     };
+
+    // EJS 渲染后处理（开关开时）：对 buckets 各 content 展宏 + 执行提示词模板插件的 <% %>。
+    // 零侵入——getWorldInfoPrompt/分桶/buildChatHistory 织入逻辑均不碰；未装插件时
+    // renderWorldInfoContent 内部降级为只展宏（<% 原样保留），不比现状差。depthEntries 各
+    // content 同样渲染后回填，buildChatHistory 的按深度织入逻辑对渲染结果无感
+    if (gs.settings.world_info.render_world_info_ejs) {
+      [buckets.before, buckets.after, buckets.anBefore, buckets.anAfter, buckets.em] = await Promise.all([
+        renderWorldInfoContent(buckets.before),
+        renderWorldInfoContent(buckets.after),
+        renderWorldInfoContent(buckets.anBefore),
+        renderWorldInfoContent(buckets.anAfter),
+        renderWorldInfoContent(buckets.em),
+      ]);
+      if (buckets.depthEntries.length > 0) {
+        const renderedDepth = await Promise.all(
+          buckets.depthEntries.map(e => renderWorldInfoContent(e.content)),
+        );
+        buckets.depthEntries = buckets.depthEntries.map((e, i) => ({
+          ...e,
+          content: renderedDepth[i],
+        }));
+      }
+    }
+
+    return buckets;
   } catch (err) {
     console.error('[Choice] buildWI failed', err);
     return empty;

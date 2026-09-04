@@ -28,7 +28,7 @@
       <div class="choice-extract-quick-head">
         <span class="choice-inline-label"><i class="fa-solid fa-bolt"></i> {{ t`标签提取` }}</span>
         <span class="choice-extract-quick-desc">{{
-          t`新手推荐：只把指定标签对里的内容发给 AI，其余内容全部丢弃`
+          t`新手推荐：只保留 AI 输出里指定标签对之间的内容，其余丢弃；用户输入原样保留`
         }}</span>
         <!-- 提取总开关：关 = 规则保留但全部停用（不受下方任何分组开关影响） -->
         <ChoiceSwitch
@@ -51,7 +51,7 @@
       <!-- 实时预览：填"正文"就展示 <正文>…</正文>，所见即所提取 -->
       <div class="choice-extract-preview">
         <span v-if="extractPreviewName">
-          {{ t`发送时只保留 ${extractPreviewName} 之间的内容（含标签本身），其余全部丢弃：` }}
+          {{ t`对 AI 输出只保留 ${extractPreviewName} 之间的内容（含标签本身），其余丢弃；用户输入原样保留：` }}
           <code class="choice-extract-preview-tag"
             >&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code
           >
