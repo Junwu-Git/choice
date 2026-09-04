@@ -1247,10 +1247,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     // ③ 「全向」提示词配置：prompt_configs 非空且尚无全向时才建（空路径交给 init 后置步；
     // 已有全向则跳过——幂等，防重跑造重复 uuid 悬空已绑定的 prompt_config_id）
-    if (
-      validated.prompt_configs.length > 0 &&
-      !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)
-    ) {
+    if (validated.prompt_configs.length > 0 && !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
       validated.prompt_configs.push(buildOpenPromptConfig(validated.prompt_rules));
     }
   }
