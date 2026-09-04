@@ -76,7 +76,16 @@ export function initPanelMount() {
     }
   };
 
-  const onMessageReceived = async (messageId: number, type: string) => {
+  // 不能把 generateOptions 的 await 留在监听器里：ST 的 eventSource.emit 串行 await
+  // 每个监听器（public/lib/eventemitter.js），而 MESSAGE_RECEIVED 之后紧接着才 emit
+  // CHARACTER_MESSAGE_RENDERED——酒馆助手前端卡渲染正挂在该事件上
+  // （JS-Slash-Runner src/store/iframe_runtimes/message.ts）。监听器不返回就会把
+  // 整次二次 API 调用的耗时推迟到正文卡片渲染之前。故通过检查后脱钩 fire-and-forget：
+  //   - storeGeneration 内部自带 saveChatDebounced（options-store.ts），落盘不依赖
+  //     ST 主保存时序；
+  //   - generateOptions 在首个 await 前同步置位 generatorState.loading（generator.ts），
+  //     与下方 loading 守卫之间无竞态窗口。
+  const onMessageReceived = (messageId: number, type: string) => {
     try {
       resync();
       if (!(chat[messageId] as StChatMessage | undefined)?.mes?.trim()) {
@@ -103,14 +112,16 @@ export function initPanelMount() {
         return;
       }
       const swipeId = getMessageSwipeId(messageId);
-      const generation = await generateOptions({ messageId, swipeId });
-      if (!generation) {
-        return;
-      }
-      storeGeneration(messageId, swipeId, generation);
-      // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
-      panelStore.autoSetCollapsed(false);
-      resync();
+      void (async () => {
+        const generation = await generateOptions({ messageId, swipeId });
+        if (!generation) {
+          return;
+        }
+        storeGeneration(messageId, swipeId, generation);
+        // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
+        panelStore.autoSetCollapsed(false);
+        resync();
+      })().catch(error => console.error('[Choice] onMessageReceived failed', error));
     } catch (error) {
       console.error('[Choice] onMessageReceived failed', error);
     }

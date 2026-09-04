@@ -137,8 +137,8 @@ export const PromptConfig = z
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
     option_min_chars: z.number().min(10).max(500).default(10),
     option_max_chars: z.number().min(10).max(500).default(60),
-    enrich_min_chars: z.number().min(10).max(500).default(30),
-    enrich_max_chars: z.number().min(10).max(500).default(80),
+    enrich_min_chars: z.number().min(10).max(500).default(10),
+    enrich_max_chars: z.number().min(10).max(500).default(60),
     context_rounds: z.number().min(0).default(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     prefill_enabled: z.boolean().default(true),
@@ -377,9 +377,9 @@ export const PromptRules = z
     /** 选项字数上限 */
     option_max_chars: z.number().min(10).max(500).default(60),
     /** 润色字数下限 */
-    enrich_min_chars: z.number().min(10).max(500).default(30),
+    enrich_min_chars: z.number().min(10).max(500).default(10),
     /** 润色字数上限 */
-    enrich_max_chars: z.number().min(10).max(500).default(80),
+    enrich_max_chars: z.number().min(10).max(500).default(60),
     /** 润色人称视角，自由文本，通过 {{enrich_person_style}} 占位符注入 enrich_core_rules 模块 */
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
     schema_version: z.number().default(0),
