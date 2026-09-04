@@ -131,6 +131,15 @@
           >
             {{ t`尾附` }}
           </button>
+          <button
+            class="choice-behavior-btn"
+            :class="{ active: behavior === 'insert' }"
+            @click="behavior = 'insert'"
+            :title="t`点击选项后插入到输入框光标处`"
+          >
+            <i class="fa-solid fa-i-cursor"></i>
+            {{ t`插入` }}
+          </button>
         </div>
         <button
           v-for="(option, index) in visibleOptions"
@@ -377,7 +386,27 @@ const onSelect = async (option: ChoiceOption) => {
     content = sep ? option.text.slice(sep.idx + sep.len) : option.text;
   }
   const $textarea = $('#send_textarea');
-  if (behavior.value === 'append') {
+  if (behavior.value === 'insert') {
+    // 光标处插入：selectionStart/End 保留点选项按钮（textarea 失焦）前的 caret 位置——
+    // 浏览器规范行为，移动端同样适用。有选区时替换选区（标准文本插入），
+    // 无选区时纯插入；空输入框或 caret 在末尾时等价尾附，无需特判。
+    // textarea.value 的 setter 规范会把 caret 移到值末尾，故"从未手动聚焦"场景
+    // 自然退化为末尾插入，不会把内容塞到开头。
+    const el = $textarea[0] as HTMLTextAreaElement;
+    const pos = el.selectionStart ?? String($textarea.val() ?? '').length;
+    const end = el.selectionEnd ?? pos;
+    const cur = String($textarea.val() ?? '');
+    const next = cur.slice(0, pos) + content + cur.slice(end);
+    $textarea.val(next)[0].dispatchEvent(new Event('input', { bubbles: true }));
+    // 写值后 caret 会被重置，恢复到插入内容之后，方便用户接着编辑
+    const caret = pos + content.length;
+    try {
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    } catch {
+      /* setSelectionRange 在极少数无 selection 的输入上可能抛错，忽略 */
+    }
+  } else if (behavior.value === 'append') {
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
   } else {
     $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));

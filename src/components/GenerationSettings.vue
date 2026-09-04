@@ -56,6 +56,15 @@
           <i class="fa-solid fa-plus"></i>
           {{ t`尾附` }}
         </button>
+        <button
+          class="choice-behavior-btn"
+          :class="{ active: gs.settings.behavior === 'insert' }"
+          @click="gs.settings.behavior = 'insert'"
+          :title="t`点击选项后插入到输入框光标处`"
+        >
+          <i class="fa-solid fa-i-cursor"></i>
+          {{ t`插入` }}
+        </button>
       </div>
     </div>
 

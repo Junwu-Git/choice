@@ -41,7 +41,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         id: 'welcome',
         icon: 'fa-solid fa-chess',
         title: '欢迎使用行动选项',
-        html: `<p><strong>行动选项</strong>会在主线对话之外，单独调用一次 API，根据当前剧情异步生成一组行动选项；点选其中一条，按所选方式进入输入框（直接发送 / 覆盖输入框 / 尾附在末尾），不占用楼层、不打断对话节奏。</p>
+        html: `<p><strong>行动选项</strong>会在主线对话之外，单独调用一次 API，根据当前剧情异步生成一组行动选项；点选其中一条，按所选方式进入输入框（直接发送 / 覆盖输入框 / 尾附在末尾 / 插到光标处），不占用楼层、不打断对话节奏。</p>
 <p>上手只需三步：<strong>配置 API → 生成选项 → 点选发送</strong>。条目池等其余功能均开箱即用，之后可从 tab 栏的 <i class="fa-solid fa-graduation-cap"></i> 功能课堂按需深入。跟着做即可，随时可以退出。</p>`,
         target: '[data-tour="settings-header"]',
       },
@@ -156,7 +156,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         icon: 'fa-solid fa-paper-plane',
         title: '点击行为',
         html: `<p><strong>点击行为</strong>决定你点一条选项后发生什么：</p>
-<p><strong>发送</strong>——直接把这条选项作为消息发出；<strong>覆盖</strong>——填入输入框并替换已有内容，你可以先改再发；<strong>尾附</strong>——追加到输入框末尾，保留你自己写的内容。</p>
+<p><strong>发送</strong>——直接把这条选项作为消息发出；<strong>覆盖</strong>——填入输入框并替换已有内容，你可以先改再发；<strong>尾附</strong>——追加到输入框末尾，保留你自己写的内容；<strong>插入</strong>——插到输入框光标所在位置，保留光标前后的文字。</p>
 <p>这里的设置与选项面板头部的切换按钮保持同步，聊天中随时可改。</p>`,
         target: '[data-tour="gen-behavior"]',
       },
@@ -326,7 +326,7 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
     points: [
       '自动生成（全局设置，对所有聊天生效）：每次 AI 回复完成后自动出一组选项，无需手动点。',
       '输入润色：发送前把你的输入改写成多个润色版本供挑选，选中的才真正发出。',
-      '点击行为：发送 = 直接发出；覆盖 = 替换输入框内容（可先改再发）；尾附 = 追加到输入框末尾。',
+      '点击行为：发送 = 直接发出；覆盖 = 替换输入框内容（可先改再发）；尾附 = 追加到输入框末尾；插入 = 插到光标处（保留已有内容）。',
       '点击行为与选项面板头部的切换按钮保持同步，聊天中随时可改。',
       '数量支持固定值或区间（如 3-6 = 每次随机）；往下还有每条字数与人称视角。',
     ],

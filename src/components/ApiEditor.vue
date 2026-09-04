@@ -1,18 +1,33 @@
 <template>
   <div class="choice-api-editor">
     <div class="choice-retry-section">
-      <label class="choice-field">
-        <span>{{ t`失败重试次数` }}</span>
-        <input
-          v-model.number="globalStore.settings.retry_count"
-          type="number"
-          class="text_pole"
-          min="0"
-          max="10"
-          placeholder="0"
-        />
-      </label>
-      <span class="choice-retry-hint">{{ t`0 = 不重试；网络错误或 5xx 时自动重试，每次间隔 1 秒` }}</span>
+      <div class="choice-retry-fields">
+        <label class="choice-field">
+          <span>{{ t`失败重试次数` }}</span>
+          <input
+            v-model.number="globalStore.settings.retry_count"
+            type="number"
+            class="text_pole"
+            min="0"
+            max="10"
+            placeholder="0"
+          />
+        </label>
+        <label class="choice-field">
+          <span>{{ t`重试间隔（秒）` }}</span>
+          <input
+            v-model.number="globalStore.settings.retry_interval"
+            type="number"
+            class="text_pole"
+            min="0"
+            max="60"
+            placeholder="1"
+          />
+        </label>
+      </div>
+      <span class="choice-retry-hint">{{
+        t`重试次数 0 = 不重试；网络错误或 5xx 时自动重试，两次重试之间按"重试间隔"等待（0 = 立即重试）`
+      }}</span>
     </div>
 
     <div class="choice-retry-section">
@@ -286,6 +301,18 @@ const reset = () => {
   border: 1px solid var(--choice-border);
   border-radius: var(--choice-radius-sm);
   background: var(--choice-bg-card);
+}
+
+/* 两个数字输入横排，窄容器自动折行堆叠——不依赖 CSS container query */
+.choice-retry-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--choice-space-2);
+}
+
+.choice-retry-fields .choice-field {
+  flex: 1 1 120px;
+  min-width: 0;
 }
 
 .choice-retry-hint {

@@ -1010,6 +1010,9 @@ export const GlobalSettings = z
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
     retry_count: z.number().min(0).max(10).default(0),
+    /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
+     *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */
+    retry_interval: z.number().min(0).max(60).default(1),
     // 请求附带 tool_choice:"none"：酒馆助手预设脚本（如 Aether 防截断）会 patch 主窗口
     // window.fetch 并改写一切 /generate 请求，"none" 是其设计内绕过信号（详见
     // api-client.ts 注释）。ST 后端仅在 tools 非空数组时才转发该字段，故它到不了上游，
@@ -1017,7 +1020,7 @@ export const GlobalSettings = z
     api_tool_choice_none: z.boolean().default(true),
     global_count_mode: z.string().default('4'),
     auto_generate: z.boolean().default(true),
-    behavior: z.enum(['send', 'fill', 'append']).default('send'),
+    behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——
