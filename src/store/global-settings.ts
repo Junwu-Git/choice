@@ -118,7 +118,9 @@ function buildMiaokeEntries(): PoolEntry[] {
   ];
 }
 
-/** 构建默认条目：「通用」分组 4 条 + 「喵可」分组 4 条 + 「时间跳跃」分组 6 条（v27 起加入喵可组） */
+/** 构建默认条目（进默认 config 引用）：「通用」分组 4 条 + 「喵可」分组 4 条 + 「时间跳跃」分组 6 条
+ *  （v27 起加入喵可组）。NSFW 分组不在此处——它是 opt-in，只进 master_pool 供条目库勾选，
+ *  默认 config 不引用，用户在「选择条目」里自行启用（见 v30 迁移块与 factoryReset） */
 function buildDefaultEntries(): PoolEntry[] {
   return [...buildGeneralEntries(), ...buildMiaokeEntries(), ...buildTimeJumpEntries()];
 }
@@ -151,6 +153,46 @@ function buildTimeJumpEntries(): PoolEntry[] {
       '反向跳跃：插入一段过去的回忆场景，与当下形成呼应或对照，结尾回到当前时间点',
       '此项为回忆插叙，需明确时间线标记，结尾必须落回当前时间点',
     ),
+  ];
+}
+
+/**
+ * 「NSFW」分组：10 条成人向行动方向条目，覆盖主动 / 被动 / 变换姿势 / 情趣四个维度。
+ * opt-in 设计：只进 master_pool（条目库可见），不进 buildDefaultEntries（默认 config 不
+ * 引用）。与 v22「时间跳跃」/ v27「喵可」（默认 config 自动引用）刻意不同——NSFW 方向
+ * 不应在用户未主动启用时混入每轮候选菜单，即便菜单模式下 AI 会按场景贴合度跳过。
+ * 用户想用时在「选择条目」里勾选该分组即可写入当前 config。
+ * 两个刻意为之的约束，不要"顺手"改掉：
+ * ① 全部 pinned:false——NSFW 方向不应像「通用」锚点那样每轮必发；pinned 会强制每轮
+ *    出现 NSFW 候选，对 SFW 场景是噪声。
+ * ② 文案一律含蓄方向级（"给出一个……的选项"），只给思考方向不给具体动作脚本——
+ *    条目是发给 AI 的方向素材，具体露骨程度由 AI 按当前场景把握；若写成照抄式动作
+ *    描写，会把选项内容锁死，与「通用」「喵可」分组的元引导设计原则相悖。
+ * type 统一带「NSFW·」前缀作标记，在条目库与发给 AI 的候选行里都能一眼认出归属
+ * （渲染格式 `type: content`，与「喵可·」前缀同构）。rule 全部留空——候选条目本就可能
+ * 因方向与场景不贴合被 AI 跳过，无需额外写作约束。
+ */
+function buildNsfwEntries(): PoolEntry[] {
+  const entry = (type: string, content: string): PoolEntry => ({
+    id: uuidv4(),
+    type,
+    content,
+    pinned: false,
+    weight: 1,
+    category: 'NSFW',
+    rule: '',
+  });
+  return [
+    entry('NSFW·主动出击', '给出一个由 {{user}} 主动发起或加码亲密接触的选项——火候与方式贴合当前氛围，不必等对方先递台阶'),
+    entry('NSFW·顺势而为', '抓住此刻氛围里最微妙的信号顺势回应，给出一个不点破、却让默契升温半分的选项'),
+    entry('NSFW·交出主导', '给出一个把主导权交给对方的选项——示意对方来安排节奏，自己只管接住每一个反应'),
+    entry('NSFW·半推半就', '给出一个嘴上矜持、身体诚实的选项——口头的推拒与行动的迎合形成可爱反差'),
+    entry('NSFW·变换姿势', '给出一个提议换个姿势或换到别的位置继续的选项——挪动本身也是情趣的一部分'),
+    entry('NSFW·就地取材', '给出一个借现场物件或环境为当下氛围添彩的选项——因地制宜，不拘小节'),
+    entry('NSFW·情趣道具', '给出一个提议用上情趣小物件助兴的选项——从试探到提议，看对方接不接招'),
+    entry('NSFW·语言调情', '给出一个用言语调情或说出羞人请求的选项——声音也是武器，说出口才升温'),
+    entry('NSFW·事后温存', '给出一个亲近过后依偎温存的选项——喘息未定时的耳语与轻抚别有滋味'),
+    entry('NSFW·大胆尝试', '给出一个以前没试过、此刻却心血来潮想试试的选项——把「要不要」抛给对方'),
   ];
 }
 
@@ -947,6 +989,22 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     migrateAllPromptText(validated, { rules: false, personStyle: false });
   }
 
+  // v30: 新增「NSFW」分组（10 条成人向方向条目，覆盖主动/被动/变换姿势/情趣四维）。
+  // 与 v22「时间跳跃」/ v27「喵可」的关键差异：**只补入 master_pool，不追加进默认 config**——
+  // NSFW 是 opt-in，条目库可见可选，但默认配置不引用，用户在「选择条目」里自行勾选启用。
+  // v22/v27 往默认 config 塞引用是因那两组适合默认出场；NSFW 不应在用户未主动启用时混入
+  // 每轮候选菜单。其余与 v22/v27 同构：按 type 去重防重复入池；迁移块的条目 id 是当场
+  // 生成的 uuid，只能当场 push（无法预生成后跨块引用，故默认 config 不引用也不需引用）。
+  // group_order 末尾补新分组名，不打乱用户既有排序
+  if ((validated.schema_version ?? 0) < 30) {
+    const existingTypes = new Set(validated.master_pool.map(e => e.type));
+    const nsfwEntries = buildNsfwEntries().filter(e => !existingTypes.has(e.type));
+    validated.master_pool.push(...nsfwEntries);
+    if (!validated.group_order.includes('NSFW')) {
+      validated.group_order.push('NSFW');
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
@@ -1620,13 +1678,17 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     ensureDefaultPromptConfig(fresh);
 
     const defaultEntries = buildDefaultEntries();
-    fresh.master_pool = [...defaultEntries];
-    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后
-    fresh.group_order = ['通用', '喵可', '时间跳跃'];
+    // NSFW 是 opt-in：进 master_pool（条目库可见可选）但不进默认 config 引用——
+    // 全新首载终态与 v30 迁移块（schema<30 时跑）对老存档的处理保持一致
+    const nsfwEntries = buildNsfwEntries();
+    fresh.master_pool = [...defaultEntries, ...nsfwEntries];
+    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后、「NSFW」收尾
+    fresh.group_order = ['通用', '喵可', '时间跳跃', 'NSFW'];
     fresh.configs = [
       {
         id: uuidv4(),
         name: '默认配置',
+        // 仅引用 defaultEntries（通用+喵可+时间跳跃），NSFW 留给用户自行勾选启用
         entries: defaultEntries.map(e => ({
           entry_id: e.id,
           pinned: e.pinned,
