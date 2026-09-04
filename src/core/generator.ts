@@ -1,6 +1,6 @@
 import { substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
-import * as toastr from 'toastr';
+import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
   loadWorldInfo,
@@ -575,12 +575,18 @@ export const STRIP_REASONING_TAGS_RE =
  *  输出契约是 "[标题]emoji 内容"，emoji 紧跟标题括号，AI 无视禁令在正文开头再加场景头
  *  括号时间隙就是"emoji+空白"（实测："[回溯闪回]🎞️ [记忆片段·三年前] 正文"曾被切成
  *  "[回溯闪回]🎞️" 和 "[记忆片段·三年前] 正文" 两条）。emoji 用 Unicode
- *  Extended_Pictographic 属性类 + 变体选择符/ZWJ/肤色修饰符，不枚举具体码位（新 emoji
- *  不断新增，枚举必漏）。关键取舍：间隙里出现任何正文文字仍判为新选项——AI 把两条选项
- *  挤在一行（"[A]内容A [B]内容B"）必须拆开，两种情况的区分依据是位置：场景头只会出现在
- *  任何正文之前（紧跟标题的 emoji 是格式的一部分），正文都写完了才出现的括号只可能是
- *  下一条选项的标题，哪怕内容以 emoji 收尾（"内容A🎞️ [B]…"）也按新选项拆 */
-const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}[\uFE0F\u200D\u{1F3FB}-\u{1F3FF}\u20E3]*)*$/u;
+ *  Extended_Pictographic 属性类 + 变体选择符/ZWJ/肤色修饰符，不枚举具体 emoji 码位
+ *  （新 emoji 不断新增，枚举必漏）。修饰符不写成字符类 [\uFE0F\u200D…]*：字符类按码位
+ *  逐一匹配，组合序列（旗子成对 Regional Indicator、修饰符必须紧跟基字符）会被错误放行，
+ *  no-misleading-character-class 正是拦这个误用——修饰符只能紧跟 emoji，故用非捕获组
+ *  列举修饰符码位（肤色五个码位用 \p{Emoji_Modifier} 涵盖，与 1F3FB-1F3FF 精确等价）。
+ *  不用 v flag 字符类集合语法：ES2024，移动端 WebView 内核滞后不兼容。关键取舍：间隙里
+ *  出现任何正文文字仍判为新选项——AI 把两条选项挤在一行（"[A]内容A [B]内容B"）必须
+ *  拆开，区分依据是位置：场景头只会出现在任何正文之前（紧跟标题的 emoji 是格式的一部分），
+ *  正文都写完了才出现的括号只可能是下一条选项的标题，哪怕内容以 emoji 收尾
+ *  （"内容A🎞️ [B]…"）也按新选项拆 */
+const TAG_STACK_GAP_RE =
+  /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
 
 export function parseOptions(text: string, count: number): string[] {
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容

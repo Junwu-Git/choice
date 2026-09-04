@@ -1,4 +1,4 @@
-import * as toastr from 'toastr';
+import toastr from 'toastr';
 import type { SecondaryApi } from '@/type/settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 

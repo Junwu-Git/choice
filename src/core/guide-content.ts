@@ -235,7 +235,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         title: '过滤：标签提取与三个分区',
         html: `<p><strong>过滤是干什么的</strong>：发送生成请求前，插件先按你定的规则清洗聊天记录——删掉思维链、小剧场等不该让"出选项的 AI"看到的内容。</p>
 <p><strong>新手推荐「标签提取」</strong>：在过滤页顶部<strong>只填标签名</strong>，插件自动按 <code>&lt;名字&gt;…&lt;/名字&gt;</code> 配对。例如卡里的剧情包在 <code>&lt;正文&gt;…&lt;/正文&gt;</code> 里，就填「正文」——发送时<strong>只保留 AI 输出里 &lt;正文&gt;…&lt;/正文&gt; 段落（含标签本身）</strong>，其余 AI 输出丢弃；用户输入原样保留。提取规则独立存放、独立启停，<strong>不会混入下方任何正则分区</strong>。</p>
-<p>进阶规则按三个分区管理：<strong>① 全局正则区</strong>（始终生效）　<strong>② 预设正则区</strong>（随酒馆预设切换）　<strong>③ 角色卡正则区</strong>（随角色卡切换）；不属于当前预设 / 角色的分组会<strong>半透明显示</strong>且不生效。执行顺序恒定：<strong>先提取、后过滤</strong>——标签匹配 / 正则在提取结果上继续删除不要的部分，二者配合不打架。</p>`,
+<p>进阶规则按三个分区管理：<strong>① 全局正则区</strong>（始终生效）&emsp;<strong>② 预设正则区</strong>（随酒馆预设切换）&emsp;<strong>③ 角色卡正则区</strong>（随角色卡切换）；不属于当前预设 / 角色的分组会<strong>半透明显示</strong>且不生效。执行顺序恒定：<strong>先提取、后过滤</strong>——标签匹配 / 正则在提取结果上继续删除不要的部分，二者配合不打架。</p>`,
         tab: 'filter',
         target: '[data-tour="filter-extract-quick"]',
         action: 'close-all',

@@ -1,4 +1,4 @@
-import * as toastr from 'toastr';
+import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { getMessageChoiceData, setMessageChoiceData, storeEnrichGeneration } from '@/core/options-store';
 import type { ChoiceGeneration } from '@/core/options-store';
