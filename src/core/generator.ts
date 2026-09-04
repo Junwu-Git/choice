@@ -445,9 +445,7 @@ const buildWI = async (): Promise<WIBuckets> => {
         renderWorldInfoContent(buckets.em),
       ]);
       if (buckets.depthEntries.length > 0) {
-        const renderedDepth = await Promise.all(
-          buckets.depthEntries.map(e => renderWorldInfoContent(e.content)),
-        );
+        const renderedDepth = await Promise.all(buckets.depthEntries.map(e => renderWorldInfoContent(e.content)));
         buckets.depthEntries = buckets.depthEntries.map((e, i) => ({
           ...e,
           content: renderedDepth[i],
