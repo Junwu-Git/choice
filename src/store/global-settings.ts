@@ -304,10 +304,15 @@ function buildOpenEntries(): PoolEntry[] {
  * 模块内容（system_prompt/user_instruction/thinking_prompt），其余模块照默认。
  * person_style/option_rules 走 OPEN 版（主体跟随条目 + 重写防越权）——generator 的
  * core_rules case 在 option_rules 非空时走"option_rules + person_style + CORE_RULES_STATIC"
- * 组合路径，故 core_rules 模块内容不被用到，无需覆盖。enrich 模块与 enrich_* 字段
- * 沿用默认（润色链路与主体模式无关）。is_default:false——简洁保持出厂默认。
+ * 组合路径，故 core_rules 模块内容不被用到，无需覆盖。is_default:false——简洁保持出厂默认。
+ *
+ * 【标量字段为死数据】v35 起配置切换仅同步 modules/person_style/option_rules
+ * （copyPromptRulesSubset 已收窄），人称/字数/轮数/预填充/柏宝书收归 prompt_rules 全局值，
+ * 严禁随配置切换——历史上硬编码/全量同步曾把用户自定义润色字数洗成 30/80、人称跟着跳变
+ * （连环踩雷）。下方标量快照仅为满足 zod 输出类型（PromptConfig 字段 required），
+ * 消费端一律读 prompt_rules，勿新增读取。is_default:false——简洁保持出厂默认。
  */
-function buildOpenPromptConfig(): PromptConfig {
+function buildOpenPromptConfig(pr: GlobalSettingsType['prompt_rules']): PromptConfig {
   const modules = klona(DEFAULT_MODULES).map((m: PromptModuleType) => {
     const override = OPEN_MODULE_CONTENTS[m.id];
     return override !== undefined ? { ...m, content: override } : m;
@@ -322,22 +327,17 @@ function buildOpenPromptConfig(): PromptConfig {
     // builtin:'open' 让"恢复默认"识别该配置有专属出厂态（OPEN_*），不会被洗成简洁。
     // 经典/简洁/用户自建不带本字段，"恢复默认"回退全局默认——简洁本就是全局默认。
     builtin: 'open',
-    option_person: '第三人称',
-    enrich_person: '第三人称',
-    enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
-    // 字数与简洁默认（schema default，v23 字数迁移后的 10/60）逐字对齐——提示词配置是全量
-    // 快照，切换时会连带换掉字数（copyPromptRulesSubset），这里若写成别的值，用户切到全向
-    // 时生成界面的字数会凭空跳变（实测踩过：曾误写 30/80，切配置字数 10-60→30-80）。
-    // 全向与简洁的语义差异只应在主体（person_style/option_rules/三个模块内容），其余字段
-    // 必须与简洁默认一致，改这里前先想清楚是否真的要让切换产生副作用。
-    option_min_chars: 10,
-    option_max_chars: 60,
-    enrich_min_chars: 30,
-    enrich_max_chars: 80,
-    context_rounds: 10,
-    context_mode: 'visible_only',
-    prefill_enabled: true,
-    baibai_enabled: false,
+    option_person: pr.option_person ?? '第三人称',
+    enrich_person: pr.enrich_person ?? '第三人称',
+    enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
+    option_min_chars: pr.option_min_chars ?? 10,
+    option_max_chars: pr.option_max_chars ?? 60,
+    enrich_min_chars: pr.enrich_min_chars ?? 30,
+    enrich_max_chars: pr.enrich_max_chars ?? 80,
+    context_rounds: pr.context_rounds ?? 10,
+    context_mode: pr.context_mode ?? 'visible_only',
+    prefill_enabled: pr.prefill_enabled ?? true,
+    baibai_enabled: pr.baibai_enabled ?? false,
   };
 }
 
@@ -1247,8 +1247,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     // ③ 「全向」提示词配置：prompt_configs 非空且尚无全向时才建（空路径交给 init 后置步；
     // 已有全向则跳过——幂等，防重跑造重复 uuid 悬空已绑定的 prompt_config_id）
-    if (validated.prompt_configs.length > 0 && !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
-      validated.prompt_configs.push(buildOpenPromptConfig());
+    if (
+      validated.prompt_configs.length > 0 &&
+      !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)
+    ) {
+      validated.prompt_configs.push(buildOpenPromptConfig(validated.prompt_rules));
     }
   }
 
@@ -1314,47 +1317,60 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v35: 配置彻底解耦为"独立模块"——条目池配置只管条目引用、提示词配置只管提示词文本
+  // （modules/person_style/option_rules），人称/字数/轮数/预填充/柏宝书/抽取参数全部收归全局。
+  // 两步自愈，把历史耦合期被改写的用户值还原：
+  // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）从默认
+  //    条目池配置的 generation 快照播种——历史上生成设置页冗余比例读生效池配置，切池配置
+  //    即跳变；generator 与生成设置页已改读全局。
+  // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/柏宝书抄回
+  //    prompt_rules——历史上切换提示词配置全量换入这些字段，用户自定义润色字数被洗成 30/80、
+  //    人称跟着跳变。默认提示词配置的快照是用户真实值的可靠来源：切换链路只会把 pr 写回
+  //    "正在离开的配置"，离开简洁时 pr 必为简洁自己的值，故简洁快照从未被污染。
+  // 已知局限：若用户停留在默认提示词配置上改过这些字段且从未切换离开过，简洁快照落后于
+  // pr，本 heal 会回退那次未同步的编辑——属可接受代价（切配置的连带污染远高频，且字段
+  // 现已全局化，用户改回一次即永久生效）。幂等：v35 只跑一次（schema_version 守卫）。
+  if ((validated.schema_version ?? 0) < 35) {
+    // ① 全局抽取参数播种（无任何池配置的极端态回退 schema 默认）
+    const defPool = validated.configs.find(c => c.is_default) ?? validated.configs[0] ?? null;
+    validated.generation = defPool ? klona(defPool.generation) : GenerationSettings.parse({});
+
+    // ② 提示词全局字段还原
+    const defPrompt = validated.prompt_configs.find(c => c.is_default);
+    if (defPrompt) {
+      const pr35 = validated.prompt_rules;
+      pr35.option_person = defPrompt.option_person;
+      pr35.enrich_person = defPrompt.enrich_person;
+      pr35.enrich_person_style = defPrompt.enrich_person_style;
+      pr35.option_min_chars = defPrompt.option_min_chars;
+      pr35.option_max_chars = defPrompt.option_max_chars;
+      pr35.enrich_min_chars = defPrompt.enrich_min_chars;
+      pr35.enrich_max_chars = defPrompt.enrich_max_chars;
+      pr35.context_rounds = defPrompt.context_rounds;
+      pr35.context_mode = defPrompt.context_mode;
+      pr35.prefill_enabled = defPrompt.prefill_enabled;
+      pr35.baibai_enabled = defPrompt.baibai_enabled;
+    }
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
   validated.schema_version = SCHEMA_VERSION;
 };
 
-// PromptConfig 与 PromptRules 共有、切换配置时需同步的规则字段集（modules + 13 项标量）。
-// 用 Pick<…['prompt_rules']> 作共享子集类型：PromptConfig 结构上同样具备这些字段，可作 src/dst。
-// 显式逐字段赋值（而非字段名数组 + as any）：新增字段时 vue-tsc 会在此处报缺字段，避免静默丢失
-type PromptRulesSubset = Pick<
-  GlobalSettingsType['prompt_rules'],
-  | 'modules'
-  | 'person_style'
-  | 'option_rules'
-  | 'option_person'
-  | 'enrich_person'
-  | 'enrich_person_style'
-  | 'option_min_chars'
-  | 'option_max_chars'
-  | 'enrich_min_chars'
-  | 'enrich_max_chars'
-  | 'context_rounds'
-  | 'context_mode'
-  | 'prefill_enabled'
-  | 'baibai_enabled'
->;
+// PromptConfig 与 PromptRules 共有、切换配置时需同步的字段集。
+// v35 起配置收敛为"纯提示词文本快照"：仅 modules + person_style + option_rules 随切换同步。
+// 人称/字数/上下文轮数与模式/预填充/柏宝书是全局生成设置（prompt_rules 单一来源），
+// 严禁随配置切换——历史上全量同步曾把用户自定义的润色字数洗成 30/80、人称跟着配置跳变
+// （用户实测连环踩雷）。用 Pick<…['prompt_rules']> 作共享子集类型：PromptConfig 结构上
+// 同样具备这些字段，可作 src/dst。显式逐字段赋值（而非字段名数组 + as any）：新增需同步
+// 的字段时 vue-tsc 会在此处报缺字段，避免静默丢失——新增"生成侧"字段时严禁加进本集合
+type PromptRulesSubset = Pick<GlobalSettingsType['prompt_rules'], 'modules' | 'person_style' | 'option_rules'>;
 const copyPromptRulesSubset = (src: PromptRulesSubset, dst: PromptRulesSubset) => {
   dst.modules = klona(src.modules);
   dst.person_style = src.person_style;
   dst.option_rules = src.option_rules;
-  dst.option_person = src.option_person;
-  dst.enrich_person = src.enrich_person;
-  dst.enrich_person_style = src.enrich_person_style;
-  dst.option_min_chars = src.option_min_chars;
-  dst.option_max_chars = src.option_max_chars;
-  dst.enrich_min_chars = src.enrich_min_chars;
-  dst.enrich_max_chars = src.enrich_max_chars;
-  dst.context_rounds = src.context_rounds;
-  dst.context_mode = src.context_mode;
-  dst.prefill_enabled = src.prefill_enabled;
-  dst.baibai_enabled = src.baibai_enabled;
 };
 
 export const useGlobalSettingsStore = defineStore('global-settings', () => {
@@ -1453,7 +1469,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     // 分支不再进入），用户删除全向后不会被复活——与 v19/v22/v27/v30 各迁移块的一次性语义一致。
     // 幂等：按 name 去重，防 wasPreV19 分支在异常重入时造重复全向（悬空 prompt_config_id）。
     if (!validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
-      validated.prompt_configs.push(buildOpenPromptConfig());
+      validated.prompt_configs.push(buildOpenPromptConfig(validated.prompt_rules));
     }
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
@@ -2024,7 +2040,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     // 用户确认弹窗已明示"删除所有提示词配置"，此处不再把当前提示词存档为经典
     ensureDefaultPromptConfig(fresh);
     // v31「全向」提示词配置：恢复出厂终态与全新首载一致（v31 块 + wasPreV19 后置步的产物）
-    fresh.prompt_configs.push(buildOpenPromptConfig());
+    fresh.prompt_configs.push(buildOpenPromptConfig(fresh.prompt_rules));
 
     const defaultEntries = buildDefaultEntries();
     // NSFW 是 opt-in：进 master_pool（条目库可见可选）但不进默认 config 引用——

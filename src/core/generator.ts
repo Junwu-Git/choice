@@ -738,9 +738,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
-    // ?? 兜底：无命中 config（effectiveConfig 为 null）时用 schema 默认生成参数，
-    // 不硬编码字面量——默认值曾与真实 schema 默认相反，改 schema 后这里自动跟随
-    const gen = ps.effectiveConfig?.generation ?? GenerationSettings.parse({});
+    // 抽取参数读全局 settings.generation（v35 起从 per-pool-config 收归全局）：条目池配置
+    // 只管条目引用，切换池配置严禁带动生成参数（历史耦合：本处读生效池配置，切池配置
+    // 分组抽取/冗余比例即跳变）。?? 兜底：v9 前古存档迁移曾 delete 过根字段，防御 undefined
+    const gen = gs.settings.generation ?? GenerationSettings.parse({});
     const pool = resolvePool({
       effectivePool: ps.effectivePool,
       count,

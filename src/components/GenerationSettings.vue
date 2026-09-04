@@ -183,25 +183,20 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { usePoolSelectorStore } from '@/store/pool-selector';
-import { GenerationSettings } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 const ui = gs.settings.ui;
 const rules = gs.settings.prompt_rules;
-const ps = usePoolSelectorStore();
 
-// oversample_pct 属 PoolConfig.generation（per-config），而生成路径读的是
-// ps.effectiveConfig（chat > character > default 覆盖解析），本页控件必须作用于同一对象
-// 才能所见即所得；get 侧 ?? schema 默认：effectiveConfig 为 null（无任何 config 的极端态）
-// 或历史对象缺字段时展示默认值，set 侧 clamp 到 schema 允许区间（0-300）防越界值入库
+// 冗余比例是全局抽取参数（settings.generation，v35 起从 per-pool-config 收归全局）——
+// 条目池配置只管条目引用，切换池配置严禁带动任何生成参数。历史耦合：本页曾读生效池配置
+// 的 oversample_pct，切池配置冗余比例即跳变（用户实测踩雷）。set 侧 clamp 到 schema 允许
+// 区间（0-300）防越界值入库
 const oversamplePct = computed({
-  get: () => ps.effectiveConfig?.generation.oversample_pct ?? GenerationSettings.parse({}).oversample_pct,
+  get: () => gs.settings.generation.oversample_pct,
   set: v => {
-    const cfg = ps.effectiveConfig;
-    if (!cfg) return;
     const n = Math.round(Number(v));
-    cfg.generation.oversample_pct = Number.isFinite(n) ? Math.min(300, Math.max(0, n)) : 0;
+    gs.settings.generation.oversample_pct = Number.isFinite(n) ? Math.min(300, Math.max(0, n)) : 0;
   },
 });
 </script>

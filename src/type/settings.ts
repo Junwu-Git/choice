@@ -57,6 +57,10 @@ export const PoolConfig = z
     name: z.string(),
     entries: z.array(PoolConfigEntry),
     is_default: z.boolean().default(false),
+    /** @deprecated v35 起抽取参数（分组抽取/打乱/固定溢出/冗余比例）收归全局
+     *  GlobalSettings.generation——条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动
+     *  任何生成参数（历史上生成设置页冗余比例读生效池配置，切池配置即跳变）。本字段仅为
+     *  旧存档兼容保留的死数据，消费端一律读全局 settings.generation，严禁新增读取。 */
     generation: GenerationSettings.prefault({}),
   })
   .prefault(() => ({ id: '', name: '', entries: [] }));
@@ -123,6 +127,11 @@ export const PromptConfig = z
     modules: z.array(PromptModule).prefault([]),
     person_style: z.string().default(''),
     option_rules: z.string().default(''),
+    /** @deprecated v35 起提示词配置收敛为"纯提示词文本快照"（仅 modules/person_style/option_rules
+     *  随切换同步，见 copyPromptRulesSubset）。下列生成侧标量（人称/字数/轮数/预填充/柏宝书）
+     *  一律收归 prompt_rules 全局值，严禁随配置切换、严禁新增从配置对象读取——历史上全量同步
+     *  曾把用户自定义的润色字数洗成 30/80、人称跟着配置跳变（用户实测踩雷）。字段仅为旧存档
+     *  兼容保留，新写入的配置里它们是死数据。 */
     option_person: z.string().default('第三人称'),
     enrich_person: z.string().default('第三人称'),
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
@@ -898,7 +907,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 35;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1010,6 +1019,12 @@ export const GlobalSettings = z
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append']).default('send'),
     empty_groups: z.array(z.string()).default([]),
+    /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
+     *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——
+     *  历史上生成设置页的冗余比例读生效池配置，切池配置即跳变（用户实测踩雷）。
+     *  消费端：generator.resolvePool 入参、GenerationSettings 页冗余比例、PoolEditor 抽取参数区。
+     *  PoolConfig.generation 降级为废弃死数据（仅旧存档兼容），见其 schema 注释。 */
+    generation: GenerationSettings.prefault({}),
   })
   .prefault({});
 export type GlobalSettings = z.infer<typeof GlobalSettings>;

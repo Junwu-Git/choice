@@ -60,21 +60,23 @@
 
     <!-- 配置编辑区域（始终可编辑） -->
     <div v-if="selectedConfig && configs.length > 0" class="choice-inline-edit">
-      <!-- 抽取参数（置顶） -->
+      <!-- 抽取参数（置顶）。v35 起为全局参数（settings.generation），不属于任何条目池配置——
+           池配置只管条目引用，切换配置不得带动这些开关（历史耦合：曾绑 selectedConfig.generation，
+           切池配置分组抽取/固定溢出即跳变）。与生成设置页的冗余比例同源 -->
       <div class="choice-inline-field">
-        <label class="choice-inline-label">{{ t`抽取参数` }}</label>
+        <label class="choice-inline-label">{{ t`抽取参数（全局）` }}</label>
         <div class="choice-inline-gen">
           <label class="choice-check" :title="t`按条目分类分组轮流抽取，避免同组扎堆`">
-            <input v-model="selectedConfig.generation.categories_enabled" type="checkbox" />
+            <input v-model="globalStore.settings.generation.categories_enabled" type="checkbox" />
             {{ t`分组抽取` }}
           </label>
           <label class="choice-check" :title="t`结果随机打乱，避免固定条目总在开头`">
-            <input v-model="selectedConfig.generation.shuffle_final" type="checkbox" />
+            <input v-model="globalStore.settings.generation.shuffle_final" type="checkbox" />
             {{ t`打乱结果` }}
           </label>
           <label class="choice-inline-gen-item">
             <span :title="t`固定条目超过数量上限时：全发=全部保留，截断=只取前N个`">{{ t`固定溢出` }}</span>
-            <select v-model="selectedConfig.generation.pinned_overflow" class="text_pole">
+            <select v-model="globalStore.settings.generation.pinned_overflow" class="text_pole">
               <option value="send_all">{{ t`全发` }}</option>
               <option value="trim">{{ t`截断` }}</option>
             </select>
