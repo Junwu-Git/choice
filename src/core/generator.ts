@@ -585,8 +585,7 @@ export const STRIP_REASONING_TAGS_RE =
  *  拆开，区分依据是位置：场景头只会出现在任何正文之前（紧跟标题的 emoji 是格式的一部分），
  *  正文都写完了才出现的括号只可能是下一条选项的标题，哪怕内容以 emoji 收尾
  *  （"内容A🎞️ [B]…"）也按新选项拆 */
-const TAG_STACK_GAP_RE =
-  /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
+const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
 
 export function parseOptions(text: string, count: number): string[] {
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
