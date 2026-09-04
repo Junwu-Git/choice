@@ -26,6 +26,10 @@ minimumReleaseAgeExclude:
   - typescript-eslint@8.69.0
   - '@alloc/quick-lru@5.3.0'
   - electron-to-chromium@1.5.418
+  - confbox@0.3.1
+  - pkg-types@2.3.2
+  - postcss@8.5.28
+  - postcss-selector-parser@7.1.6
 onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
