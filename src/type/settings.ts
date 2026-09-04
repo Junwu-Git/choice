@@ -186,14 +186,7 @@ export const OPEN_CONFIG_NAME = '全向';
 /** 「全向」模式新增的 6 个条目分组名。分组轮询（drawByCategories）按 category 分桶、组间轮询，
  *  组数即各方向占比——6 组各自成组后 user/char/剧情/关系/日常五方向轮流出候选，不塌缩单组。
  *  顺序即 group_order 追加序，也用于 factoryReset 的终态字面量。 */
-export const OPEN_GROUP_NAMES = [
-  '聚焦·user',
-  '聚焦·char',
-  '剧情演化',
-  '剧情规划',
-  '关系推进',
-  '日常闲趣',
-] as const;
+export const OPEN_GROUP_NAMES = ['聚焦·user', '聚焦·char', '剧情演化', '剧情规划', '关系推进', '日常闲趣'] as const;
 
 /** 「全向」提示词配置的叙述风格：行动主体不固定，跟随候选条目的指向。
  *  与 DEFAULT_PERSON_STYLE 的本质差异：后者把 {{user}} 钉死为行动主体，本版允许条目指定

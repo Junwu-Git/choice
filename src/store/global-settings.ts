@@ -233,23 +233,63 @@ function buildOpenEntries(): PoolEntry[] {
   });
   return [
     // 聚焦·user：明确 {{user}} 主体 + 行动类型维度，与「通用」组（元引导：顺承/反差/本心/开放）互补
-    entry('本色而行', '给出一个以 {{user}} 为行动主体的选项——写 {{user}} 此刻能做、想做的具体行动，贴合其性格与当下心境，可包含台词', '聚焦·user'),
-    entry('破格一试', '给出一个以 {{user}} 为主语、略出其常规性格的选项——做平时不太会做的事，让人物立起来，但不脱离当前场景', '聚焦·user'),
-    entry('心声直陈', '给出一个让 {{user}} 把此刻的情绪或想法说出口、写出来的选项——以 {{user}} 为主语，可含台词', '聚焦·user'),
+    entry(
+      '本色而行',
+      '给出一个以 {{user}} 为行动主体的选项——写 {{user}} 此刻能做、想做的具体行动，贴合其性格与当下心境，可包含台词',
+      '聚焦·user',
+    ),
+    entry(
+      '破格一试',
+      '给出一个以 {{user}} 为主语、略出其常规性格的选项——做平时不太会做的事，让人物立起来，但不脱离当前场景',
+      '聚焦·user',
+    ),
+    entry(
+      '心声直陈',
+      '给出一个让 {{user}} 把此刻的情绪或想法说出口、写出来的选项——以 {{user}} 为主语，可含台词',
+      '聚焦·user',
+    ),
     // 聚焦·char：角色主语。三条显式带防越权边界句，兼容"选项本身即某角色行动"的语义
-    entry('角色主动', '给出一个以 {{char}} 或在场角色为主语的选项——直接写该角色此刻主动会做的行动，可包含其台词；把镜头交给角色，只写行动本身，其他各方的反应留给正文', '聚焦·char'),
-    entry('角色回应', '给出一个以在场角色为主语、回应眼下局面的选项——该角色对刚才发生的事做出自己的举动或表态，可包含其台词', '聚焦·char'),
-    entry('角色张力', '给出一个以角色为主语、与 {{user}} 制造张力或拉近距离的选项——该角色的主动举动让局面更有戏，可包含其台词', '聚焦·char'),
+    entry(
+      '角色主动',
+      '给出一个以 {{char}} 或在场角色为主语的选项——直接写该角色此刻主动会做的行动，可包含其台词；把镜头交给角色，只写行动本身，其他各方的反应留给正文',
+      '聚焦·char',
+    ),
+    entry(
+      '角色回应',
+      '给出一个以在场角色为主语、回应眼下局面的选项——该角色对刚才发生的事做出自己的举动或表态，可包含其台词',
+      '聚焦·char',
+    ),
+    entry(
+      '角色张力',
+      '给出一个以角色为主语、与 {{user}} 制造张力或拉近距离的选项——该角色的主动举动让局面更有戏，可包含其台词',
+      '聚焦·char',
+    ),
     // 剧情演化：不以单一角色行动呈现，事件/环境/第三方自然推进
-    entry('事件异动', '给出一个让剧情自己往前走的选项——新事件、突发状况或局面突变自然发生，留出各方反应的余地', '剧情演化'),
+    entry(
+      '事件异动',
+      '给出一个让剧情自己往前走的选项——新事件、突发状况或局面突变自然发生，留出各方反应的余地',
+      '剧情演化',
+    ),
     entry('环境变化', '给出一个由环境推动剧情的选项——天色、天气、声响、场合变动等环境因素自然改变当下局面', '剧情演化'),
     entry('第三方介入', '给出一个由第三方搅动局面的选项——消息传来、他人到场或场外因素介入，剧情推进一步', '剧情演化'),
     // 剧情规划：主动安排剧情走向，与剧情演化（被动推进）互补
-    entry('布局铺垫', '给出一个为后续埋线的选项——角色或剧情此刻定下计划、许下约定或留下伏笔，效果在之后的正文里展开', '剧情规划'),
-    entry('导演推进', '给出一个导演式的走向选择——切换场景、引入新事件或新角色、推进某条暗线；只定走向，不写具体展开', '剧情规划'),
+    entry(
+      '布局铺垫',
+      '给出一个为后续埋线的选项——角色或剧情此刻定下计划、许下约定或留下伏笔，效果在之后的正文里展开',
+      '剧情规划',
+    ),
+    entry(
+      '导演推进',
+      '给出一个导演式的走向选择——切换场景、引入新事件或新角色、推进某条暗线；只定走向，不写具体展开',
+      '剧情规划',
+    ),
     entry('收束归线', '给出一个往回收的选项——把散开的支线、悬而未决的事往主线收拢，让剧情有个阶段性的落点', '剧情规划'),
     // 关系推进：聚焦 {{user}} 与对方关系的双向维度，主语仍含 {{user}}
-    entry('关系靠近', '给出一个让 {{user}} 与对方关系更进一步的选项——一次靠近、一次牵手或一句掏心话，由当下氛围决定火候', '关系推进'),
+    entry(
+      '关系靠近',
+      '给出一个让 {{user}} 与对方关系更进一步的选项——一次靠近、一次牵手或一句掏心话，由当下氛围决定火候',
+      '关系推进',
+    ),
     entry('关系试探', '给出一个试探对方态度的选项——旁敲侧击、欲言又止或抛个话头，看对方怎么接', '关系推进'),
     entry('关系袒露', '给出一个袒露真心的选项——说出平时不会说的话、承认平时不承认的事，赌一把对方的回应', '关系推进'),
     // 日常闲趣：松弛日常向，给剧情喘息
@@ -1207,10 +1247,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     // ③ 「全向」提示词配置：prompt_configs 非空且尚无全向时才建（空路径交给 init 后置步；
     // 已有全向则跳过——幂等，防重跑造重复 uuid 悬空已绑定的 prompt_config_id）
-    if (
-      validated.prompt_configs.length > 0 &&
-      !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)
-    ) {
+    if (validated.prompt_configs.length > 0 && !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
       validated.prompt_configs.push(buildOpenPromptConfig());
     }
   }
@@ -1241,9 +1278,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const poolKept = validated.configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
     if (poolKept) {
       const poolRemovedIds = new Set(
-        validated.configs
-          .filter(c => c.name === OPEN_CONFIG_NAME && c.id !== poolKept.id)
-          .map(c => c.id),
+        validated.configs.filter(c => c.name === OPEN_CONFIG_NAME && c.id !== poolKept.id).map(c => c.id),
       );
       if (poolRemovedIds.size > 0) {
         validated.configs = validated.configs.filter(c => !poolRemovedIds.has(c.id));
@@ -1255,9 +1290,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const promptKept = validated.prompt_configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
     if (promptKept) {
       const promptRemovedIds = new Set(
-        validated.prompt_configs
-          .filter(c => c.name === OPEN_CONFIG_NAME && c.id !== promptKept.id)
-          .map(c => c.id),
+        validated.prompt_configs.filter(c => c.name === OPEN_CONFIG_NAME && c.id !== promptKept.id).map(c => c.id),
       );
       if (promptRemovedIds.size > 0) {
         validated.prompt_configs = validated.prompt_configs.filter(c => !promptRemovedIds.has(c.id));
