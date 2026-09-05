@@ -758,8 +758,15 @@ const onSelect = async (option: ChoiceOption) => {
   overflow-y: auto;
   /* 触屏上面板内滚动到边缘时禁止滚动链传导，避免把酒馆聊天页一起拖走 */
   overscroll-behavior: contain;
+  /* 显式声明 Y 轴平移：安卓部分 WebView 对 overflow:auto 容器的触摸手势映射不完善，
+     未声明 touch-action 时可能不把触摸滑动识别为滚动意图，导致用户只能拖右侧滚动条。
+     pan-y 仅放行纵向平移，不影响页面横向滚动/缩放 */
+  touch-action: pan-y;
+  /* 旧安卓 WebView 需此属性才启用惯性平滑滚动，新浏览器自动忽略，无副作用 */
+  -webkit-overflow-scrolling: touch;
   gap: var(--choice-space-1);
-  padding: var(--choice-space-2);
+  /* 右侧 padding 加宽一档：滚动条不再紧贴面板右边缘，提升触屏命中率 */
+  padding: var(--choice-space-2) var(--choice-space-3) var(--choice-space-2);
 }
 
 .choice-panel--dense .choice-option-btn {
@@ -832,5 +839,8 @@ const onSelect = async (option: ChoiceOption) => {
   max-height: 40dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* 与 dense 同理：停靠模式同样需显式声明 Y 轴平移 + 惯性滚动，保证触屏滑动体验一致 */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 </style>
