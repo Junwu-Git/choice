@@ -169,10 +169,30 @@ export const PromptConfig = z
     option_person: z.string().default('第三人称'),
     enrich_person: z.string().default('第三人称'),
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
-    option_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MIN_CHARS_DEFAULT).catch(OPTION_MIN_CHARS_DEFAULT),
-    option_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MAX_CHARS_DEFAULT).catch(OPTION_MAX_CHARS_DEFAULT),
-    enrich_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MIN_CHARS_DEFAULT).catch(ENRICH_MIN_CHARS_DEFAULT),
-    enrich_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MAX_CHARS_DEFAULT).catch(ENRICH_MAX_CHARS_DEFAULT),
+    option_min_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(OPTION_MIN_CHARS_DEFAULT)
+      .catch(OPTION_MIN_CHARS_DEFAULT),
+    option_max_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(OPTION_MAX_CHARS_DEFAULT)
+      .catch(OPTION_MAX_CHARS_DEFAULT),
+    enrich_min_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(ENRICH_MIN_CHARS_DEFAULT)
+      .catch(ENRICH_MIN_CHARS_DEFAULT),
+    enrich_max_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(ENRICH_MAX_CHARS_DEFAULT)
+      .catch(ENRICH_MAX_CHARS_DEFAULT),
     context_rounds: z.number().min(0).default(10).catch(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     prefill_enabled: z.boolean().default(true),
@@ -407,13 +427,33 @@ export const PromptRules = z
     /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
     enrich_prompt: z.string().default(''),
     /** 选项字数下限 */
-    option_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MIN_CHARS_DEFAULT).catch(OPTION_MIN_CHARS_DEFAULT),
+    option_min_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(OPTION_MIN_CHARS_DEFAULT)
+      .catch(OPTION_MIN_CHARS_DEFAULT),
     /** 选项字数上限 */
-    option_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MAX_CHARS_DEFAULT).catch(OPTION_MAX_CHARS_DEFAULT),
+    option_max_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(OPTION_MAX_CHARS_DEFAULT)
+      .catch(OPTION_MAX_CHARS_DEFAULT),
     /** 润色字数下限 */
-    enrich_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MIN_CHARS_DEFAULT).catch(ENRICH_MIN_CHARS_DEFAULT),
+    enrich_min_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(ENRICH_MIN_CHARS_DEFAULT)
+      .catch(ENRICH_MIN_CHARS_DEFAULT),
     /** 润色字数上限 */
-    enrich_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MAX_CHARS_DEFAULT).catch(ENRICH_MAX_CHARS_DEFAULT),
+    enrich_max_chars: z
+      .number()
+      .min(CHARS_MIN_LIMIT)
+      .max(CHARS_MAX_LIMIT)
+      .default(ENRICH_MAX_CHARS_DEFAULT)
+      .catch(ENRICH_MAX_CHARS_DEFAULT),
     /** 润色人称视角，自由文本，通过 {{enrich_person_style}} 占位符注入 enrich_core_rules 模块 */
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
     schema_version: z.number().default(0),

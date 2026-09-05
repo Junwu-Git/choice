@@ -791,7 +791,13 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     genController = new AbortController();
     const signal = genController.signal;
 
-    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, gs.settings.retry_interval, signal);
+    const raw = await callSecondaryApiWithRetry(
+      messages,
+      api,
+      gs.settings.retry_count,
+      gs.settings.retry_interval,
+      signal,
+    );
     if (cancelled) return null;
     const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
     if (!options.length) {
@@ -1118,7 +1124,13 @@ export async function generatePoolEntries(params: {
         (forceType ? `强制类型：所有生成条目的 type 必须为 "${forceType}"。\n` : '') +
         `已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
     });
-    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, gs.settings.retry_interval, poolGenController.signal);
+    const raw = await callSecondaryApiWithRetry(
+      messages,
+      api,
+      gs.settings.retry_count,
+      gs.settings.retry_interval,
+      poolGenController.signal,
+    );
     const parsed = parsePoolGenItems(raw, params.count);
     // 把 1-based 序号映射为已解析的 replaceTargetId + 原文；越界序号降级为新增条目
     const items: PoolGenItem[] = parsed.map(p => {

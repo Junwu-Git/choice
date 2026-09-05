@@ -71,7 +71,13 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     enrichController = new AbortController();
     const signal = enrichController.signal;
 
-    const raw = await callSecondaryApiWithRetry(messages, api, gs.settings.retry_count, gs.settings.retry_interval, signal);
+    const raw = await callSecondaryApiWithRetry(
+      messages,
+      api,
+      gs.settings.retry_count,
+      gs.settings.retry_interval,
+      signal,
+    );
     return parseOptions(raw, enrichCount);
   } catch (e) {
     if ((e as Error)?.name === 'AbortError') return [];
