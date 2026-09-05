@@ -30,6 +30,7 @@ import {
   type FilterGroup,
   type RegexLibraryEntry,
   type FilterGroupEntry,
+  sanitizePromptRulesChars,
 } from '@/type/settings';
 // chat/character store 不反向依赖 global-settings，无循环导入；
 // 不能依赖 unplugin-auto-import——它只覆盖 vue/pinia/@vueuse/zod 等预设，
@@ -1429,6 +1430,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // 方向与现行 schema（z.preprocess(String) 归一化为字符串）相反，已删除——
   // schema 的 preprocess 已兼容旧数字/旧字符串存档，保留该块只会误导后人。
 
+  // 字数字段预迁移：把 prompt_rules 的 4 个 *_chars 钳到 [10,500] 并保证 min<=max。
+  // 为什么必须在 validateInplace 前：zod .min(10) 对"已存在的非法值"fail-closed
+  // （.default 只补缺失字段、不补非法值），用户曾经 UI 输入 <10 经无校验 watcher 落盘，
+  // 下次加载即整扩展崩溃。就地修正后由后续 saveSettingsDebounced 持久化，坏档自愈。
+  sanitizePromptRulesChars(existing);
+
   const validated = validateInplace(GlobalSettings, existing);
 
   // v19 提示词配置创建的分流依据，必须在 applyDefaults 置 SCHEMA_VERSION 前捕获：
@@ -1479,7 +1486,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   watch(
     settings,
     new_settings => {
-      _.set(extension_settings, setting_field, klona(new_settings));
+      // 落盘前 sanitize：把 prompt_rules 字数钳到合法区间，堵住任何路径写入的非法值
+      // （前端 v-model 直写 store 引用、外部编辑 settings.json、历史存档残留），
+      // 保证落盘值必合法——与加载预迁移 clamp + schema .catch 构成纵深防御。
+      const snapshot = klona(new_settings);
+      sanitizePromptRulesChars(snapshot.prompt_rules);
+      _.set(extension_settings, setting_field, snapshot);
       saveSettingsDebounced();
     },
     { deep: true },
