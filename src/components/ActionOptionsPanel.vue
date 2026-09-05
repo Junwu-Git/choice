@@ -583,6 +583,33 @@ const onSelect = async (option: ChoiceOption) => {
   white-space: normal;
 }
 
+/* 非悬浮预览（compact）形态：选项多时始终限高内部滚动，限高触发的唯一条件是
+   "内容超出"，与设备 pointer 类型或容器宽度无关。这是 dense 未激活时的兜底——
+   Bluestacks5 等模拟器报告 pointer: fine 且容器宽度 >=420px 时 useCompactLayout
+   不触发 dense，此前 .choice-panel-body 无 max-height，被 #chat 的 overflow-y:scroll
+   接管，用户在选项栏内滑动时拖动的是酒馆聊天页而非选项栏内部（划不动的主因）。
+   compact（悬浮预览极简卡）排除：其尺寸由 popover 外壳约束，且选项通常很少 */
+.choice-panel:not(.choice-panel--compact) .choice-panel-body {
+  /* 同 dvh 回退：手机上 vh 按布局视口取值可能超出可视高度 */
+  max-height: 45vh;
+  max-height: 45dvh;
+  overflow-y: auto;
+  /* 纵向到顶/底后允许滚动链传导给酒馆聊天页（继续滑可翻聊天记录），
+     横向仍 contain 防止触发酒馆左右滑动手势（切回复/生成新回复）。
+     此前 dense/docked 用 overscroll-behavior:contain 四轴全挡，到顶/底后
+     滑动死在面板内、聊天页不跟随，体感像"卡住"；改为分轴后体验更顺滑 */
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+  /* 安卓部分 WebView 对 overflow:auto 容器未声明 touch-action 时不把触摸识别为
+     滚动意图，用户只能拖右侧滚动条；pan-y 仅放行纵向平移，不影响横向滚动/缩放 */
+  touch-action: pan-y;
+  /* 旧安卓 WebView 需此属性才启用惯性平滑滚动，新浏览器自动忽略，无副作用 */
+  -webkit-overflow-scrolling: touch;
+  /* 细滚动条 + 主题色，避免默认粗滚动条挤占选项宽度 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--choice-border-strong) transparent;
+}
+
 .choice-panel-loading {
   flex: 1;
   display: flex;
@@ -752,18 +779,10 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel--dense .choice-panel-body {
-  /* 同 dvh 回退：手机上 vh 按布局视口取值，45vh 可能超出可视高度 */
-  max-height: 45vh;
-  max-height: 45dvh;
-  overflow-y: auto;
-  /* 触屏上面板内滚动到边缘时禁止滚动链传导，避免把酒馆聊天页一起拖走 */
-  overscroll-behavior: contain;
-  /* 显式声明 Y 轴平移：安卓部分 WebView 对 overflow:auto 容器的触摸手势映射不完善，
-     未声明 touch-action 时可能不把触摸滑动识别为滚动意图，导致用户只能拖右侧滚动条。
-     pan-y 仅放行纵向平移，不影响页面横向滚动/缩放 */
-  touch-action: pan-y;
-  /* 旧安卓 WebView 需此属性才启用惯性平滑滚动，新浏览器自动忽略，无副作用 */
-  -webkit-overflow-scrolling: touch;
+  /* max-height/overflow/touch-action/overscroll 由基础规则
+     (.choice-panel:not(--compact) .choice-panel-body) 提供，dense 仅压密度。
+     限高滚动此前独占于此（依赖 width<420px），Bluestacks5 等宽屏模拟器不命中
+     导致划不动；现已下沉为基础规则兜底所有形态 */
   gap: var(--choice-space-1);
   /* 右侧 padding 加宽一档：滚动条不再紧贴面板右边缘，提升触屏命中率 */
   padding: var(--choice-space-2) var(--choice-space-3) var(--choice-space-2);
@@ -835,12 +854,11 @@ const onSelect = async (option: ChoiceOption) => {
 }
 
 .choice-panel--docked .choice-panel-body {
+  /* 仅覆盖限高为 40dvh（比基础 45dvh 略矮：停靠面板恒在可视区内，少占屏）。
+     overflow/touch-action/overscroll 由基础规则提供，不在此重复——此前 dock 块
+     用 overscroll-behavior:contain 覆盖了基础的分轴值，到顶/底后死在面板内，
+     现统一交给基础的分轴规则，体验一致 */
   max-height: 40vh;
   max-height: 40dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* 与 dense 同理：停靠模式同样需显式声明 Y 轴平移 + 惯性滚动，保证触屏滑动体验一致 */
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
 }
 </style>
