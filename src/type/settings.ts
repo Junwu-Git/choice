@@ -985,7 +985,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 37;
+export const SCHEMA_VERSION = 38;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1147,21 +1147,86 @@ export type ChatSettings = z.infer<typeof ChatSettings>;
 /** 被动状态追踪设置类型（从 ChatSettings 派生） */
 export type UserStatusSettings = ChatSettings['status_tracking'];
 
+/** 被动体感分类枚举（5 类）。老存档的 label 字段值直接映射到本枚举。 */
+export const STATUS_CATEGORIES = ['体感', '生理反应', '唤起', '衣着', '情绪'] as const;
+export type StatusCategory = typeof STATUS_CATEGORIES[number];
+
+/** 老 label → 新 category 的映射表（6→5，其他→情绪）。 */
+const LEGACY_LABEL_MAP: Record<string, StatusCategory> = {
+  体感: '体感',
+  生理反应: '生理反应',
+  唤起: '唤起',
+  衣着: '衣着',
+  情绪: '情绪',
+  其他: '情绪',
+};
+
 /** 单条 user 被动状态（楼层快照里的一条）。
  *  source: 'auto' = AI 自动提取更新、'manual' = 用户手动编辑增删。
- *  updatedAt 用于区分新旧条目（手动改后 AI 再更新会保留用户的 label/description 并覆盖）。 */
-export interface UserStatusEntry {
+ *  updatedAt 用于区分新旧条目（手动改后 AI 再更新会保留用户的 label/description 并覆盖）。
+ *  v38：label→category、description→text、新增可选 intensity（0-100）。 */
+export interface StatusEntry {
   id: string;
-  label: string;
-  description: string;
+  category: StatusCategory;
+  text: string;
+  intensity?: number;
   source: 'auto' | 'manual';
   updatedAt: number;
 }
 
+/** 唤起状态机（固定结构，非列表）。null = 无性相关情境时可省略。 */
+export interface ArousalState {
+  phase: '平静' | '兴奋' | '临界' | '不应期';
+  hardness: number;        // 0-100，勃起硬度百分比
+  secretion: '干燥' | '微润' | '湿滑' | '射精残留';
+  cause: string;            // 当前成因（自由文本，平静时填"无"）
+  recovery: string;         // 体力恢复状态（自由文本）
+}
+
 /** 楼层级状态快照（挂在 message.extra['choice'][swipeId].userStatus 上）。
- *  entries = 当前有效的被动状态条目；updatedAt = 本次快照更新时间。
- *  null = 该楼层无状态快照（功能未开启时的老楼层、user 消息楼层等）。 */
+ *  entries = 当前有效的被动状态条目；arousal = 唤起状态机（可空）；time_hint = 粗略时间描述。
+ *  null = 该楼层无状态快照（功能未开启时的老楼层、user 消息楼层等）。
+ *  v38：新增 arousal / time_hint；entries 内字段由 label/description 升级为 category/text。 */
 export interface UserStatusSnapshot {
-  entries: UserStatusEntry[];
+  entries: StatusEntry[];
+  arousal: ArousalState | null;
+  time_hint: string;
   updatedAt: number;
+}
+
+/** 老存档兼容：将旧结构 {id, label, description, source, updatedAt} 映射为新 StatusEntry。
+ *   label 不在枚举内时默认归为"情绪"；缺失字段由调用方兜底。 */
+export function legacyEntryToStatusEntry(e: Record<string, unknown>): StatusEntry {
+  const label = typeof e.label === 'string' ? e.label : '';
+  const category = (LEGACY_LABEL_MAP[label] ?? '情绪') as StatusCategory;
+  return {
+    id: typeof e.id === 'string' ? e.id : crypto.randomUUID(),
+    category,
+    text: typeof e.description === 'string' ? e.description : '',
+    source: e.source === 'manual' ? 'manual' : 'auto',
+    updatedAt: typeof e.updatedAt === 'number' ? e.updatedAt : Date.now(),
+  };
+}
+
+/** 老存档兼容：将任意 userStatus 快照标准化为 UserStatusSnapshot。
+ *  旧快照缺 arousal/time_hint 时补默认值；entries 内老字段自动映射。 */
+export function normalizeUserStatusSnapshot(raw: unknown): UserStatusSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const rawEntries = Array.isArray(r.entries) ? r.entries : [];
+  const entries = rawEntries
+    .map(e => (typeof e === 'object' && e ? legacyEntryToStatusEntry(e as Record<string, unknown>) : null))
+    .filter((e): e is StatusEntry => e !== null);
+
+  const arousal = r.arousal && typeof r.arousal === 'object'
+    ? (r.arousal as ArousalState)
+    : null;
+  const time_hint = typeof r.time_hint === 'string' ? r.time_hint : '';
+
+  return {
+    entries,
+    arousal,
+    time_hint,
+    updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : Date.now(),
+  };
 }

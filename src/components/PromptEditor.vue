@@ -377,7 +377,9 @@ const rules = globalStore.settings.prompt_rules;
 // 被动状态大页传入：true 时仅显示 status_only 模块，隐藏配置栏/工具栏/模式切换
 const props = defineProps<{ statusOnly?: boolean }>();
 
-/** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
+/** 只读模块：仅允许移动和开关，不可编辑/删除/复制。
+ *  status_rules 是状态追踪系统核心规则，删除后状态功能完全失效，故设为只读防止误删。
+ *  status_instruction 保持可编辑（用户自定义指令是设计意图）。 */
 const READONLY_MODULE_IDS = new Set([
   'world_info_before',
   'persona_description',
@@ -387,6 +389,7 @@ const READONLY_MODULE_IDS = new Set([
   'world_info_after',
   'chat_history',
   'baibai_summary',
+  'status_rules',
 ]);
 const DEPRECATED_MODULE_IDS = new Set(['baibai_state']);
 
@@ -397,7 +400,14 @@ const allModules = computed(() => {
   }
   // 状态大页模式：只显示 status_only 模块，跳过选项/润色过滤
   if (props.statusOnly) {
-    return modules.filter(m => m.status_only);
+    const filtered = modules.filter(m => m.status_only);
+    // 兜底：若过滤结果为空（v36 旧数据 status_only 字段为 undefined/false），回退显示
+    // 已知 status 模块，防止状态提示词页空白
+    if (filtered.length === 0) {
+      const statusIds = new Set(['status_rules', 'status_instruction']);
+      return modules.filter(m => statusIds.has(m.id));
+    }
+    return filtered;
   }
   // 润色关闭时强制隐藏所有 enrich_only 模块，忽略 promptMode
   if (!globalStore.settings.ui.enrich_enabled) {

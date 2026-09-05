@@ -59,7 +59,7 @@
           min="1"
           max="20"
         />
-        <span class="choice-status-field-hint">{{ t`超过上限时保留最新 N 条` }}</span>
+        <span class="choice-status-field-hint">{{ t`新格式每轮约 5-10 条体感 + 唤起状态机，entries 超过上限时保留最新 N 条` }}</span>
       </div>
     </div>
 

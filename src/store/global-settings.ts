@@ -1405,6 +1405,62 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v38: 被动状态结构化 JSON 升级——强制刷新 status_rules / status_instruction 的 content，
+  // 兜底补充缺失模块 + 修正 status_only 字段。输出契约从 JSON 数组升级为 JSON 对象
+  // （含 time_hint / entries / arousal），条目字段从 label/description 升级为 category/text/intensity。
+  // 补建逻辑：v36 迁移只在 schema_version < 36 时运行一次，用户在此后通过 UI 删除了
+  // status_rules/status_instruction 后升级到 v37/v38，v36 不再跑、v37/v38 只刷新 content，
+  // 模块永久缺失 → 状态提示词页空白。此块兜底补回，幂等（已存在不覆盖 content/只修 status_only）。
+  if ((validated.schema_version ?? 0) < 38) {
+    const defaults38 = klona(DEFAULT_MODULES);
+    const statusIds38 = new Set(['status_rules', 'status_instruction']);
+    // 1) content 刷新（仅对已存在模块，同 v37 先例）
+    const refreshMap38 = new Map(
+      defaults38.filter(d => statusIds38.has(d.id)).map(d => [d.id, d.content] as const),
+    );
+    for (const m of validated.prompt_rules.modules) {
+      if (statusIds38.has(m.id) && refreshMap38.has(m.id)) {
+        m.content = refreshMap38.get(m.id)!;
+      }
+    }
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        if (statusIds38.has(m.id) && refreshMap38.has(m.id)) {
+          m.content = refreshMap38.get(m.id)!;
+        }
+      }
+    }
+    // 2) 修正 status_only 字段（v36 JSON 中该字段可能缺失，push 进存档的模块携带 undefined/false）
+    for (const m of validated.prompt_rules.modules) {
+      if (statusIds38.has(m.id) && !m.status_only) {
+        m.status_only = true;
+      }
+    }
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        if (statusIds38.has(m.id) && !m.status_only) {
+          m.status_only = true;
+        }
+      }
+    }
+    // 3) 补充缺失模块（v36 迁移不再跑，用户删除后无法自愈）
+    const existing38 = new Set(validated.prompt_rules.modules.map(m => m.id));
+    for (const d of defaults38) {
+      if (statusIds38.has(d.id) && !existing38.has(d.id)) {
+        validated.prompt_rules.modules.push(klona(d));
+      }
+    }
+    // 重置只读/系统标志位（同 v36 先例，确保 status_rules 是 marker+system）
+    const READONLY_IDS_38 = new Set(['status_rules']);
+    for (const m of validated.prompt_rules.modules) {
+      if (READONLY_IDS_38.has(m.id)) {
+        m.marker = true;
+        m.system = true;
+      }
+    }
+    resetOrderFromDefaults(validated);
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
