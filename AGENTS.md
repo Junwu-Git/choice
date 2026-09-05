@@ -125,6 +125,23 @@ npx vue-tsc --noEmit # 单独跑类型检查，退出码必须为 0（类型债�
 
 **dist 产物与提交约定（牢记，不要反复询问）**：本地`pnpm build`只作打包/类型验证，不是发布流程；`watch`是`--mode development`（内联 sourcemap、不出独立`index.js.map`），随时会覆盖任何 production 产物，属正常状态。推送后远程 GitHub 有 bot action 自动重打包（`[bot] Bundle` 提交，production 产物含独立 map），才是发布产物的最终来源。因此：提交时`dist/`处于任何模式的产物都**直接入库推送**，不要为 map 被删、js 内联 map 这类状态差异询问用户，也不要为提交前重跑 production 构建纠结。
 
+## 分支纪律（防三分支选项代码漂移）
+
+被动状态（`feat/passive-status`）未成熟、不能进 main/test 发布；但行动选项 bug fix 需持续发布。被动状态与 bug fix 都改 `settings.ts`/`global-settings.ts`，**必然文件重叠**——隔离只能靠分支职责 + 同步纪律，无法靠分文件。另一干扰源：bot bundle 在 main/test 都触发，两分支 dist 永远互相漂移，故同步纪律必须「只搬 src 不搬 dist」。
+
+### 分支职责
+- **main**：发布线。只从 test 同步 src；dist 由 bot bundle 自动管理。
+- **test**：行动选项 bug fix 主战场 + 预发布验证。
+- **feat/passive-status**：被动状态专用。定期 `git rebase origin/main` 获取 bug fix；成熟前永不合并回 main/test。
+
+### 核心纪律
+1. 行动选项 bug fix **只在 test 修** → push test 验证。
+2. test → main 同步：**cherry-pick src 不带 dist**——`git cherry-pick -n <sha>`，若 dist 冲突 `git checkout HEAD -- dist/`（保留 main 侧 dist，让 bot bundle 重出）→ commit → push main。**dist 永不跨分支搬移**。
+3. 被动状态改动**只在 feat**；feat 定期 `git rebase origin/main` 获取 bug fix。rebase 冲突解决总原则：main 的 fail-safe 与 feat 的被动状态**两边代码都保留**；dist 用 main 侧（`git checkout --ours dist/`，rebase 中 ours=新 base 即 main）；feat 不触发 bot bundle，dist 本地重 build。
+4. 被动状态成熟后：feat merge 进 main → test 同步 main → 才算发布。
+
+> `--ours/--theirs` 方向易搞反：**cherry-pick 中 theirs=被 pick 的 commit**；**rebase 中 ours=新 base（main 侧）**。
+
 ### 用 Chrome DevTools MCP 自行验证，不要只做静态代码审查
 
 **浏览器验证前先暂停询问**：每次改动后不要默认自动开浏览器验证——先暂停询问用户本次是否需要浏览器验证；小改动（文案/样式微调/纯逻辑调整等）通常没必要，由用户决定。用户明确要求验证或改动涉及核心交互链路时再走完整验证流程。
