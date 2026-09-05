@@ -5,6 +5,40 @@ import { z } from 'zod';
 
 export const setting_field = 'choice';
 
+// 字数上下限与各字段默认值——schema 的 .min/.max/.default/.catch、加载预迁移 clamp、
+// watcher 落盘前 sanitize、前端 input 钳制四处共用，禁止各自硬编码 10/500。
+// 为什么必须集中：历史上 schema 用 .min(10) 对"已存在的非法值"fail-closed（.default 只补
+// 缺失字段、不补非法值），用户在 UI 输入 <10 经无校验 watcher 落盘后，下次加载即整扩展崩溃。
+export const CHARS_MIN_LIMIT = 10;
+export const CHARS_MAX_LIMIT = 500;
+export const OPTION_MIN_CHARS_DEFAULT = 10;
+export const OPTION_MAX_CHARS_DEFAULT = 60;
+export const ENRICH_MIN_CHARS_DEFAULT = 10;
+export const ENRICH_MAX_CHARS_DEFAULT = 60;
+
+// 把字数字段值钳到合法区间 [CHARS_MIN_LIMIT, CHARS_MAX_LIMIT]，非有限数回落 dft。
+// 加载预迁移 / watcher 落盘前 / 前端 input 三处复用，单一真相源防各处 10/500 漂移。
+export function clampCharsValue(v: unknown, dft: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? Math.min(CHARS_MAX_LIMIT, Math.max(CHARS_MIN_LIMIT, n)) : dft;
+}
+
+// 就地把 prompt_rules 的 4 个字数字段钳到合法区间并保证 min<=max。
+// 加载预迁移（validateInplace 前）与 watcher 落盘前共用：确保任何路径读入/落盘的值都合法，
+// 从根上杜绝单个非法字段让整档 zod parse 失败、整扩展崩溃（fail-safe）。
+export function sanitizePromptRulesChars(pr: unknown): void {
+  if (!pr || typeof pr !== 'object') return;
+  const o = pr as Record<string, unknown>;
+  const lo1 = clampCharsValue(o.option_min_chars, OPTION_MIN_CHARS_DEFAULT);
+  const hi1 = clampCharsValue(o.option_max_chars, OPTION_MAX_CHARS_DEFAULT);
+  const lo2 = clampCharsValue(o.enrich_min_chars, ENRICH_MIN_CHARS_DEFAULT);
+  const hi2 = clampCharsValue(o.enrich_max_chars, ENRICH_MAX_CHARS_DEFAULT);
+  o.option_min_chars = lo1;
+  o.option_max_chars = lo1 > hi1 ? lo1 : hi1;
+  o.enrich_min_chars = lo2;
+  o.enrich_max_chars = lo2 > hi2 ? lo2 : hi2;
+}
+
 export const PoolEntry = z
   .object({
     id: z.string(),
@@ -14,7 +48,7 @@ export const PoolEntry = z
     // 自由文本提示，与 rule 的"适用时机"语义完全重叠；旧存档里的 condition 键由 zod 剥离
     rule: z.string().default(''),
     pinned: z.boolean().default(false),
-    weight: z.number().min(0).default(1),
+    weight: z.number().min(0).default(1).catch(1),
     category: z.string().default(''),
   })
   // zod4 的 prefault 参数类型是输入类型：PoolEntry 的 id/type 无 default（必填），
@@ -31,7 +65,7 @@ export const GenerationSettings = z
     // 菜单模式超采样：非固定条目抽样量 = 所需数 + ceil(所需数 × pct/100)。
     // 0 = 关闭菜单模式（抽取数=所需数，精确 1:1，等同 v23 前行为）；上限 300 防误输入巨值。
     // 老存档靠 zod default 自动补 50，无需显式迁移
-    oversample_pct: z.number().min(0).max(300).default(50),
+    oversample_pct: z.number().min(0).max(300).default(50).catch(50),
   })
   .prefault({});
 export type GenerationSettings = z.infer<typeof GenerationSettings>;
@@ -40,7 +74,7 @@ export const PoolConfigEntry = z
   .object({
     entry_id: z.string(),
     pinned: z.boolean().default(false),
-    weight: z.number().min(0).default(1),
+    weight: z.number().min(0).default(1).catch(1),
     // 配置层停用开关：false = 条目保留在配置中但不参与生成（在 pool-selector 解析层剔除，
     // 抽取算法无感知）。与 pinned 的 checkbox 用不同控件（滑动开关），避免两种"勾选"语义混淆。
     // 老存档缺字段由 default(true) 自动补齐（同 panel_lock 先例），无需 bump schema_version
@@ -135,11 +169,11 @@ export const PromptConfig = z
     option_person: z.string().default('第三人称'),
     enrich_person: z.string().default('第三人称'),
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
-    option_min_chars: z.number().min(10).max(500).default(10),
-    option_max_chars: z.number().min(10).max(500).default(60),
-    enrich_min_chars: z.number().min(10).max(500).default(10),
-    enrich_max_chars: z.number().min(10).max(500).default(60),
-    context_rounds: z.number().min(0).default(10),
+    option_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MIN_CHARS_DEFAULT).catch(OPTION_MIN_CHARS_DEFAULT),
+    option_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MAX_CHARS_DEFAULT).catch(OPTION_MAX_CHARS_DEFAULT),
+    enrich_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MIN_CHARS_DEFAULT).catch(ENRICH_MIN_CHARS_DEFAULT),
+    enrich_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MAX_CHARS_DEFAULT).catch(ENRICH_MAX_CHARS_DEFAULT),
+    context_rounds: z.number().min(0).default(10).catch(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     prefill_enabled: z.boolean().default(true),
     baibai_enabled: z.boolean().default(false),
@@ -352,7 +386,7 @@ export const PromptRules = z
   .object({
     system_prompt: z.string().default(''),
     core_rules: z.string().default(''),
-    context_rounds: z.number().min(0).default(10),
+    context_rounds: z.number().min(0).default(10).catch(10),
     /** @deprecated 已迁移到 chat_filter_groups，保留用于向后兼容 */
     chat_filter_rules: z.array(ChatFilterRule).default([]),
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
@@ -373,13 +407,13 @@ export const PromptRules = z
     /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
     enrich_prompt: z.string().default(''),
     /** 选项字数下限 */
-    option_min_chars: z.number().min(10).max(500).default(10),
+    option_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MIN_CHARS_DEFAULT).catch(OPTION_MIN_CHARS_DEFAULT),
     /** 选项字数上限 */
-    option_max_chars: z.number().min(10).max(500).default(60),
+    option_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(OPTION_MAX_CHARS_DEFAULT).catch(OPTION_MAX_CHARS_DEFAULT),
     /** 润色字数下限 */
-    enrich_min_chars: z.number().min(10).max(500).default(10),
+    enrich_min_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MIN_CHARS_DEFAULT).catch(ENRICH_MIN_CHARS_DEFAULT),
     /** 润色字数上限 */
-    enrich_max_chars: z.number().min(10).max(500).default(60),
+    enrich_max_chars: z.number().min(CHARS_MIN_LIMIT).max(CHARS_MAX_LIMIT).default(ENRICH_MAX_CHARS_DEFAULT).catch(ENRICH_MAX_CHARS_DEFAULT),
     /** 润色人称视角，自由文本，通过 {{enrich_person_style}} 占位符注入 enrich_core_rules 模块 */
     enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
     schema_version: z.number().default(0),
@@ -394,9 +428,9 @@ export const SecondaryApi = z
     apiurl: z.string(),
     key: z.string(),
     model: z.string(),
-    temperature: z.number().min(0).max(2).default(1),
-    max_tokens: z.number().min(1).default(4096),
-    timeout: z.number().min(0).default(180),
+    temperature: z.number().min(0).max(2).default(1).catch(1),
+    max_tokens: z.number().min(1).default(4096).catch(4096),
+    timeout: z.number().min(0).default(180).catch(180),
     stream: z.boolean().default(false),
     exclude_params: z.string().default(''),
   })
@@ -956,7 +990,7 @@ export const UISettings = z
      * 旧存档值是本枚举子集，直接兼容，无需迁移。
      */
     theme_mode: z.enum(['auto', 'st', 'dark', 'light', 'dusk', 'sakura', 'celadon', 'honey']).default('auto'),
-    opacity: z.number().min(0.3).max(1).default(0.88),
+    opacity: z.number().min(0.3).max(1).default(0.88).catch(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
     /**
      * 字体档是否跟随设备：true 时忽略 font_size，触屏（pointer: coarse）默认 small、
@@ -972,7 +1006,7 @@ export const UISettings = z
      */
     panel_position: z.enum(['chat', 'input']).default('chat'),
     /** 行内设置面板内容区高度（px），拖拽手柄可调整 */
-    panel_height: z.number().min(300).max(800).default(500),
+    panel_height: z.number().min(300).max(800).default(500).catch(500),
     /**
      * 新手引导是否已完成/跳过。三个触发方共享这一个开关：首启欢迎卡（启动 3s 后）、
      * 首次打开设置面板（maybeAutoOpenOnboarding）、生成遇 API 未配置的自动召回
@@ -1009,10 +1043,10 @@ export const GlobalSettings = z
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
-    retry_count: z.number().min(0).max(10).default(0),
+    retry_count: z.number().min(0).max(10).default(0).catch(0),
     /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
      *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */
-    retry_interval: z.number().min(0).max(60).default(1),
+    retry_interval: z.number().min(0).max(60).default(1).catch(1),
     // 请求附带 tool_choice:"none"：酒馆助手预设脚本（如 Aether 防截断）会 patch 主窗口
     // window.fetch 并改写一切 /generate 请求，"none" 是其设计内绕过信号（详见
     // api-client.ts 注释）。ST 后端仅在 tools 非空数组时才转发该字段，故它到不了上游，

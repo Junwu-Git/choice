@@ -135,6 +135,7 @@
             type="number"
             min="10"
             max="500"
+            @change="clampOptionChars"
           />
           <span>-</span>
           <input
@@ -144,6 +145,7 @@
             type="number"
             min="10"
             max="500"
+            @change="clampOptionChars"
           />
         </label>
         <label class="choice-count-item">
@@ -155,6 +157,7 @@
             type="number"
             min="10"
             max="500"
+            @change="clampEnrichChars"
           />
           <span>-</span>
           <input
@@ -164,6 +167,7 @@
             type="number"
             min="10"
             max="500"
+            @change="clampEnrichChars"
           />
         </label>
       </div>
@@ -192,6 +196,13 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import {
+  clampCharsValue,
+  OPTION_MIN_CHARS_DEFAULT,
+  OPTION_MAX_CHARS_DEFAULT,
+  ENRICH_MIN_CHARS_DEFAULT,
+  ENRICH_MAX_CHARS_DEFAULT,
+} from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 const ui = gs.settings.ui;
@@ -208,6 +219,23 @@ const oversamplePct = computed({
     gs.settings.generation.oversample_pct = Number.isFinite(n) ? Math.min(300, Math.max(0, n)) : 0;
   },
 });
+
+// 字数输入失焦钳制：用户键入 <10/>500 或非法值时自动钳到合法边界
+// （min 输 1→10、max 输 10000000000→500），并保证 min<=max。
+// 用 @change（失焦/回车）而非 @input：实时钳会破坏多位数输入（输 "100" 时 "1" 被钳成 10 跳变）。
+// 落盘还有 global-settings watcher 的 sanitizePromptRulesChars 兜底，双保险。
+const clampOptionChars = () => {
+  const lo = clampCharsValue(rules.option_min_chars, OPTION_MIN_CHARS_DEFAULT);
+  const hi = clampCharsValue(rules.option_max_chars, OPTION_MAX_CHARS_DEFAULT);
+  rules.option_min_chars = lo;
+  rules.option_max_chars = lo > hi ? lo : hi;
+};
+const clampEnrichChars = () => {
+  const lo = clampCharsValue(rules.enrich_min_chars, ENRICH_MIN_CHARS_DEFAULT);
+  const hi = clampCharsValue(rules.enrich_max_chars, ENRICH_MAX_CHARS_DEFAULT);
+  rules.enrich_min_chars = lo;
+  rules.enrich_max_chars = lo > hi ? lo : hi;
+};
 </script>
 
 <style scoped>
