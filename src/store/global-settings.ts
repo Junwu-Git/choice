@@ -1851,9 +1851,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     // 回写当前归属配置：否则切配置/重载时 loadPromptConfig 用仍陈旧的配置快照覆盖工作副本，
     // 重排不持久（与 switchPromptConfig 的回写同源）。归属为 null（boot 前未确定）时跳过，
     // 维持旧行为——boot 后 PromptEditor 首次 switchPromptConfig 即会设置归属
-    const owner = promptEditConfigId
-      ? settings.value.prompt_configs.find(c => c.id === promptEditConfigId)
-      : null;
+    const owner = promptEditConfigId ? settings.value.prompt_configs.find(c => c.id === promptEditConfigId) : null;
     if (owner) syncPromptRulesToConfig(owner);
   }
 
