@@ -602,14 +602,21 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
   validated.prompt_rules.schema_version = 17;
 };
 
-/** 将现有模块的 order 重置为 DEFAULT_MODULES 中的值 */
-const resetOrderFromDefaults = (validated: GlobalSettingsType) => {
-  const defaults = klona(DEFAULT_MODULES);
-  const defaultMap = new Map(defaults.map(m => [m.id, m]));
-  for (const m of validated.prompt_rules.modules) {
+/** 按 id 把任意 modules 数组的 order 重排到 DEFAULT_MODULES 当前值。
+ *  id 不在 DEFAULT（用户自建模块）的 order 不动——只修历史迁移期冻结的漂移，不改用户自定。
+ *  单一事实源：resetOrderFromDefaults（工作副本）与 v36 迁移（配置快照）都委托本函数，
+ *  避免两处 order 同步逻辑各自演化造成漂移 */
+const resyncModuleOrders = (modules: PromptModuleType[]) => {
+  const defaultMap = new Map(klona(DEFAULT_MODULES).map(m => [m.id, m]));
+  for (const m of modules) {
     const d = defaultMap.get(m.id);
     if (d) m.order = d.order;
   }
+};
+
+/** 将工作副本 prompt_rules.modules 的 order 重置为 DEFAULT_MODULES 中的值（委托 resyncModuleOrders） */
+const resetOrderFromDefaults = (validated: GlobalSettingsType) => {
+  resyncModuleOrders(validated.prompt_rules.modules);
 };
 
 /** 老存档（schema < 19）迁移专用：创建「经典/简洁」双提示词配置并加载简洁到工作副本。
@@ -1351,6 +1358,37 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v36: 修复模块 order 漂移。v29（b2f8abc6）结构性重编号了 DEFAULT_MODULES 的 order
+  // （reward_prompt 19.5→23、assistant_thinking 20→24、enrich 自检/规格模块各 -1、
+  // enrich_assistant 24→25），意图让 reward_prompt 紧贴两个 <thinking> 预填模块之上、
+  // 三者居列表底部。但 v29 迁移块只跑文本迁移（migrateAllPromptText），从不重排 order；
+  // 而 resetOrderFromDefaults 只在 migratePromptModules 内、受 prompt_rules.schema_version<17
+  // 守卫——已到 v17 的老用户永远不再被重排，且它只碰 prompt_rules.modules（工作副本）、
+  // 从不碰 prompt_configs[].modules（快照）。与此同时 v24 ensureRewardModule 用「当前」
+  // DEFAULT 的 order 把 reward_prompt 补进各配置，而同配置里 assistant_thinking 仍冻在旧
+  // order 20，于是 reward_prompt(23) 反落 assistant_thinking(20) 下方。enrich_only 模块被
+  // 隐藏时（选项模式/关润色，见 PromptEditor.vue:395）enrich_assistant 不显示，reward_prompt
+  // 即成可见最底层。本块一次性把工作副本与所有配置快照的 order 按 id 对齐当前 DEFAULT，
+  // 既消此反转，也顺带收敛其余历史漂移。幂等：对齐到 DEFAULT 多次执行结果一致；<36 守卫
+  // 只跑一次；用户自建模块（id 不在 DEFAULT）order 不动
+  if ((validated.schema_version ?? 0) < 36) {
+    resyncModuleOrders(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      resyncModuleOrders(cfg.modules);
+    }
+  }
+
+  // v37: 加强场景思考（thinking_prompt step1 场景盘点 + step5→6 反八股/情绪禁区 +
+  // self-check 八股/极端自检）+ 反八股/极端情绪禁令（option_rules 去喵 8/7 条 + 喵 8 条
+  // + 全向 9 条 → 各自扩列）。CORE_RULES_STATIC 是代码常量直接改即生效，不入存档、无迁移对
+  // （同 v26/v28 先例）。仅跑文本迁移，无池/结构变更。与 v21~v29 各文本迁移块同构，
+  // migrateAllPromptText 覆盖 prompt_rules + 所有 prompt_configs 的 option_rules/
+  // person_style/modules——全向 cfg.option_rules 与各 cfg.modules 的 thinking_prompt 一并迁移。
+  // thinking 喵版已由 v25 对收敛为去喵，v37 对 from 均为去喵当前文本，无需喵版 thinking 对。
+  if ((validated.schema_version ?? 0) < 37) {
+    migrateAllPromptText(validated);
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 
@@ -1810,6 +1848,13 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       const d = defaultMap.get(m.id);
       if (d) m.order = d.order;
     });
+    // 回写当前归属配置：否则切配置/重载时 loadPromptConfig 用仍陈旧的配置快照覆盖工作副本，
+    // 重排不持久（与 switchPromptConfig 的回写同源）。归属为 null（boot 前未确定）时跳过，
+    // 维持旧行为——boot 后 PromptEditor 首次 switchPromptConfig 即会设置归属
+    const owner = promptEditConfigId
+      ? settings.value.prompt_configs.find(c => c.id === promptEditConfigId)
+      : null;
+    if (owner) syncPromptRulesToConfig(owner);
   }
 
   function resetModuleContent(id: string) {
