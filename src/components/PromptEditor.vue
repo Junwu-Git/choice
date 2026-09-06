@@ -1,7 +1,7 @@
 <template>
   <div class="choice-prompt-editor">
     <div class="choice-page-toolbar" data-tour="prompt-toolbar">
-      <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
+      <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`">
         <select v-model="rules.context_mode" class="text_pole" style="width: auto">
           <option value="rounds">{{ t`轮数模式` }}</option>
           <option value="visible_only">{{ t`仅可见消息` }}</option>

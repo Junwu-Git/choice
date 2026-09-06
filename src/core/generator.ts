@@ -1,12 +1,14 @@
-import { substituteParams, this_chid } from '@sillytavern/script';
+import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
   loadWorldInfo,
+  METADATA_KEY,
   selected_world_info,
   worldInfoCache,
 } from '@sillytavern/scripts/world-info';
+import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensions/regex/engine';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
@@ -255,9 +257,12 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
   const mode = gs.settings.prompt_rules.context_mode;
-  // rounds：取最后 N 轮，含隐藏消息；visible_only：仅未隐藏消息，不限轮数
-  let msgs = mode === 'visible_only' ? chatArr.filter(m => !m.is_hidden) : [...chatArr];
-  if (mode === 'rounds' && contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
+  // 镜像 ST 主生成 coreChat：先剔除隐藏楼层（is_system），再按模式截尾。
+  // visible_only：全量未隐藏消息；rounds：未隐藏消息的最后 N*2 条（隐藏楼层不再占轮数槽位，
+  // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
+  // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
+  const visible = chatArr.filter((m: any) => !m.is_system);
+  const msgs = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   let lastAssistantIdx = -1;
@@ -265,9 +270,17 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
   // 必须先把消息裁剪到只剩标签区间，之后现有 tag/regex 规则在裁剪结果上继续跑——
   // 这样"提取后再用标签过滤滤掉提取内容里的子标签"天然成立，且无提取规则的用户行为零变化
   const extractRules = rules.filter(r => r.type === 'extract');
-  for (const m of msgs) {
-    if (m.is_system) continue;
-    let content = m.mes ?? '';
+  // depth 相对当前迭代数组：0=距末尾最近一条，对齐 script.js:4445（rounds 截尾取自末尾，
+  // 截尾数组内 depth 与全量未隐藏数组一致，无需特判）
+  const total = msgs.length;
+  for (let i = 0; i < total; i++) {
+    const m = msgs[i];
+    // 先过酒馆正则扩展的提示词侧处理——与主生成完全一致：promptOnly 正则按 minDepth/maxDepth
+    // 限定作用楼层（"只保留最近 N 层"类脚本即靠此清空旧楼层），不应用则旧楼层全文直发 AI。
+    // depth 必须传入，否则 minDepth/maxDepth 判定被整段跳过（engine.js:362）。不传 characterOverride，
+    // 与主生成历史路径一致（script.js:4447）。清空后的空消息由下方 !content.trim() 整条丢弃。
+    const placement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
+    let content = getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: total - i - 1 });
     if (!content) continue;
     // 标签提取只作用于 AI 输出（assistant）：user 输入多为纯文本/对白，不含待提取的结构化
     // 标签区间，对其执行 extract 会因无目标标签而整条丢弃，致用户发送内容从提示词消失。
@@ -392,7 +405,9 @@ const buildWI = async (): Promise<WIBuckets> => {
     // getWorldInfoPrompt 要求 chat 为倒序（最新消息在前），与 ST 主生成 script.js
     // 中 .reverse() 保持一致。不倒序会导致 WorldInfoBuffer 把最旧消息当作最新层扫描，
     // 绿灯关键词匹配的是旧上下文而非当前层。
-    const chatStrings = chatArr.map((m: any) => m?.mes ?? '').reverse();
+    // 过滤 is_system：主生成喂给 checkWorldInfo 的是 coreChat（已剔除隐藏楼层），choice 此前
+    // 喂全量 chat 会让隐藏楼层里的关键词多触发绿灯记忆条目，与主生成激活范围不一致。
+    const chatStrings = chatArr.filter((m: any) => !m.is_system).map((m: any) => m?.mes ?? '').reverse();
     const ch = getStCharacter(this_chid);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
@@ -469,9 +484,10 @@ type Restore = { restore: () => void } | null;
  *     临时变异条目 disable 标志，restore 逐条还原——checkWorldInfo 对 disable==true 的条目跳过
  *     （world-info.js:4689），变异即控制注入。
  *  处理范围 = 生成时 ST 实际会读取的所有"活动书"：selected_world_info（getGlobalLore，world-info.js:4415）、
- *  角色绑定书 character.data.extensions.world（getCharacterLore，:4363）、enabled_books（用户显式启用）。
- *  此前只遍历 enabled_books，导致在角色绑定书 / 全局选中书上设置的 off/force/custom 与逐条覆盖被静默忽略
- *  （"整本关了仍注入"即此因），现已扩到全集。
+ *  角色绑定书 character.data.extensions.world（getCharacterLore，:4363）、聊天绑定书
+ *  chat_metadata[METADATA_KEY]（getChatLore，:4432，原生聊天世界书）、enabled_books（用户显式启用）。
+ *  此前只遍历 enabled_books，导致在角色绑定书 / 全局选中书 / 聊天绑定书上设置的 off/force/custom
+ *  与逐条覆盖被静默忽略（"整本关了仍注入"即此因），现已扩到全集。
  *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，切换模式即
  *  脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条生效（快照未覆盖的
  *  条目保持酒馆原状）。异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt
@@ -487,10 +503,13 @@ export const applyWIExcl = async (
   const modeOf = (name: string): WIBookMode => modes[name] ?? 'follow';
 
   // 处理范围 = ST 生成时实际读取的全部活动书（见上方 JSDoc 出处）。
-  // 角色绑定书与全局选中书不在 enabled_books 里，旧实现只遍历 enabled_books 才是 bug 根源。
+  // 角色绑定书 / 聊天绑定书不在 enabled_books 里，旧实现只遍历 enabled_books 才是 bug 根源。
   const ch = getStCharacter(this_chid);
   const cw = ch?.data?.extensions?.world;
-  const processSet = new Set<string>([...saved, ...enabled, ...(cw ? [cw] : [])]);
+  // 聊天绑定书：原生世界书面板的"聊天世界书"按钮绑定（chat_metadata[METADATA_KEY]，METADATA_KEY='world_info'）。
+  // getChatLore（world-info.js:4432）直接读此键，不在 selected_world_info 中，故需单独纳入处理范围。
+  const chatBook = typeof chat_metadata?.[METADATA_KEY] === 'string' ? chat_metadata[METADATA_KEY] : '';
+  const processSet = new Set<string>([...saved, ...enabled, ...(cw ? [cw] : []), ...(chatBook ? [chatBook] : [])]);
 
   // off 模式书并入临时排除：整本不注入（等价"条目全关"的生成结果，且无需条目级变异）。
   // 覆盖全集，不再只筛 enabled_books——否则角色/全局书的 off 模式形同虚设。
@@ -513,6 +532,10 @@ export const applyWIExcl = async (
   selected_world_info.push(...newList);
   const cwEx = !!cw && allExcl.has(cw);
   if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
+  // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
+  // 与角色绑定书的临时改写同一模式；restore 还原原值。
+  const chatBookEx = !!chatBook && allExcl.has(chatBook);
+  if (chatBookEx) chat_metadata[METADATA_KEY] = '';
 
   // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
   // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
@@ -560,6 +583,7 @@ export const applyWIExcl = async (
       selected_world_info.length = 0;
       selected_world_info.push(...saved);
       if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
+      if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
       for (const m of mutated) m.entry.disable = m.value;
     },
   };
