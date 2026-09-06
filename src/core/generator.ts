@@ -20,7 +20,14 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { ChatSettings, PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
+import type {
+  ChatSettings,
+  PoolEntry,
+  PromptModule,
+  SecondaryApi,
+  WIBookMode,
+  WorldInfoGlobalSettings,
+} from '@/type/settings';
 import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -421,7 +428,15 @@ const WI_DEPTH_AFTER_MAXDEPTH = 2;
 
 const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
-  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthBefore: '', depthAfter: '' };
+  const empty: WIBuckets = {
+    before: '',
+    after: '',
+    anBefore: '',
+    anAfter: '',
+    em: '',
+    depthBefore: '',
+    depthAfter: '',
+  };
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const chatArr: any[] = ctx?.chat ?? [];
@@ -472,8 +487,16 @@ const buildWI = async (): Promise<WIBuckets> => {
         .map((e: any) => e?.content ?? '')
         .filter(Boolean)
         .join('\n'),
-      depthBefore: allDepth.filter(e => e.depth > WI_DEPTH_AFTER_MAXDEPTH).sort(byDepthDesc).map(e => e.content).join('\n\n'),
-      depthAfter: allDepth.filter(e => e.depth <= WI_DEPTH_AFTER_MAXDEPTH).sort(byDepthDesc).map(e => e.content).join('\n\n'),
+      depthBefore: allDepth
+        .filter(e => e.depth > WI_DEPTH_AFTER_MAXDEPTH)
+        .sort(byDepthDesc)
+        .map(e => e.content)
+        .join('\n\n'),
+      depthAfter: allDepth
+        .filter(e => e.depth <= WI_DEPTH_AFTER_MAXDEPTH)
+        .sort(byDepthDesc)
+        .map(e => e.content)
+        .join('\n\n'),
     };
 
     // EJS 渲染后处理（开关开时）：对 buckets 各 content 展宏 + 执行提示词模板插件的 <% %>。
@@ -481,7 +504,15 @@ const buildWI = async (): Promise<WIBuckets> => {
     // 降级为只展宏（<% 原样保留），不比现状差。depthBefore/depthAfter 已是单串，并入同一轮
     // Promise.all 渲染回填即可（迁出历史后注入逻辑对渲染结果无感）
     if (gs.settings.world_info.render_world_info_ejs) {
-      [buckets.before, buckets.after, buckets.anBefore, buckets.anAfter, buckets.em, buckets.depthBefore, buckets.depthAfter] = await Promise.all([
+      [
+        buckets.before,
+        buckets.after,
+        buckets.anBefore,
+        buckets.anAfter,
+        buckets.em,
+        buckets.depthBefore,
+        buckets.depthAfter,
+      ] = await Promise.all([
         renderWorldInfoContent(buckets.before),
         renderWorldInfoContent(buckets.after),
         renderWorldInfoContent(buckets.anBefore),
