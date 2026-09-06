@@ -1399,6 +1399,28 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     migrateAllPromptText(validated);
   }
 
+  // v38: 世界书深度条目不再织入历史中段（与对白交织会污染 <history> 内容），改迁到
+  // <history> 标签之外：depth ≤ 2（D0/D1/D2）→ </history> 之后、depth ≥ 3 → <history> 之前。
+  // 新增两个只读 marker 模块（wi_depth_before / wi_depth_after）承载注入点。老存档的
+  // 工作副本 prompt_rules.modules 与每个 prompt_configs[].modules 快照都需按 id 去重补建
+  // （配置切换换入的是 configs 的模块快照，漏掉 configs 会导致切换后注入点消失，同 v24
+  // reward_prompt 先例）。补建后 resyncModuleOrders 把 order 对齐当前 DEFAULT（本版把
+  // history_open 起的尾部 +1/+2 重编号以插入两个 marker）。用户自建模块（id 不在 DEFAULT）
+  // order 不动。幂等：去重 push + 按 id 对齐 order 多次执行结果一致
+  if ((validated.schema_version ?? 0) < 38) {
+    const DEPTH_MODULE_IDS = new Set(['wi_depth_before', 'wi_depth_after']);
+    const ensureDepthModule = (modules: PromptModuleType[]): void => {
+      const have = new Set(modules.map(m => m.id));
+      for (const d of klona(DEFAULT_MODULES)) {
+        if (DEPTH_MODULE_IDS.has(d.id) && !have.has(d.id)) modules.push(d);
+      }
+    };
+    ensureDepthModule(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) ensureDepthModule(cfg.modules);
+    resyncModuleOrders(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
 

@@ -20,14 +20,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type {
-  ChatSettings,
-  PoolEntry,
-  PromptModule,
-  SecondaryApi,
-  WIBookMode,
-  WorldInfoGlobalSettings,
-} from '@/type/settings';
+import type { ChatSettings, PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
 import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -203,18 +196,28 @@ export const buildMessages = async (
       }
       case 'world_info_after': {
         if (wiBuckets) {
-          // v24 起深度条目不再塞末尾（会丢失"按深度插入历史"的定位），改由
-          // buildChatHistory 按 depth 织入——见 chat_history case
+          // 深度条目不再塞此桶末尾、也不再织入历史中段（会与对白交织污染 <history>），
+          // 改按 depth 分组迁到 <history> 标签外——见 wi_depth_before/after 两个 marker
           const merged = [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n');
           if (merged) msgs.push({ role: 'system', content: merged });
         }
         break;
       }
       case 'chat_history': {
-        const history = buildChatHistory(contextRounds, wiBuckets?.depthEntries ?? []);
-        for (const m of history) {
-          msgs.push(prefillEnabled ? m : { ...m, role: 'system' });
-        }
+        // 历史一律 system（buildChatHistory 内已强制），不再随 prefillEnabled 切换 user/assistant；
+        // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在 <history> 标签外注入
+        const history = buildChatHistory(contextRounds);
+        for (const m of history) msgs.push(m);
+        break;
+      }
+      case 'wi_depth_before': {
+        // depth ≥ 3 的世界书 atDepth 条目，注入 </reference> 与 <history> 之间（深、背景）
+        if (wiBuckets && wiBuckets.depthBefore) msgs.push({ role: 'system', content: wiBuckets.depthBefore });
+        break;
+      }
+      case 'wi_depth_after': {
+        // depth ≤ 2（D0/D1/D2）的世界书 atDepth 条目，注入 </history> 之后（浅、贴近生成点）
+        if (wiBuckets && wiBuckets.depthAfter) msgs.push({ role: 'system', content: wiBuckets.depthAfter });
         break;
       }
       case 'baibai_summary': {
@@ -292,7 +295,7 @@ ${CORE_RULES_STATIC}`;
   return merged;
 };
 
-const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthEntries'] = []): ChatMsg[] => {
+const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -352,9 +355,11 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
       }
     }
     if (!content.trim()) continue;
-    const role = isUser ? 'user' : 'assistant'; // 复用上方 isUser，不再重复判定
-    h.push({ role, content });
-    if (role === 'assistant') lastAssistantIdx = h.length - 1;
+    // 用户要求：历史一律 system——<history> 作"已发生剧情"参考上下文而非活对话，角色不再
+    // 区分 user/assistant。但 <current_scene> 仍须锚定最后一条 AI 楼层，故用 isUser（而非
+    // 已扁平为 system 的 role）追踪 lastAssistantIdx——若改回按 role 判定会恒不命中
+    h.push({ role: 'system', content });
+    if (!isUser) lastAssistantIdx = h.length - 1;
   }
   // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
   // 避免在长对话中注意力被稀释到更早的剧情。回退到 h 最后一条（无 assistant 时）。
@@ -363,29 +368,6 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
     h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }
 
-  // 世界书 atDepth 条目按深度织入历史（v24）——镜像 ST 主生成的"距末尾 depth 条"语义
-  // （script.js:4609-4613 经 setExtensionPrompt IN_CHAT 注入；openai.js populationInjectionPrompts
-  // 在 newest-first 数组 index=depth 处插入，reverse 后等价于 oldest-first 的 length-depth 处）。
-  // 深度相对实际发送的截断历史 h（插件只发送 h，无法插入未发送消息；与 ST 相对全量 chat 有
-  // 微小差异，极端情况 depth≥h.length 时 clamp 到开头，属可接受取舍）。
-  // 织入在 <current_scene> 包裹之后执行（包裹不改变消息数，length 不变）：
-  // 按目标索引分组，从大索引往小索引 splice——大索引插入不会位移小索引目标，无需回溯补偿；
-  // 同索引多条按 role 顺序 system<user<assistant 排列（与 ST populationInjectionPrompts 的
-  // roles 迭代顺序一致），整组一次性 splice 保证相邻。
-  if (depthEntries.length > 0) {
-    const origLen = h.length;
-    const roleOrder = (r: string) => (r === 'system' ? 0 : r === 'user' ? 1 : 2);
-    const groups = new Map<number, ChatMsg[]>();
-    for (const e of depthEntries) {
-      const idx = Math.max(0, Math.min(origLen, origLen - e.depth));
-      if (!groups.has(idx)) groups.set(idx, []);
-      groups.get(idx)!.push({ role: e.role, content: e.content });
-    }
-    for (const idx of [...groups.keys()].sort((a, b) => b - a)) {
-      const batch = groups.get(idx)!.sort((x, y) => roleOrder(x.role) - roleOrder(y.role));
-      h.splice(idx, 0, ...batch);
-    }
-  }
   return h;
 };
 
@@ -425,20 +407,21 @@ type WIBuckets = {
   anBefore: string;
   anAfter: string;
   em: string;
-  /** atDepth 世界书条目（v24 起结构化保存，不再拍平塞末尾）：
-   *  depth = 距聊天历史末尾的消息数（0=紧接末尾），织入 buildChatHistory 的对应位置；
-   *  role 来自条目自身的角色设置（system/user/assistant），非固定 system。 */
-  depthEntries: Array<{ depth: number; role: 'system' | 'user' | 'assistant'; content: string }>;
+  /** atDepth 世界书条目，按深度阈值分两组、各自按 depth 降序拼接、统一 system 注入：
+   *  depth ≤ WI_DEPTH_AFTER_MAXDEPTH（0/1/2）→ depthAfter，注入 </history> 之后（浅、贴近生成点）；
+   *  depth ≥ 阈值+1 → depthBefore，注入 <history> 之前（深、背景）。不再织入历史中段，
+   *  保持 <history> 纯对白，避免世界书与正文交织污染历史内容。 */
+  depthBefore: string;
+  depthAfter: string;
 };
 
-/** ST extension_prompt_roles 数值 → 插件 ChatMsg role 字符串（script.js:493 已核实：
- *  SYSTEM:0 / USER:1 / ASSISTANT:2）。未知值兜底 'system'（世界书深度条目的绝大多数场景）。 */
-const mapWIRole = (role: unknown): 'system' | 'user' | 'assistant' =>
-  role === 1 || role === '1' ? 'user' : role === 2 || role === '2' ? 'assistant' : 'system';
+/** depth ≤ 此值的世界书深度条目注入 </history> 之后（浅、贴近生成点）；> 此值注入 <history> 之前（深、背景）。
+ *  取 2：D0/D1/D2 归"历史后"，D3+ 归"历史前"（用户指定）。 */
+const WI_DEPTH_AFTER_MAXDEPTH = 2;
 
 const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
-  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthEntries: [] };
+  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthBefore: '', depthAfter: '' };
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const chatArr: any[] = ctx?.chat ?? [];
@@ -469,6 +452,17 @@ const buildWI = async (): Promise<WIBuckets> => {
       creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
+    // worldInfoDepth 结构 = [{depth, entries: string[]}]（world-info.js:5121-5125 已核实）。
+    // 同 depth+role 的多条目 ST 已 unshift 合并进同一组，组内按 \n 拼接即可。v38 起不再
+    // 织入历史中段：按 WI_DEPTH_AFTER_MAXDEPTH 分两组，各自按 depth 降序（深者在前 / D2→D0
+    // 在末，使 D0 最贴近生成点）、组间 \n\n 拼成单串，注入时统一 system（条目原 role 不保留）
+    const allDepth = (result.worldInfoDepth ?? [])
+      .map((d: any) => ({
+        depth: typeof d?.depth === 'number' ? d.depth : 0,
+        content: (d?.entries ?? []).filter(Boolean).join('\n'),
+      }))
+      .filter(e => e.content);
+    const byDepthDesc = (a: { depth: number }, b: { depth: number }) => b.depth - a.depth;
     const buckets: WIBuckets = {
       before: result.worldInfoBefore ?? '',
       after: result.worldInfoAfter ?? '',
@@ -478,37 +472,24 @@ const buildWI = async (): Promise<WIBuckets> => {
         .map((e: any) => e?.content ?? '')
         .filter(Boolean)
         .join('\n'),
-      // worldInfoDepth 结构 = [{depth, entries: string[], role}]（world-info.js:5121-5125 已核实）。
-      // 同 depth+role 的多条目 ST 已 unshift 合并进同一组，组内按 \n 拼接即可；
-      // 不再像旧版那样跨 depth 拍平成一条——那会丢失"按深度插入历史"的定位
-      depthEntries: (result.worldInfoDepth ?? [])
-        .map((d: any) => ({
-          depth: typeof d?.depth === 'number' ? d.depth : 0,
-          role: mapWIRole(d?.role),
-          content: (d?.entries ?? []).filter(Boolean).join('\n'),
-        }))
-        .filter(e => e.content),
+      depthBefore: allDepth.filter(e => e.depth > WI_DEPTH_AFTER_MAXDEPTH).sort(byDepthDesc).map(e => e.content).join('\n\n'),
+      depthAfter: allDepth.filter(e => e.depth <= WI_DEPTH_AFTER_MAXDEPTH).sort(byDepthDesc).map(e => e.content).join('\n\n'),
     };
 
     // EJS 渲染后处理（开关开时）：对 buckets 各 content 展宏 + 执行提示词模板插件的 <% %>。
-    // 零侵入——getWorldInfoPrompt/分桶/buildChatHistory 织入逻辑均不碰；未装插件时
-    // renderWorldInfoContent 内部降级为只展宏（<% 原样保留），不比现状差。depthEntries 各
-    // content 同样渲染后回填，buildChatHistory 的按深度织入逻辑对渲染结果无感
+    // 零侵入——getWorldInfoPrompt/分桶逻辑不碰；未装插件时 renderWorldInfoContent 内部
+    // 降级为只展宏（<% 原样保留），不比现状差。depthBefore/depthAfter 已是单串，并入同一轮
+    // Promise.all 渲染回填即可（迁出历史后注入逻辑对渲染结果无感）
     if (gs.settings.world_info.render_world_info_ejs) {
-      [buckets.before, buckets.after, buckets.anBefore, buckets.anAfter, buckets.em] = await Promise.all([
+      [buckets.before, buckets.after, buckets.anBefore, buckets.anAfter, buckets.em, buckets.depthBefore, buckets.depthAfter] = await Promise.all([
         renderWorldInfoContent(buckets.before),
         renderWorldInfoContent(buckets.after),
         renderWorldInfoContent(buckets.anBefore),
         renderWorldInfoContent(buckets.anAfter),
         renderWorldInfoContent(buckets.em),
+        renderWorldInfoContent(buckets.depthBefore),
+        renderWorldInfoContent(buckets.depthAfter),
       ]);
-      if (buckets.depthEntries.length > 0) {
-        const renderedDepth = await Promise.all(buckets.depthEntries.map(e => renderWorldInfoContent(e.content)));
-        buckets.depthEntries = buckets.depthEntries.map((e, i) => ({
-          ...e,
-          content: renderedDepth[i],
-        }));
-      }
     }
 
     return buckets;

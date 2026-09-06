@@ -122,7 +122,7 @@
       "marker": true,
       "system": true,
       "enabled": true,
-      "order": 13
+      "order": 14
     },
     {
       "id": "baibai_state",
@@ -132,7 +132,7 @@
       "marker": true,
       "system": true,
       "enabled": false,
-      "order": 16
+      "order": 18
     },
     {
       "id": "reference_close",
@@ -145,6 +145,16 @@
       "order": 11
     },
     {
+      "id": "wi_depth_before",
+      "name": "世界书深度（历史前）",
+      "role": "system",
+      "content": "",
+      "marker": true,
+      "system": true,
+      "enabled": true,
+      "order": 12
+    },
+    {
       "id": "history_open",
       "name": "历史开始",
       "role": "system",
@@ -152,7 +162,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 12
+      "order": 13
     },
     {
       "id": "chat_history",
@@ -162,7 +172,7 @@
       "marker": true,
       "system": true,
       "enabled": true,
-      "order": 14
+      "order": 15
     },
     {
       "id": "history_close",
@@ -172,7 +182,17 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 15
+      "order": 16
+    },
+    {
+      "id": "wi_depth_after",
+      "name": "世界书深度（历史后）",
+      "role": "system",
+      "content": "",
+      "marker": true,
+      "system": true,
+      "enabled": true,
+      "order": 17
     },
     {
       "id": "core_rules",
@@ -182,7 +202,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 17,
+      "order": 19,
       "option_only": true
     },
     {
@@ -193,7 +213,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 18,
+      "order": 20,
       "option_only": true
     },
     {
@@ -204,7 +224,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 19,
+      "order": 21,
       "option_only": true
     },
     {
@@ -215,7 +235,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 20,
+      "order": 22,
       "enrich_only": true
     },
     {
@@ -226,7 +246,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 21,
+      "order": 23,
       "enrich_only": true
     },
     {
@@ -237,7 +257,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 22,
+      "order": 24,
       "enrich_only": true
     },
     {
@@ -248,7 +268,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 23
+      "order": 25
     },
     {
       "id": "assistant_thinking",
@@ -258,7 +278,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 24,
+      "order": 26,
       "option_only": true
     },
     {
@@ -269,7 +289,7 @@
       "marker": false,
       "system": false,
       "enabled": true,
-      "order": 25,
+      "order": 27,
       "enrich_only": true
     }
   ]
