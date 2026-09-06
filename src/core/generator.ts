@@ -14,12 +14,13 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
+import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
+import type { ChatSettings, PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
 import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -46,6 +47,9 @@ let genController: AbortController | null = null;
  *  新手引导用它检测"用户已成功生成过第一组选项"，仅在 generateOptions 成功路径置位 */
 export const lastOptionsGeneratedAt = ref(0);
 
+/** 最近一次 buildMessages 的完整产物（调试用），DebugSettings 渲染；undefined = 尚未生成过。 */
+export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
+
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
 export const poolGenState = reactive({ loading: false });
@@ -65,6 +69,34 @@ export const resolveCount = (cm: string): number => {
 
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
+
+/**
+ * 解析世界书参与范围（全局排除 + 聊天排除 + 数据库开关 + 数据库目标书强制排除/启用）。
+ * 供 generateOptions / enrichUserInput 共用，避免两处漂移。
+ */
+export async function resolveWIParticipation(
+  gwi: WorldInfoGlobalSettings,
+  cwi: ChatSettings['world_info'],
+): Promise<{ allExcl: string[]; enabled: string[] }> {
+  const gs = useGlobalSettingsStore();
+  let allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  let enabled = [...cwi.enabled_books];
+
+  const book = getShujukuTargetBook();
+  if (book) {
+    if (gs.settings.prompt_rules.shujuku_enabled) {
+      // 开关 ON：确保该书参与（未绑定时靠 applyWIExcl 的 enabled 通道临时追加到 selected_world_info）
+      if (!enabled.includes(book)) enabled.push(book);
+    } else {
+      // 开关 OFF：排除该书，除非它是角色卡主世界书（避免误杀主书）
+      const ch = getStCharacter(this_chid);
+      const primary = String(ch?.data?.extensions?.world ?? '').trim();
+      if (book !== primary) allExcl.push(book);
+    }
+  }
+
+  return { allExcl, enabled };
+}
 
 export type Ctx = {
   count: number;
@@ -249,6 +281,7 @@ ${CORE_RULES_STATIC}`;
       merged.push({ ...msg });
     }
   }
+  lastBuildMessages.value = structuredClone(merged);
   return merged;
 };
 
@@ -756,9 +789,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   generatorState.generationId = gid;
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
   const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, cwi.enabled_books, cwi.book_entry_modes, cwi.book_entry_overrides)
+    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
     : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);

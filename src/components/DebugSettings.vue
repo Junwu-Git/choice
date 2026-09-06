@@ -10,6 +10,16 @@
       <p>{{ t`API 数` }}: {{ globalStore.settings.apis.length }}</p>
     </div>
     <div class="choice-debug-section">
+      <h4>{{ t`上次生成的消息` }}</h4>
+      <div v-if="!lastBuildMessages" class="choice-empty-hint">{{ t`尚未生成过` }}</div>
+      <div v-else class="choice-debug-messages">
+        <div v-for="(m, i) in lastBuildMessages" :key="i" class="choice-debug-msg">
+          <span class="choice-debug-role" :class="'role-' + m.role">{{ m.role }}</span>
+          <span class="choice-debug-content">{{ truncate(m.content) }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="choice-debug-section">
       <h4>{{ t`危险操作` }}</h4>
       <button class="menu_button" :title="t`删除所有设置并恢复为插件出厂默认值`" @click="factoryReset">
         <i class="fa-solid fa-rotate-left"></i>
@@ -22,6 +32,7 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { lastBuildMessages } from '@/core/generator';
 
 const globalStore = useGlobalSettingsStore();
 
@@ -34,6 +45,10 @@ function factoryReset() {
     return;
   globalStore.factoryReset();
   toastr.success(t`已恢复出厂设置`);
+}
+
+function truncate(s: string, n = 120): string {
+  return s.length > n ? s.slice(0, n) + '…' : s;
 }
 </script>
 
@@ -55,5 +70,43 @@ function factoryReset() {
   margin: 2px 0;
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
+}
+
+.choice-debug-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  max-height: 400px;
+  overflow: auto;
+}
+
+.choice-debug-msg {
+  display: flex;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-xs);
+  line-height: 1.4;
+}
+
+.choice-debug-role {
+  flex-shrink: 0;
+  font-weight: 600;
+  text-transform: uppercase;
+  width: 60px;
+}
+
+.role-system {
+  color: var(--choice-color-info);
+}
+.role-user {
+  color: var(--choice-color-warning);
+}
+.role-assistant {
+  color: var(--choice-color-success);
+}
+
+.choice-debug-content {
+  word-break: break-all;
+  white-space: pre-wrap;
+  color: var(--choice-text);
 }
 </style>

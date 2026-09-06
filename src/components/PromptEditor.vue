@@ -23,6 +23,10 @@
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
       </label>
+      <label class="choice-context-rounds" :title="t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`">
+        <input v-model="rules.shujuku_enabled" type="checkbox" />
+        {{ t`数据库` }}
+      </label>
     </div>
 
     <div class="choice-config-bar">
@@ -562,6 +566,7 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
         context_mode: pr.context_mode,
         prefill_enabled: pr.prefill_enabled,
         baibai_enabled: pr.baibai_enabled,
+        shujuku_enabled: pr.shujuku_enabled,
       },
     },
     null,
@@ -650,6 +655,7 @@ function importPrompts() {
         ],
         ['prefill_enabled', b(rawConfig.prefill_enabled)],
         ['baibai_enabled', b(rawConfig.baibai_enabled)],
+        ['shujuku_enabled', b(rawConfig.shujuku_enabled)],
       ];
       for (const [k, v] of cfgEntries) {
         if (v !== undefined) fileConfig[k] = v;

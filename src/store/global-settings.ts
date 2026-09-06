@@ -339,6 +339,7 @@ function buildOpenPromptConfig(pr: GlobalSettingsType['prompt_rules']): PromptCo
     context_mode: pr.context_mode ?? 'visible_only',
     prefill_enabled: pr.prefill_enabled ?? true,
     baibai_enabled: pr.baibai_enabled ?? false,
+    shujuku_enabled: pr.shujuku_enabled ?? false,
   };
 }
 
@@ -516,6 +517,10 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
+  if (version < 37) {
+    validated.prompt_rules.shujuku_enabled = false;
+  }
+
   if (version < 12) {
     // v12: 新增角色卡上下文模块（描述/性格/场景），让行动选项生成时也能看到角色卡核心设定
     // 此前这些字段只在 generatePoolEntries 中注入，generateOptions 缺失
@@ -647,6 +652,7 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     context_mode: pr.context_mode ?? 'visible_only',
     prefill_enabled: pr.prefill_enabled ?? true,
     baibai_enabled: pr.baibai_enabled ?? false,
+    shujuku_enabled: pr.shujuku_enabled ?? false,
   };
 
   // 2. 创建"简洁"配置（简化版模块）
@@ -675,6 +681,7 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     context_mode: 'visible_only',
     prefill_enabled: true,
     baibai_enabled: false,
+    shujuku_enabled: false,
   };
 
   validated.prompt_configs = [classicConfig, simpleConfig];
@@ -694,6 +701,7 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
   pr.context_mode = 'visible_only';
   pr.prefill_enabled = true;
   pr.baibai_enabled = false;
+  pr.shujuku_enabled = false;
 
   // 4. 旧过滤分组（prompt_rules.chat_filter_groups）搬运到新家 filter_settings.groups。
   //    新 FilterGroup 用 entries（引用正则库或内联规则），旧分组是平铺 rules 数组——逐条包成
@@ -737,6 +745,7 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
       context_mode: pr.context_mode ?? 'visible_only',
       prefill_enabled: pr.prefill_enabled ?? true,
       baibai_enabled: pr.baibai_enabled ?? false,
+      shujuku_enabled: pr.shujuku_enabled ?? false,
     },
   ];
 };
@@ -1355,6 +1364,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       pr35.context_mode = defPrompt.context_mode;
       pr35.prefill_enabled = defPrompt.prefill_enabled;
       pr35.baibai_enabled = defPrompt.baibai_enabled;
+      pr35.shujuku_enabled = defPrompt.shujuku_enabled;
     }
   }
 
@@ -2067,6 +2077,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       context_mode: fc.context_mode === 'rounds' || fc.context_mode === 'visible_only' ? fc.context_mode : undefined,
       prefill_enabled: b(fc.prefill_enabled),
       baibai_enabled: b(fc.baibai_enabled),
+      shujuku_enabled: b(fc.shujuku_enabled),
     };
     // 键名来自上方硬编码白名单，与 PromptConfig 字段一一对应，这里集中收窄一次
     for (const [key, value] of Object.entries(patch)) {

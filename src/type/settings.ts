@@ -211,6 +211,7 @@ export const PromptConfig = z
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     prefill_enabled: z.boolean().default(true),
     baibai_enabled: z.boolean().default(false),
+    shujuku_enabled: z.boolean().default(false),
     /** 内置配置标记：标识该配置由迁移/出厂流程创建、有专属出厂态（"恢复默认"应回到该配置的
      *  出厂内容而非全局默认）。目前仅全向配置设为 'open'——其 modules/person_style/option_rules
      *  与全局默认（简洁）不同，不加标记会让"恢复默认"把全向内容洗成简洁。
@@ -434,6 +435,8 @@ export const PromptRules = z
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
     baibai_enabled: z.boolean().default(false),
+    /** SP·数据库 记忆源总开关：关闭时 SP·数据库 的注入目标世界书不参与选项/润色生成 */
+    shujuku_enabled: z.boolean().default(false),
     /** 叙述风格（人称/视角），自由文本；非空时替换 core_rules 模块中的【叙述风格】段落 */
     person_style: z.string().default(DEFAULT_PERSON_STYLE),
     /** 核心选项生成规则，自由文本；非空时替换 core_rules 模块中的【核心规则】段落 */
