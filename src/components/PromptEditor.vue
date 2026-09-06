@@ -1,7 +1,12 @@
 <template>
   <div class="choice-prompt-editor">
     <div class="choice-page-toolbar" data-tour="prompt-toolbar">
-      <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`">
+      <label
+        class="choice-context-rounds"
+        :title="
+          t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`
+        "
+      >
         <select v-model="rules.context_mode" class="text_pole" style="width: auto">
           <option value="rounds">{{ t`轮数模式` }}</option>
           <option value="visible_only">{{ t`仅可见消息` }}</option>
@@ -23,7 +28,12 @@
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
       </label>
-      <label class="choice-context-rounds" :title="t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`">
+      <label
+        class="choice-context-rounds"
+        :title="
+          t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`
+        "
+      >
         <input v-model="rules.shujuku_enabled" type="checkbox" />
         {{ t`数据库` }}
       </label>

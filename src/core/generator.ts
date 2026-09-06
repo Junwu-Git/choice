@@ -20,7 +20,14 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { ChoiceGeneration } from '@/core/options-store';
-import type { ChatSettings, PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
+import type {
+  ChatSettings,
+  PoolEntry,
+  PromptModule,
+  SecondaryApi,
+  WIBookMode,
+  WorldInfoGlobalSettings,
+} from '@/type/settings';
 import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
@@ -440,7 +447,10 @@ const buildWI = async (): Promise<WIBuckets> => {
     // 绿灯关键词匹配的是旧上下文而非当前层。
     // 过滤 is_system：主生成喂给 checkWorldInfo 的是 coreChat（已剔除隐藏楼层），choice 此前
     // 喂全量 chat 会让隐藏楼层里的关键词多触发绿灯记忆条目，与主生成激活范围不一致。
-    const chatStrings = chatArr.filter((m: any) => !m.is_system).map((m: any) => m?.mes ?? '').reverse();
+    const chatStrings = chatArr
+      .filter((m: any) => !m.is_system)
+      .map((m: any) => m?.mes ?? '')
+      .reverse();
     const ch = getStCharacter(this_chid);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
