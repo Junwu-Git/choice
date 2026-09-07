@@ -1,7 +1,18 @@
 // 生成后去重：标题判定 + 字符 bigram Jaccard，纯本地字符串运算，零 API 成本。
 // 参照集 = 上一 AI 楼层当前代 ∪ 当前楼层既有代（同楼重新生成也防）。
 
-export type DedupResult = { kept: string[]; droppedCount: number };
+export type DedupDetail = {
+  candidate: string;
+  reason: 'title' | 'jaccard';
+  matchedRef: string;
+  score?: number;
+};
+
+export type DedupResult = {
+  kept: string[];
+  droppedCount: number;
+  details: DedupDetail[];
+};
 
 export function dedupOptions(candidates: string[], references: string[], threshold: number): DedupResult {
   const titleOf = (s: string): string | null => {
@@ -31,35 +42,40 @@ export function dedupOptions(candidates: string[], references: string[], thresho
     }
     return union === 0 ? 0 : inter / union;
   };
-  const isDup = (cand: string, ref: string): boolean => {
+  // 标题仅精确匹配，避免中文短标题因单向包含被误杀。
+  const isDup = (cand: string, ref: string): { dup: boolean; detail?: DedupDetail } => {
     const ct = titleOf(cand);
     const rt = titleOf(ref);
-    if (ct && rt) {
-      if (ct === rt || ct.includes(rt) || rt.includes(ct)) return true;
+    if (ct && rt && ct === rt) {
+      return { dup: true, detail: { candidate: cand, reason: 'title', matchedRef: ref, score: 1 } };
     }
-    return jaccard(bigrams(contentOf(cand)), bigrams(contentOf(ref))) >= threshold;
+    const score = jaccard(bigrams(contentOf(cand)), bigrams(contentOf(ref)));
+    if (score >= threshold) {
+      return { dup: true, detail: { candidate: cand, reason: 'jaccard', matchedRef: ref, score } };
+    }
+    return { dup: false };
   };
 
   const kept: string[] = [];
   let dropped = 0;
+  const details: DedupDetail[] = [];
   for (const cand of candidates) {
     let dup = false;
+    let detail: DedupDetail | undefined;
     for (const ref of references) {
-      if (isDup(cand, ref)) {
+      const result = isDup(cand, ref);
+      if (result.dup) {
         dup = true;
+        detail = result.detail;
         break;
       }
     }
-    if (!dup) {
-      for (const ref of kept) {
-        if (isDup(cand, ref)) {
-          dup = true;
-          break;
-        }
-      }
+    if (dup) {
+      dropped++;
+      if (detail) details.push(detail);
+    } else {
+      kept.push(cand);
     }
-    if (dup) dropped++;
-    else kept.push(cand);
   }
-  return { kept, droppedCount: dropped };
+  return { kept, droppedCount: dropped, details };
 }

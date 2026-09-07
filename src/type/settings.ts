@@ -70,7 +70,7 @@ export const GenerationSettings = z
     // 参照集 = 上一 AI 楼层当前代 ∪ 当前楼层既有代（覆盖同楼重新生成）。
     dedup_enabled: z.boolean().default(true),
     // 0-1 的 bigram Jaccard 阈值；NaN 由 .catch 兜底（同 oversample_pct 先例），不加 min/max clamp（项目约束：不改写用户输入）。
-    dedup_threshold: z.number().default(0.6).catch(0.6),
+    dedup_threshold: z.number().default(0.75).catch(0.75),
   })
   .prefault({});
 export type GenerationSettings = z.infer<typeof GenerationSettings>;

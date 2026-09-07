@@ -21,7 +21,9 @@
     </div>
     <div class="choice-debug-section">
       <h4>{{ t`上次去重报告` }}</h4>
-      <div v-if="!lastDedupReport" class="choice-empty-hint">{{ t`去重未触发（未启用或无重复）` }}</div>
+      <div v-if="!lastDedupReport || !lastDedupReport.details.length" class="choice-empty-hint">
+        {{ t`去重未触发（未启用或无重复）` }}
+      </div>
       <div v-else class="choice-debug-messages">
         <div class="choice-debug-msg">
           <span class="choice-debug-role">{{ t`剔除数` }}</span>
@@ -30,6 +32,33 @@
         <div class="choice-debug-msg">
           <span class="choice-debug-role">{{ t`补齐` }}</span>
           <span class="choice-debug-content">{{ lastDedupReport.refilled ? t`是` : t`否` }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`阈值` }}</span>
+          <span class="choice-debug-content">{{ lastDedupReport.threshold }}</span>
+        </div>
+      </div>
+      <div v-if="lastDedupReport?.refs.length" class="choice-debug-dedup-refs">
+        <div class="choice-debug-dedup-refs-title">{{ t`参照池（${lastDedupReport.refs.length} 条）` }}</div>
+        <div class="choice-debug-dedup-refs-list">
+          <div v-for="(ref, i) in lastDedupReport.refs" :key="i" class="choice-debug-dedup-ref-item">
+            {{ truncate(ref, 100) }}
+          </div>
+        </div>
+      </div>
+      <div v-if="lastDedupReport?.details.length" class="choice-debug-dedup-details">
+        <div
+          v-for="(d, i) in lastDedupReport.details"
+          :key="i"
+          class="choice-debug-dedup-item"
+        >
+          <div class="choice-debug-dedup-candidate">{{ truncate(d.candidate, 80) }}</div>
+          <div class="choice-debug-dedup-meta">
+            <span :class="['choice-debug-dedup-reason', 'reason-' + d.reason]">
+              {{ d.reason === 'title' ? t`标题精确匹配` : t`Jaccard ${d.score?.toFixed(2)}` }}
+            </span>
+            <span class="choice-debug-dedup-matched">{{ t`⇐` }} {{ truncate(d.matchedRef, 60) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -122,5 +151,76 @@ function truncate(s: string, n = 120): string {
   word-break: break-all;
   white-space: pre-wrap;
   color: var(--choice-text);
+}
+
+.choice-debug-dedup-details {
+  margin-top: var(--choice-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-debug-dedup-item {
+  padding: var(--choice-space-2);
+  background: var(--choice-bg-elevated);
+  border-radius: var(--choice-radius-sm);
+  border-left: 3px solid var(--choice-color-warning);
+}
+
+.choice-debug-dedup-candidate {
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text);
+  word-break: break-all;
+}
+
+.choice-debug-dedup-meta {
+  margin-top: var(--choice-space-1);
+  display: flex;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+}
+
+.choice-debug-dedup-reason {
+  font-weight: 600;
+}
+
+.reason-title {
+  color: var(--choice-color-info);
+}
+
+.reason-jaccard {
+  color: var(--choice-color-warning);
+}
+
+.choice-debug-dedup-matched {
+  opacity: 0.8;
+}
+
+.choice-debug-dedup-refs {
+  margin-top: var(--choice-space-2);
+}
+
+.choice-debug-dedup-refs-title {
+  font-size: var(--choice-text-xs);
+  font-weight: 600;
+  color: var(--choice-text-secondary);
+  margin-bottom: var(--choice-space-1);
+}
+
+.choice-debug-dedup-refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-debug-dedup-ref-item {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  word-break: break-all;
+  padding: var(--choice-space-1) var(--choice-space-2);
+  background: var(--choice-bg-elevated);
+  border-radius: var(--choice-radius-sm);
+  border-left: 2px solid var(--choice-color-info);
 }
 </style>

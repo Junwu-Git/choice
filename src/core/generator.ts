@@ -59,7 +59,16 @@ export const lastOptionsGeneratedAt = ref(0);
 export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
 
 /** 最近一次去重报告（调试用），DebugSettings 渲染；undefined = 尚未生成过或去重未启用。 */
-export const lastDedupReport = ref<{ dropped: number; refilled: boolean } | undefined>(undefined);
+export const lastDedupReport = ref<
+  | {
+      dropped: number;
+      refilled: boolean;
+      details: { candidate: string; reason: 'title' | 'jaccard'; matchedRef: string; score?: number }[];
+      threshold: number;
+      refs: string[];
+    }
+  | undefined
+>(undefined);
 
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
@@ -934,9 +943,18 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         dedupRefs,
         genCfg.dedup_threshold,
       );
-      lastDedupReport.value = { dropped: r1.droppedCount, refilled: false };
-      if (r1.kept.length < count) {
-        const need = count - r1.kept.length;
+      let kept = r1.kept;
+      let dropped = r1.droppedCount;
+      let details = r1.details;
+      let refilled = false;
+      // refill 循环：直到凑够 count 条或 refill 无新产出为止，防止最终数量不足。
+      // 上限 3 轮防模型持续返回重复内容导致死循环。
+      let refillRound = 0;
+      const MAX_REFILL_ROUNDS = 3;
+      while (kept.length < count && refillRound < MAX_REFILL_ROUNDS) {
+        refillRound++;
+        refilled = true;
+        const need = count - kept.length;
         const refillMessages: ChatMsg[] = [
           ...messages,
           { role: 'assistant', content: raw },
@@ -955,15 +973,29 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         );
         if (cancelled) return null;
         const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
-        const r2 = dedupOptions(
+        const rNext = dedupOptions(
           refillParsed.map(o => o.text),
-          [...dedupRefs, ...r1.kept],
+          [...dedupRefs, ...kept],
           genCfg.dedup_threshold,
         );
-        options = [...r1.kept, ...r2.kept].slice(0, count).map(t => ({ text: t, sourceEntryId: null }));
-        lastDedupReport.value = { dropped: r1.droppedCount + r2.droppedCount, refilled: true };
-      } else {
-        options = r1.kept.map(t => ({ text: t, sourceEntryId: null }));
+        dropped += rNext.droppedCount;
+        details = details.concat(rNext.details);
+        kept = kept.concat(rNext.kept);
+        // 若本次 refill 解析为空或去重后无新条目，停止循环，避免无限请求。
+        if (!refillParsed.length || !rNext.kept.length) break;
+      }
+      options = kept.slice(0, count).map(t => ({ text: t, sourceEntryId: null }));
+      lastDedupReport.value = {
+        dropped,
+        refilled,
+        details,
+        threshold: genCfg.dedup_threshold,
+        refs: dedupRefs,
+      };
+      if (dropped > 0) {
+        toastr.warning(
+          t`剔除 ${dropped} 条重复选项，已补齐 ${kept.length - r1.kept.length} 条`,
+        );
       }
     }
     if (!options.length) {
