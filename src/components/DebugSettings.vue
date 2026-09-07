@@ -20,6 +20,20 @@
       </div>
     </div>
     <div class="choice-debug-section">
+      <h4>{{ t`上次去重报告` }}</h4>
+      <div v-if="!lastDedupReport" class="choice-empty-hint">{{ t`去重未触发（未启用或无重复）` }}</div>
+      <div v-else class="choice-debug-messages">
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`剔除数` }}</span>
+          <span class="choice-debug-content">{{ lastDedupReport.dropped }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`补齐` }}</span>
+          <span class="choice-debug-content">{{ lastDedupReport.refilled ? t`是` : t`否` }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="choice-debug-section">
       <h4>{{ t`危险操作` }}</h4>
       <button class="menu_button" :title="t`删除所有设置并恢复为插件出厂默认值`" @click="factoryReset">
         <i class="fa-solid fa-rotate-left"></i>
@@ -32,7 +46,7 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { lastBuildMessages } from '@/core/generator';
+import { lastBuildMessages, lastDedupReport } from '@/core/generator';
 
 const globalStore = useGlobalSettingsStore();
 

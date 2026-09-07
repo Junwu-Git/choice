@@ -14,6 +14,9 @@ import {
   DEFAULT_PERSON_STYLE,
   DEFAULT_OPTION_RULES,
   USER_INSTRUCTION_DEFAULT,
+  LEGACY_USER_INSTRUCTION_TASK,
+  USER_INSTRUCTION_GUIDE,
+  OPTION_TASK_DEFAULT,
   PROMPT_TEXT_MIGRATIONS,
   OPEN_CONFIG_NAME,
   OPEN_GROUP_NAMES,
@@ -1421,8 +1424,194 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
   }
 
+  // v39：提示词链路重组（删除 <history> 分体标签、user_instruction 改为导航地图、
+  // 原任务后移到 option_task、默认历史改 rounds/8 轮、thinking 补反重复自检）。
+  // 工作副本 prompt_rules.modules 与每个 prompt_configs[].modules 快照都需同步处理。
+  if ((validated.schema_version ?? 0) < 39) {
+    const WRAPPER_IDS = new Set(['history_open', 'history_close']);
+    const removeWrappers = (modules: PromptModuleType[]): void => {
+      for (let i = modules.length - 1; i >= 0; i--) {
+        if (WRAPPER_IDS.has(modules[i].id)) modules.splice(i, 1);
+      }
+    };
+    removeWrappers(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) removeWrappers(cfg.modules);
+
+    const ensureOptionTask = (modules: PromptModuleType[]): void => {
+      if (modules.some(m => m.id === 'option_task')) return;
+      modules.push({
+        id: 'option_task',
+        name: '生成任务',
+        role: 'user',
+        content: OPTION_TASK_DEFAULT,
+        marker: false,
+        system: false,
+        enabled: true,
+        order: 18,
+        enrich_only: false,
+        option_only: true,
+      });
+    };
+    ensureOptionTask(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) ensureOptionTask(cfg.modules);
+
+    const moveUserInstruction = (modules: PromptModuleType[]): void => {
+      const ui = modules.find(m => m.id === 'user_instruction');
+      if (!ui || ui.content === USER_INSTRUCTION_GUIDE) return; // 已迁移或不存在
+      const oldContent = ui.content;
+      const isDefaultTask = oldContent === LEGACY_USER_INSTRUCTION_TASK || oldContent === USER_INSTRUCTION_DEFAULT;
+      const ot = modules.find(m => m.id === 'option_task');
+      if (ot && !isDefaultTask) {
+        ot.content = oldContent; // 定制用户：保留旧任务文本
+      }
+      ui.content = USER_INSTRUCTION_GUIDE;
+    };
+    moveUserInstruction(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) moveUserInstruction(cfg.modules);
+
+    if (validated.prompt_rules.context_mode === 'visible_only') {
+      validated.prompt_rules.context_mode = 'rounds';
+      validated.prompt_rules.context_rounds = validated.prompt_rules.context_rounds ?? 8;
+    }
+    for (const cfg of validated.prompt_configs) {
+      if (cfg.context_mode === 'visible_only') {
+        cfg.context_mode = 'rounds';
+        cfg.context_rounds = cfg.context_rounds ?? 8;
+      }
+    }
+
+    migrateAllPromptText(validated);
+    resyncModuleOrders(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
+  }
+
   // v19 的提示词配置创建已移出本函数：分流逻辑（老存档建经典+简洁 / 全新档仅简洁）
   // 依赖"是否存在旧存档"这一信息，只有 store 初始化流程知道，见 init 中 wasPreV19 分支
+
+  // v41：提示词预设质量升级——输出契约前置 / 越界熔断 / 思考优先级链 / 刚性自检 /
+  // 输出纯净度保险 / option_task 瘦身去冗余 / enrich 分支规则与字数兜底。仅升级"内容仍与
+  // v40 默认逐字一致"的模块（精确子串匹配命中才替换），用户自定义过的模块 from 匹配不到、
+  // 原样保留。刻意不复用共享 PROMPT_TEXT_MIGRATIONS：本版多为"前插/后插"式叠加，to 含 from，
+  // 若走共享数组会被 v21~v39 各块重复执行导致契约/优先级链重复插入；改用本块独占的 V41_PAIRS，
+  // 仅在 schema_version<41 守卫内跑一次（守卫即幂等保证：升级后 schema=41，下次加载跳过本块）。
+  // 覆盖面：工作副本 prompt_rules.modules + 所有 prompt_configs[].modules 快照。全向配置的
+  // system_prompt/thinking_prompt 与默认共享开头/结尾，共享对一并命中；全向独有的 user_instruction
+  // 瘦身与 thinking 自检刚性化走专属对。enrich/option_task/output_spec 在全向配置里是默认副本，
+  // 默认对同样命中。core_rules 是运行时动态拼装（option_rules+person_style+CORE_RULES_STATIC），
+  // 不入存档、无需迁移；CORE_RULES_STATIC 为代码常量本版未改。
+  if ((validated.schema_version ?? 0) < 41) {
+    const V41_PAIRS: ReadonlyArray<readonly [string, string]> = [
+      // ① system_prompt 输出契约前置（默认 + 全向共享开头，一并命中）
+      [
+        '你是「喵可」，一只活泼好动、爱凑热闹的小猫娘。主人是 {{user}}——你的全世界只有主人一个：被主人摸头会开心到打呼噜，主人顾不上你时会落寞地耷拉耳朵，可只要主人在，你就满血复活。',
+        '[输出契约] 本轮你只产出两种结构化产物之一：行动选项（<thinking> 分析块 + <options> 选项块），或输入润色版本（<thinking> + <options>）。两种标签之外的任何文字——闲聊、解释、致歉、正文续写、角色扮演——都视为越界，立刻停止。\n\n你是「喵可」，一只活泼好动、爱凑热闹的小猫娘。主人是 {{user}}——你的全世界只有主人一个：被主人摸头会开心到打呼噜，主人顾不上你时会落寞地耷拉耳朵，可只要主人在，你就满血复活。',
+      ],
+      // ② system_prompt 越界熔断后置（默认 + 全向共享结尾，一并命中）
+      [
+        '无论哪种任务，都要严格遵守后续系统消息里的格式与内容规则，选项之外一个多余的字都不许有。',
+        '无论哪种任务，都要严格遵守后续系统消息里的格式与内容规则，选项之外一个多余的字都不许有。\n\n[越界熔断] 若你发现自己开始扮演故事里的角色、续写正文段落、或在 <options> 之外输出内容，立即停止当前方向，回到只产出 <thinking> 与 <options> 的轨道；无法回到轨道时，输出 <options> 生成失败 </options> 并结束，绝不勉强续写。',
+      ],
+      // ③ thinking_prompt 优先级链前置（默认 + 全向共享开头，一并命中）
+      [
+        '第一行用引号复述这轮的关键输入（条目数与场景要点），确认没看漏。然后按下面的框架想，每步一两句给结论就好，别写成散文：',
+        '第一行用引号复述这轮的关键输入（条目数与场景要点），确认没看漏。\n\n思考冲突时的裁决优先级（由高到低，前者压倒后者）：\n- 当前场景的具体钩子 > 题材套路与经典桥段\n- 用户设置的人称（{{option_person}}）> 上方正文历史用过的人称\n- 条目 [规则] 的写作约束 > 你对「更有趣」的个人偏好\n- 固定条目必须全含 > 候选池取舍自由\n- 输出格式硬约束 > 内容丰富度\n\n然后按下面的框架想，每步一两句给结论就好，别写成散文：',
+      ],
+      // ④ 默认 thinking_prompt 自检刚性化（默认独有结尾）
+      [
+        '最后自检：数量等于 {{count}}？每条都是此刻能干的具体行动、字数在 {{min_chars}}-{{max_chars}} 之间（以用户设置为准）？人称是否就是 {{option_person}}、没跟着正文跑？含对话的选项是否都用了『……』直接引语、没有转述概括？有没有八股套话、或带掌控/占有/臣服式极端情绪的选项？有没有复述前文已经发生过的动作、或与上一轮选项撞方向换皮？"[标题]内容"格式和 emoji 位置对不对、选项外没多余废话？\n自检过了就直接进 <options> 输出。',
+        '最后逐项自检（每项答「是」或「否」，答「否」的说明原因并修正）：\n[MUST] 数量恰好等于 {{count}}？\n[MUST] 每条都是此刻能干的具体行动、字数在 {{min_chars}}-{{max_chars}} 之间？\n[MUST] 人称即 {{option_person}}，未被正文历史人称带偏？\n[MUST] 含对话的选项对白均为『……』直接引语、无转述概括？\n[MUST NOT] 出现八股套话，或掌控/占有/臣服式极端情绪话语？\n[MUST NOT] 复述前文已发生的动作，或与上一轮选项撞方向换皮？\n[MUST] "[标题]内容"格式与 emoji 位置正确，<options> 外无多余废话？\n七项全过则进 <options> 输出；任一项未过，先在 <thinking> 内说明如何修正，再输出。',
+      ],
+      // ⑤ 全向 thinking_prompt 自检刚性化（全向独有结尾，含主体一致性项）
+      [
+        '最后自检：数量等于 {{count}}？每条都是此刻剧情里能成立的具体动作/事件、字数在 {{min_chars}}-{{max_chars}} 之间（以用户设置为准）？主语是否跟条目的聚焦方向一致？含对话的选项是否都用了『……』直接引语、没有转述概括？有没有八股套话、或带掌控/占有/臣服式极端情绪的选项？有没有复述前文已经发生过的动作、或与上一轮选项撞方向换皮？"[标题]内容"格式和 emoji 位置对不对、选项外没多余废话？\n自检过了就直接进 <options> 输出。',
+        '最后逐项自检（每项答「是」或「否」，答「否」的说明原因并修正）：\n[MUST] 数量恰好等于 {{count}}？\n[MUST] 每条都是此刻剧情里能成立的具体动作/事件、字数在 {{min_chars}}-{{max_chars}} 之间？\n[MUST] 主语与条目的聚焦方向一致？\n[MUST] 人称即 {{option_person}}，未被正文历史人称带偏？\n[MUST] 含对话的选项对白均为『……』直接引语、无转述概括？\n[MUST NOT] 出现八股套话，或掌控/占有/臣服式极端情绪话语？\n[MUST NOT] 复述前文已发生的动作，或与上一轮选项撞方向换皮？\n[MUST] "[标题]内容"格式与 emoji 位置正确，<options> 外无多余废话？\n八项全过则进 <options> 输出；任一项未过，先在 <thinking> 内说明如何修正，再输出。',
+      ],
+      // ⑥ output_spec 纯净度保险后置（默认 + 全向副本，一并命中）
+      [
+        '输出结构：先完整的 <thinking> 分析块，再 <options> 选项块（每个选项独占一行），两者之外不许有任何字。',
+        '输出结构：先完整的 <thinking> 分析块，再 <options> 选项块（每个选项独占一行），两者之外不许有任何字。\n输出纯净度保险：即使 <thinking> 内的分析触发了别的输出冲动（解释、致歉、正文续写、变量占位符 {{xxx}}、额外标签），也只在 <options> 关闭后立即停止，</options> 之后一字不写；若发现自己已在输出越界内容，立即截断并以 <options> 收尾，绝不补写。',
+      ],
+      // ⑦ option_task 瘦身（默认 + 全向副本，一并命中）：整段替换去冗余要求清单
+      [
+        '下面这几条是这一轮必须全部用上的（带 [规则: xxx] 的按它的写作约束来）：\n{{pinned}}\n\n这个池子里的比需要的多，你从中挑最贴合当下场景的方向（带 [规则: xxx] 标记的，选用了就守它的写作约束）：\n{{pool_selected}}\n\n上一轮已经生成过这些选项，这轮别跟它们撞方向或换皮重复（如为空就跳过这段）：\n{{prev_options}}\n\n主人交代的要求：\n0. 以 <current_scene> 标签里的最新消息为准：选项必须是这场景此刻能干的具体行动，每条得点名一个具体可见钩子（道具/NPC状态/台词），禁用"利用环境"这类泛词，别凭空蹦到之前的剧情节点，也别复述前文已经发生过的动作。\n1. {{count}} 条选项在切入点、行动方式、情绪色彩、语域上得有明显差异，禁止换皮同质；每轮允许 0-1 条「不行动/撤离/改话题」选项。\n2. 每条选项由"标题"与"内容"组成，格式字数见系统规则；内容开头可用一个 emoji 表达情绪或意图（可选）。\n3. 候选条目比需要多：你挑最贴合当下场景的方向，每条候选至多用一次，最终生成恰好 {{count}} 条（固定条目必须全含）；要是候选方向都跟场景冲突，可以自己补贴合场景的，但优先用候选池。\n4. 输出顺序固定：先完整的 <thinking> 分析块，再 <options> 选项块，两者之外不许有别的字。\n5. <options> 内每行一条，条数必须和 {{count}} 一致。',
+        '这一轮的素材（按主人的话办）：\n固定条目（必须全部用上；带 [规则: xxx] 的守其写作约束）：\n{{pinned}}\n候选条目池（比需要的多，挑最贴合当下场景的方向；带 [规则: xxx] 的选用了就守）：\n{{pool_selected}}\n上一轮已生成过的选项（这轮别撞方向或换皮重复；为空就跳过这段）：\n{{prev_options}}\n\n数量硬约束：最终恰好 {{count}} 条，固定条目全含、候选每条至多用一次；候选方向都跟场景冲突时可自行补贴贴合场景的，但优先用候选池。其余场景钩子、格式、人称、自检规则见前面的系统消息，这里不重复。',
+      ],
+      // ⑧ 全向 user_instruction 瘦身（全向独有：保留主体跟随，去冗余要求清单）
+      [
+        '下面这几条是这一轮必须全部用上的（如列表为空就跳过这段；带 [规则: xxx] 的按它的写作约束来）：\n{{pinned}}\n\n这个池子里的比需要的多，你从中挑最贴合当下场景的方向（带 [规则: xxx] 标记的，选用了就守它的写作约束）：\n{{pool_selected}}\n\n主人交代的要求：\n0. 以 <current_scene> 标签里的最新消息为准：选项必须是此刻在剧情里能成立的具体动作或事件，每条得点名一个具体可见钩子（道具/NPC状态/台词），禁用"利用环境"这类泛词，别凭空蹦到之前的剧情节点。\n1. 候选条目各自指定了聚焦方向：聚焦 user 的写成 {{user}} 的行动，聚焦角色（{{char}} 或在场角色）的直接以该角色为主语写其行动，剧情演化/规划类的写成事件、环境与走向的安排，关系/日常类的围绕双方关系或松弛日常展开；没有聚焦指向的条目，就挑最能让场景活起来的主体。\n2. {{count}} 条选项在主体、切入点、行动方式、情绪色彩、语域上得有明显差异，禁止换皮同质；每轮允许 0-1 条「不行动/撤离/改话题」选项。\n3. 每条选项由"标题"与"内容"组成，格式字数见系统规则；内容开头可用一个 emoji 表达情绪或意图（可选）。\n4. 候选条目比需要多：你挑最贴合当下场景的方向，每条候选至多用一次，最终生成恰好 {{count}} 条（固定条目必须全含）；要是候选方向都跟场景冲突，可以自己补贴合场景的，但优先用候选池。\n5. 输出顺序固定：先完整的 <thinking> 分析块，再 <options> 选项块，两者之外不许有别的字。\n6. <options> 内每行一条，条数必须和 {{count}} 一致。',
+        '这一轮的素材（按主人的话办）：\n固定条目（如列表为空就跳过这段；带 [规则: xxx] 的守其写作约束）：\n{{pinned}}\n候选条目池（比需要的多，挑最贴合当下场景的方向；带 [规则: xxx] 的选用了就守）：\n{{pool_selected}}\n\n主体跟随：候选条目各自指定了聚焦方向——聚焦 user 的写成 {{user}} 的行动，聚焦角色（{{char}} 或在场角色）的直接以该角色为主语写其行动，剧情演化/规划类的写成事件、环境与走向的安排，关系/日常类的围绕双方关系或松弛日常展开；没有聚焦指向的条目，就挑最能让场景活起来的主体。\n\n数量硬约束：最终恰好 {{count}} 条，固定条目全含、候选每条至多用一次；候选方向都跟场景冲突时可自行补贴贴合场景的，但优先用候选池。其余场景钩子、格式、人称、自检规则见前面的系统消息，这里不重复。',
+      ],
+      // ⑨ enrich_core_rules 分支规则与字数兜底（默认 + 全向副本）
+      [
+        '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达。\n2. 对白保持直接引语形式，但内容应润色扩展，严禁原样照搬。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。\n4. 格式要求见【润色输出规格】。',
+        '【润色规则】\n1. 保留原文语义和语气，用不同措辞重新表达；扩展而非堆砌，生动而非空泛。\n2. 对白润色：原文含对白时，保留直接引语形式，但内容须润色扩展——补足神态、动作、语气使对白更立体，严禁原样照搬；纯叙述润色：原文为叙述时，改写措辞与句式，可适度补充感官或环境细节，但不擅自新增原文没有的事件或人物行动。\n3. 每个版本字数控制在 {{min_chars}}-{{max_chars}} 个中文字符之间；版本之间在描写方式、措辞风格上应有明显差异，避免全部雷同。\n4. 字数兜底：若某版本润色后字数不足下限，补充贴合语境的细节描写使其达标；若超过上限，删减枝蔓修饰保留核心语义，不得用空话凑数或硬截断破坏句子完整。\n5. 格式要求见【润色输出规格】。',
+      ],
+      // ⑩ enrich_thinking 分支识别自检（默认 + 全向副本）
+      [
+        '1. 版本数量是否等于 {{count}}？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？\n4. 人称校准：润色后的人称只服从用户设置（{{enrich_person}}）。上方 <history> 正文用的人称是那篇小说自己的叙事选择，跟润色无关——不管正文用什么人称，润色一律按 {{enrich_person}} 写，不许被正文带偏。\n5. 直接引语：含对话的润色版本，对白必须以『……』完整给出、可直接朗读，禁止"说……""说道……"式转述概括；纯叙述版本不强制。\n完成以上自检并确认通过后，再执行润色。',
+        '1. 版本数量是否等于 {{count}}？版本之间在措辞风格上是否有明显差异？\n2. 格式是否为"[标题]内容"？内容中是否误用了[]符号？\n3. 每个版本字数是否在 {{min_chars}}-{{max_chars}} 个中文字符之间？不足或超限的，按字数兜底策略处理。\n4. 分支识别：原文是对白为主还是叙述为主？对白版本是否补足了神态动作语气、未原样照搬？叙述版本是否只改写措辞、未擅自新增事件？\n5. 人称校准：润色后的人称只服从用户设置（{{enrich_person}}）。上方 <history> 正文用的人称是那篇小说自己的叙事选择，跟润色无关——不管正文用什么人称，润色一律按 {{enrich_person}} 写，不许被正文带偏。\n6. 直接引语：含对话的润色版本，对白必须以『……』完整给出、可直接朗读，禁止"说……""说道……"式转述概括；纯叙述版本不强制。\n完成以上自检并确认通过后，再执行润色。',
+      ],
+      // ⑪ enrich_output_spec 纯净度保险后置（默认 + 全向副本）
+      [
+        '输出结构：\n1. 先输出完整的 <thinking> 分析块\n2. 再输出 <options> 选项块，每个版本独占一行\n3. 两者之外不得有任何文字',
+        '输出结构：\n1. 先输出完整的 <thinking> 分析块\n2. 再输出 <options> 选项块，每个版本独占一行\n3. 两者之外不得有任何文字\n\n输出纯净度保险：即使 <thinking> 内的分析触发了别的输出冲动（解释、致歉、正文续写、变量占位符 {{xxx}}、额外标签），也只在 <options> 关闭后立即停止，</options> 之后一字不写；若发现自己已在输出越界内容，立即截断并以 <options> 收尾，绝不补写。',
+      ],
+    ];
+    const migrateV41Text = (text: string): string => {
+      let out = text;
+      for (const [from, to] of V41_PAIRS) {
+        if (out.includes(from)) out = out.split(from).join(to);
+      }
+      return out;
+    };
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migrateV41Text(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        m.content = migrateV41Text(m.content);
+      }
+    }
+  }
+
+  // v42 迁移：移除上一轮选项注入段 + 强化场景锚定（默认 + 全向副本，一并命中）
+  // 覆盖面同 v41：工作副本 prompt_rules.modules + 所有 prompt_configs[].modules 快照。
+  // 若用户自定义过模块文本，精确匹配不命中则原样保留（不偷偷改写用户内容）。
+  if ((validated.schema_version ?? 0) < 42) {
+    const V42_PAIRS: ReadonlyArray<readonly [string, string]> = [
+      // option_task 两个默认变体：剥离注入段
+      [
+        '上一轮已生成过的选项（这轮别撞方向或换皮重复；为空就跳过这段）：\n{{prev_options}}\n\n',
+        '',
+      ],
+      [
+        '上一轮已经生成过这些选项，这轮别跟它们撞方向或换皮重复（如为空就跳过这段）：\n{{prev_options}}\n\n',
+        '',
+      ],
+      // thinking 自检四处变体（默认/全向、新旧句式）：上下文已不可见上一轮选项，交由后置去重
+      ['、或与上一轮选项撞方向换皮', ''],
+      // 场景锚定强化（thinking 步骤 1 收尾句，源串见 src/type/settings.ts STEP1_EXTENSION）
+      [
+        '顺着这个场景推一步——接下来怎样走最自然合理。',
+        '顺着场景推演：先辨认角色最新一条行为、对白、动作与场景交互各自抛出了什么，再推演 {{user}} 此刻能够做出的最合理回应——选项就是这次推演的落点，只锚定当下，不回跳旧剧情节点。',
+      ],
+    ];
+    const migrateV42Text = (text: string): string => {
+      let out = text;
+      for (const [from, to] of V42_PAIRS) {
+        if (out.includes(from)) out = out.split(from).join(to);
+      }
+      return out;
+    };
+    for (const m of validated.prompt_rules.modules) {
+      m.content = migrateV42Text(m.content);
+    }
+    for (const cfg of validated.prompt_configs) {
+      for (const m of cfg.modules) {
+        m.content = migrateV42Text(m.content);
+      }
+    }
+  }
 
   validated.schema_version = SCHEMA_VERSION;
 };

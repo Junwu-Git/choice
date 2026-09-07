@@ -13,13 +13,14 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
+import { dedupOptions } from '@/core/option-dedup';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import type { ChoiceGeneration } from '@/core/options-store';
+import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
 import type {
   ChatSettings,
   PoolEntry,
@@ -56,6 +57,9 @@ export const lastOptionsGeneratedAt = ref(0);
 
 /** 最近一次 buildMessages 的完整产物（调试用），DebugSettings 渲染；undefined = 尚未生成过。 */
 export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
+
+/** 最近一次去重报告（调试用），DebugSettings 渲染；undefined = 尚未生成过或去重未启用。 */
+export const lastDedupReport = ref<{ dropped: number; refilled: boolean } | undefined>(undefined);
 
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
@@ -116,6 +120,7 @@ export type Ctx = {
   enrichPersonStyle: string;
   optionPerson: string;
   enrichPerson: string;
+  prevOptions: string;
 };
 const sub = (t: string, c: Ctx) =>
   t
@@ -129,7 +134,8 @@ const sub = (t: string, c: Ctx) =>
     .replaceAll('{{max_chars}}', String(c.maxChars))
     .replaceAll('{{enrich_person_style}}', c.enrichPersonStyle)
     .replaceAll('{{option_person}}', c.optionPerson)
-    .replaceAll('{{enrich_person}}', c.enrichPerson);
+    .replaceAll('{{enrich_person}}', c.enrichPerson)
+    .replaceAll('{{prev_options}}', c.prevOptions);
 
 export const buildMessages = async (
   modules: PromptModule[],
@@ -211,19 +217,19 @@ export const buildMessages = async (
         break;
       }
       case 'chat_history': {
-        // 历史一律 system（buildChatHistory 内已强制），不再随 prefillEnabled 切换 user/assistant；
-        // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在 <history> 标签外注入
+        // 保持原始 user/assistant 角色（buildChatHistory 内已强制），不再随 prefillEnabled 切换；
+        // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在聊天历史外注入
         const history = buildChatHistory(contextRounds);
         for (const m of history) msgs.push(m);
         break;
       }
       case 'wi_depth_before': {
-        // depth ≥ 3 的世界书 atDepth 条目，注入 </reference> 与 <history> 之间（深、背景）
+        // depth ≥ 3 的世界书 atDepth 条目，注入 </reference> 与聊天历史之间（深、背景）
         if (wiBuckets && wiBuckets.depthBefore) msgs.push({ role: 'system', content: wiBuckets.depthBefore });
         break;
       }
       case 'wi_depth_after': {
-        // depth ≤ 2（D0/D1/D2）的世界书 atDepth 条目，注入 </history> 之后（浅、贴近生成点）
+        // depth ≤ 2（D0/D1/D2）的世界书 atDepth 条目，注入聊天历史之后（浅、贴近生成点）
         if (wiBuckets && wiBuckets.depthAfter) msgs.push({ role: 'system', content: wiBuckets.depthAfter });
         break;
       }
@@ -329,8 +335,13 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
     // 限定作用楼层（"只保留最近 N 层"类脚本即靠此清空旧楼层），不应用则旧楼层全文直发 AI。
     // depth 必须传入，否则 minDepth/maxDepth 判定被整段跳过（engine.js:362）。不传 characterOverride，
     // 与主生成历史路径一致（script.js:4447）。清空后的空消息由下方 !content.trim() 整条丢弃。
+    // 开关关闭时整体跳过酒馆正则（含 depth 限定脚本）——逃生舱：预设正则清空旧层 user 输入
+    // 会让相邻 assistant 失去 user 分隔而"合并"，受此困扰的用户可关闭此开关只用本页过滤规则。
+    const stRegexOn = gs.settings.filter_settings.st_regex_enabled;
     const placement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
-    let content = getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: total - i - 1 });
+    let content = stRegexOn
+      ? getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: total - i - 1 })
+      : String(m.mes ?? '');
     if (!content) continue;
     // 标签提取只作用于 AI 输出（assistant）：user 输入多为纯文本/对白，不含待提取的结构化
     // 标签区间，对其执行 extract 会因无目标标签而整条丢弃，致用户发送内容从提示词消失。
@@ -362,10 +373,10 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
       }
     }
     if (!content.trim()) continue;
-    // 用户要求：历史一律 system——<history> 作"已发生剧情"参考上下文而非活对话，角色不再
-    // 区分 user/assistant。但 <current_scene> 仍须锚定最后一条 AI 楼层，故用 isUser（而非
-    // 已扁平为 system 的 role）追踪 lastAssistantIdx——若改回按 role 判定会恒不命中
-    h.push({ role: 'system', content });
+    // 保持原始 user/assistant 角色：实测统一 system 后模型不适应历史语境，
+    // 恢复按消息来源区分角色。lastAssistantIdx 仍用 isUser 追踪最后一条 AI 楼层，
+    // 用于下方 <current_scene> 包裹——与 role 字段解耦，改 role 不影响锚定逻辑
+    h.push({ role: isUser ? 'user' : 'assistant', content });
     if (!isUser) lastAssistantIdx = h.length - 1;
   }
   // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
@@ -841,6 +852,37 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return line;
     };
     const poolSelectedText = pool.drawn.map(renderEntryLine).join('\n');
+    // 读上一 AI 楼层的已生成选项 + 当前楼层既有代，供后置去重参照（只读，不作条目）。
+    // prevOptions 仍填充 Ctx 以兼容用户自定义模块引用 {{prev_options}} 的情况。
+    const dedupRefs: string[] = [];
+    try {
+      const ctx = window.SillyTavern?.getContext?.();
+      const chatArr: any[] = ctx?.chat ?? [];
+      for (let i = _target.messageId - 1; i >= 0; i--) {
+        const m = chatArr[i];
+        if (m && !m.is_user && !m.is_system) {
+          const swipeId = getMessageSwipeId(i);
+          const data = getMessageChoiceData(i, swipeId);
+          if (!data?.generations?.length) break;
+          const gens = data.generations;
+          const idx = data.currentIndex ?? gens.length - 1;
+          const lastGen = gens[idx];
+          if (lastGen?.options?.length) {
+            dedupRefs.push(...lastGen.options.map((o: { text: string }) => o.text));
+          }
+          break;
+        }
+      }
+      // 同楼重新生成：当前楼层被替换的版本也纳入参照集
+      const curData = getMessageChoiceData(_target.messageId, getMessageSwipeId(_target.messageId));
+      const curGen = curData?.generations?.[curData.currentIndex ?? curData.generations.length - 1];
+      if (curGen?.options?.length) {
+        dedupRefs.push(...curGen.options.map((o: { text: string }) => o.text));
+      }
+    } catch {
+      /* 容错：读不到则 dedupRefs 保持空数组 */
+    }
+    const prevOptions = dedupRefs.join('\n');
     const c: Ctx = {
       count,
       pinnedCount,
@@ -852,6 +894,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       enrichPersonStyle: '',
       optionPerson: '第三人称',
       enrichPerson: '第三人称',
+      prevOptions,
     };
     const rules = gs.settings.prompt_rules;
 
@@ -878,7 +921,40 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       signal,
     );
     if (cancelled) return null;
-    const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    const parsed = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    if (!parsed.length) {
+      toastr.error(t`未能解析出任何选项,请检查模型输出`);
+      return null;
+    }
+    let options = parsed;
+    const genCfg = gs.settings.generation;
+    if (genCfg.dedup_enabled) {
+      const r1 = dedupOptions(parsed.map(o => o.text), dedupRefs, genCfg.dedup_threshold);
+      lastDedupReport.value = { dropped: r1.droppedCount, refilled: false };
+      if (r1.kept.length < count) {
+        const need = count - r1.kept.length;
+        const refillMessages: ChatMsg[] = [
+          ...messages,
+          { role: 'assistant', content: raw },
+          { role: 'user', content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。` },
+        ];
+        lastBuildMessages.value = structuredClone(refillMessages);
+        const refillRaw = await callSecondaryApiWithRetry(
+          refillMessages,
+          api,
+          gs.settings.retry_count,
+          gs.settings.retry_interval,
+          signal,
+        );
+        if (cancelled) return null;
+        const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
+        const r2 = dedupOptions(refillParsed.map(o => o.text), [...dedupRefs, ...r1.kept], genCfg.dedup_threshold);
+        options = [...r1.kept, ...r2.kept].slice(0, count).map(t => ({ text: t, sourceEntryId: null }));
+        lastDedupReport.value = { dropped: r1.droppedCount + r2.droppedCount, refilled: true };
+      } else {
+        options = r1.kept.map(t => ({ text: t, sourceEntryId: null }));
+      }
+    }
     if (!options.length) {
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
