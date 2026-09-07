@@ -47,11 +47,7 @@
         </div>
       </div>
       <div v-if="lastDedupReport?.details.length" class="choice-debug-dedup-details">
-        <div
-          v-for="(d, i) in lastDedupReport.details"
-          :key="i"
-          class="choice-debug-dedup-item"
-        >
+        <div v-for="(d, i) in lastDedupReport.details" :key="i" class="choice-debug-dedup-item">
           <div class="choice-debug-dedup-candidate">{{ truncate(d.candidate, 80) }}</div>
           <div class="choice-debug-dedup-meta">
             <span :class="['choice-debug-dedup-reason', 'reason-' + d.reason]">

@@ -993,9 +993,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         refs: dedupRefs,
       };
       if (dropped > 0) {
-        toastr.warning(
-          t`剔除 ${dropped} 条重复选项，已补齐 ${kept.length - r1.kept.length} 条`,
-        );
+        toastr.warning(t`剔除 ${dropped} 条重复选项，已补齐 ${kept.length - r1.kept.length} 条`);
       }
     }
     if (!options.length) {
