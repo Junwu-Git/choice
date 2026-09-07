@@ -1580,14 +1580,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   if ((validated.schema_version ?? 0) < 42) {
     const V42_PAIRS: ReadonlyArray<readonly [string, string]> = [
       // option_task 两个默认变体：剥离注入段
-      [
-        '上一轮已生成过的选项（这轮别撞方向或换皮重复；为空就跳过这段）：\n{{prev_options}}\n\n',
-        '',
-      ],
-      [
-        '上一轮已经生成过这些选项，这轮别跟它们撞方向或换皮重复（如为空就跳过这段）：\n{{prev_options}}\n\n',
-        '',
-      ],
+      ['上一轮已生成过的选项（这轮别撞方向或换皮重复；为空就跳过这段）：\n{{prev_options}}\n\n', ''],
+      ['上一轮已经生成过这些选项，这轮别跟它们撞方向或换皮重复（如为空就跳过这段）：\n{{prev_options}}\n\n', ''],
       // thinking 自检四处变体（默认/全向、新旧句式）：上下文已不可见上一轮选项，交由后置去重
       ['、或与上一轮选项撞方向换皮', ''],
       // 场景锚定强化（thinking 步骤 1 收尾句，源串见 src/type/settings.ts STEP1_EXTENSION）

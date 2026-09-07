@@ -45,11 +45,17 @@ export function dedupOptions(candidates: string[], references: string[], thresho
   for (const cand of candidates) {
     let dup = false;
     for (const ref of references) {
-      if (isDup(cand, ref)) { dup = true; break; }
+      if (isDup(cand, ref)) {
+        dup = true;
+        break;
+      }
     }
     if (!dup) {
       for (const ref of kept) {
-        if (isDup(cand, ref)) { dup = true; break; }
+        if (isDup(cand, ref)) {
+          dup = true;
+          break;
+        }
       }
     }
     if (dup) dropped++;

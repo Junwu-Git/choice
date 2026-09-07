@@ -929,14 +929,21 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     let options = parsed;
     const genCfg = gs.settings.generation;
     if (genCfg.dedup_enabled) {
-      const r1 = dedupOptions(parsed.map(o => o.text), dedupRefs, genCfg.dedup_threshold);
+      const r1 = dedupOptions(
+        parsed.map(o => o.text),
+        dedupRefs,
+        genCfg.dedup_threshold,
+      );
       lastDedupReport.value = { dropped: r1.droppedCount, refilled: false };
       if (r1.kept.length < count) {
         const need = count - r1.kept.length;
         const refillMessages: ChatMsg[] = [
           ...messages,
           { role: 'assistant', content: raw },
-          { role: 'user', content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。` },
+          {
+            role: 'user',
+            content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
+          },
         ];
         lastBuildMessages.value = structuredClone(refillMessages);
         const refillRaw = await callSecondaryApiWithRetry(
@@ -948,7 +955,11 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         );
         if (cancelled) return null;
         const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
-        const r2 = dedupOptions(refillParsed.map(o => o.text), [...dedupRefs, ...r1.kept], genCfg.dedup_threshold);
+        const r2 = dedupOptions(
+          refillParsed.map(o => o.text),
+          [...dedupRefs, ...r1.kept],
+          genCfg.dedup_threshold,
+        );
         options = [...r1.kept, ...r2.kept].slice(0, count).map(t => ({ text: t, sourceEntryId: null }));
         lastDedupReport.value = { dropped: r1.droppedCount + r2.droppedCount, refilled: true };
       } else {

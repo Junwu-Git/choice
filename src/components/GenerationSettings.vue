@@ -123,12 +123,18 @@
         <div class="choice-field-label">
           <label>{{ t`防重复` }}</label>
         </div>
-        <small class="choice-field-hint">{{ t`提示词不再注入上一轮选项（防污染）；生成后自动剔除与上一 AI 楼层/当前楼既有版本同标题或正文相似度≥阈值的条目，不足时自动补齐一次。阈值 0-1，越小越严格，0.6 默认。` }}</small>
+        <small class="choice-field-hint">{{
+          t`提示词不再注入上一轮选项（防污染）；生成后自动剔除与上一 AI 楼层/当前楼既有版本同标题或正文相似度≥阈值的条目，不足时自动补齐一次。阈值 0-1，越小越严格，0.6 默认。`
+        }}</small>
       </div>
       <div class="choice-count-row">
         <label class="choice-count-item">
           <span>{{ t`启用` }}</span>
-          <input v-model="gs.settings.generation.dedup_enabled" type="checkbox" :title="t`生成后自动去重，不足时自动补齐`" />
+          <input
+            v-model="gs.settings.generation.dedup_enabled"
+            type="checkbox"
+            :title="t`生成后自动去重，不足时自动补齐`"
+          />
         </label>
         <label class="choice-count-item">
           <span>{{ t`阈值` }}</span>
