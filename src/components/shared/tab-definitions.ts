@@ -38,5 +38,5 @@ export const ADVANCED_TAB_IDS = ['prompt', 'worldinfo', 'filter', 'debug'] as co
 export function visibleTabs(all: TabDefinition[], advanced: boolean): TabDefinition[] {
   if (advanced) return all;
   const advancedIds = new Set<string>(ADVANCED_TAB_IDS);
-  return all.filter((t) => !advancedIds.has(t.id));
+  return all.filter(t => !advancedIds.has(t.id));
 }

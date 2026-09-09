@@ -97,7 +97,10 @@ function startChapter(chapterId: string, stepIndex = 0): void {
   // 简化模式下进阶章（prompt/worldinfo/filter）拒直达且不做 fallback：进阶步骤的
   // 聚光灯锚点全在隐藏 tab 内，强行进入只会对着一堆找不到目标的降级卡片空转；
   // 不 fallback 到 quick-start 是避免"点了 A 却被带到 B"的意外跳页
-  if (isAdvancedChapter(chapterId as GuideChapter['id']) && !useGlobalSettingsStore(pinia).settings.ui.advanced_features_enabled) {
+  if (
+    isAdvancedChapter(chapterId as GuideChapter['id']) &&
+    !useGlobalSettingsStore(pinia).settings.ui.advanced_features_enabled
+  ) {
     return;
   }
   onboardingChapterId.value = chapterId;

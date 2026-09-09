@@ -93,13 +93,7 @@ const OLD_NSFW_CONTENT_BY_TYPE = new Map<string, string>([
 ]);
 
 /** 条目构建小工具：统一字段形态，pinned 默认 false、weight 默认 1、rule 默认空。 */
-const createPoolEntry = (
-  category: string,
-  type: string,
-  content: string,
-  pinned = false,
-  rule = '',
-): PoolEntry => ({
+const createPoolEntry = (category: string, type: string, content: string, pinned = false, rule = ''): PoolEntry => ({
   id: uuidv4(),
   type,
   content,
@@ -165,9 +159,17 @@ function buildCharacterSubjectEntries(): PoolEntry[] {
  */
 function buildTimeJumpEntries(): PoolEntry[] {
   return [
-    createPoolEntry('时间跳跃', '须臾之间', '只推进几分钟到半小时的微小时间，用茶凉、雨停、天色暗下一格这类细节完成对话间隙的自然过渡'),
+    createPoolEntry(
+      '时间跳跃',
+      '须臾之间',
+      '只推进几分钟到半小时的微小时间，用茶凉、雨停、天色暗下一格这类细节完成对话间隙的自然过渡',
+    ),
     createPoolEntry('时间跳跃', '翌日清晨', '跳到第二天早晨，以晨间光线、声音或身体感受开场，昨夜的事件沉淀为余韵'),
-    createPoolEntry('时间跳跃', '数日之后', '跳过两三天到一周，用新习惯、将愈未愈的伤、来往的消息等细节交代这段时间留下的痕迹'),
+    createPoolEntry(
+      '时间跳跃',
+      '数日之后',
+      '跳过两三天到一周，用新习惯、将愈未愈的伤、来往的消息等细节交代这段时间留下的痕迹',
+    ),
     createPoolEntry('时间跳跃', '季节更迭', '大幅推进到换季时节，环境物候明显变化，人物关系与心境随时间产生微妙位移'),
     createPoolEntry('时间跳跃', '多年以后', '跨度数年到数十年，外貌、身份、关系发生显著变化，带一丝物是人非的怅然'),
     createPoolEntry(
@@ -192,7 +194,11 @@ function buildTimePassEntries(): PoolEntry[] {
     createPoolEntry('时间流逝', '数日之后', '跳过两三天到一周，用新习惯、伤势变化、往来消息等细节交代时间痕迹'),
     createPoolEntry('时间流逝', '季节更迭', '推进到换季时节，让环境物候、人物关系和心境产生可感知的位移'),
     createPoolEntry('时间流逝', '多年以后', '推进数年或更久，让外貌、身份、关系或目标发生足以改变局势的变化'),
-    createPoolEntry('时间流逝', '回溯闪回', '插入一段与当前相关的过去场景，用呼应或对照补充信息，结尾必须回到当前时间点'),
+    createPoolEntry(
+      '时间流逝',
+      '回溯闪回',
+      '插入一段与当前相关的过去场景，用呼应或对照补充信息，结尾必须回到当前时间点',
+    ),
     createPoolEntry('时间流逝', '夜色渐深', '在同一段夜晚内缓慢推进时间，让灯光、困意、酒意或气氛随钟点发生变化'),
     createPoolEntry('时间流逝', '等待间隙', '描写一段被拉长的等待、赶路、守候或恢复过程，让时间流逝本身改变人物状态'),
   ];
@@ -270,7 +276,11 @@ function buildNsfwEntries(): PoolEntry[] {
     createPoolEntry('NSFW', 'NSFW·变换位置', '给出一个换到别处或调整姿势继续的方向，让空间变化服务于当前氛围'),
     createPoolEntry('NSFW', 'NSFW·语言调情', '通过调情、挑逗或羞人请求推进亲密互动，表达贴合人物说话方式'),
     createPoolEntry('NSFW', 'NSFW·事后温存', '把亲近后的依偎、耳语、照料或余韵作为下一拍，关注关系变化而非重复过程'),
-    createPoolEntry('NSFW', 'NSFW·大胆尝试', '给出一个此前未尝试、此刻有动机尝试的亲密方向，由人物边界和当前情境决定尺度'),
+    createPoolEntry(
+      'NSFW',
+      'NSFW·大胆尝试',
+      '给出一个此前未尝试、此刻有动机尝试的亲密方向，由人物边界和当前情境决定尺度',
+    ),
   ];
 }
 
@@ -1588,9 +1598,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   if ((validated.schema_version ?? 0) < 46) {
     const legacyTypes = new Set([...LEGACY_GENERAL_TYPES, ...LEGACY_TIME_JUMP_TYPES]);
     const legacyEntryIds = new Set(
-      validated.master_pool
-        .filter(entry => legacyTypes.has(entry.type))
-        .map(entry => entry.id),
+      validated.master_pool.filter(entry => legacyTypes.has(entry.type)).map(entry => entry.id),
     );
     const droppedNsfwIds = new Set(
       validated.master_pool

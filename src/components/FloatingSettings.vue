@@ -112,7 +112,10 @@ watch(
   },
 );
 watch(activeTab, tab => {
-  if (!gs.settings.ui.advanced_features_enabled && ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])) {
+  if (
+    !gs.settings.ui.advanced_features_enabled &&
+    ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])
+  ) {
     activeTab.value = 'pool';
   }
 });
