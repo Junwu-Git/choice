@@ -61,6 +61,12 @@
         <button class="choice-panel-btn choice-theme-cycle" :title="cycleTitle" @click="onCycleTheme">
           <i class="fa-solid fa-palette"></i>
         </button>
+        <!-- 设置入口：恒在工具区最右（与生成/锁定/主题并列），点开插件设置面板。
+             与悬浮球/魔棒菜单共用 openSettings 同一开关；tools 容器已 @click.stop，
+             不会误触标题栏折叠 -->
+        <button class="choice-panel-btn choice-panel-settings" :title="t`打开设置`" @click="onOpenSettings">
+          <i class="fa-solid fa-gear"></i>
+        </button>
       </div>
       <!-- 生成/润色进行中的动效：跑在标题栏下边缘（2px 光带），不撑开 body——
            收起时面板就是一条栏，动效正落在"折叠后的栏"上；展开时旧选项保持可见不闪烁 -->
@@ -187,6 +193,7 @@ import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { nextThemeMode, themeLabel } from '@/core/theme-presets';
+import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { sendTextareaMessage } from '@sillytavern/script';
@@ -247,6 +254,11 @@ const cycleTitle = computed(() => {
 });
 const onCycleTheme = () => {
   gs.settings.ui.theme_mode = nextThemeMode(themeMode.value);
+};
+
+// 工具区最右的设置按钮：直接复用悬浮球/魔棒菜单的同一开关，避免两套面板状态
+const onOpenSettings = () => {
+  openSettings();
 };
 
 // 面板挂在聊天流末尾，折叠态点展开时高度向下生长，底部常落在视口外（手机尤甚，

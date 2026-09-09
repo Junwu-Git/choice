@@ -1083,6 +1083,13 @@ export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 export const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
+    /**
+     * 酒馆输入框左侧魔棒（扩展程序）菜单里的「行动选项」入口显隐开关。
+     * 仅控制 #extensionsMenu 中 #choice_wand_container 的显示（wand-menu.ts 订阅本字段
+     * 即时同步），不影响选项面板、悬浮窗等其他入口。
+     * 老存档缺字段由 default(true) 补齐：升级零变化，保持既有默认可见行为
+     */
+    wand_menu_enabled: z.boolean().default(true),
     enrich_enabled: z.boolean().default(true),
     enrich_count: z.string().default('4'),
     /** @deprecated 已迁移到 theme_mode，保留用于向后兼容迁移 */
