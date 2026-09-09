@@ -18,6 +18,21 @@
       </span>
     </div>
 
+    <!-- 酒馆正则总开关：聊天记录是否先走酒馆原生正则（全局/预设/角色卡三区），
+         再走本页过滤规则。关 = 只用本页规则，避免预设正则清空旧层 user 输入
+         导致 assistant 配对断裂、相邻合并。 -->
+    <div class="choice-stregex-head" data-tour="filter-stregex-toggle">
+      <span class="choice-inline-label"><i class="fa-solid fa-scroll"></i> {{ t`走酒馆正则` }}</span>
+      <span class="choice-stregex-desc">{{
+        t`开：聊天记录先过酒馆全局/预设/角色卡正则，再走本页规则；关：跳过酒馆正则，只用本页规则`
+      }}</span>
+      <ChoiceSwitch
+        v-model="gs.settings.filter_settings.st_regex_enabled"
+        class="choice-stregex-switch"
+        :title="gs.settings.filter_settings.st_regex_enabled ? t`酒馆正则已启用` : t`酒馆正则已关闭，仅使用本页规则`"
+      />
+    </div>
+
     <hr class="sysHR" />
 
     <!-- 标签提取快速区（新手入口）：不理解分区/分组/正则也能用，填标签名即可。
@@ -538,10 +553,28 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
+/* 酒馆正则总开关行：与标签提取快速区同源 baseline 布局 */
+.choice-stregex-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--choice-space-2);
+  flex-wrap: wrap;
+}
+
 /* 总开关对齐标题行：baseline 布局下开关需要自身居中修正 */
 .choice-extract-quick-switch {
   align-self: center;
   margin-left: auto;
+}
+
+.choice-stregex-switch {
+  align-self: center;
+  margin-left: auto;
+}
+
+.choice-stregex-desc {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
 }
 
 /* 总开关关闭：chips 灰显但仍可见（规则保留，只是不参与生成） */

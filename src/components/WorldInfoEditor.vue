@@ -66,18 +66,10 @@
             <i class="fa-solid" :class="bookExpanded.has(book.name) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-wi-light" :class="bookLightClass(book)"></span>
             <span class="choice-wi-name">{{ book.name }}</span>
-            <span
-              class="choice-wi-badge"
-              :class="
-                book.source === 'global'
-                  ? 'badge-global'
-                  : book.source === 'character'
-                    ? 'badge-character'
-                    : 'badge-plugin'
-              "
-            >
-              {{ book.source === 'global' ? t`全局` : book.source === 'character' ? t`角色` : t`插件` }}
-            </span>
+            <span v-if="book.source === 'global'" class="choice-wi-badge badge-global">{{ t`全局` }}</span>
+            <span v-if="book.source === 'character'" class="choice-wi-badge badge-character">{{ t`角色` }}</span>
+            <span v-if="book.source === 'chat'" class="choice-wi-badge badge-chat">{{ t`聊天` }}</span>
+            <span v-if="book.isShujuku" class="choice-wi-badge badge-shujuku">{{ t`数据库` }}</span>
             <span v-if="getBookMode(book.name) === 'custom'" class="choice-wi-badge badge-custom">{{ t`自定义` }}</span>
             <!-- 三态钩 + 自定义：循环 条目全关 → 条目启用（默认）→ 条目全启用；勾选条目进入自定义 -->
             <span
@@ -141,12 +133,13 @@
 </template>
 
 <script setup lang="ts">
-import { this_chid, eventSource, event_types } from '@sillytavern/script';
+import { this_chid, eventSource, event_types, chat_metadata } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
-import { loadWorldInfo, selected_world_info, world_names } from '@sillytavern/scripts/world-info';
+import { loadWorldInfo, selected_world_info, world_names, METADATA_KEY } from '@sillytavern/scripts/world-info';
 import toastr from 'toastr';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import type { WIBookMode } from '@/type/settings';
 
 const chatStore = useChatSettingsStore();
@@ -171,8 +164,9 @@ type LoadedWorldInfo = {
 
 type BookInfo = {
   name: string;
-  source: 'global' | 'character' | '';
+  source: 'global' | 'character' | 'chat' | '';
   active: boolean;
+  isShujuku: boolean;
 };
 
 type EntryInfo = {
@@ -319,14 +313,19 @@ const refreshAll = async () => {
   const global = [...(selected_world_info ?? [])];
   const enabledSet = new Set(chatStore.settings.world_info.enabled_books);
   const charWorld = getStCharacter(this_chid)?.data?.extensions?.world as string | undefined;
+  const chatBook = typeof chat_metadata?.[METADATA_KEY] === 'string' ? chat_metadata[METADATA_KEY] : '';
+  const shujukuBook = await getShujukuTargetBook();
   const result: BookInfo[] = [];
   for (const name of world_names ?? []) {
     const isGlobal = global.includes(name) && !enabledSet.has(name);
     const isCharacter = charWorld === name;
+    const isChat = chatBook === name;
+    const isShujuku = shujukuBook === name;
     result.push({
       name,
-      source: isGlobal ? 'global' : isCharacter ? 'character' : '',
-      active: isGlobal || isCharacter,
+      source: isGlobal ? 'global' : isCharacter ? 'character' : isChat ? 'chat' : '',
+      active: isGlobal || isCharacter || isChat || enabledSet.has(name) || isShujuku,
+      isShujuku,
     });
   }
   allBooks.value = result;
@@ -483,6 +482,12 @@ onUnmounted(() => {
 }
 .badge-character {
   background: var(--choice-color-warning-bg);
+}
+.badge-chat {
+  background: #5c6bc0;
+}
+.badge-shujuku {
+  background: #7e57c2;
 }
 .badge-plugin {
   background: #4a8a6a;

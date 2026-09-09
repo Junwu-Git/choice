@@ -24,7 +24,7 @@
         <div class="choice-floating-body choice-scrollbar">
           <div ref="tabsEl" class="choice-tabs" data-tour="tab-strip">
             <button
-              v-for="tab in FLOATING_TABS"
+              v-for="tab in displayTabs"
               :key="tab.id"
               :ref="setTabBtnRef(tab.id)"
               class="choice-tab"
@@ -77,10 +77,17 @@ import FilterEditor from '@/components/FilterEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
-import { FLOATING_TABS, type TabId } from '@/components/shared/tab-definitions';
+import { FLOATING_TABS, visibleTabs, ADVANCED_TAB_IDS, type TabId } from '@/components/shared/tab-definitions';
 import { PAGE_HINTS } from '@/core/guide-content';
 import { isSettingsOpen, closeSettings } from '@/core/floating-state';
 import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
+import { useGlobalSettingsStore } from '@/store/global-settings';
+
+const gs = useGlobalSettingsStore();
+
+// 简化模式（advanced_features_enabled=false）下 tab 栏只渲染基础 tab；
+// FLOATING_TABS 本体不动，隐藏的 tab 内容 v-if 链仍保留（不可激活即不可见）
+const displayTabs = computed(() => visibleTabs(FLOATING_TABS, gs.settings.ui.advanced_features_enabled));
 
 const activeTab = ref<TabId>('pool');
 const showGuide = ref(false);
@@ -91,6 +98,27 @@ const onTabClick = (id: TabId) => {
   maybeAutoOpenOnboarding();
   activeTab.value = id;
 };
+
+// 简化模式守卫：开关关闭瞬间，若当前停在高级 tab 则弹回条目池，避免内容区空白。
+// watch 开关只能捕获"开关变化"瞬间，兜不住其它写入路径（onboardingPendingTab 直跳、
+// 开关关闭期间设置隐藏 tab 后再打开面板等）——所以同时 watch activeTab：
+// 任何时刻 activeTab 指向隐藏 tab 都会被弹回。两处不冲突，同一 tick 内幂等
+watch(
+  () => gs.settings.ui.advanced_features_enabled,
+  advanced => {
+    if (!advanced && ADVANCED_TAB_IDS.includes(activeTab.value as (typeof ADVANCED_TAB_IDS)[number])) {
+      activeTab.value = 'pool';
+    }
+  },
+);
+watch(activeTab, tab => {
+  if (
+    !gs.settings.ui.advanced_features_enabled &&
+    ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])
+  ) {
+    activeTab.value = 'pool';
+  }
+});
 
 // 面板打开瞬间触发首次自动弹出（向导实例挂在 FloatingRoot，全局单实例）；
 // maybeAutoOpenOnboarding 内部自判 onboarding_done，重复调用无副作用

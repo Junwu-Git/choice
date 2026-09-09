@@ -27,3 +27,16 @@ export const FLOATING_TABS: TabDefinition[] = [
   { id: 'appearance', label: '外观', icon: 'fa-solid fa-palette' },
   { id: 'debug', label: '调试', icon: 'fa-solid fa-gear' },
 ];
+
+// 高级功能分层（advanced_features_enabled 开关）下的基础/高级 tab 划分。
+// api 属首配必经路径必须留在基础层；引导章节的进阶判定（guide-content 的
+// isAdvancedChapter）复用 ADVANCED_TAB_IDS，两处划分必须同步演进。
+export const BASIC_TAB_IDS = ['pool', 'generation', 'api', 'appearance'] as const satisfies readonly TabId[];
+export const ADVANCED_TAB_IDS = ['prompt', 'worldinfo', 'filter', 'debug'] as const satisfies readonly TabId[];
+
+/** 简化模式下过滤掉高级 tab；只过滤不排序，展示顺序始终跟随传入数组本身 */
+export function visibleTabs(all: TabDefinition[], advanced: boolean): TabDefinition[] {
+  if (advanced) return all;
+  const advancedIds = new Set<string>(ADVANCED_TAB_IDS);
+  return all.filter(t => !advancedIds.has(t.id));
+}

@@ -8,8 +8,9 @@
  * 上的 evalTemplate + prepareContext（见插件 exports.ts），本桥接直接调这两个函数完成渲染，
  * 不走事件 hook、不依赖插件内部未导出的函数。
  *
- * 零侵入：choice 现有数据流 getWorldInfoPrompt → WIBuckets → buildChatHistory 全部不动，
- * 本桥接仅在 buildWI 拿到 buckets 后对 content 字符串做一层展宏 + EJS 渲染后处理。
+ * 零侵入：choice 现有数据流 getWorldInfoPrompt → WIBuckets → buildChatHistory 不动其取数/过滤，
+ * 本桥接仅在 buildWI 拿到 buckets 后对 content 字符串做一层展宏 + EJS 渲染后处理（深度条目
+ * v38 起拆为 depthBefore/depthAfter 两单串，与各桶一同渲染回填）。
  */
 import { substituteParams } from '@sillytavern/script';
 

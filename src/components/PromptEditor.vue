@@ -1,7 +1,12 @@
 <template>
   <div class="choice-prompt-editor">
     <div class="choice-page-toolbar" data-tour="prompt-toolbar">
-      <label class="choice-context-rounds" :title="t`轮数模式：取最后 N 轮；仅可见消息：不限轮数，排除隐藏消息`">
+      <label
+        class="choice-context-rounds"
+        :title="
+          t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`
+        "
+      >
         <select v-model="rules.context_mode" class="text_pole" style="width: auto">
           <option value="rounds">{{ t`轮数模式` }}</option>
           <option value="visible_only">{{ t`仅可见消息` }}</option>
@@ -22,6 +27,15 @@
       <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
         <input v-model="rules.baibai_enabled" type="checkbox" />
         {{ t`柏宝书` }}
+      </label>
+      <label
+        class="choice-context-rounds"
+        :title="
+          t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`
+        "
+      >
+        <input v-model="rules.shujuku_enabled" type="checkbox" />
+        {{ t`数据库` }}
       </label>
     </div>
 
@@ -247,7 +261,6 @@
               }}</span>
               <input
                 v-else
-                ref="renameInput"
                 v-model="renameText"
                 class="text_pole choice-rename-input"
                 @blur="finishRename(mod)"
@@ -383,6 +396,8 @@ const READONLY_MODULE_IDS = new Set([
   'world_info_after',
   'chat_history',
   'baibai_summary',
+  'wi_depth_before',
+  'wi_depth_after',
 ]);
 const DEPRECATED_MODULE_IDS = new Set(['baibai_state']);
 
@@ -549,8 +564,6 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
       exportedAt: new Date().toISOString(),
       modules,
       config: {
-        person_style: pr.person_style,
-        option_rules: pr.option_rules,
         option_person: pr.option_person,
         enrich_person: pr.enrich_person,
         enrich_person_style: pr.enrich_person_style,
@@ -562,6 +575,7 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
         context_mode: pr.context_mode,
         prefill_enabled: pr.prefill_enabled,
         baibai_enabled: pr.baibai_enabled,
+        shujuku_enabled: pr.shujuku_enabled,
       },
     },
     null,
@@ -632,8 +646,6 @@ function importPrompts() {
       const b = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
       const fileConfig: Record<string, string | number | boolean> = {};
       const cfgEntries: Array<[string, string | number | boolean | undefined]> = [
-        ['person_style', s(rawConfig.person_style)],
-        ['option_rules', s(rawConfig.option_rules)],
         ['option_person', s(rawConfig.option_person)],
         ['enrich_person', s(rawConfig.enrich_person)],
         ['enrich_person_style', s(rawConfig.enrich_person_style)],
@@ -650,6 +662,7 @@ function importPrompts() {
         ],
         ['prefill_enabled', b(rawConfig.prefill_enabled)],
         ['baibai_enabled', b(rawConfig.baibai_enabled)],
+        ['shujuku_enabled', b(rawConfig.shujuku_enabled)],
       ];
       for (const [k, v] of cfgEntries) {
         if (v !== undefined) fileConfig[k] = v;
@@ -760,8 +773,8 @@ const previewContent = (mod: PromptModule): string => {
     };
     return m[mod.id] ?? '[动态内容]';
   }
-  const t = mod.content.replace(/\{\{[^}]+\}\}/g, '...').slice(0, 80);
-  return t || '(空)';
+  const content = mod.content.replace(/\{\{[^}]+\}\}/g, '...').slice(0, 80);
+  return content || '(空)';
 };
 
 const onDragStart = (e: DragEvent, idx: number) => {

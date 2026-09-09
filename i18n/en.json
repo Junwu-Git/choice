@@ -266,6 +266,8 @@
   "删除条目提示": "Delete entry \"${0}\"?",
   "面板": "Panel",
   "在屏幕右下角显示快捷按钮": "Show a quick-access button in the bottom-right corner",
+  "魔棒菜单入口": "Wand Menu Entry",
+  "在扩展程序（魔棒）菜单中显示行动选项入口": "Show the Action Options entry in the Extensions (wand) menu",
   "启用输入润色": "Enable Input Enrich",
   "发送消息前用 AI 改写为多个润色版本": "Rewrite messages into multiple polished versions using AI before sending",
   "润色版本数": "Enrich versions",

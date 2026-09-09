@@ -10,6 +10,7 @@
  * 不构成运行时循环）；onboarding.ts 反向 import 本模块的章节数据。
  */
 import type { TabId } from '@/components/shared/tab-definitions';
+import { ADVANCED_TAB_IDS } from '@/components/shared/tab-definitions';
 import type { OnboardingStep } from '@/core/onboarding';
 import { resolveCustomApi, lastOptionsGeneratedAt } from '@/core/generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -24,6 +25,14 @@ export interface GuideChapter {
   brief: string;
   steps: OnboardingStep[];
 }
+
+/**
+ * 进阶章判定：id 落在高级 tab 集合内的章节。复用 tab-definitions 的
+ * ADVANCED_TAB_IDS——tab 与章节的进阶划分必须同步演进，两处各写一份迟早漂移。
+ * debug 无章节，天然覆盖不到；quick-start/pool/generation/appearance 是基础章。
+ */
+export const isAdvancedChapter = (id: GuideChapter['id']): boolean =>
+  (ADVANCED_TAB_IDS as readonly string[]).includes(id);
 
 const isApiReady = (): boolean => {
   const gs = useGlobalSettingsStore(pinia);
@@ -76,7 +85,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         id: 'run-generate',
         icon: 'fa-solid fa-wand-magic-sparkles',
         title: '最后一步：生成你的第一组选项',
-        html: `<p>配置完成！点面板右上角 <strong>×</strong> 关闭设置。生成入口在<strong>聊天流内的选项面板</strong>上：点面板头部的「生成」按钮，或者什么都不做——AI 每次回复完成后会<strong>自动生成</strong>一组选项（默认开启）。</p>
+        html: `<p>配置完成！点面板右上角 <strong>×</strong> 关闭设置。生成入口在<strong>聊天流内的选项面板</strong>上：点面板头部右侧的 <strong>✨ 生成图标</strong>，或者什么都不做——AI 每次回复完成后会<strong>自动生成</strong>一组选项（默认开启）。</p>
 <p>注意：选项面板只出现在与 AI 的对话中，当前聊天里还没有 AI 回复时先发一条消息。生成成功后会自动进入最后一步。</p>`,
         done: () => lastOptionsGeneratedAt.value > 0,
       },
@@ -180,7 +189,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
       {
         id: 'prompt-intro',
         icon: 'fa-solid fa-align-left',
-        title: '提示词：生成指令怎么组装',
+        title: '提示词：选项提示词怎么组装',
         html: `<p>选项内容由这里的<strong>提示词模块</strong>驱动：<strong>顶部工具栏</strong>可切换上下文轮数模式、开关预填充；下方是模块列表，可拖拽排序、编辑内容。</p>
 <p>默认配置开箱即用，新手无需改动；想调整时点 <i class="fa-solid fa-circle-question"></i> 查看本页说明。</p>`,
         tab: 'prompt',
@@ -227,7 +236,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
     id: 'filter',
     icon: 'fa-solid fa-filter',
     title: '过滤',
-    brief: '标签提取一键提取标签内容；三个分区与正则库进阶清洗',
+    brief: '标签提取一键提取标签内容；三个分区与正则库进阶清洗；顶部开关控制是否先走酒馆正则',
     steps: [
       {
         id: 'filter-zones',
@@ -334,12 +343,14 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
   prompt: {
     icon: 'fa-solid fa-align-left',
     title: '提示词',
-    brief: '选项内容由模块化提示词驱动，默认配置开箱即用。',
+    brief: '选项内容由模块化提示词驱动，默认配置开箱即用；编辑器里看到的模块内容就是实际发送给 AI 的提示词。',
     points: [
       '模块按角色分段：system = 系统指令，user = 素材与上下文，assistant = 预填充起手式；可拖拽排序、启停、编辑。',
+      '默认提示词已把场景锚定、信息边界、方向差异等基础原则收进核心规则，不再拆成一排相互叠加的规则开关；需要改时直接编辑核心规则。',
+      '{{user}} 等酒馆宏仍由酒馆引擎替换（assistant 预填模块内同样执行）；插件自己的占位符（如 {{count}}、{{pool_selected}}）会在发送前替换为本轮实际值。',
       '上下文轮数决定带多少历史消息给生成选项的 AI。',
-      '顶部「叙述风格」「选项规则」是核心规则模块的快捷编辑入口，无需打开模块编辑器。',
       '🔒 标记的不可编辑模块由系统自动管理（世界书条目、角色描述等注入项）。',
+      '防重复：提示词不再注入上一轮选项（防污染），生成后自动剔除与上一 AI 楼层/当前楼既有版本重复的选项——同标题需内容也相似才剔除，不同标题按正文相似度判定，不足时自动补齐（最多 2 轮）。',
     ],
   },
   api: {
@@ -362,15 +373,17 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
       '每本书三态循环：关（完全不参与）→ 跟随（按酒馆条目启用状态）→ 强制（全部参与）；展开书名可进入自定义逐条勾选。',
       '「全局排除」的书在所有聊天中永久不被参考，可随时移除撤销。',
       '🔵 蓝灯 = 常驻条目（始终注入），🟢 绿灯 = 关键词触发（匹配时注入）。',
+      'SP·数据库 的注入目标世界书需在提示词页开启「数据库」开关才会参与选项生成：蓝灯索引/概要条目始终注入，绿灯记忆条目靠关键词命中激活，扫描深度与酒馆主生成一致。聊天绑定的书在此页会显示「聊天」徽章，「数据库」开关可显式控制目标书的参与。',
       '新建/删除世界书后点「刷新列表」同步酒馆侧变更。',
     ],
   },
   filter: {
     icon: 'fa-solid fa-filter',
     title: '过滤',
-    brief: '生成前按规则清洗聊天记录。新手用顶部「标签提取」，进阶规则按三个分区管理。',
+    brief: '生成前按规则清洗聊天记录。新手用顶部「标签提取」，页顶开关控制是否先走酒馆正则。',
     points: [
       '「标签提取」（页顶）只填标签名：填「正文」即保留 <正文>…</正文> 段落发给 AI，其余丢弃；多条提取取并集。',
+      '「走酒馆正则」开关：开（默认）= 先过酒馆全局/预设/角色卡正则，再过本页规则；关 = 只用本页规则，逃生舱：预设正则清空旧层 user 输入导致 assistant 合并时关掉。',
       '提取功能只在页顶快速区，独立存放、独立启停——三个正则分区与正则库只做「过滤」（删除/替换），不出现提取规则。',
       '执行顺序恒定：先提取、后过滤——分区规则在提取结果上继续删除不要的部分，二者配合不打架。',
       '三个分区：全局正则区（始终生效）、预设正则区（随酒馆预设切换）、角色卡正则区（随角色卡切换）。',

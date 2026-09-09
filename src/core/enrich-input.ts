@@ -1,5 +1,12 @@
 import { callSecondaryApiWithRetry } from './api-client';
-import { buildMessages, resolveCustomApi, applyWIExcl, parseOptions, resolveCount } from './generator';
+import {
+  buildMessages,
+  resolveCustomApi,
+  applyWIExcl,
+  parseOptions,
+  resolveCount,
+  resolveWIParticipation,
+} from './generator';
 import type { Ctx } from './generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
@@ -56,13 +63,14 @@ export async function enrichUserInput(input: string): Promise<string[]> {
       pr.enrich_person_style || (pr.enrich_person ? `统一使用${pr.enrich_person} {{user}} 为主语` : ''),
     optionPerson: pr.option_person || '第三人称',
     enrichPerson: pr.enrich_person || '第三人称',
+    prevOptions: '',
   };
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
   const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, cwi.enabled_books, cwi.book_entry_modes, cwi.book_entry_overrides)
+    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
     : null;
 
   try {

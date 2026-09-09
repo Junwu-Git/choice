@@ -3,7 +3,7 @@ import type { TabId } from '@/components/shared/tab-definitions';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { pinia } from '@/pinia';
 import { openSettings } from '@/core/floating-state';
-import { GUIDE_CHAPTERS } from '@/core/guide-content';
+import { GUIDE_CHAPTERS, isAdvancedChapter, type GuideChapter } from '@/core/guide-content';
 
 /** 向导弹窗可见性。向导是全局单实例（挂在 FloatingRoot），不挂在行内/悬浮面板内——
  *  行内面板常驻挂载而悬浮面板内容 v-if，若各挂一份实例，共享同一 ref 会让
@@ -94,6 +94,15 @@ export function openChapterMenu(): void {
 function startChapter(chapterId: string, stepIndex = 0): void {
   onboardingMenuVisible.value = false;
   if (!GUIDE_CHAPTERS.some(c => c.id === chapterId)) return;
+  // 简化模式下进阶章（prompt/worldinfo/filter）拒直达且不做 fallback：进阶步骤的
+  // 聚光灯锚点全在隐藏 tab 内，强行进入只会对着一堆找不到目标的降级卡片空转；
+  // 不 fallback 到 quick-start 是避免"点了 A 却被带到 B"的意外跳页
+  if (
+    isAdvancedChapter(chapterId as GuideChapter['id']) &&
+    !useGlobalSettingsStore(pinia).settings.ui.advanced_features_enabled
+  ) {
+    return;
+  }
   onboardingChapterId.value = chapterId;
   onboardingStepIndex.value = stepIndex;
   onboardingVisible.value = true;

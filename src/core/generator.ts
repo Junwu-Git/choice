@@ -1,24 +1,35 @@
-import { substituteParams, this_chid } from '@sillytavern/script';
+import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter } from '@/core/st-character';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
   loadWorldInfo,
+  METADATA_KEY,
   selected_world_info,
   worldInfoCache,
 } from '@sillytavern/scripts/world-info';
+import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensions/regex/engine';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
+import { dedupOptions } from '@/core/option-dedup';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
+import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import type { ChoiceGeneration } from '@/core/options-store';
-import type { PoolEntry, PromptModule, SecondaryApi, WIBookMode, WorldInfoGlobalSettings } from '@/type/settings';
-import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
+import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
+import type {
+  ChatSettings,
+  PoolEntry,
+  PromptModule,
+  SecondaryApi,
+  WIBookMode,
+  WorldInfoGlobalSettings,
+} from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -44,6 +55,21 @@ let genController: AbortController | null = null;
  *  新手引导用它检测"用户已成功生成过第一组选项"，仅在 generateOptions 成功路径置位 */
 export const lastOptionsGeneratedAt = ref(0);
 
+/** 最近一次 buildMessages 的完整产物（调试用），DebugSettings 渲染；undefined = 尚未生成过。 */
+export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
+
+/** 最近一次去重报告（调试用），DebugSettings 渲染；undefined = 尚未生成过或去重未启用。 */
+export const lastDedupReport = ref<
+  | {
+      dropped: number;
+      refilled: boolean;
+      details: { candidate: string; reason: 'title' | 'jaccard'; matchedRef: string; score?: number }[];
+      threshold: number;
+      refs: string[];
+    }
+  | undefined
+>(undefined);
+
 /** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
  *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
 export const poolGenState = reactive({ loading: false });
@@ -64,6 +90,34 @@ export const resolveCount = (cm: string): number => {
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
+/**
+ * 解析世界书参与范围（全局排除 + 聊天排除 + 数据库开关 + 数据库目标书强制排除/启用）。
+ * 供 generateOptions / enrichUserInput 共用，避免两处漂移。
+ */
+export async function resolveWIParticipation(
+  gwi: WorldInfoGlobalSettings,
+  cwi: ChatSettings['world_info'],
+): Promise<{ allExcl: string[]; enabled: string[] }> {
+  const gs = useGlobalSettingsStore();
+  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const enabled = [...cwi.enabled_books];
+
+  const book = getShujukuTargetBook();
+  if (book) {
+    if (gs.settings.prompt_rules.shujuku_enabled) {
+      // 开关 ON：确保该书参与（未绑定时靠 applyWIExcl 的 enabled 通道临时追加到 selected_world_info）
+      if (!enabled.includes(book)) enabled.push(book);
+    } else {
+      // 开关 OFF：排除该书，除非它是角色卡主世界书（避免误杀主书）
+      const ch = getStCharacter(this_chid);
+      const primary = String(ch?.data?.extensions?.world ?? '').trim();
+      if (book !== primary) allExcl.push(book);
+    }
+  }
+
+  return { allExcl, enabled };
+}
+
 export type Ctx = {
   count: number;
   pinnedCount: number;
@@ -75,7 +129,10 @@ export type Ctx = {
   enrichPersonStyle: string;
   optionPerson: string;
   enrichPerson: string;
+  prevOptions: string;
 };
+
+/** 只替换本插件定义的运行时占位符；酒馆宏交给宿主的 substituteParams 处理。 */
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
@@ -88,7 +145,8 @@ const sub = (t: string, c: Ctx) =>
     .replaceAll('{{max_chars}}', String(c.maxChars))
     .replaceAll('{{enrich_person_style}}', c.enrichPersonStyle)
     .replaceAll('{{option_person}}', c.optionPerson)
-    .replaceAll('{{enrich_person}}', c.enrichPerson);
+    .replaceAll('{{enrich_person}}', c.enrichPerson)
+    .replaceAll('{{prev_options}}', c.prevOptions);
 
 export const buildMessages = async (
   modules: PromptModule[],
@@ -162,18 +220,28 @@ export const buildMessages = async (
       }
       case 'world_info_after': {
         if (wiBuckets) {
-          // v24 起深度条目不再塞末尾（会丢失"按深度插入历史"的定位），改由
-          // buildChatHistory 按 depth 织入——见 chat_history case
+          // 深度条目不再塞此桶末尾、也不再织入历史中段（会与对白交织污染 <history>），
+          // 改按 depth 分组迁到 <history> 标签外——见 wi_depth_before/after 两个 marker
           const merged = [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n');
           if (merged) msgs.push({ role: 'system', content: merged });
         }
         break;
       }
       case 'chat_history': {
-        const history = buildChatHistory(contextRounds, wiBuckets?.depthEntries ?? []);
-        for (const m of history) {
-          msgs.push(prefillEnabled ? m : { ...m, role: 'system' });
-        }
+        // 保持原始 user/assistant 角色（buildChatHistory 内已强制），不再随 prefillEnabled 切换；
+        // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在聊天历史外注入
+        const history = buildChatHistory(contextRounds);
+        for (const m of history) msgs.push(m);
+        break;
+      }
+      case 'wi_depth_before': {
+        // depth ≥ 3 的世界书 atDepth 条目，注入 </reference> 与聊天历史之间（深、背景）
+        if (wiBuckets && wiBuckets.depthBefore) msgs.push({ role: 'system', content: wiBuckets.depthBefore });
+        break;
+      }
+      case 'wi_depth_after': {
+        // depth ≤ 2（D0/D1/D2）的世界书 atDepth 条目，注入聊天历史之后（浅、贴近生成点）
+        if (wiBuckets && wiBuckets.depthAfter) msgs.push({ role: 'system', content: wiBuckets.depthAfter });
         break;
       }
       case 'baibai_summary': {
@@ -188,33 +256,11 @@ export const buildMessages = async (
         break;
       }
 
-      case 'user_instruction': {
-        const content = sub(mod.content, augmentedCtx);
-        if (content) msgs.push({ role: mod.role, content });
-        break;
-      }
       case 'core_rules': {
-        const personStyle = pr.person_style || '';
-        const optionRules = pr.option_rules || '';
-        // person_style 优先（高级用户覆盖），回退到 option_person 自动生成。
-        // v23 起去除"绝对主语+微表情+物理交互"的小说腔文风强制：只表达人称 + 场景贴合
-        // 导向，与 DEFAULT_PERSON_STYLE 新默认语义对齐（人称不硬编码，由 option_person 注入）
-        let content: string;
-        if (optionRules && (personStyle || pr.option_person)) {
-          const effectivePersonStyle =
-            personStyle ||
-            `选项以${pr.option_person || '第三人称'} {{user}} 视角展开，写成 {{user}} 当下可以立刻执行的具体行动，贴合当前场景与 {{user}} 的性格，允许包含 {{user}} 的台词；优先利用场景中真实可用的互动手段，不写脱离情境的抒情或旁白。`;
-          content = `生成选项时要严格遵守以下规则：
-${optionRules}
-
-叙述风格方面：
-${effectivePersonStyle}
-
-${CORE_RULES_STATIC}`;
-        } else {
-          content = mod.content;
-        }
-        content = substituteParams(sub(content, augmentedCtx));
+        // core_rules 单一来源：直接发模块自己的 content（经占位符替换）。
+        // 以前按隐藏字段动态拼装，造成"编辑器显示 ≠ 实际发送"的双来源矛盾；
+        // 该路径已整体删除，现在编辑器内容就是发送给 AI 的内容。
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -225,7 +271,7 @@ ${CORE_RULES_STATIC}`;
       }
       case 'assistant_ack':
       case 'assistant_thinking': {
-        const content = mod.content;
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -237,27 +283,35 @@ ${CORE_RULES_STATIC}`;
     }
   }
 
-  // 合并相邻同 role 消息，避免连续多个 system/user/assistant
+  // 合并相邻同 role 消息，避免连续多个 system/user/assistant。
+  // user 消息不互相合并（审计 A5）：聊天历史末条 user 与 option_task/enrich_prompt
+  // 同为 user 时会把「生成任务」混进历史正文——user 角色消息在提示词里代表独立的输入
+  // 边界，合并会模糊"这是用户说的话"还是"这是任务指令"；system/assistant 相邻（多为
+  // 内置模块拼接）仍合并以减少首尾噪音
   const merged: ChatMsg[] = [];
   for (const msg of msgs) {
     const last = merged[merged.length - 1];
-    if (last && last.role === msg.role) {
+    if (last && last.role === msg.role && msg.role !== 'user') {
       last.content = last.content + '\n\n' + msg.content;
     } else {
       merged.push({ ...msg });
     }
   }
+  lastBuildMessages.value = structuredClone(merged);
   return merged;
 };
 
-const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthEntries'] = []): ChatMsg[] => {
+const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
   const mode = gs.settings.prompt_rules.context_mode;
-  // rounds：取最后 N 轮，含隐藏消息；visible_only：仅未隐藏消息，不限轮数
-  let msgs = mode === 'visible_only' ? chatArr.filter(m => !m.is_hidden) : [...chatArr];
-  if (mode === 'rounds' && contextRounds > 0) msgs = msgs.slice(-contextRounds * 2);
+  // 镜像 ST 主生成 coreChat：先剔除隐藏楼层（is_system），再按模式截尾。
+  // visible_only：全量未隐藏消息；rounds：未隐藏消息的最后 N*2 条（隐藏楼层不再占轮数槽位，
+  // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
+  // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
+  const visible = chatArr.filter((m: any) => !m.is_system);
+  const msgs = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   let lastAssistantIdx = -1;
@@ -265,9 +319,22 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
   // 必须先把消息裁剪到只剩标签区间，之后现有 tag/regex 规则在裁剪结果上继续跑——
   // 这样"提取后再用标签过滤滤掉提取内容里的子标签"天然成立，且无提取规则的用户行为零变化
   const extractRules = rules.filter(r => r.type === 'extract');
-  for (const m of msgs) {
-    if (m.is_system) continue;
-    let content = m.mes ?? '';
+  // depth 相对当前迭代数组：0=距末尾最近一条，对齐 script.js:4445（rounds 截尾取自末尾，
+  // 截尾数组内 depth 与全量未隐藏数组一致，无需特判）
+  const total = msgs.length;
+  for (let i = 0; i < total; i++) {
+    const m = msgs[i];
+    // 先过酒馆正则扩展的提示词侧处理——与主生成完全一致：promptOnly 正则按 minDepth/maxDepth
+    // 限定作用楼层（"只保留最近 N 层"类脚本即靠此清空旧楼层），不应用则旧楼层全文直发 AI。
+    // depth 必须传入，否则 minDepth/maxDepth 判定被整段跳过（engine.js:362）。不传 characterOverride，
+    // 与主生成历史路径一致（script.js:4447）。清空后的空消息由下方 !content.trim() 整条丢弃。
+    // 开关关闭时整体跳过酒馆正则（含 depth 限定脚本）——逃生舱：预设正则清空旧层 user 输入
+    // 会让相邻 assistant 失去 user 分隔而"合并"，受此困扰的用户可关闭此开关只用本页过滤规则。
+    const stRegexOn = gs.settings.filter_settings.st_regex_enabled;
+    const placement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
+    let content = stRegexOn
+      ? getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: total - i - 1 })
+      : String(m.mes ?? '');
     if (!content) continue;
     // 标签提取只作用于 AI 输出（assistant）：user 输入多为纯文本/对白，不含待提取的结构化
     // 标签区间，对其执行 extract 会因无目标标签而整条丢弃，致用户发送内容从提示词消失。
@@ -299,9 +366,11 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
       }
     }
     if (!content.trim()) continue;
-    const role = isUser ? 'user' : 'assistant'; // 复用上方 isUser，不再重复判定
-    h.push({ role, content });
-    if (role === 'assistant') lastAssistantIdx = h.length - 1;
+    // 保持原始 user/assistant 角色：实测统一 system 后模型不适应历史语境，
+    // 恢复按消息来源区分角色。lastAssistantIdx 仍用 isUser 追踪最后一条 AI 楼层，
+    // 用于下方 <current_scene> 包裹——与 role 字段解耦，改 role 不影响锚定逻辑
+    h.push({ role: isUser ? 'user' : 'assistant', content });
+    if (!isUser) lastAssistantIdx = h.length - 1;
   }
   // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
   // 避免在长对话中注意力被稀释到更早的剧情。回退到 h 最后一条（无 assistant 时）。
@@ -310,29 +379,6 @@ const buildChatHistory = (contextRounds: number, depthEntries: WIBuckets['depthE
     h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }
 
-  // 世界书 atDepth 条目按深度织入历史（v24）——镜像 ST 主生成的"距末尾 depth 条"语义
-  // （script.js:4609-4613 经 setExtensionPrompt IN_CHAT 注入；openai.js populationInjectionPrompts
-  // 在 newest-first 数组 index=depth 处插入，reverse 后等价于 oldest-first 的 length-depth 处）。
-  // 深度相对实际发送的截断历史 h（插件只发送 h，无法插入未发送消息；与 ST 相对全量 chat 有
-  // 微小差异，极端情况 depth≥h.length 时 clamp 到开头，属可接受取舍）。
-  // 织入在 <current_scene> 包裹之后执行（包裹不改变消息数，length 不变）：
-  // 按目标索引分组，从大索引往小索引 splice——大索引插入不会位移小索引目标，无需回溯补偿；
-  // 同索引多条按 role 顺序 system<user<assistant 排列（与 ST populationInjectionPrompts 的
-  // roles 迭代顺序一致），整组一次性 splice 保证相邻。
-  if (depthEntries.length > 0) {
-    const origLen = h.length;
-    const roleOrder = (r: string) => (r === 'system' ? 0 : r === 'user' ? 1 : 2);
-    const groups = new Map<number, ChatMsg[]>();
-    for (const e of depthEntries) {
-      const idx = Math.max(0, Math.min(origLen, origLen - e.depth));
-      if (!groups.has(idx)) groups.set(idx, []);
-      groups.get(idx)!.push({ role: e.role, content: e.content });
-    }
-    for (const idx of [...groups.keys()].sort((a, b) => b - a)) {
-      const batch = groups.get(idx)!.sort((x, y) => roleOrder(x.role) - roleOrder(y.role));
-      h.splice(idx, 0, ...batch);
-    }
-  }
   return h;
 };
 
@@ -372,27 +418,41 @@ type WIBuckets = {
   anBefore: string;
   anAfter: string;
   em: string;
-  /** atDepth 世界书条目（v24 起结构化保存，不再拍平塞末尾）：
-   *  depth = 距聊天历史末尾的消息数（0=紧接末尾），织入 buildChatHistory 的对应位置；
-   *  role 来自条目自身的角色设置（system/user/assistant），非固定 system。 */
-  depthEntries: Array<{ depth: number; role: 'system' | 'user' | 'assistant'; content: string }>;
+  /** atDepth 世界书条目，按深度阈值分两组、各自按 depth 降序拼接、统一 system 注入：
+   *  depth ≤ WI_DEPTH_AFTER_MAXDEPTH（0/1/2）→ depthAfter，注入 </history> 之后（浅、贴近生成点）；
+   *  depth ≥ 阈值+1 → depthBefore，注入 <history> 之前（深、背景）。不再织入历史中段，
+   *  保持 <history> 纯对白，避免世界书与正文交织污染历史内容。 */
+  depthBefore: string;
+  depthAfter: string;
 };
 
-/** ST extension_prompt_roles 数值 → 插件 ChatMsg role 字符串（script.js:493 已核实：
- *  SYSTEM:0 / USER:1 / ASSISTANT:2）。未知值兜底 'system'（世界书深度条目的绝大多数场景）。 */
-const mapWIRole = (role: unknown): 'system' | 'user' | 'assistant' =>
-  role === 1 || role === '1' ? 'user' : role === 2 || role === '2' ? 'assistant' : 'system';
+/** depth ≤ 此值的世界书深度条目注入 </history> 之后（浅、贴近生成点）；> 此值注入 <history> 之前（深、背景）。
+ *  取 2：D0/D1/D2 归"历史后"，D3+ 归"历史前"（用户指定）。 */
+const WI_DEPTH_AFTER_MAXDEPTH = 2;
 
 const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
-  const empty: WIBuckets = { before: '', after: '', anBefore: '', anAfter: '', em: '', depthEntries: [] };
+  const empty: WIBuckets = {
+    before: '',
+    after: '',
+    anBefore: '',
+    anAfter: '',
+    em: '',
+    depthBefore: '',
+    depthAfter: '',
+  };
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const chatArr: any[] = ctx?.chat ?? [];
     // getWorldInfoPrompt 要求 chat 为倒序（最新消息在前），与 ST 主生成 script.js
     // 中 .reverse() 保持一致。不倒序会导致 WorldInfoBuffer 把最旧消息当作最新层扫描，
     // 绿灯关键词匹配的是旧上下文而非当前层。
-    const chatStrings = chatArr.map((m: any) => m?.mes ?? '').reverse();
+    // 过滤 is_system：主生成喂给 checkWorldInfo 的是 coreChat（已剔除隐藏楼层），choice 此前
+    // 喂全量 chat 会让隐藏楼层里的关键词多触发绿灯记忆条目，与主生成激活范围不一致。
+    const chatStrings = chatArr
+      .filter((m: any) => !m.is_system)
+      .map((m: any) => m?.mes ?? '')
+      .reverse();
     const ch = getStCharacter(this_chid);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
@@ -411,6 +471,17 @@ const buildWI = async (): Promise<WIBuckets> => {
       creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
+    // worldInfoDepth 结构 = [{depth, entries: string[]}]（world-info.js:5121-5125 已核实）。
+    // 同 depth+role 的多条目 ST 已 unshift 合并进同一组，组内按 \n 拼接即可。v38 起不再
+    // 织入历史中段：按 WI_DEPTH_AFTER_MAXDEPTH 分两组，各自按 depth 降序（深者在前 / D2→D0
+    // 在末，使 D0 最贴近生成点）、组间 \n\n 拼成单串，注入时统一 system（条目原 role 不保留）
+    const allDepth = (result.worldInfoDepth ?? [])
+      .map((d: any) => ({
+        depth: typeof d?.depth === 'number' ? d.depth : 0,
+        content: (d?.entries ?? []).filter(Boolean).join('\n'),
+      }))
+      .filter(e => e.content);
+    const byDepthDesc = (a: { depth: number }, b: { depth: number }) => b.depth - a.depth;
     const buckets: WIBuckets = {
       before: result.worldInfoBefore ?? '',
       after: result.worldInfoAfter ?? '',
@@ -420,37 +491,40 @@ const buildWI = async (): Promise<WIBuckets> => {
         .map((e: any) => e?.content ?? '')
         .filter(Boolean)
         .join('\n'),
-      // worldInfoDepth 结构 = [{depth, entries: string[], role}]（world-info.js:5121-5125 已核实）。
-      // 同 depth+role 的多条目 ST 已 unshift 合并进同一组，组内按 \n 拼接即可；
-      // 不再像旧版那样跨 depth 拍平成一条——那会丢失"按深度插入历史"的定位
-      depthEntries: (result.worldInfoDepth ?? [])
-        .map((d: any) => ({
-          depth: typeof d?.depth === 'number' ? d.depth : 0,
-          role: mapWIRole(d?.role),
-          content: (d?.entries ?? []).filter(Boolean).join('\n'),
-        }))
-        .filter(e => e.content),
+      depthBefore: allDepth
+        .filter(e => e.depth > WI_DEPTH_AFTER_MAXDEPTH)
+        .sort(byDepthDesc)
+        .map(e => e.content)
+        .join('\n\n'),
+      depthAfter: allDepth
+        .filter(e => e.depth <= WI_DEPTH_AFTER_MAXDEPTH)
+        .sort(byDepthDesc)
+        .map(e => e.content)
+        .join('\n\n'),
     };
 
     // EJS 渲染后处理（开关开时）：对 buckets 各 content 展宏 + 执行提示词模板插件的 <% %>。
-    // 零侵入——getWorldInfoPrompt/分桶/buildChatHistory 织入逻辑均不碰；未装插件时
-    // renderWorldInfoContent 内部降级为只展宏（<% 原样保留），不比现状差。depthEntries 各
-    // content 同样渲染后回填，buildChatHistory 的按深度织入逻辑对渲染结果无感
+    // 零侵入——getWorldInfoPrompt/分桶逻辑不碰；未装插件时 renderWorldInfoContent 内部
+    // 降级为只展宏（<% 原样保留），不比现状差。depthBefore/depthAfter 已是单串，并入同一轮
+    // Promise.all 渲染回填即可（迁出历史后注入逻辑对渲染结果无感）
     if (gs.settings.world_info.render_world_info_ejs) {
-      [buckets.before, buckets.after, buckets.anBefore, buckets.anAfter, buckets.em] = await Promise.all([
+      [
+        buckets.before,
+        buckets.after,
+        buckets.anBefore,
+        buckets.anAfter,
+        buckets.em,
+        buckets.depthBefore,
+        buckets.depthAfter,
+      ] = await Promise.all([
         renderWorldInfoContent(buckets.before),
         renderWorldInfoContent(buckets.after),
         renderWorldInfoContent(buckets.anBefore),
         renderWorldInfoContent(buckets.anAfter),
         renderWorldInfoContent(buckets.em),
+        renderWorldInfoContent(buckets.depthBefore),
+        renderWorldInfoContent(buckets.depthAfter),
       ]);
-      if (buckets.depthEntries.length > 0) {
-        const renderedDepth = await Promise.all(buckets.depthEntries.map(e => renderWorldInfoContent(e.content)));
-        buckets.depthEntries = buckets.depthEntries.map((e, i) => ({
-          ...e,
-          content: renderedDepth[i],
-        }));
-      }
     }
 
     return buckets;
@@ -469,9 +543,10 @@ type Restore = { restore: () => void } | null;
  *     临时变异条目 disable 标志，restore 逐条还原——checkWorldInfo 对 disable==true 的条目跳过
  *     （world-info.js:4689），变异即控制注入。
  *  处理范围 = 生成时 ST 实际会读取的所有"活动书"：selected_world_info（getGlobalLore，world-info.js:4415）、
- *  角色绑定书 character.data.extensions.world（getCharacterLore，:4363）、enabled_books（用户显式启用）。
- *  此前只遍历 enabled_books，导致在角色绑定书 / 全局选中书上设置的 off/force/custom 与逐条覆盖被静默忽略
- *  （"整本关了仍注入"即此因），现已扩到全集。
+ *  角色绑定书 character.data.extensions.world（getCharacterLore，:4363）、聊天绑定书
+ *  chat_metadata[METADATA_KEY]（getChatLore，:4432，原生聊天世界书）、enabled_books（用户显式启用）。
+ *  此前只遍历 enabled_books，导致在角色绑定书 / 全局选中书 / 聊天绑定书上设置的 off/force/custom
+ *  与逐条覆盖被静默忽略（"整本关了仍注入"即此因），现已扩到全集。
  *  四态语义：off=整本并入临时排除（等价"条目全关"）；follow=酒馆原生 disable（覆盖不生效，切换模式即
  *  脱离自定义）；force=全部条目 disable=false；custom=按 book_entry_overrides 逐条生效（快照未覆盖的
  *  条目保持酒馆原状）。异步原因：loadWorldInfo 未命中缓存时会 fetch，条目变异必须在 getWorldInfoPrompt
@@ -487,10 +562,13 @@ export const applyWIExcl = async (
   const modeOf = (name: string): WIBookMode => modes[name] ?? 'follow';
 
   // 处理范围 = ST 生成时实际读取的全部活动书（见上方 JSDoc 出处）。
-  // 角色绑定书与全局选中书不在 enabled_books 里，旧实现只遍历 enabled_books 才是 bug 根源。
+  // 角色绑定书 / 聊天绑定书不在 enabled_books 里，旧实现只遍历 enabled_books 才是 bug 根源。
   const ch = getStCharacter(this_chid);
   const cw = ch?.data?.extensions?.world;
-  const processSet = new Set<string>([...saved, ...enabled, ...(cw ? [cw] : [])]);
+  // 聊天绑定书：原生世界书面板的"聊天世界书"按钮绑定（chat_metadata[METADATA_KEY]，METADATA_KEY='world_info'）。
+  // getChatLore（world-info.js:4432）直接读此键，不在 selected_world_info 中，故需单独纳入处理范围。
+  const chatBook = typeof chat_metadata?.[METADATA_KEY] === 'string' ? chat_metadata[METADATA_KEY] : '';
+  const processSet = new Set<string>([...saved, ...enabled, ...(cw ? [cw] : []), ...(chatBook ? [chatBook] : [])]);
 
   // off 模式书并入临时排除：整本不注入（等价"条目全关"的生成结果，且无需条目级变异）。
   // 覆盖全集，不再只筛 enabled_books——否则角色/全局书的 off 模式形同虚设。
@@ -513,6 +591,10 @@ export const applyWIExcl = async (
   selected_world_info.push(...newList);
   const cwEx = !!cw && allExcl.has(cw);
   if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
+  // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
+  // 与角色绑定书的临时改写同一模式；restore 还原原值。
+  const chatBookEx = !!chatBook && allExcl.has(chatBook);
+  if (chatBookEx) chat_metadata[METADATA_KEY] = '';
 
   // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
   // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
@@ -560,6 +642,7 @@ export const applyWIExcl = async (
       selected_world_info.length = 0;
       selected_world_info.push(...saved);
       if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
+      if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
       for (const m of mutated) m.entry.disable = m.value;
     },
   };
@@ -732,9 +815,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   generatorState.generationId = gid;
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
   const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, cwi.enabled_books, cwi.book_entry_modes, cwi.book_entry_overrides)
+    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
     : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
@@ -762,17 +845,51 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return line;
     };
     const poolSelectedText = pool.drawn.map(renderEntryLine).join('\n');
+    // 读上一 AI 楼层的已生成选项 + 当前楼层既有代，供后置去重参照（只读，不作条目）。
+    // prevOptions 仍填充 Ctx 以兼容用户自定义模块引用 {{prev_options}} 的情况。
+    const dedupRefs: string[] = [];
+    try {
+      const ctx = window.SillyTavern?.getContext?.();
+      const chatArr: any[] = ctx?.chat ?? [];
+      for (let i = _target.messageId - 1; i >= 0; i--) {
+        const m = chatArr[i];
+        if (m && !m.is_user && !m.is_system) {
+          const swipeId = getMessageSwipeId(i);
+          const data = getMessageChoiceData(i, swipeId);
+          if (!data?.generations?.length) break;
+          const gens = data.generations;
+          const idx = data.currentIndex ?? gens.length - 1;
+          const lastGen = gens[idx];
+          if (lastGen?.options?.length) {
+            dedupRefs.push(...lastGen.options.map((o: { text: string }) => o.text));
+          }
+          break;
+        }
+      }
+      // 同楼重新生成：当前楼层被替换的版本也纳入参照集
+      const curData = getMessageChoiceData(_target.messageId, getMessageSwipeId(_target.messageId));
+      const curGen = curData?.generations?.[curData.currentIndex ?? curData.generations.length - 1];
+      if (curGen?.options?.length) {
+        dedupRefs.push(...curGen.options.map((o: { text: string }) => o.text));
+      }
+    } catch {
+      /* 容错：读不到则 dedupRefs 保持空数组 */
+    }
+    const prevOptions = dedupRefs.join('\n');
     const c: Ctx = {
       count,
       pinnedCount,
       pinned: pool.pinned.map(renderEntryLine).join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
-      minChars: 30,
-      maxChars: 80,
+      // 直接取全局设置而非硬编码：buildMessages 的 augmentedCtx 会再按 isEnrich 覆盖，
+      // 这里提供一致的非死值，避免误导后人（审计 A4）
+      minChars: gs.settings.prompt_rules.option_min_chars,
+      maxChars: gs.settings.prompt_rules.option_max_chars,
       enrichPersonStyle: '',
       optionPerson: '第三人称',
       enrichPerson: '第三人称',
+      prevOptions,
     };
     const rules = gs.settings.prompt_rules;
 
@@ -799,7 +916,74 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       signal,
     );
     if (cancelled) return null;
-    const options = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    const parsed = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    if (!parsed.length) {
+      toastr.error(t`未能解析出任何选项,请检查模型输出`);
+      return null;
+    }
+    let options = parsed;
+    const genCfg = gs.settings.generation;
+    if (genCfg.dedup_enabled) {
+      const r1 = dedupOptions(
+        parsed.map(o => o.text),
+        dedupRefs,
+        genCfg.dedup_threshold,
+      );
+      let kept = r1.kept;
+      let dropped = r1.droppedCount;
+      let details = r1.details;
+      let refilled = false;
+      // refill 循环：直到凑够 count 条或 refill 无新产出为止，防止最终数量不足。
+      // 上限 2 轮防模型持续返回重复内容导致死循环。
+      let refillRound = 0;
+      const MAX_REFILL_ROUNDS = 2;
+      while (kept.length < count && refillRound < MAX_REFILL_ROUNDS) {
+        refillRound++;
+        // 若累计剔除比例 > 60%，说明模型可能整体重复，停止 refill
+        if (parsed.length > 0 && dropped / parsed.length > 0.6) break;
+        refilled = true;
+        const need = count - kept.length;
+        const refillMessages: ChatMsg[] = [
+          ...messages,
+          { role: 'assistant', content: raw },
+          {
+            role: 'user',
+            content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
+          },
+        ];
+        lastBuildMessages.value = structuredClone(refillMessages);
+        const refillRaw = await callSecondaryApiWithRetry(
+          refillMessages,
+          api,
+          gs.settings.retry_count,
+          gs.settings.retry_interval,
+          signal,
+        );
+        if (cancelled) return null;
+        const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
+        const rNext = dedupOptions(
+          refillParsed.map(o => o.text),
+          [...dedupRefs, ...kept],
+          genCfg.dedup_threshold,
+        );
+        dropped += rNext.droppedCount;
+        details = details.concat(rNext.details);
+        kept = kept.concat(rNext.kept);
+        // 若本次 refill 解析为空或去重后无新条目，停止循环，避免无限请求。
+        if (!refillParsed.length || !rNext.kept.length) break;
+      }
+      options = kept.slice(0, count).map(t => ({ text: t, sourceEntryId: null }));
+      lastDedupReport.value = {
+        dropped,
+        refilled,
+        details,
+        threshold: genCfg.dedup_threshold,
+        refs: dedupRefs,
+      };
+      if (dropped > 0) {
+        toastr.warning(t`剔除 ${dropped} 条重复选项，已补齐 ${kept.length - r1.kept.length} 条`);
+      }
+    }
     if (!options.length) {
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
