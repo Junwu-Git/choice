@@ -99,8 +99,8 @@ export async function resolveWIParticipation(
   cwi: ChatSettings['world_info'],
 ): Promise<{ allExcl: string[]; enabled: string[] }> {
   const gs = useGlobalSettingsStore();
-  let allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
-  let enabled = [...cwi.enabled_books];
+  const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
+  const enabled = [...cwi.enabled_books];
 
   const book = getShujukuTargetBook();
   if (book) {
@@ -283,11 +283,15 @@ export const buildMessages = async (
     }
   }
 
-  // 合并相邻同 role 消息，避免连续多个 system/user/assistant
+  // 合并相邻同 role 消息，避免连续多个 system/user/assistant。
+  // user 消息不互相合并（审计 A5）：聊天历史末条 user 与 option_task/enrich_prompt
+  // 同为 user 时会把「生成任务」混进历史正文——user 角色消息在提示词里代表独立的输入
+  // 边界，合并会模糊"这是用户说的话"还是"这是任务指令"；system/assistant 相邻（多为
+  // 内置模块拼接）仍合并以减少首尾噪音
   const merged: ChatMsg[] = [];
   for (const msg of msgs) {
     const last = merged[merged.length - 1];
-    if (last && last.role === msg.role) {
+    if (last && last.role === msg.role && msg.role !== 'user') {
       last.content = last.content + '\n\n' + msg.content;
     } else {
       merged.push({ ...msg });
@@ -878,8 +882,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       pinned: pool.pinned.map(renderEntryLine).join('\n'),
       poolSelected: poolSelectedText || '无',
       input: '',
-      minChars: 30,
-      maxChars: 80,
+      // 直接取全局设置而非硬编码：buildMessages 的 augmentedCtx 会再按 isEnrich 覆盖，
+      // 这里提供一致的非死值，避免误导后人（审计 A4）
+      minChars: gs.settings.prompt_rules.option_min_chars,
+      maxChars: gs.settings.prompt_rules.option_max_chars,
       enrichPersonStyle: '',
       optionPerson: '第三人称',
       enrichPerson: '第三人称',

@@ -166,13 +166,17 @@ Kemini 预设是酒馆 chat completion 预设（Gemini 系优化），`prompts` 
 
 ### 3.1 数据模型与组装（事实基线）
 
-- `PromptModule`（`src/type/settings.ts:143-155`）：`id/name/role/content/marker/system/enabled/order/enrich_only/option_only`。marker 模块为锚点（内容恒空、不可编辑）。
-- `PromptConfig`（`settings.ts:157+`）：v35 起是**纯文本快照**，切换配置只同步 `{modules, person_style, option_rules}` 三字段（`global-settings.ts:1545-1555`）。选择链 `chat > character > default`（`prompt-config-selector.ts:11-21`）。
-- `PromptRules`（`settings.ts:376+`）是运行时工作副本；字数 10~60（硬上限 500，`settings.ts:12-40` 三处共用 clamp）。
-- 默认模板 `choice-prompts-optimized.json`：单套 30 模块，content 合计 3252 字符；`option_only` 10 个、`enrich_only` 5 个、共享 15 个（11 个为 marker）；6 个可选规则模块（order 15.1~15.6）**默认全关**。
-- `core_rules` 的实际生效内容是代码拼装而非 JSON 文本：`option_rules + person_style + CORE_RULES_STATIC` 三段（`generator.ts:256-280`），JSON 里的 core_rules 只是兜底。
-- 占位符：`sub()`（`generator.ts:134-147`）支持 11 个（`{{count}}/{{pinned}}/{{pool_selected}}/{{input}}/{{min_chars}}/{{max_chars}}/{{option_person}}/…`），之后过酒馆宏 `substituteParams`。**assistant 预填模块不做任何替换**（`generator.ts:287-292`，有注释明示这是稳定契约）。
-- 结构化锚点已存在：`<reference>` 资料区、`<current_scene>` 场景锚定（`buildChatHistory`，`generator.ts:386-391`）、`<thinking>/<options>` 输出契约、`assistant_thinking` 预填起手。
+> ⚠ **现状核对（2026-09-09 审计，见 `docs/choice-audit-prompt-pool-2026-09.md`）**：本文档写于 v44 迁移推进期，以下基线与当前实现存在漂移，特此修订：
+> - `PromptConfig` 切换配置只同步 **`{modules}`** 单字段（`copyPromptRulesSubset`，`global-settings.ts`）；`person_style/option_rules` 已于提示词降复杂化时从 schema 移除。
+> - 默认模板 `choice-prompts-optimized.json` 现为 **24 模块**（`baibai_state` 为 deprecated 隐藏模块）；**不存在**「6 个可选规则模块 opt_*（order 15.1~15.6）」——那是 §5/§6 的 P2 规划，未实现。
+> - `core_rules` 现为**直接发模块自身 content**（`generator.ts` 的动态拼装分支已删除），「JSON 里的 core_rules 只是兜底」的说法不再成立。
+
+- `PromptModule`（`src/type/settings.ts`）：`id/name/role/content/marker/system/enabled/order/enrich_only/option_only`。marker 模块为锚点（内容恒空、不可编辑）。
+- `PromptConfig`（`settings.ts`）：v35 起是**纯文本快照**，切换配置只同步 `{modules}`（`copyPromptRulesSubset`）。选择链 `chat > character > default`（`prompt-config-selector.ts:11-21`）。
+- `PromptRules`（`settings.ts`）是运行时工作副本；字数 10~500（`settings.ts:12-40` 三处共用 clamp）。
+- 默认模板 `choice-prompts-optimized.json`：单套 24 模块；`option_only` 若干、`enrich_only` 若干、marker 模块为锚点。
+- 占位符：`sub()` 支持 12 个（`{{count}}/{{pinned}}/{{pool_selected}}/{{input}}/{{min_chars}}/{{max_chars}}/{{option_person}}/{{enrich_person}}/…`），之后过酒馆宏 `substituteParams`。**assistant 预填模块不做任何替换**（`generator.ts`，有注释明示这是稳定契约）。
+- 结构化锚点已存在：`<reference>` 资料区、`<current_scene>` 场景锚定（`buildChatHistory`）、`<thinking>/<options>` 输出契约、`assistant_thinking` 预填起手、`wi_depth_before/after` 世界书深度注入点。
 
 ### 3.2 与 Kemini 的结构对应关系
 
@@ -213,6 +217,8 @@ choice 已有的部分其实相当完整：marker 锚点 ≈ Kemini 的内置 ma
 ---
 
 ## 5. 核心机制设计：插槽 + 互斥变体 + 用户旋钮
+
+> ⚠ **规划状态（2026-09-09 审计）**：本节 `{{slot:}}` 插槽 / 互斥变体 / 用户旋钮为 **P2 规划，未实现**——`PromptModule` 无 `slot` 字段、`generator.ts` 无收集/替换阶段、`PromptEditor` 无变体组卡。落地前勿在代码中假定这些机制存在。
 
 ### 5.1 数据模型
 
@@ -318,6 +324,8 @@ t = t.replace(/\{\{slot:([a-z][a-z0-9_]*)\}\}/g, (raw, name) => {
 ---
 
 ## 6. 默认内容精修（单套）
+
+> ⚠ **规划状态（2026-09-09 审计）**：本节 `thinking_prompt` v2、`opt_*` 可选模块、插槽教学示例等为 **P1/P2 规划，未落地**——`choice-prompts-optimized.json` 与 `DEFAULT_MODULES` 不含 opt_* 模块、不含 `{{slot:}}` 示例。
 
 > 以下文案直接可用于 `choice-prompts-optimized.json` 与 `DEFAULT_MODULES`。注意边界：**JSON/常量改动只影响新装与"恢复默认"，存量用户的 modules 是存档快照，不受影响**——这是 v35 快照原则的必然结果，发布说明里要写清"老用户需恢复默认或手动启用新模块"。
 

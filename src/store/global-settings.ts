@@ -477,9 +477,10 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     resetOrderFromDefaults(validated);
   }
 
-  if (version < 37) {
-    validated.prompt_rules.shujuku_enabled = false;
-  }
+  // v37 的 shujuku_enabled 初始化原在本处（version < 37 时置 false），已删除：
+  // ① 该守卫受 prompt_rules.schema_version<17 控制，migratePromptModules 只在老档迁移
+  //    运行一次，语义错位（应属 applyDefaults）；② 缺字段由 schema default(false) 兜底，
+  //    v35 迁移会从默认提示词配置快照还原用户真实值。删除后行为等价（审计 C1）
 
   if (version < 12) {
     // v12: 新增角色卡上下文模块（描述/性格/场景），让行动选项生成时也能看到角色卡核心设定
@@ -1440,10 +1441,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // ① 删「全向」三件套（6 组 18 条条目 + 全向池配置 + 全向提示词配置）与「喵可」分组 4 条，
   //    chat/character 绑定重绑回默认配置（rebindConfigId/rebindPromptConfigId，模式照抄 v33 块）
   // ② 删 user_instruction/output_spec/reward_prompt 三个模块 id（模式照抄 v39 removeWrappers）；
-  //    ②' 补建六个内置可选规则模块 opt_*（默认关，模式照抄 v38 ensureDepthModule）
+  //    （「补建六个内置可选规则模块 opt_*」原为 P2 规划，未实现——JSON 默认模块无 opt_*，
+  //     本版本不补建，勿按注释意会成已完成）
   // ③ 默认文本中性化（内容 === v43 默认逐字才替换——用户自定义文本不动，同 v41/v42 原则）；
   //    ③' 模块改名（默认名精确匹配才改，自定义名不动），纯显示层，不影响 id/解析
-  // ④ resyncModuleOrders 对齐新 DEFAULT order（含删模块后的重编号与 opt_* 的 15.1~15.6）
+  // ④ resyncModuleOrders 对齐新 DEFAULT order（含删模块后的重编号）
   if ((validated.schema_version ?? 0) < 44) {
     // ── ① 删全向三件套 + 喵可组 ──
     // 全向 6 组与喵可组都按 category 清理：master_pool 删条目、所有 configs 删引用、
@@ -1829,9 +1831,12 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     eventSource.on(event_types.OAI_PRESET_CHANGED_AFTER, () => syncPresetName());
     eventSource.on(event_types.CHARACTER_PAGE_LOADED, () => {
       currentCharacterId.value = normChid(this_chid);
+      // 角色/聊天绑定变化后，未建立编辑归属时让工作副本跟随新生效配置（审计 A2）
+      syncEffectivePromptConfigToWorkCopy();
     });
     eventSource.on(event_types.CHAT_CHANGED, () => {
       currentCharacterId.value = normChid(this_chid);
+      syncEffectivePromptConfigToWorkCopy();
     });
   } catch {
     /* eventSource 不可用时静默跳过 */
@@ -2162,6 +2167,48 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
    *  也会被随后的切换冲掉。跨会话无归属记录（boot 时 prompt_rules 即生效配置内容），
    *  归属为 null 时回退旧语义按生效配置回写，行为不变。 */
   let promptEditConfigId: string | null = null;
+
+  /** chat > character > default 解析生效提示词配置（与 prompt-config-selector 同规则，
+   *  此处不引 selector store 避免跨 store 依赖，逻辑保持单点）。 */
+  const resolveEffectivePromptConfig = (): PromptConfig | null => {
+    const chatId = useChatSettingsStore().settings.prompt_config_id;
+    if (chatId) return settings.value.prompt_configs.find(c => c.id === chatId) ?? null;
+    const charId = useCharacterSettingsStore().settings.prompt_config_id;
+    if (charId) return settings.value.prompt_configs.find(c => c.id === charId) ?? null;
+    return settings.value.prompt_configs.find(c => c.is_default) ?? null;
+  };
+
+  /** 绑定生效：用户尚未在提示词页做过配置加载/切换（promptEditConfigId 为空）时，
+   *  运行时工作副本跟随 chat > character > default 解析出的生效配置——绑定配置真正
+   *  生效，与 AGENTS.md「提示词配置覆盖式选择」的表述一致（审计 A2）。
+   *  该函数只在未建立编辑归属时运行：一旦 switchPromptConfig 设过归属，编辑器优先，
+   *  不再自动覆盖（避免自动加载踩掉用户显式选择的配置）。与下面的模块深度 watch 配合：
+   *  用户在提示词页的编辑会回写归属配置快照，故此处从快照加载不丢编辑。 */
+  const syncEffectivePromptConfigToWorkCopy = () => {
+    if (promptEditConfigId) return;
+    const config = resolveEffectivePromptConfig();
+    if (config) copyPromptRulesSubset(config, settings.value.prompt_rules);
+  };
+
+  // 模块编辑即回写当前归属配置快照：PromptEditor 的任何模块改动（内容/开关/排序/增删）
+  // 都落在工作副本 prompt_rules.modules，若不同步快照，切换配置或「编辑→刷新→切一次配置」
+  // 后 loadPromptConfig 会用旧快照覆盖丢失编辑（审计 A1）。deep watch 幂等：回写只改
+  // config.modules 引用，不反向触发本 watch；未建立归属时回写生效配置（首次打开提示词页
+  // 即生效），loadPromptConfig/A2 复制产生的同名回写内容相同无副作用。
+  watch(
+    () => settings.value.prompt_rules.modules,
+    () => {
+      const owner = promptEditConfigId
+        ? settings.value.prompt_configs.find(c => c.id === promptEditConfigId)
+        : resolveEffectivePromptConfig();
+      if (owner) syncPromptRulesToConfig(owner);
+    },
+    { deep: true },
+  );
+
+  // 初始化即按生效配置填充工作副本（绑定生效，审计 A2）。settings 落盘 watcher 在此前已
+  // 注册，工作副本加载即落盘最终态，配置快照不被触碰
+  syncEffectivePromptConfigToWorkCopy();
 
   function loadPromptConfig(config: PromptConfig) {
     copyPromptRulesSubset(config, settings.value.prompt_rules);

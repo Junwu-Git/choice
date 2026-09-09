@@ -74,5 +74,12 @@ export default [
     },
   },
   eslintConfigPrettier,
-  globalIgnores(['dist/**', 'node_modules/**', 'eslint.config.mjs', 'postcss.config.js', 'vite.config.ts']),
+  globalIgnores([
+    'dist/**',
+    'node_modules/**',
+    '.kilo/**',
+    'eslint.config.mjs',
+    'postcss.config.js',
+    'vite.config.ts',
+  ]),
 ];

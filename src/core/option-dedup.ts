@@ -19,11 +19,11 @@ export function dedupOptions(candidates: string[], references: string[], thresho
   // 用户调高阈值时标题门槛同步上浮，调低时标题门槛下探至 0（单靠标题即可判重）。
   const titleGate = Math.max(0, threshold - 0.35);
   const titleOf = (s: string): string | null => {
-    const m = s.match(/^\s*[\[【]([^\]】]+)[\]】]/);
+    const m = s.match(/^\s*[[【]([^\]】]+)[\]】]/);
     return m ? m[1] : null;
   };
   const contentOf = (s: string): string => {
-    const idx = s.search(/^\s*[\[【][^\]】]+[\]】]\s*/);
+    const idx = s.search(/^\s*[[【][^\]】]+[\]】]\s*/);
     return idx >= 0 ? s.slice(idx).trim() : s.trim();
   };
   const normalize = (s: string): string => s.replace(/\s+/g, '').trim();
