@@ -2,7 +2,19 @@
   <div class="choice-appearance-editor">
     <div class="choice-appearance-section">
       <span class="choice-appearance-section-title">{{ t`面板` }}</span>
+      <!-- 高级功能开关放「面板」分区最前：appearance 是基础 tab，简化模式下它是
+           重新开启高级 tab 的唯一入口，必须任何模式下都可达。
+           纯 UI 分层语义：关闭只隐藏高级设置页入口，过滤规则/世界书注入等
+           运行时行为照常生效，文案不暗示"功能已关闭" -->
       <div class="choice-behavior-grid" data-tour="appearance-floating">
+        <label class="choice-check">
+          <input v-model="ui.advanced_features_enabled" type="checkbox" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`高级功能` }}</strong>
+            <small>{{ t`显示提示词、世界书、过滤、调试等进阶设置页` }}</small>
+          </span>
+        </label>
         <label class="choice-check">
           <input v-model="ui.floating_enabled" type="checkbox" />
           <span class="choice-check-custom"></span>

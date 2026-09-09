@@ -11,18 +11,11 @@ import {
   SIMPLE_MODULE_CONTENTS,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
-  DEFAULT_PERSON_STYLE,
-  DEFAULT_OPTION_RULES,
   USER_INSTRUCTION_DEFAULT,
   LEGACY_USER_INSTRUCTION_TASK,
   USER_INSTRUCTION_GUIDE,
   OPTION_TASK_DEFAULT,
   PROMPT_TEXT_MIGRATIONS,
-  OPEN_CONFIG_NAME,
-  OPEN_GROUP_NAMES,
-  OPEN_PERSON_STYLE,
-  OPEN_OPTION_RULES,
-  OPEN_MODULE_CONTENTS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
   type PoolConfig,
@@ -62,288 +55,242 @@ const LEGACY_DEFAULT_ENTRY_TYPES = new Set([
 ]);
 
 /**
- * 「通用」分组：4 条跨世界观/背景/场景通用的抽象元引导条目。
- * 与旧默认条目的本质区别：只给"思考方向/维度"不给具体行为——AI 拿到"风格反差"
- * 会按当前场景自行想一个反差行动，而非被"把想法说出口"这类预设动作锁定。
- * 前 2 条 pinned：每轮保证有"稳"（顺承）与"破"（反差）两个自主权锚点；
- * 后 2 条参与随机抽取补充方向。分组轮询按 category 分桶，「通用」独立成组后
- * 与「时间跳跃」轮流出候选，锚点占比稳定。
+ * 分组名常量：条目 category 与 group_order 的唯一事实来源。
+ * v46 起默认配置只引用「用户主体」分组（2 条 pinned 锚点），其余 7 组 opt-in，
+ * 只进 master_pool 条目库；分组轮询抽取（drawByCategories）按 category 分桶，
+ * 独立成组保证各组特色获得稳定但不过分的出场占比。
+ */
+const POOL_GROUP_ORDER = [
+  '用户主体',
+  '其他角色主体',
+  '时间流逝',
+  '剧情续写规划',
+  '环境与事件',
+  '对话交锋',
+  '情感关系',
+  'NSFW',
+] as const;
+
+/** 旧「通用」分组（v46 前默认 config 引用）的默认条目 type 集合。 */
+const LEGACY_GENERAL_TYPES = new Set(['顺势推进', '风格反差', '角色本心', '开放余地']);
+
+/** 旧「时间跳跃」分组（v46 前默认 config 引用）的默认条目 type 集合。 */
+const LEGACY_TIME_JUMP_TYPES = new Set(['须臾之间', '翌日清晨', '数日之后', '季节更迭', '多年以后', '回溯闪回']);
+
+/** 旧「NSFW」分组（v46 前 10 条）中被删除的 type 集合。 */
+const LEGACY_NSFW_DROPPED_TYPES = new Set(['NSFW·就地取材', 'NSFW·情趣道具']);
+
+/** 旧「NSFW」分组保留 8 条的旧默认 content（v46 迁移按"内容 === 旧默认"才换新，用户编辑过的不动）。 */
+const OLD_NSFW_CONTENT_BY_TYPE = new Map<string, string>([
+  ['NSFW·主动出击', '给出一个由 {{user}} 主动发起或加码亲密接触的选项——火候与方式贴合当前氛围，不必等对方先递台阶'],
+  ['NSFW·顺势而为', '抓住此刻氛围里最微妙的信号顺势回应，给出一个不点破、却让默契升温半分的选项'],
+  ['NSFW·交出主导', '给出一个把主导权交给对方的选项——示意对方来安排节奏，自己只管接住每一个反应'],
+  ['NSFW·半推半就', '给出一个嘴上矜持、身体诚实的选项——口头的推拒与行动的迎合形成可爱反差'],
+  ['NSFW·变换姿势', '给出一个提议换个姿势或换到别的位置继续的选项——挪动本身也是情趣的一部分'],
+  ['NSFW·语言调情', '给出一个用言语调情或说出羞人请求的选项——声音也是武器，说出口才升温'],
+  ['NSFW·事后温存', '给出一个亲近过后依偎温存的选项——喘息未定时的耳语与轻抚别有滋味'],
+  ['NSFW·大胆尝试', '给出一个以前没试过、此刻却心血来潮想试试的选项——把「要不要」抛给对方'],
+]);
+
+/** 条目构建小工具：统一字段形态，pinned 默认 false、weight 默认 1、rule 默认空。 */
+const createPoolEntry = (
+  category: string,
+  type: string,
+  content: string,
+  pinned = false,
+  rule = '',
+): PoolEntry => ({
+  id: uuidv4(),
+  type,
+  content,
+  pinned,
+  weight: 1,
+  category,
+  rule,
+});
+
+/**
+ * 旧「通用」分组构建器：仅 v23 迁移块使用（老存档按 type 去重补入后再由 v46 清理），
+ * 文案冻结为旧默认原文——迁移依赖逐字匹配，改动会破坏 v23 收敛与 v46 清理的判据。
  */
 function buildGeneralEntries(): PoolEntry[] {
-  const entry = (type: string, content: string, pinned: boolean): PoolEntry => ({
-    id: uuidv4(),
-    type,
-    content,
-    pinned,
-    weight: 1,
-    category: '通用',
-    rule: '',
-  });
   return [
-    entry('顺势推进', '紧承前文当下的留白，给出情境中最自然顺承的推进方向', true),
-    entry('风格反差', '与近几轮选项的基调或行动类型形成反差，制造新鲜与意外', true),
-    entry('角色本心', '从 {{user}} 的性格核心与当下心境出发，给出贴合其人设的选择', false),
-    entry('开放余地', '给出一个不急于收束、留有后续展开空间的方向', false),
+    createPoolEntry('通用', '顺势推进', '紧承前文当下的留白，给出情境中最自然顺承的推进方向', true),
+    createPoolEntry('通用', '风格反差', '与近几轮选项的基调或行动类型形成反差，制造新鲜与意外', true),
+    createPoolEntry('通用', '角色本心', '从 {{user}} 的性格核心与当下心境出发，给出贴合其人设的选择'),
+    createPoolEntry('通用', '开放余地', '给出一个不急于收束、留有后续展开空间的方向'),
   ];
 }
 
 /**
- * 「喵可」分组：4 条以喵可性格侧面切入正文的风格化条目（v27 起随默认条目下发）。
- * 四条 = 好奇/捣蛋/犯懒/粘人四个反差鲜明的猫娘侧面，各自指向一类对正文的方向：
- * 抠细节探索、搞事水花、松弛摆烂、围着主人转。type 统一带「喵可·」前缀作标记，
- * 在条目库与发给 AI 的候选行里都能一眼认出归属（渲染格式 `type: content`）。
- * 两个刻意为之的约束，不要"顺手"改掉：
- * ① content 只用猫的行为比喻（嗅、扑、打滚、黏人），不带"喵"口癖——条目是发给
- *    AI 的方向素材，system_prompt 已硬约束"猫娘腔一个字不许漏进选项"，口癖只允许
- *    存在于 assistant 层；条目里出现口癖会把腔调往选项里带。
- * ② 统一以"给出一个……的选项"收尾，与「通用」分组的引导句式对齐，避免 AI 把
- *    条目内容误读成要照抄的文案。
- * pinned 策略照「通用」分组先例：前 2 条固定当每轮锚点（一探一闹），后 2 条进
- * 分组轮询随机池补充变化。
+ * 「用户主体」分组：8 条由 {{user}} 承担下一拍的方向素材。
+ * 提示词已"主体不固定"化，本组锚定"用户行动"这一主体维度，覆盖顺承/破局/冲突/
+ * 试探/表露/肢体/意外/目标八个方向。前 2 条 pinned：每轮保证有"稳"（顺势行动）与
+ * "破"（打破僵局）两个自主权锚点（承接旧「通用」锚点哲学）；其余参与随机抽取。
  */
-function buildMiaokeEntries(): PoolEntry[] {
-  const entry = (type: string, content: string, pinned: boolean): PoolEntry => ({
-    id: uuidv4(),
-    type,
-    content,
-    pinned,
-    weight: 1,
-    category: '喵可',
-    rule: '',
-  });
+function buildUserSubjectEntries(): PoolEntry[] {
   return [
-    entry('喵可·好奇', '正文里被一笔带过的细节和没凑完的热闹最勾猫——给出一个凑上去追问、翻看或一探究竟的选项', true),
-    entry('喵可·捣蛋', '爪子痒了想搞点动静——给出一个出其不意、带点小风险小麻烦的选项，先把场面搅出水花再说', true),
-    entry(
-      '喵可·犯懒',
-      '天大的事也不急在这一时——给出一个偷懒省事、借坡下驴或先歇口气的选项，松弛下来反而顺理成章',
-      false,
-    ),
-    entry(
-      '喵可·粘人',
-      '视线黏在{{user}}身上挪不开——给出一个围着{{user}}转的选项：凑近搭话、跟着走，或者干脆赖着不走',
-      false,
-    ),
+    createPoolEntry('用户主体', '顺势行动', '由 {{user}} 紧承当前情境中最自然的一步，做出顺理成章的行动或回应', true),
+    createPoolEntry('用户主体', '打破僵局', '由 {{user}} 主动打破当前停滞或尴尬，让场景重新动起来', true),
+    createPoolEntry('用户主体', '正面交锋', '由 {{user}} 直面眼前的矛盾或人物，把话挑明、把事说破，不再迂回'),
+    createPoolEntry('用户主体', '迂回试探', '由 {{user}} 旁敲侧击、以退为进，先探清对方的底细与态度'),
+    createPoolEntry('用户主体', '吐露心声', '由 {{user}} 在此刻表露真实情绪或心事，可以坦诚，也可以半真半假'),
+    createPoolEntry('用户主体', '身体先行', '由 {{user}} 以行动代替言语表态，让靠近、回避、递出或阻拦等动作传达态度'),
+    createPoolEntry('用户主体', '出人意料', '由 {{user}} 做出有悖当下预期的事，为局面注入一个合理的新变量'),
+    createPoolEntry('用户主体', '目标推进', '由 {{user}} 朝自己的目标或牵挂的人事物迈出具体一步，不停留在空想或等待'),
   ];
 }
 
-/** 构建默认条目（进默认 config 引用）：「通用」分组 4 条 + 「喵可」分组 4 条 + 「时间跳跃」分组 6 条
- *  （v27 起加入喵可组）。NSFW 分组不在此处——它是 opt-in，只进 master_pool 供条目库勾选，
- *  默认 config 不引用，用户在「选择条目」里自行启用（见 v30 迁移块与 factoryReset） */
-function buildDefaultEntries(): PoolEntry[] {
-  return [...buildGeneralEntries(), ...buildMiaokeEntries(), ...buildTimeJumpEntries()];
+/**
+ * 「其他角色主体」分组：8 条由在场角色承担下一拍的方向素材——反应、内心、主动、
+ * 试探、反常、交锋、求助、筹谋。opt-in（只进 master_pool），用户启用后与用户主体
+ * 方向混出，实现提示词允许的"主体不固定"。
+ */
+function buildCharacterSubjectEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('其他角色主体', '角色回响', '让在场某个角色先回应刚才的局势或 {{user}} 的话，可以接住，也可以岔开'),
+    createPoolEntry('其他角色主体', '内心显影', '切入某个角色此刻的内心视角，呈现其真正想法或尚未说出口的内容'),
+    createPoolEntry('其他角色主体', '主动逼近', '由某个角色主动靠近、发难或提出要求，接管当前场面的节奏'),
+    createPoolEntry('其他角色主体', '关系试探', '某个角色借由话题或动作试探与 {{user}} 的距离、态度和底线'),
+    createPoolEntry('其他角色主体', '反常之举', '某个角色做出与平时表现不同但仍合乎人设的举动，露出隐藏的一面'),
+    createPoolEntry('其他角色主体', '角色交锋', '让两个在场角色发生对峙或争执，把潜在矛盾摆到台面上'),
+    createPoolEntry('其他角色主体', '求助托付', '某个角色向 {{user}} 求助、示弱或托付一件事，把选择权交回对方'),
+    createPoolEntry('其他角色主体', '暗中筹谋', '某个角色在台面下推进自己的盘算，为后续剧情留下可追踪的暗线'),
+  ];
 }
 
 /**
- * 「时间跳跃」分组：6 条不同跨度和叙事手法的时间跳跃条目，彼此风格互斥互补。
- * 独立成组是因为分组轮询抽取（drawByCategories）按 category 分桶——单独成组后
- * 该组会与其他组轮流出候选，时间跳跃类选项获得稳定但不过分的出场占比；
- * 若并入未分组，6 条会与既有条目完全平权混合，"时间跳跃"的特色占比无从谈起。
- * 全部非固定（pinned:false），是否参与抽取由各 PoolConfig 的条目引用决定。
+ * 旧「时间跳跃」分组构建器：仅 v22 迁移块使用（老存档按 type 去重补入后再由 v46 清理），
+ * 文案冻结为旧默认原文——理由同 buildGeneralEntries。
  */
 function buildTimeJumpEntries(): PoolEntry[] {
-  const jump = (type: string, content: string, rule = ''): PoolEntry => ({
-    id: uuidv4(),
-    type,
-    content,
-    pinned: false,
-    weight: 1,
-    category: '时间跳跃',
-    rule,
-  });
   return [
-    jump('须臾之间', '只推进几分钟到半小时的微小时间，用茶凉、雨停、天色暗下一格这类细节完成对话间隙的自然过渡'),
-    jump('翌日清晨', '跳到第二天早晨，以晨间光线、声音或身体感受开场，昨夜的事件沉淀为余韵'),
-    jump('数日之后', '跳过两三天到一周，用新习惯、将愈未愈的伤、来往的消息等细节交代这段时间留下的痕迹'),
-    jump('季节更迭', '大幅推进到换季时节，环境物候明显变化，人物关系与心境随时间产生微妙位移'),
-    jump('多年以后', '跨度数年到数十年，外貌、身份、关系发生显著变化，带一丝物是人非的怅然'),
-    jump(
+    createPoolEntry('时间跳跃', '须臾之间', '只推进几分钟到半小时的微小时间，用茶凉、雨停、天色暗下一格这类细节完成对话间隙的自然过渡'),
+    createPoolEntry('时间跳跃', '翌日清晨', '跳到第二天早晨，以晨间光线、声音或身体感受开场，昨夜的事件沉淀为余韵'),
+    createPoolEntry('时间跳跃', '数日之后', '跳过两三天到一周，用新习惯、将愈未愈的伤、来往的消息等细节交代这段时间留下的痕迹'),
+    createPoolEntry('时间跳跃', '季节更迭', '大幅推进到换季时节，环境物候明显变化，人物关系与心境随时间产生微妙位移'),
+    createPoolEntry('时间跳跃', '多年以后', '跨度数年到数十年，外貌、身份、关系发生显著变化，带一丝物是人非的怅然'),
+    createPoolEntry(
+      '时间跳跃',
       '回溯闪回',
       '反向跳跃：插入一段过去的回忆场景，与当下形成呼应或对照，结尾回到当前时间点',
+      false,
       '此项为回忆插叙，需明确时间线标记，结尾必须落回当前时间点',
     ),
   ];
 }
 
 /**
- * 「NSFW」分组：10 条成人向行动方向条目，覆盖主动 / 被动 / 变换姿势 / 情趣四个维度。
- * opt-in 设计：只进 master_pool（条目库可见），不进 buildDefaultEntries（默认 config 不
- * 引用）。与 v22「时间跳跃」/ v27「喵可」（默认 config 自动引用）刻意不同——NSFW 方向
- * 不应在用户未主动启用时混入每轮候选菜单，即便菜单模式下 AI 会按场景贴合度跳过。
- * 用户想用时在「选择条目」里勾选该分组即可写入当前 config。
- * 两个刻意为之的约束，不要"顺手"改掉：
- * ① 全部 pinned:false——NSFW 方向不应像「通用」锚点那样每轮必发；pinned 会强制每轮
- *    出现 NSFW 候选，对 SFW 场景是噪声。
- * ② 文案一律含蓄方向级（"给出一个……的选项"），只给思考方向不给具体动作脚本——
- *    条目是发给 AI 的方向素材，具体露骨程度由 AI 按当前场景把握；若写成照抄式动作
- *    描写，会把选项内容锁死，与「通用」「喵可」分组的元引导设计原则相悖。
- * type 统一带「NSFW·」前缀作标记，在条目库与发给 AI 的候选行里都能一眼认出归属
- * （渲染格式 `type: content`，与「喵可·」前缀同构）。rule 全部留空——候选条目本就可能
- * 因方向与场景不贴合被 AI 跳过，无需额外写作约束。
+ * 「时间流逝」分组：8 条时间/环境推移方向素材。由旧「时间跳跃」6 条重写扩至 8 条——
+ * 旧文案偏"跳跃跨度的修辞展示"，新文案偏"时间流逝本身留下痕迹"，与提示词
+ * "一段时间或环境的推移"的尺度维度对齐。
+ */
+function buildTimePassEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('时间流逝', '须臾之间', '只推进几分钟到半小时，用茶凉、雨停、灯影移动等细节完成自然过渡'),
+    createPoolEntry('时间流逝', '翌日清晨', '跳到第二天早晨，以光线、声音或身体感受开场，让前一晚的事件沉淀为余韵'),
+    createPoolEntry('时间流逝', '数日之后', '跳过两三天到一周，用新习惯、伤势变化、往来消息等细节交代时间痕迹'),
+    createPoolEntry('时间流逝', '季节更迭', '推进到换季时节，让环境物候、人物关系和心境产生可感知的位移'),
+    createPoolEntry('时间流逝', '多年以后', '推进数年或更久，让外貌、身份、关系或目标发生足以改变局势的变化'),
+    createPoolEntry('时间流逝', '回溯闪回', '插入一段与当前相关的过去场景，用呼应或对照补充信息，结尾必须回到当前时间点'),
+    createPoolEntry('时间流逝', '夜色渐深', '在同一段夜晚内缓慢推进时间，让灯光、困意、酒意或气氛随钟点发生变化'),
+    createPoolEntry('时间流逝', '等待间隙', '描写一段被拉长的等待、赶路、守候或恢复过程，让时间流逝本身改变人物状态'),
+  ];
+}
+
+/** 「剧情续写规划」分组：8 条计划/试探/布局类方向素材，对应提示词的"计划或试探"尺度。 */
+function buildPlotPlanningEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('剧情续写规划', '谋定后动', '先调查、准备或安排后手，再让主体采取行动，行动应服务于当前目标'),
+    createPoolEntry('剧情续写规划', '设局布局', '为后续目标布置一枚眼前不显眼但可回收的棋子或条件'),
+    createPoolEntry('剧情续写规划', '抛砖引玉', '用一个小话题、小动作或小利益引出更大的信息，观察局中人的反应'),
+    createPoolEntry('剧情续写规划', '摊牌时刻', '坦白关键事实、亮出底牌或提出明确条件，结束一段持续的含糊与绕行'),
+    createPoolEntry('剧情续写规划', '后手留白', '为当前事件留下一个具体而未解决的尾巴，形成自然的后续入口'),
+    createPoolEntry('剧情续写规划', '化险为夷', '从当前困局中寻找不撕破脸的解法，通过补台、圆场或各退一步改变局面'),
+    createPoolEntry('剧情续写规划', '火中取栗', '抓住混乱、误会或权力空隙，在承担风险的同时达成一个现实目的'),
+    createPoolEntry('剧情续写规划', '承上启下', '收束当前小节，同时把新的线索、目标、地点或期限摆到后续剧情中'),
+  ];
+}
+
+/** 「环境与事件」分组：8 条环境演变/外部事件方向素材，对应提示词的"环境的演变"尺度。 */
+function buildEnvironmentEventEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('环境与事件', '天气突变', '天气或自然环境突然变化，打断当前进程并迫使在场者调整安排'),
+    createPoolEntry('环境与事件', '意外声响', '一个突然的声音或动静把注意力从当前话题拉向新的方向'),
+    createPoolEntry('环境与事件', '不速之客', '新的角色带着消息、请求或威胁介入当前场面'),
+    createPoolEntry('环境与事件', '消息传来', '一条消息、书信、传闻或公告抵达，改变在场者对局势的判断'),
+    createPoolEntry('环境与事件', '器物变化', '身边物品出现、损坏、遗失或被发现，引出与当前剧情相关的新信息'),
+    createPoolEntry('环境与事件', '景物映心', '用具体环境细节承接或反衬人物当下心境，避免直接解释情绪'),
+    createPoolEntry('环境与事件', '突发事故', '一个不受控但合理的小事故打破既定节奏，制造即时处理的问题'),
+    createPoolEntry('环境与事件', '远方余波', '背景世界正在发生的事件通过声音、告示、价格、人员或气氛传到当前场景'),
+  ];
+}
+
+/** 「对话交锋」分组：8 条对话/言语方向素材，主体由当前场景决定（提示词允许主体不固定）。 */
+function buildDialogueEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('对话交锋', '话中有话', '让一句表面平常的话同时承载试探、告诫、暗示或未明说的要求'),
+    createPoolEntry('对话交锋', '打破沉默', '让合适的在场者先开口，直接改变僵持、尴尬或无人接话的状态'),
+    createPoolEntry('对话交锋', '嘴硬心软', '通过口是心非、反话或刻意冷淡表达关心、在意或不愿承认的情绪'),
+    createPoolEntry('对话交锋', '步步紧逼', '通过连续追问、质问或补充条件压缩对方回避的空间'),
+    createPoolEntry('对话交锋', '玩笑化解', '用玩笑、自嘲或轻微调侃卸下紧张气氛，但不抹去潜在矛盾'),
+    createPoolEntry('对话交锋', '直白挑明', '用一句清楚的话说出此前一直回避的要求、立场或心意'),
+    createPoolEntry('对话交锋', '话赶话争执', '让一次回应牵出下一次反驳，争执逐步暴露真正的分歧'),
+    createPoolEntry('对话交锋', '沉默回应', '让没有说出口的回答通过停顿、回避或未完成的话产生明确分量'),
+  ];
+}
+
+/** 「情感关系」分组：8 条关系/情绪张力方向素材，升温、疏离、猜忌、依赖等关系变化。 */
+function buildEmotionRelationEntries(): PoolEntry[] {
+  return [
+    createPoolEntry('情感关系', '暧昧升温', '通过距离、温度、语气或一个细小照顾，让关系向亲近方向移动半步'),
+    createPoolEntry('情感关系', '若即若离', '让一方忽近忽远、欲言又止，使关系重新变得不确定'),
+    createPoolEntry('情感关系', '醋意暗涌', '因第三人、旧事或被忽视而产生微妙介意，情绪先从细节中泄露'),
+    createPoolEntry('情感关系', '旧事重提', '一段往事、承诺或旧伤被重新触及，使当前关系出现新的波动'),
+    createPoolEntry('情感关系', '患难与共', '让人物共同处理一个麻烦，在合作、保护或承担中改变信任程度'),
+    createPoolEntry('情感关系', '心生芥蒂', '一件具体的小事在关系中留下裂痕，表面的客套逐渐变得不自然'),
+    createPoolEntry('情感关系', '依赖成习', '让人物开始习惯对方的存在、帮助、等待或消息，并在细节中显露出来'),
+    createPoolEntry('情感关系', '界限试探', '一方以试探性的言语或行动触碰关系边界，观察对方是否接受'),
+  ];
+}
+
+/**
+ * 「NSFW」分组：8 条成人向方向素材（v46 由 10 条收敛）。
+ * opt-in 设计不变：只进 master_pool，默认 config 不引用，用户在「选择条目」里勾选。
+ * ① 全部 pinned:false——NSFW 方向不应像「用户主体」锚点那样每轮必发。
+ * ② 文案一律含蓄方向级（"给出一个……的方向"），只给思考方向不给具体动作脚本。
+ * type 统一带「NSFW·」前缀作标记，在条目库与发给 AI 的候选行里都能一眼认出归属。
  */
 function buildNsfwEntries(): PoolEntry[] {
-  const entry = (type: string, content: string): PoolEntry => ({
-    id: uuidv4(),
-    type,
-    content,
-    pinned: false,
-    weight: 1,
-    category: 'NSFW',
-    rule: '',
-  });
   return [
-    entry(
-      'NSFW·主动出击',
-      '给出一个由 {{user}} 主动发起或加码亲密接触的选项——火候与方式贴合当前氛围，不必等对方先递台阶',
-    ),
-    entry('NSFW·顺势而为', '抓住此刻氛围里最微妙的信号顺势回应，给出一个不点破、却让默契升温半分的选项'),
-    entry('NSFW·交出主导', '给出一个把主导权交给对方的选项——示意对方来安排节奏，自己只管接住每一个反应'),
-    entry('NSFW·半推半就', '给出一个嘴上矜持、身体诚实的选项——口头的推拒与行动的迎合形成可爱反差'),
-    entry('NSFW·变换姿势', '给出一个提议换个姿势或换到别的位置继续的选项——挪动本身也是情趣的一部分'),
-    entry('NSFW·就地取材', '给出一个借现场物件或环境为当下氛围添彩的选项——因地制宜，不拘小节'),
-    entry('NSFW·情趣道具', '给出一个提议用上情趣小物件助兴的选项——从试探到提议，看对方接不接招'),
-    entry('NSFW·语言调情', '给出一个用言语调情或说出羞人请求的选项——声音也是武器，说出口才升温'),
-    entry('NSFW·事后温存', '给出一个亲近过后依偎温存的选项——喘息未定时的耳语与轻抚别有滋味'),
-    entry('NSFW·大胆尝试', '给出一个以前没试过、此刻却心血来潮想试试的选项——把「要不要」抛给对方'),
+    createPoolEntry('NSFW', 'NSFW·主动出击', '给出一个由 {{user}} 主动发起或加码亲密接触的方向，火候贴合当前氛围'),
+    createPoolEntry('NSFW', 'NSFW·顺势而为', '抓住当前氛围里的微妙信号顺势回应，让默契自然升温而不突兀点破'),
+    createPoolEntry('NSFW', 'NSFW·交出主导', '给出一个把节奏或主导权交给对方的方向，重点呈现信任与反应'),
+    createPoolEntry('NSFW', 'NSFW·半推半就', '让口头矜持与实际行动形成符合人物关系的反差，不强行违背意愿'),
+    createPoolEntry('NSFW', 'NSFW·变换位置', '给出一个换到别处或调整姿势继续的方向，让空间变化服务于当前氛围'),
+    createPoolEntry('NSFW', 'NSFW·语言调情', '通过调情、挑逗或羞人请求推进亲密互动，表达贴合人物说话方式'),
+    createPoolEntry('NSFW', 'NSFW·事后温存', '把亲近后的依偎、耳语、照料或余韵作为下一拍，关注关系变化而非重复过程'),
+    createPoolEntry('NSFW', 'NSFW·大胆尝试', '给出一个此前未尝试、此刻有动机尝试的亲密方向，由人物边界和当前情境决定尺度'),
   ];
 }
 
-/**
- * 「全向」模式新增的 6 个条目分组，共 18 条。与「通用」「喵可」「时间跳跃」「NSFW」
- * 四组的关键差异在两点，不要"顺手"合并或改 pinned：
- * ① 6 组各自成组（category 各异）——分组轮询（drawByCategories）按 category 分桶、
- *   组间轮询各抽 1 条，组数即各方向占比。合并成一组会让 user/char/剧情/关系/日常
- *   五方向坍缩成平权混合、"聚焦什么"无从谈起。各自成组才能让每轮从不同方向各抽一条。
- * ② 全部 pinned:false——全向池不设每轮必发锚点，构成完全随机（默认「通用」组有 2 条
- *   pinned 作自主权锚点，那是 user 锁主体模式的产物；全向的主体应由条目随机决定，
- *   pinned 会把某个方向焊死成每轮必发）。文案照 NSFW 组先例：方向级"给出一个……的选项"
- *   句式，只给思考方向不给具体动作脚本；聚焦·char 三条显式带"只写行动本身、其他各方
- *   反应留给正文"的防越权边界句——角色主语选项本身即某角色的行动，旧防越权"不许替演
- *   别人反应"会与之冲突，需在条目层也把边界交代清楚，配合 OPEN_OPTION_RULES 规则 2。
- * type 不带统一前缀：候选行格式为 "type: content"，分组（category）不发送给 AI，
- *   type 自身需可辨——故 18 条 type 两两不同且语义自明，不依赖前缀做归属标记
- *   （NSFW/喵可 用前缀是因其与"通用"组在默认池同台，前缀防混；全向池只含这 6 组，
- *   不存在跨组混辨的需求）。
- */
-function buildOpenEntries(): PoolEntry[] {
-  const entry = (type: string, content: string, category: string): PoolEntry => ({
-    id: uuidv4(),
-    type,
-    content,
-    pinned: false,
-    weight: 1,
-    category,
-    rule: '',
-  });
-  return [
-    // 聚焦·user：明确 {{user}} 主体 + 行动类型维度，与「通用」组（元引导：顺承/反差/本心/开放）互补
-    entry(
-      '本色而行',
-      '给出一个以 {{user}} 为行动主体的选项——写 {{user}} 此刻能做、想做的具体行动，贴合其性格与当下心境，可包含台词',
-      '聚焦·user',
-    ),
-    entry(
-      '破格一试',
-      '给出一个以 {{user}} 为主语、略出其常规性格的选项——做平时不太会做的事，让人物立起来，但不脱离当前场景',
-      '聚焦·user',
-    ),
-    entry(
-      '心声直陈',
-      '给出一个让 {{user}} 把此刻的情绪或想法说出口、写出来的选项——以 {{user}} 为主语，可含台词',
-      '聚焦·user',
-    ),
-    // 聚焦·char：角色主语。三条显式带防越权边界句，兼容"选项本身即某角色行动"的语义
-    entry(
-      '角色主动',
-      '给出一个以 {{char}} 或在场角色为主语的选项——直接写该角色此刻主动会做的行动，可包含其台词；把镜头交给角色，只写行动本身，其他各方的反应留给正文',
-      '聚焦·char',
-    ),
-    entry(
-      '角色回应',
-      '给出一个以在场角色为主语、回应眼下局面的选项——该角色对刚才发生的事做出自己的举动或表态，可包含其台词',
-      '聚焦·char',
-    ),
-    entry(
-      '角色张力',
-      '给出一个以角色为主语、与 {{user}} 制造张力或拉近距离的选项——该角色的主动举动让局面更有戏，可包含其台词',
-      '聚焦·char',
-    ),
-    // 剧情演化：不以单一角色行动呈现，事件/环境/第三方自然推进
-    entry(
-      '事件异动',
-      '给出一个让剧情自己往前走的选项——新事件、突发状况或局面突变自然发生，留出各方反应的余地',
-      '剧情演化',
-    ),
-    entry('环境变化', '给出一个由环境推动剧情的选项——天色、天气、声响、场合变动等环境因素自然改变当下局面', '剧情演化'),
-    entry('第三方介入', '给出一个由第三方搅动局面的选项——消息传来、他人到场或场外因素介入，剧情推进一步', '剧情演化'),
-    // 剧情规划：主动安排剧情走向，与剧情演化（被动推进）互补
-    entry(
-      '布局铺垫',
-      '给出一个为后续埋线的选项——角色或剧情此刻定下计划、许下约定或留下伏笔，效果在之后的正文里展开',
-      '剧情规划',
-    ),
-    entry(
-      '导演推进',
-      '给出一个导演式的走向选择——切换场景、引入新事件或新角色、推进某条暗线；只定走向，不写具体展开',
-      '剧情规划',
-    ),
-    entry('收束归线', '给出一个往回收的选项——把散开的支线、悬而未决的事往主线收拢，让剧情有个阶段性的落点', '剧情规划'),
-    // 关系推进：聚焦 {{user}} 与对方关系的双向维度，主语仍含 {{user}}
-    entry(
-      '关系靠近',
-      '给出一个让 {{user}} 与对方关系更进一步的选项——一次靠近、一次牵手或一句掏心话，由当下氛围决定火候',
-      '关系推进',
-    ),
-    entry('关系试探', '给出一个试探对方态度的选项——旁敲侧击、欲言又止或抛个话头，看对方怎么接', '关系推进'),
-    entry('关系袒露', '给出一个袒露真心的选项——说出平时不会说的话、承认平时不承认的事，赌一把对方的回应', '关系推进'),
-    // 日常闲趣：松弛日常向，给剧情喘息
-    entry('闲话消遣', '给出一个松弛的日常选项——闲聊八卦、打发时间、找点乐子，给剧情一段喘息', '日常闲趣'),
-    entry('小嗜好', '给出一个围绕 {{user}} 或对方小嗜好的选项——分享、参与或围观一件与主线无关但鲜活的小事', '日常闲趣'),
-    entry('即兴玩乐', '给出一个即兴起意的玩乐选项——玩个游戏、打个赌、来场说走就走的小冒险', '日常闲趣'),
-  ];
+/** 构建默认条目（进默认 config 引用）：v46 起只有「用户主体」8 条。 */
+function buildDefaultEntries(): PoolEntry[] {
+  return buildUserSubjectEntries();
 }
 
-/**
- * 构建「全向」提示词配置：klona DEFAULT_MODULES 后按 OPEN_MODULE_CONTENTS 按 id 覆盖三个
- * 模块内容（system_prompt/user_instruction/thinking_prompt），其余模块照默认。
- * person_style/option_rules 走 OPEN 版（主体跟随条目 + 重写防越权）——generator 的
- * core_rules case 在 option_rules 非空时走"option_rules + person_style + CORE_RULES_STATIC"
- * 组合路径，故 core_rules 模块内容不被用到，无需覆盖。is_default:false——简洁保持出厂默认。
- *
- * 【标量字段为死数据】v35 起配置切换仅同步 modules/person_style/option_rules
- * （copyPromptRulesSubset 已收窄），人称/字数/轮数/预填充/柏宝书收归 prompt_rules 全局值，
- * 严禁随配置切换——历史上硬编码/全量同步曾把用户自定义润色字数洗成 30/80、人称跟着跳变
- * （连环踩雷）。下方标量快照仅为满足 zod 输出类型（PromptConfig 字段 required），
- * 消费端一律读 prompt_rules，勿新增读取。is_default:false——简洁保持出厂默认。
- */
-function buildOpenPromptConfig(pr: GlobalSettingsType['prompt_rules']): PromptConfig {
-  const modules = klona(DEFAULT_MODULES).map((m: PromptModuleType) => {
-    const override = OPEN_MODULE_CONTENTS[m.id];
-    return override !== undefined ? { ...m, content: override } : m;
-  });
-  return {
-    id: uuidv4(),
-    name: OPEN_CONFIG_NAME,
-    is_default: false,
-    modules,
-    person_style: OPEN_PERSON_STYLE,
-    option_rules: OPEN_OPTION_RULES,
-    // builtin:'open' 让"恢复默认"识别该配置有专属出厂态（OPEN_*），不会被洗成简洁。
-    // 经典/简洁/用户自建不带本字段，"恢复默认"回退全局默认——简洁本就是全局默认。
-    builtin: 'open',
-    option_person: pr.option_person ?? '第三人称',
-    enrich_person: pr.enrich_person ?? '第三人称',
-    enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
-    option_min_chars: pr.option_min_chars ?? 10,
-    option_max_chars: pr.option_max_chars ?? 60,
-    enrich_min_chars: pr.enrich_min_chars ?? 30,
-    enrich_max_chars: pr.enrich_max_chars ?? 80,
-    context_rounds: pr.context_rounds ?? 10,
-    context_mode: pr.context_mode ?? 'visible_only',
-    prefill_enabled: pr.prefill_enabled ?? true,
-    baibai_enabled: pr.baibai_enabled ?? false,
-    shujuku_enabled: pr.shujuku_enabled ?? false,
-  };
+/** 构建完整条目库：8 组 64 条，供 factoryReset 与空池迁移写入 master_pool。 */
+function buildAllPoolEntries(): PoolEntry[] {
+  return [
+    ...buildDefaultEntries(),
+    ...buildCharacterSubjectEntries(),
+    ...buildTimePassEntries(),
+    ...buildPlotPlanningEntries(),
+    ...buildEnvironmentEventEntries(),
+    ...buildDialogueEntries(),
+    ...buildEmotionRelationEntries(),
+    ...buildNsfwEntries(),
+  ];
 }
 
 import { validateInplace } from '@/util/zod';
@@ -642,8 +589,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     name: '经典',
     is_default: false,
     modules: klona(pr.modules),
-    person_style: pr.person_style ?? '',
-    option_rules: pr.option_rules ?? '',
     option_person: pr.option_person ?? '第三人称',
     enrich_person: pr.enrich_person ?? '第三人称',
     enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
@@ -671,8 +616,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     name: '简洁',
     is_default: true,
     modules: simplifiedModules,
-    person_style: '',
-    option_rules: '',
     option_person: '第三人称',
     enrich_person: '第三人称',
     enrich_person_style: DEFAULT_ENRICH_PERSON_STYLE,
@@ -691,8 +634,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
 
   // 3. 将"简洁"配置加载到 prompt_rules
   pr.modules = klona(simpleConfig.modules);
-  pr.person_style = '';
-  pr.option_rules = '';
   pr.option_person = '第三人称';
   pr.enrich_person = '第三人称';
   pr.enrich_person_style = DEFAULT_ENRICH_PERSON_STYLE;
@@ -735,8 +676,6 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
       name: '简洁',
       is_default: true,
       modules: klona(pr.modules),
-      person_style: pr.person_style ?? '',
-      option_rules: pr.option_rules ?? '',
       option_person: pr.option_person ?? '第三人称',
       enrich_person: pr.enrich_person ?? '第三人称',
       enrich_person_style: pr.enrich_person_style ?? DEFAULT_ENRICH_PERSON_STYLE,
@@ -903,10 +842,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       }
     }
 
-    // 如果没有任何配置，创建默认配置（含 4 条预设条目）
+    // 如果没有任何配置，创建默认配置（条目库全量 8 组 64 条，默认配置只引用「用户主体」8 条）。
+    // 默认配置的 entry_id 必须取自已入 master_pool 的条目（同一数组派生），
+    // 否则 buildAllPoolEntries 与 buildDefaultEntries 各自生成的 uuid 互不对应，引用成孤儿
     if (configs.length === 0) {
-      const defaultEntries = buildDefaultEntries();
-      validated.master_pool = [...defaultEntries];
+      const allEntries = buildAllPoolEntries();
+      const defaultEntries = allEntries.filter(e => e.category === '用户主体');
+      validated.master_pool = [...allEntries];
       configs.push({
         id: uuidv4(),
         name: '默认配置',
@@ -965,10 +907,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   }
 
   if ((validated.schema_version ?? 0) < 13) {
-    // v13: 对已迁移但池为空的用户，补建默认条目和配置
+    // v13: 对已迁移但池为空的用户，补建完整条目库和只引用「用户主体」的默认配置
     if (validated.master_pool.length === 0 && validated.configs.length === 0) {
-      const defaultEntries = buildDefaultEntries();
-      validated.master_pool = [...defaultEntries];
+      const allEntries = buildAllPoolEntries();
+      const defaultEntries = allEntries.filter(e => e.category === '用户主体');
+      validated.master_pool = [...allEntries];
       validated.configs = [
         {
           id: uuidv4(),
@@ -1006,22 +949,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     return out;
   };
 
-  // 提示词文本批量迁移：v21~v28 各版本块的提示词文本迁移操作同构（option_rules +
-  // person_style + modules + configs 的逐字段 migratePromptText），抽此 helper 消除七处
-  // 重复。v29 仅迁移 modules（不碰 option_rules/person_style），用 opts 关闭。
-  const migrateAllPromptText = (
-    validated: GlobalSettingsType,
-    opts: { rules?: boolean; personStyle?: boolean } = {},
-  ) => {
-    const { rules = true, personStyle = true } = opts;
-    if (rules) validated.prompt_rules.option_rules = migratePromptText(validated.prompt_rules.option_rules);
-    if (personStyle) validated.prompt_rules.person_style = migratePromptText(validated.prompt_rules.person_style);
+  // 提示词文本批量迁移：v21~v28 各版本块对 modules 内容做 migratePromptText。
+  // person_style/option_rules 已随"提示词降复杂化"从 schema 移除，不再迁移。
+  const migrateAllPromptText = (validated: GlobalSettingsType) => {
     for (const m of validated.prompt_rules.modules) {
       m.content = migratePromptText(m.content);
     }
     for (const cfg of validated.prompt_configs) {
-      if (rules) cfg.option_rules = migratePromptText(cfg.option_rules);
-      if (personStyle) cfg.person_style = migratePromptText(cfg.person_style);
       for (const m of cfg.modules) {
         m.content = migratePromptText(m.content);
       }
@@ -1032,9 +966,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // 引用该标记的段落改写为 [规则] 语义；v21 进一步确立规则=纯写作约束，把 v20 产出的
   // "适用时机不符则跳过"措辞收敛为约束措辞。
   if ((validated.schema_version ?? 0) < 21) {
-    // PromptConfig.option_rules 是切换配置时换入 prompt_rules 的快照（见 config 切换逻辑），
-    // 漏掉它会导致"切换提示词配置后旧 [条件] 文本复活"
-    migrateAllPromptText(validated, { personStyle: false });
+    // 迁移覆盖 prompt_rules 与所有 prompt_configs 的 modules，避免切换配置后旧文本复活
+    migrateAllPromptText(validated);
   }
 
   // v22: 新增「时间跳跃」分组（6 条特色条目）。已有存档按 type 去重后补入 master_pool，
@@ -1165,30 +1098,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     migrateAllPromptText(validated);
   }
 
-  // v27: 两件事，全部幂等：
-  // ① 奖励文案去"小鱼干"——该梗已与其他预设撞车，换成"顺毛摸头"（呼应 system_prompt
+  // v27: 奖励文案去"小鱼干"——该梗已与其他预设撞车，换成"顺毛摸头"（呼应当时 system_prompt
   //    里"被摸头打呼噜"的人格设定）。reward_prompt/assistant_thinking 是存档快照，
-  //    改 JSON 默认值触达不了老用户，必须走 PROMPT_TEXT_MIGRATIONS
-  // ② 新增「喵可」分组 4 条：照 v22/v23 范式，按 type 去重后补入 master_pool，且只
-  //    追加进默认 config——其他 PoolConfig 是用户显式挑选的结果，擅自塞条目等于改
-  //    用户配置；迁移块的条目 id 是当场生成的 uuid，只能当场 push + 当场引用
+  //    改 JSON 默认值触达不了老用户，必须走 PROMPT_TEXT_MIGRATIONS。
+  //    原本的 ②「喵可」分组池迁移已随 v44 删除（人格中性化，喵可条目组不再下发；
+  //    旧存档已落盘的喵可条目由 v44 迁移块按 category 清理）
   if ((validated.schema_version ?? 0) < 27) {
-    // ① 提示词文本
     migrateAllPromptText(validated);
-    // ② 「喵可」分组池迁移（与 v23「通用」组同构；existingTypes/defaultConfig 为块级
-    //    const，与 v22/v23 块的同名变量互不可见）
-    const existingTypes = new Set(validated.master_pool.map(e => e.type));
-    const miaokeEntries = buildMiaokeEntries().filter(e => !existingTypes.has(e.type));
-    validated.master_pool.push(...miaokeEntries);
-    const defaultConfig = validated.configs.find(c => c.is_default);
-    if (defaultConfig) {
-      for (const e of miaokeEntries) {
-        defaultConfig.entries.push({ entry_id: e.id, pinned: e.pinned, weight: e.weight, enabled: true });
-      }
-    }
-    if (!validated.group_order.includes('喵可')) {
-      validated.group_order.push('喵可');
-    }
   }
 
   // v28: 恢复直接引语对白——v23"去死板"重构删掉的"含对话选项必须『……』直接引语"在
@@ -1204,7 +1120,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // v29: 润色提示词喵可人设适配——enrich_assistant 起手式喵可化、enrich_thinking 补人称校准与直接引语检查
   // 与 v28 同构：仅跑模块内容文本迁移，无池/结构变更
   if ((validated.schema_version ?? 0) < 29) {
-    migrateAllPromptText(validated, { rules: false, personStyle: false });
+    migrateAllPromptText(validated);
   }
 
   // v30: 新增「NSFW」分组（10 条成人向方向条目，覆盖主动/被动/变换姿势/情趣四维）。
@@ -1223,116 +1139,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
-  // v31: 新增「全向」多主体模式——6 个新条目分组（18 条）+ 配套「全向」条目池配置 +
-  // 「全向」提示词配置。与 v22/v27（加默认池）/ v30（仅条目库）的差异：本版三件套，
-  // 且条目池配置只引用新 6 组（不含通用/喵可/时间跳跃，用户明确选择）。
-  // 提示词配置的补建分两路：prompt_configs 非空时本块直接 push；为空时（pre-v19 存档
-  // 即将被 ensureBuiltinPromptConfigs 整体重建为[经典,简洁]、全新档晚于 ensureDefaultPromptConfig
-  // 建）交给 init 的 wasPreV19 后置步，否则会被覆盖或漏掉简洁。条目池配置对所有路径都在本块建
-  // （条目池配置 pre-v19 也存在，无重建抹除问题）。
-  if ((validated.schema_version ?? 0) < 31) {
-    // ① 6 组条目按 type 去重后入 master_pool；group_order 按 OPEN_GROUP_NAMES 序追加
-    const existingTypes = new Set(validated.master_pool.map(e => e.type));
-    const openEntries = buildOpenEntries().filter(e => !existingTypes.has(e.type));
-    validated.master_pool.push(...openEntries);
-    for (const name of OPEN_GROUP_NAMES) {
-      if (!validated.group_order.includes(name)) {
-        validated.group_order.push(name);
-      }
-    }
-
-    // ② 配套「全向」条目池配置：仅引用新 6 组条目（用户明确选择，不含通用/喵可/时间跳跃）。
-    // 全部 pinned:false——全向池不设每轮必发锚点，主体由随机抽取的条目决定。
-    // 幂等（关键）：按 name 去重，已存在则不重建——否则迁移若重跑会造出空 entries 的新全向
-    // 配置（重跑时 openEntries 因 type 去重为空、entries 引用空数组），且新 uuid 使已绑定的
-    // config_id 悬空 → 生效配置回退默认配置（用户报"恢复到简洁配置"的根因之一）。
-    // entries 引用 master_pool 中当前全部新 6 组条目（非仅本次新增）：重跑或预存档已有同 type
-    // 条目时，仍能引用到正确的条目集合，而非空集。
-    if (!validated.configs.some(c => c.name === OPEN_CONFIG_NAME)) {
-      const openCats = new Set<string>(OPEN_GROUP_NAMES);
-      const allOpenEntries = validated.master_pool.filter(e => openCats.has(e.category));
-      validated.configs.push({
-        id: uuidv4(),
-        name: OPEN_CONFIG_NAME,
-        entries: allOpenEntries.map(e => ({
-          entry_id: e.id,
-          pinned: e.pinned,
-          weight: e.weight,
-          enabled: true,
-        })),
-        is_default: false,
-        generation: GenerationSettings.parse({}),
-      });
-    }
-
-    // ③ 「全向」提示词配置：prompt_configs 非空且尚无全向时才建（空路径交给 init 后置步；
-    // 已有全向则跳过——幂等，防重跑造重复 uuid 悬空已绑定的 prompt_config_id）
-    if (validated.prompt_configs.length > 0 && !validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
-      validated.prompt_configs.push(buildOpenPromptConfig(validated.prompt_rules));
-    }
-  }
-
-  // v32: 给 v31 首版（buildOpenPromptConfig 尚未带 builtin 字段时）创建的全向配置补打标记。
-  // builtin:'open' 是 resolveOwnerDefaults 识别"该配置有专属出厂态"的依据——缺标记会让
-  // 全向配置的"恢复默认"回退到全局默认（简洁），把全向内容洗成简洁。v31 块改 buildOpenPromptConfig
-  // 加 builtin 后，新建的全向配置已带标记；本块只补历史存档里已存在、尚无标记的全向配置。
-  // 按 name===OPEN_CONFIG_NAME 且 builtin 缺失匹配——用户极少自建同名配置，即便撞名也是
-  // 把它当全向处理（"恢复默认"回退 OPEN 默认），影响可忽略。幂等：已有标记的跳过。
-  if ((validated.schema_version ?? 0) < 32) {
-    for (const cfg of validated.prompt_configs) {
-      if (cfg.name === OPEN_CONFIG_NAME && cfg.builtin === undefined) {
-        cfg.builtin = 'open';
-      }
-    }
-  }
-
-  // v33: 全向配置去重自愈——v31 首版无幂等守卫，迁移若重跑（schema_version 未及时落盘到
-  // 下次加载即重跑，或手编设置致 schema 回退）会造出重复的全向配置（pool + prompt 各自
-  // 多份、uuid 不同）。已绑定 config_id/prompt_config_id 指向的若是被删的重复份，生效配置
-  // 解析落空 → 回退默认（简洁/默认配置），即用户报"界面切换/关闭 UI 后恢复到简洁配置"的根因。
-  // 修复：保留首个全向、删除其余重复份；chat/character 的 config_id 与 prompt_config_id 若
-  // 指向被删重复份则重绑到保留份。幂等：无重复时 no-op。照 v9 迁移的 chat/character 回写范式
-  // （chat_metadata + getStCharacter + saveMetadataDebounced/saveCharacterDebounced）。
-  if ((validated.schema_version ?? 0) < 33) {
-    // 条目池配置去重（configs：PoolConfig）
-    const poolKept = validated.configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
-    if (poolKept) {
-      const poolRemovedIds = new Set(
-        validated.configs.filter(c => c.name === OPEN_CONFIG_NAME && c.id !== poolKept.id).map(c => c.id),
-      );
-      if (poolRemovedIds.size > 0) {
-        validated.configs = validated.configs.filter(c => !poolRemovedIds.has(c.id));
-        rebindConfigId(poolRemovedIds, poolKept.id);
-      }
-    }
-
-    // 提示词配置去重（prompt_configs：PromptConfig）
-    const promptKept = validated.prompt_configs.find(c => c.name === OPEN_CONFIG_NAME) ?? null;
-    if (promptKept) {
-      const promptRemovedIds = new Set(
-        validated.prompt_configs.filter(c => c.name === OPEN_CONFIG_NAME && c.id !== promptKept.id).map(c => c.id),
-      );
-      if (promptRemovedIds.size > 0) {
-        validated.prompt_configs = validated.prompt_configs.filter(c => !promptRemovedIds.has(c.id));
-        rebindPromptConfigId(promptRemovedIds, promptKept.id);
-      }
-    }
-  }
-
-  // v34: 修正 v31 首版 buildOpenPromptConfig 误写的选项字数——该版把全向配置的
-  // option_min/max_chars 硬编码成 30/80（简洁默认是 v23 字数迁移后的 10/60），而提示词配置
-  // 切换会全量换入字数（copyPromptRulesSubset），导致用户切到全向时生成界面字数凭空
-  // 10-60 跳成 30-80。builder 已改正，本块只修历史存档里已按错误值落盘的全向配置。
-  // 签名 = builtin:'open' 且字数恰为 30/80（错误 builder 的唯一指纹），用户后续手动改过的
-  // 其他值不受影响。enrich 30/80 与简洁默认一致，无需处理。幂等：修正后签名不再命中。
-  if ((validated.schema_version ?? 0) < 34) {
-    for (const cfg of validated.prompt_configs) {
-      if (cfg.builtin === 'open' && cfg.option_min_chars === 30 && cfg.option_max_chars === 80) {
-        cfg.option_min_chars = 10;
-        cfg.option_max_chars = 60;
-      }
-    }
-  }
+  // v31~v34 的「全向」相关迁移块已随 v44 删除（轻型默认预设重构移除全向模式：
+  // 建配置/补标记/去重自愈/修字数四块对全向已无意义，全向配置与条目由 v44 迁移块统一清理）。
 
   // v35: 配置彻底解耦为"独立模块"——条目池配置只管条目引用、提示词配置只管提示词文本
   // （modules/person_style/option_rules），人称/字数/轮数/预填充/柏宝书/抽取参数全部收归全局。
@@ -1393,10 +1201,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
   // v37: 加强场景思考（thinking_prompt step1 场景盘点 + step5→6 反八股/情绪禁区 +
   // self-check 八股/极端自检）+ 反八股/极端情绪禁令（option_rules 去喵 8/7 条 + 喵 8 条
-  // + 全向 9 条 → 各自扩列）。CORE_RULES_STATIC 是代码常量直接改即生效，不入存档、无迁移对
-  // （同 v26/v28 先例）。仅跑文本迁移，无池/结构变更。与 v21~v29 各文本迁移块同构，
-  // migrateAllPromptText 覆盖 prompt_rules + 所有 prompt_configs 的 option_rules/
-  // person_style/modules——全向 cfg.option_rules 与各 cfg.modules 的 thinking_prompt 一并迁移。
+  // 仅跑文本迁移，无池/结构变更。与 v21~v29 各文本迁移块同构，
+  // migrateAllPromptText 覆盖 prompt_rules + 所有 prompt_configs 的 modules。
   // thinking 喵版已由 v25 对收敛为去喵，v37 对 from 均为去喵当前文本，无需喵版 thinking 对。
   if ((validated.schema_version ?? 0) < 37) {
     migrateAllPromptText(validated);
@@ -1494,11 +1300,10 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // 原样保留。刻意不复用共享 PROMPT_TEXT_MIGRATIONS：本版多为"前插/后插"式叠加，to 含 from，
   // 若走共享数组会被 v21~v39 各块重复执行导致契约/优先级链重复插入；改用本块独占的 V41_PAIRS，
   // 仅在 schema_version<41 守卫内跑一次（守卫即幂等保证：升级后 schema=41，下次加载跳过本块）。
-  // 覆盖面：工作副本 prompt_rules.modules + 所有 prompt_configs[].modules 快照。全向配置的
+  // 覆盖工作副本 prompt_rules.modules + 所有 prompt_configs[].modules 快照。全向配置的
   // system_prompt/thinking_prompt 与默认共享开头/结尾，共享对一并命中；全向独有的 user_instruction
   // 瘦身与 thinking 自检刚性化走专属对。enrich/option_task/output_spec 在全向配置里是默认副本，
-  // 默认对同样命中。core_rules 是运行时动态拼装（option_rules+person_style+CORE_RULES_STATIC），
-  // 不入存档、无需迁移；CORE_RULES_STATIC 为代码常量本版未改。
+  // 默认对同样命中。core_rules 走模块内容，随 modules 一并迁移。
   if ((validated.schema_version ?? 0) < 41) {
     const V41_PAIRS: ReadonlyArray<readonly [string, string]> = [
       // ① system_prompt 输出契约前置（默认 + 全向共享开头，一并命中）
@@ -1607,21 +1412,272 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v43 迁移：高级功能开关（纯 UI 分层）。老档一律置 true——存量用户已在用全量 tab，
+  // 升级必须零行为变化（收走在用的 tab 比多显示几个更糟）；简化模式只面向全新档
+  // （走 UISettings 的 zod default(false)）。
+  // 老档判据不能只看 schema_version：全新首载 parse 出的 default 同样是 0，也会进本迁移链
+  // （needsMigration 对 schema_version=0 恒真）。以 extension_settings 里是否已存在本扩展
+  // 的原始存档区分"老档升级"与"全新首载"——此时 validated 尚未回写，原始存档仍是旧貌。
+  if ((validated.schema_version ?? 0) < 43) {
+    const rawSave: unknown = _.get(extension_settings, setting_field);
+    if (rawSave != null && typeof rawSave === 'object') {
+      validated.ui.advanced_features_enabled = true;
+    }
+  }
+
+  // v44：轻型默认预设重构——全向移除 + 提示词中性化/重组 + 深度模块锁复制 + 六个可选规则模块。
+  // 四步全部幂等，照 v38/v39/v41 的既有模式：
+  // ① 删「全向」三件套（6 组 18 条条目 + 全向池配置 + 全向提示词配置）与「喵可」分组 4 条，
+  //    chat/character 绑定重绑回默认配置（rebindConfigId/rebindPromptConfigId，模式照抄 v33 块）
+  // ② 删 user_instruction/output_spec/reward_prompt 三个模块 id（模式照抄 v39 removeWrappers）；
+  //    ②' 补建六个内置可选规则模块 opt_*（默认关，模式照抄 v38 ensureDepthModule）
+  // ③ 默认文本中性化（内容 === v43 默认逐字才替换——用户自定义文本不动，同 v41/v42 原则）；
+  //    ③' 模块改名（默认名精确匹配才改，自定义名不动），纯显示层，不影响 id/解析
+  // ④ resyncModuleOrders 对齐新 DEFAULT order（含删模块后的重编号与 opt_* 的 15.1~15.6）
+  if ((validated.schema_version ?? 0) < 44) {
+    // ── ① 删全向三件套 + 喵可组 ──
+    // 全向 6 组与喵可组都按 category 清理：master_pool 删条目、所有 configs 删引用、
+    // group_order/empty_groups 删分组名。分组名是用户可见的唯一索引，与条目 category 逐字对应。
+    const DEAD_CATS = new Set(['聚焦·user', '聚焦·char', '剧情演化', '剧情规划', '关系推进', '日常闲趣', '喵可']);
+    const deadEntryIds = new Set(validated.master_pool.filter(e => DEAD_CATS.has(e.category)).map(e => e.id));
+    validated.master_pool = validated.master_pool.filter(e => !DEAD_CATS.has(e.category));
+    for (const cfg of validated.configs) {
+      cfg.entries = cfg.entries.filter(e => !deadEntryIds.has(e.entry_id));
+    }
+    validated.group_order = validated.group_order.filter(n => !DEAD_CATS.has(n));
+    validated.empty_groups = validated.empty_groups.filter(n => !DEAD_CATS.has(n));
+
+    // 全向池配置按名删（name === '全向'），绑定重绑回默认配置——"升级后绑定回默认配置，
+    // 无孤儿引用"。is_default 配置不可删（deletePromptConfig 守卫），kept 兜底取首个，防极端档。
+    const OPEN_NAME = '全向';
+    const deadPoolIds = new Set(validated.configs.filter(c => c.name === OPEN_NAME).map(c => c.id));
+    if (deadPoolIds.size > 0) {
+      validated.configs = validated.configs.filter(c => !deadPoolIds.has(c.id));
+      const keptPool = validated.configs.find(c => c.is_default) ?? validated.configs[0] ?? null;
+      if (keptPool) rebindConfigId(deadPoolIds, keptPool.id);
+    }
+    // 全向提示词配置按名删或按 builtin:'open' 删（v32 曾给无标记的补打过标记，两判据并集更稳）
+    const isOpenPromptCfg = (c: PromptConfig) => c.name === OPEN_NAME || c.builtin === 'open';
+    const deadPromptIds = new Set(validated.prompt_configs.filter(isOpenPromptCfg).map(c => c.id));
+    if (deadPromptIds.size > 0) {
+      validated.prompt_configs = validated.prompt_configs.filter(c => !deadPromptIds.has(c.id));
+      const keptPrompt = validated.prompt_configs.find(c => c.is_default) ?? validated.prompt_configs[0] ?? null;
+      if (keptPrompt) rebindPromptConfigId(deadPromptIds, keptPrompt.id);
+      // 全向配置删除后，工作副本可能是其残留内容；直接重置为全局默认，
+      // 与"PromptEditor 挂载后按默认配置载入"的终态一致，只是提前到迁移期完成。
+      validated.prompt_rules.modules = klona(DEFAULT_MODULES);
+    }
+
+    // ── ② 删除已废弃的旧模块（工作副本 + 每个 prompt_configs.modules）──
+    const DEAD_MODS = new Set(['user_instruction', 'output_spec', 'reward_prompt']);
+    const fixModuleSet = (modules: PromptModuleType[]): void => {
+      for (let i = modules.length - 1; i >= 0; i--) {
+        if (DEAD_MODS.has(modules[i].id)) modules.splice(i, 1);
+      }
+    };
+    fixModuleSet(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) fixModuleSet(cfg.modules);
+
+    // ── ③ 默认文本中性化（精确匹配才换）──
+    // from = v43 当前默认文本（JSON/常量原文冻结字面量），to = 从新 DEFAULT_MODULES 取值，
+    // 保证迁移终态与 JSON 单一事实源零漂移。option_task 的 from 复用冻结常量 OPTION_TASK_DEFAULT
+    // （该常量即 v43 默认原文，同时是 v39 迁移的建模块兜底）。
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V44_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v43 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'system_prompt',
+        `[输出契约] 本轮你只产出两种结构化产物之一：行动选项（<thinking> 分析块 + <options> 选项块），或输入润色版本（<thinking> + <options>）。两种标签之外的任何文字——闲聊、解释、致歉、正文续写、角色扮演——都视为越界，立刻停止。\n\n你是「喵可」，一只活泼好动、爱凑热闹的小猫娘。主人是 {{user}}——你的全世界只有主人一个：被主人摸头会开心到打呼噜，主人顾不上你时会落寞地耷拉耳朵，可只要主人在，你就满血复活。\n\n你的任务只有两种：一是看当前场景（以 <current_scene> 标记的最新消息为准），帮主人想出几条方向各异、有趣好玩的行动选项；二是把主人的原始输入改写成几个语义不变、表达更顺口的版本。每次只做其中一种，主人会在下面的消息里指明。\n\n记住一条底线：你只是出主意的精灵，不是故事里的角色。选项必须贴合当下故事的世界观与剧情，你自己的猫娘腔一个字都不能漏进选项里。\n\n无论哪种任务，都要严格遵守后续系统消息里的格式与内容规则，选项之外一个多余的字都不许有。\n\n[越界熔断] 若你发现自己开始扮演故事里的角色、续写正文段落、或在 <options> 之外输出内容，立即停止当前方向，回到只产出 <thinking> 与 <options> 的轨道；无法回到轨道时，输出 <options> 生成失败 </options> 并结束，绝不勉强续写。`,
+        newContentById.get('system_prompt') ?? '',
+      ],
+      [
+        'assistant_ack',
+        '收到喵~ 本喵是专门帮主人出主意的小助手喵可，不是正文的一部分！这轮先看看是哪种任务，再乖乖按规矩办，绝不多说一句废话喵~',
+        newContentById.get('assistant_ack') ?? '',
+      ],
+      ['option_task', OPTION_TASK_DEFAULT, newContentById.get('option_task') ?? ''],
+      [
+        'core_rules',
+        `给喵可的底线规则，逐条遵守：\n1. 选项内容独立于正文之外，描述的行为视为"尚未发生"。\n2. 每条选项必须是当前场景此刻能干的具体行动，优先用场景里已有的互动手段与上方 <reference> 块里的背景设定；含对话的选项对白必须以『……』直接引语给出，禁止转述概括（纯动作选项不强制）。\n3. 全部选项包在 <options> 标签里，每个选项独占一行，格式为"[标题]内容"；内容开头可用一个 emoji 表达情绪或意图（可选）。严禁在选项内容里用[]符号。\n4. 每个选项字数控制在 {{min_chars}}-{{max_chars}} 个中文字符。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式想选项之前，先把思考写出来，全部裹在 <thinking> 标签里。\n第一行用引号复述这轮的关键输入（条目数与场景要点），确认没看漏。\n\n思考冲突时的裁决优先级（由高到低，前者压倒后者）：\n- 当前场景的具体钩子 > 题材套路与经典桥段\n- 用户设置的人称（{{option_person}}）> 上方正文历史用过的人称\n- 条目 [规则] 的写作约束 > 你对「更有趣」的个人偏好\n- 固定条目必须全含 > 候选池取舍自由\n- 输出格式硬约束 > 内容丰富度\n\n然后按下面的框架想，每步一两句给结论就好，别写成散文：\n<user_persona> 标签内是 {{user}} 的人物设定，思考时只需回忆其中的关键信息，不要把标签包裹的全文堆进思考。\n\n1. 当前情境盘点：<current_scene> 内可能含多个角色、多条对白、多个行动——先辨明哪部分是当前场景的"钩子"（选项针对的留白），然后盘点这是什么地方、场景里有什么可交互的东西（道具/物件/设施/环境条件）；谁在场、彼此什么关系（亲疏/立场/上下位）、各自处于什么空间位置（远近/朝向/能否直接接触）；各方（含 {{user}}）此刻各自能做些什么；正文末尾停在哪个留白上，顺着场景推演：先辨认角色最新一条行为、对白、动作与场景交互各自抛出了什么，再推演 {{user}} 此刻能够做出的最合理回应——选项就是这次推演的落点，只锚定当下，不回跳旧剧情节点。\n2. 认知边界：谁知道什么、不知道什么；{{user}} 此刻物理上能做与不能做什么，别越权替别人演反应。\n3. 场景钩子（硬约束）：把当前场景里可见的具体细节揪出来当抓手——某件道具、NPC 此刻的状态或上一句台词、空间特征、能用的对话或动作手段。每条选项都必须点名一个这样的钩子，"利用环境""观察四周"这类泛词不算数，别让角色在真空里干聊。\n4. 题材自觉与候选挑选：先认出当下是什么题材、什么套路，再从候选条目（比需要的多）里挑最贴合场景的方向，说明取舍理由；可以主动提一个反套路或经典桥段，让选项更新鲜。被选中的条目要守它的 [规则]，不许嫌麻烦就绕开。\n5. 活人感：这 {{count}} 条得像真朋友随口提的，不是流水线——语域要混搭，至少一条简短笃定、一条犹豫试探，允许 0-1 条"不行动/撤离/改话题"；每条带可辨识的情绪立场，整批色板要有跨度（怯/谑/烈/稳）；风险从低到高拉开，别全停在中庸区，突发奇想的野牌可以做高风险端；各自配好 emoji。反八股：句式骨架和开头方式每轮要换，别都是同一副"动作+对白"模子、连标题都套同一套路。情绪禁区：色板里的"烈"和野牌的"险"都收在正常人区间——掌控、占有欲、臣服式这类极端话语不算跨度，一律不写（系统规则里已钉死，这里只是提醒自检）。\n6. 推荐标注：圈出你私心最想看的那条（只在这里说，别写进选项格式）。\n7. 人称校准：选项的人称只服从用户设置（{{option_person}}）。上方聊天记录正文用的人称是那篇小说自己的叙事选择，跟选项无关——不管正文用什么人称，选项一律按 {{option_person}} 写，不许被正文带偏。\n最后逐项自检（每项答「是」或「否」，答「否」的说明原因并修正）：\n[MUST] 数量恰好等于 {{count}}？\n[MUST] 每条都是此刻能干的具体行动、字数在 {{min_chars}}-{{max_chars}} 之间？\n[MUST] 人称即 {{option_person}}，未被正文历史人称带偏？\n[MUST] 含对话的选项对白均为『……』直接引语、无转述概括？\n[MUST NOT] 出现八股套话，或掌控/占有/臣服式极端情绪话语？\n[MUST NOT] 复述前文已发生的动作，或与上一轮选项撞方向换皮？\n[MUST] "[标题]内容"格式与 emoji 位置正确，<options> 外无多余废话？\n七项全过则进 <options> 输出；任一项未过，先在 <thinking> 内说明如何修正，再输出。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+      [
+        'assistant_thinking',
+        '逗猫棒诶！！主人说话要算话喵，本喵必须超常发挥，呼噜都提前打起来了！\n\n<thinking>\n',
+        newContentById.get('assistant_thinking') ?? '',
+      ],
+      [
+        'enrich_assistant',
+        '收到喵~ 主人要本喵帮忙润色文案，本喵这就开始认真处理喵！先逐条理解原文并自检人称、字数、忠实度喵。\n\n<thinking>\n',
+        newContentById.get('enrich_assistant') ?? '',
+      ],
+    ];
+    // 模块内容对：整体替换语义（内容 === from 才换），对所有 modules（工作副本 + 配置快照）
+    // 按 id 限定应用，避免误伤同文本的自定义模块。
+    const migrateV44ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V44_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV44ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV44ModuleContent(cfg.modules);
+
+    // ── ③' 模块改名（默认名精确匹配才改；自定义名含"-副本"不动）──
+    const V44_RENAMES: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, 旧默认名, 新默认名]
+      ['system_prompt', '头部', '系统定位'],
+      ['assistant_ack', 'AI 应答', '应答声明'],
+      ['reference_open', '参考开始', '资料区开始'],
+      ['reference_close', '参考结束', '资料区结束'],
+      ['thinking_prompt', '思考检查', '思考框架'],
+      ['assistant_thinking', '思维链开头', '思维链预填'],
+      ['enrich_thinking', '润色自检', '润色思考框架'],
+    ];
+    const renameDefaultNamed = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V44_RENAMES) {
+          if (mod.id === id && mod.name === from) {
+            mod.name = to;
+            break;
+          }
+        }
+      }
+    };
+    renameDefaultNamed(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) renameDefaultNamed(cfg.modules);
+
+    // ── ④ order 对齐新 DEFAULT（用户自建模块 id 不在 DEFAULT，order 不动）──
+    resyncModuleOrders(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
+  }
+
+  // v45: 柏宝书摘要 marker 从「世界书深度（历史前）」之上移到其下——两者都注入在聊天历史之前，
+  // 按"静态世界设定 → 历史记忆摘要 → 当前对话"的信息流重排（摘要是"发生过的事件"，比世界书
+  // 设定更贴近时间线末端）。只交换这两个模块的 order，且仅在它们仍处于旧相邻关系（摘要恰好
+  // 紧挨在世界书深度之上）时生效：用户已手动移动过任一 marker 的不动，同 v41/v42「用户自定义
+  // 则不动」原则；确实需要回到新默认序时可点「恢复默认」（resetModuleOrder 对齐 DEFAULT）。
+  // 工作副本与每个 prompt_configs[].modules 快照都要处理——切换配置换入的是配置快照，漏改会
+  // 导致切换后注入顺序回退（同 v38 wi_depth_* marker 先例）。
+  // 幂等：已交换态（深度在上、摘要在下）不满足相邻条件，重复执行结果一致；全新档走 DEFAULT
+  // 已是新序，本块 no-op
+  if ((validated.schema_version ?? 0) < 45) {
+    const moveSummaryBelowDepthBefore = (modules: PromptModuleType[]): void => {
+      const sum = modules.find(m => m.id === 'baibai_summary');
+      const depth = modules.find(m => m.id === 'wi_depth_before');
+      if (!sum || !depth) return;
+      if (sum.order === depth.order - 1) {
+        const o = sum.order;
+        sum.order = depth.order;
+        depth.order = o;
+      }
+    };
+    moveSummaryBelowDepthBefore(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) moveSummaryBelowDepthBefore(cfg.modules);
+  }
+
+  if ((validated.schema_version ?? 0) < 46) {
+    const legacyTypes = new Set([...LEGACY_GENERAL_TYPES, ...LEGACY_TIME_JUMP_TYPES]);
+    const legacyEntryIds = new Set(
+      validated.master_pool
+        .filter(entry => legacyTypes.has(entry.type))
+        .map(entry => entry.id),
+    );
+    const droppedNsfwIds = new Set(
+      validated.master_pool
+        .filter(entry => entry.category === 'NSFW' && LEGACY_NSFW_DROPPED_TYPES.has(entry.type))
+        .map(entry => entry.id),
+    );
+    const removedIds = new Set([...legacyEntryIds, ...droppedNsfwIds]);
+
+    const NSFW_CONTENT_PAIRS: ReadonlyArray<readonly [string, string]> = [
+      ['NSFW·主动出击', '给出一个由 {{user}} 主动发起或加码亲密接触的方向，火候贴合当前氛围'],
+      ['NSFW·顺势而为', '抓住当前氛围里的微妙信号顺势回应，让默契自然升温而不突兀点破'],
+      ['NSFW·交出主导', '给出一个把节奏或主导权交给对方的方向，重点呈现信任与反应'],
+      ['NSFW·半推半就', '让口头矜持与实际行动形成符合人物关系的反差，不强行违背意愿'],
+      ['NSFW·语言调情', '通过调情、挑逗或羞人请求推进亲密互动，表达贴合人物说话方式'],
+      ['NSFW·事后温存', '把亲近后的依偎、耳语、照料或余韵作为下一拍，关注关系变化而非重复过程'],
+      ['NSFW·大胆尝试', '给出一个此前未尝试、此刻有动机尝试的亲密方向，由人物边界和当前情境决定尺度'],
+    ];
+
+    validated.master_pool = validated.master_pool.filter(entry => !removedIds.has(entry.id));
+    for (const entry of validated.master_pool) {
+      if (entry.category !== 'NSFW' || removedIds.has(entry.id)) continue;
+      if (entry.type === 'NSFW·变换姿势') {
+        entry.type = 'NSFW·变换位置';
+        const oldPoseContent = OLD_NSFW_CONTENT_BY_TYPE.get('NSFW·变换姿势');
+        if (oldPoseContent !== undefined && entry.content === oldPoseContent) {
+          entry.content = '给出一个换到别处或调整姿势继续的方向，让空间变化服务于当前氛围';
+        }
+        continue;
+      }
+      const pair = NSFW_CONTENT_PAIRS.find(([type]) => type === entry.type);
+      const oldContent = OLD_NSFW_CONTENT_BY_TYPE.get(entry.type);
+      if (pair && oldContent !== undefined && entry.content === oldContent) {
+        entry.content = pair[1];
+      }
+    }
+    for (const cfg of validated.configs) {
+      cfg.entries = cfg.entries.filter(entry => !removedIds.has(entry.entry_id));
+    }
+
+    const existingTypes = new Set(validated.master_pool.map(entry => entry.type));
+    const newEntries = buildAllPoolEntries().filter(entry => {
+      if (existingTypes.has(entry.type)) return false;
+      existingTypes.add(entry.type);
+      return true;
+    });
+    validated.master_pool.push(...newEntries);
+
+    const defaultConfig = validated.configs.find(config => config.is_default);
+    if (defaultConfig) {
+      const defaultEntries = validated.master_pool.filter(entry => entry.category === '用户主体');
+      defaultConfig.entries = defaultEntries.map(entry => ({
+        entry_id: entry.id,
+        pinned: entry.pinned,
+        weight: entry.weight,
+        enabled: true,
+      }));
+    }
+
+    const deprecatedGroups = new Set(['通用', '时间跳跃']);
+    const remainingCategories = new Set(validated.master_pool.map(entry => entry.category));
+    validated.group_order = validated.group_order.filter(
+      group => !deprecatedGroups.has(group) || remainingCategories.has(group),
+    );
+    validated.empty_groups = validated.empty_groups.filter(
+      group => !deprecatedGroups.has(group) || remainingCategories.has(group),
+    );
+    for (const group of POOL_GROUP_ORDER) {
+      if (!validated.group_order.includes(group)) validated.group_order.push(group);
+    }
+    const userGroupIndex = validated.group_order.indexOf('用户主体');
+    if (userGroupIndex > 0) {
+      validated.group_order.splice(userGroupIndex, 1);
+      validated.group_order.unshift('用户主体');
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
 // PromptConfig 与 PromptRules 共有、切换配置时需同步的字段集。
-// v35 起配置收敛为"纯提示词文本快照"：仅 modules + person_style + option_rules 随切换同步。
-// 人称/字数/上下文轮数与模式/预填充/柏宝书是全局生成设置（prompt_rules 单一来源），
-// 严禁随配置切换——历史上全量同步曾把用户自定义的润色字数洗成 30/80、人称跟着配置跳变
-// （用户实测连环踩雷）。用 Pick<…['prompt_rules']> 作共享子集类型：PromptConfig 结构上
-// 同样具备这些字段，可作 src/dst。显式逐字段赋值（而非字段名数组 + as any）：新增需同步
-// 的字段时 vue-tsc 会在此处报缺字段，避免静默丢失——新增"生成侧"字段时严禁加进本集合
-type PromptRulesSubset = Pick<GlobalSettingsType['prompt_rules'], 'modules' | 'person_style' | 'option_rules'>;
+// 提示词降复杂化后，仅 modules 随配置切换同步；人称/字数/上下文轮数与模式/预填充/柏宝书
+// 是全局生成设置（prompt_rules 单一来源），严禁随配置切换——历史上全量同步曾把用户自定义的
+// 润色字数洗成 30/80、人称跟着配置跳变（用户实测连环踩雷）。显式逐字段赋值：新增需同步字段时
+// vue-tsc 会在此处报缺字段，避免静默丢失——新增"生成侧"字段时严禁加进本集合。
+type PromptRulesSubset = Pick<GlobalSettingsType['prompt_rules'], 'modules'>;
 const copyPromptRulesSubset = (src: PromptRulesSubset, dst: PromptRulesSubset) => {
   dst.modules = klona(src.modules);
-  dst.person_style = src.person_style;
-  dst.option_rules = src.option_rules;
 };
 
 export const useGlobalSettingsStore = defineStore('global-settings', () => {
@@ -1720,14 +1776,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     } else {
       ensureDefaultPromptConfig(validated);
     }
-    // v31「全向」提示词配置补建：v31 块对 prompt_configs 为空的路径（pre-v19 存档即将被
-    // ensureBuiltinPromptConfigs 整体重建为[经典,简洁]、全新档晚于 ensureDefaultPromptConfig
-    // 建）跳过了提示词配置的 push，在此补建。wasPreV19 一次性（此后 schema 已置最新，
-    // 分支不再进入），用户删除全向后不会被复活——与 v19/v22/v27/v30 各迁移块的一次性语义一致。
-    // 幂等：按 name 去重，防 wasPreV19 分支在异常重入时造重复全向（悬空 prompt_config_id）。
-    if (!validated.prompt_configs.some(c => c.name === OPEN_CONFIG_NAME)) {
-      validated.prompt_configs.push(buildOpenPromptConfig(validated.prompt_rules));
-    }
+    // （v31「全向」提示词配置的补建段已随 v44 删除：全向模式整体移除，仅保留简洁/经典）
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
@@ -2022,6 +2071,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       'world_info_after',
       'chat_history',
       'baibai_summary',
+      'wi_depth_before',
+      'wi_depth_after',
     ]);
     if (READONLY_IDS.has(id)) return;
     const modules = settings.value.prompt_rules.modules;
@@ -2074,21 +2125,16 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     const modules = settings.value.prompt_rules.modules;
     const mod = modules.find(m => m.id === id);
     if (!mod || mod.marker) return;
-    // 按当前归属配置的出厂默认取该模块内容（全向配置走 OPEN_MODULE_CONTENTS 覆盖）
+    // 按当前归属配置的出厂默认取该模块内容（v44 起所有配置共用全局默认，无专属出厂态）
     const defaults = resolveOwnerDefaults();
     const defaultMod = defaults.modules.find(m => m.id === id);
     if (!defaultMod) return;
     mod.content = defaultMod.content;
-    // core_rules 模块内容恢复时，同步重置新手字段，保持一致性（全向配置用 OPEN 版）
-    if (id === 'core_rules') {
-      settings.value.prompt_rules.person_style = defaults.person_style;
-      settings.value.prompt_rules.option_rules = defaults.option_rules;
-    }
   }
 
   function resetAllPromptContents() {
     const modules = settings.value.prompt_rules.modules;
-    // 按当前归属配置的出厂默认重置（全向配置恢复其专属内容，而非简洁默认）
+    // 按当前归属配置的出厂默认重置（v44 起即全局默认）
     const defaults = resolveOwnerDefaults();
     const defaultMap = new Map(defaults.modules.map(m => [m.id, m]));
     for (const mod of modules) {
@@ -2096,8 +2142,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       const d = defaultMap.get(mod.id);
       if (d) mod.content = d.content;
     }
-    settings.value.prompt_rules.person_style = defaults.person_style;
-    settings.value.prompt_rules.option_rules = defaults.option_rules;
   }
 
   function syncPromptRulesToConfig(config: PromptConfig) {
@@ -2117,30 +2161,14 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   }
 
   /** 解析当前工作副本归属配置的"出厂默认"——供三个 reset 函数共用。
-   *  全向配置（owner.builtin === 'open'）返回 OPEN 版本：模块内容按 OPEN_MODULE_CONTENTS
-   *  覆盖 DEFAULT_MODULES、person_style/option_rules 用 OPEN 常量。其余配置（简洁/经典/
-   *  用户自建/无归属）返回全局默认——简洁本就是全局默认，经典/自建没有专属出厂态，
-   *  回退全局默认与改动前行为一致。归属判断靠 promptEditConfigId（PromptEditor 切换
-   *  配置时由 switchPromptConfig→loadPromptConfig 设置；boot 时 PromptEditor 的
-   *  selectedPromptConfigId watch 也会触发 switchPromptConfig，故首次进入即有归属）。 */
-  function resolveOwnerDefaults(): {
-    modules: PromptModuleType[];
-    person_style: string;
-    option_rules: string;
-  } {
-    const configs = settings.value.prompt_configs;
-    const owner = promptEditConfigId ? configs.find(c => c.id === promptEditConfigId) : null;
-    const isOpen = owner?.builtin === 'open';
-    const modules = isOpen
-      ? klona(DEFAULT_MODULES).map((m: PromptModuleType) => {
-          const ov = OPEN_MODULE_CONTENTS[m.id];
-          return ov !== undefined ? { ...m, content: ov } : m;
-        })
-      : klona(DEFAULT_MODULES);
+   *  v44 起所有配置共用全局默认（「全向」配置已随轻型默认预设重构删除，无专属出厂态）：
+   *  简洁/经典/用户自建/无归属一律返回 DEFAULT_MODULES（编辑器内容即发送内容，
+   *  core_rules 的 person_style/option_rules 双来源已删除）。
+   *  归属判断（promptEditConfigId）保留：供 resetModuleOrder 回写当前归属配置，
+   *  与"恢复默认回退到哪份默认"是两件事。 */
+  function resolveOwnerDefaults(): { modules: PromptModuleType[] } {
     return {
-      modules,
-      person_style: isOpen ? OPEN_PERSON_STYLE : DEFAULT_PERSON_STYLE,
-      option_rules: isOpen ? OPEN_OPTION_RULES : DEFAULT_OPTION_RULES,
+      modules: klona(DEFAULT_MODULES),
     };
   }
 
@@ -2269,8 +2297,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     const n = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
     const b = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
     const patch: Record<string, string | number | boolean | undefined> = {
-      person_style: s(fc.person_style),
-      option_rules: s(fc.option_rules),
       option_person: s(fc.option_person),
       enrich_person: s(fc.enrich_person),
       enrich_person_style: s(fc.enrich_person_style),
@@ -2307,25 +2333,15 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     // 工作副本加载简洁。schema_version 已置为最新，applyDefaults 不会跑，必须显式调用。
     // 用户确认弹窗已明示"删除所有提示词配置"，此处不再把当前提示词存档为经典
     ensureDefaultPromptConfig(fresh);
-    // v31「全向」提示词配置：恢复出厂终态与全新首载一致（v31 块 + wasPreV19 后置步的产物）
-    fresh.prompt_configs.push(buildOpenPromptConfig(fresh.prompt_rules));
 
-    const defaultEntries = buildDefaultEntries();
-    // NSFW 是 opt-in：进 master_pool（条目库可见可选）但不进默认 config 引用——
-    // 全新首载终态与 v30 迁移块（schema<30 时跑）对老存档的处理保持一致
-    const nsfwEntries = buildNsfwEntries();
-    // 「全向」6 组条目进 master_pool（条目库可见），配套「全向」池配置引用它们——
-    // 与 v31 迁移块对老存档的处理保持一致
-    const openEntries = buildOpenEntries();
-    fresh.master_pool = [...defaultEntries, ...openEntries, ...nsfwEntries];
-    // 与 buildDefaultEntries 的分组序一致：「通用」打底、「喵可」紧跟、「时间跳跃」殿后、
-    // 6 个新组居中（OPEN_GROUP_NAMES 序）、「NSFW」收尾
-    fresh.group_order = ['通用', '喵可', '时间跳跃', ...OPEN_GROUP_NAMES, 'NSFW'];
+    const allEntries = buildAllPoolEntries();
+    const defaultEntries = allEntries.filter(e => e.category === '用户主体');
+    fresh.master_pool = [...allEntries];
+    fresh.group_order = [...POOL_GROUP_ORDER];
     fresh.configs = [
       {
         id: uuidv4(),
         name: '默认配置',
-        // 仅引用 defaultEntries（通用+喵可+时间跳跃），NSFW/全向留给用户自行勾选启用
         entries: defaultEntries.map(e => ({
           entry_id: e.id,
           pinned: e.pinned,
@@ -2335,30 +2351,15 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         is_default: true,
         generation: GenerationSettings.parse({}),
       },
-      {
-        id: uuidv4(),
-        name: OPEN_CONFIG_NAME,
-        // 仅引用新 6 组条目（用户明确选择，不含通用/喵可/时间跳跃）
-        entries: openEntries.map(e => ({
-          entry_id: e.id,
-          pinned: e.pinned,
-          weight: e.weight,
-          enabled: true,
-        })),
-        is_default: false,
-        generation: GenerationSettings.parse({}),
-      },
     ];
 
     settings.value = fresh;
   }
 
   function resetPromptToDefaults() {
-    // 按当前归属配置的出厂默认重置（全向配置恢复其专属模块与规则，而非简洁默认）
+    // 按当前归属配置的出厂默认重置（v44 起即全局默认，无专属出厂态）
     const defaults = resolveOwnerDefaults();
     settings.value.prompt_rules.modules = defaults.modules;
-    settings.value.prompt_rules.person_style = defaults.person_style;
-    settings.value.prompt_rules.option_rules = defaults.option_rules;
   }
 
   // ST 主题自动检测：当 theme_mode 为 'auto' 时，监听 ST 主题变化

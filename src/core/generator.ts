@@ -29,7 +29,7 @@ import type {
   WIBookMode,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
-import { DEFAULT_MODULES, CORE_RULES_STATIC, GenerationSettings } from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
 
 export type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -131,6 +131,8 @@ export type Ctx = {
   enrichPerson: string;
   prevOptions: string;
 };
+
+/** 只替换本插件定义的运行时占位符；酒馆宏交给宿主的 substituteParams 处理。 */
 const sub = (t: string, c: Ctx) =>
   t
     .replaceAll('{{count}}', String(c.count))
@@ -254,33 +256,11 @@ export const buildMessages = async (
         break;
       }
 
-      case 'user_instruction': {
-        const content = sub(mod.content, augmentedCtx);
-        if (content) msgs.push({ role: mod.role, content });
-        break;
-      }
       case 'core_rules': {
-        const personStyle = pr.person_style || '';
-        const optionRules = pr.option_rules || '';
-        // person_style 优先（高级用户覆盖），回退到 option_person 自动生成。
-        // v23 起去除"绝对主语+微表情+物理交互"的小说腔文风强制：只表达人称 + 场景贴合
-        // 导向，与 DEFAULT_PERSON_STYLE 新默认语义对齐（人称不硬编码，由 option_person 注入）
-        let content: string;
-        if (optionRules && (personStyle || pr.option_person)) {
-          const effectivePersonStyle =
-            personStyle ||
-            `选项以${pr.option_person || '第三人称'} {{user}} 视角展开，写成 {{user}} 当下可以立刻执行的具体行动，贴合当前场景与 {{user}} 的性格，允许包含 {{user}} 的台词；优先利用场景中真实可用的互动手段，不写脱离情境的抒情或旁白。`;
-          content = `生成选项时要严格遵守以下规则：
-${optionRules}
-
-叙述风格方面：
-${effectivePersonStyle}
-
-${CORE_RULES_STATIC}`;
-        } else {
-          content = mod.content;
-        }
-        content = substituteParams(sub(content, augmentedCtx));
+        // core_rules 单一来源：直接发模块自己的 content（经占位符替换）。
+        // 以前按隐藏字段动态拼装，造成"编辑器显示 ≠ 实际发送"的双来源矛盾；
+        // 该路径已整体删除，现在编辑器内容就是发送给 AI 的内容。
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -291,7 +271,7 @@ ${CORE_RULES_STATIC}`;
       }
       case 'assistant_ack':
       case 'assistant_thinking': {
-        const content = mod.content;
+        const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -948,11 +928,13 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       let details = r1.details;
       let refilled = false;
       // refill 循环：直到凑够 count 条或 refill 无新产出为止，防止最终数量不足。
-      // 上限 3 轮防模型持续返回重复内容导致死循环。
+      // 上限 2 轮防模型持续返回重复内容导致死循环。
       let refillRound = 0;
-      const MAX_REFILL_ROUNDS = 3;
+      const MAX_REFILL_ROUNDS = 2;
       while (kept.length < count && refillRound < MAX_REFILL_ROUNDS) {
         refillRound++;
+        // 若累计剔除比例 > 60%，说明模型可能整体重复，停止 refill
+        if (parsed.length > 0 && dropped / parsed.length > 0.6) break;
         refilled = true;
         const need = count - kept.length;
         const refillMessages: ChatMsg[] = [

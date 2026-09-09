@@ -15,6 +15,9 @@ export type DedupResult = {
 };
 
 export function dedupOptions(candidates: string[], references: string[], threshold: number): DedupResult {
+  // 标题匹配的内容门槛 = max(0, 用户阈值 - 0.35)。默认 0.75 → 0.4，保持现状；
+  // 用户调高阈值时标题门槛同步上浮，调低时标题门槛下探至 0（单靠标题即可判重）。
+  const titleGate = Math.max(0, threshold - 0.35);
   const titleOf = (s: string): string | null => {
     const m = s.match(/^\s*[\[【]([^\]】]+)[\]】]/);
     return m ? m[1] : null;
@@ -42,12 +45,16 @@ export function dedupOptions(candidates: string[], references: string[], thresho
     }
     return union === 0 ? 0 : inter / union;
   };
-  // 标题仅精确匹配，避免中文短标题因单向包含被误杀。
+  // 标题精确匹配后增加内容 bigram Jaccard 门槛（>0.4），避免 type 相同但内容不同的选项被误杀。
   const isDup = (cand: string, ref: string): { dup: boolean; detail?: DedupDetail } => {
     const ct = titleOf(cand);
     const rt = titleOf(ref);
     if (ct && rt && ct === rt) {
-      return { dup: true, detail: { candidate: cand, reason: 'title', matchedRef: ref, score: 1 } };
+      // 标题匹配的内容门槛由用户阈值派生，保持与 UI 同步。
+      const contentJaccard = jaccard(bigrams(contentOf(cand)), bigrams(contentOf(ref)));
+      if (contentJaccard > titleGate) {
+        return { dup: true, detail: { candidate: cand, reason: 'title', matchedRef: ref, score: contentJaccard } };
+      }
     }
     const score = jaccard(bigrams(contentOf(cand)), bigrams(contentOf(ref)));
     if (score >= threshold) {

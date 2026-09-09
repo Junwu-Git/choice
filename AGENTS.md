@@ -1,177 +1,119 @@
 # choice（异步行动选项）— 项目说明
 
-SillyTavern 第三方扩展，基于 `tavern_extension_template` 二次开发。核心功能：单独调用API异步生成"行动选项"，供玩家点选后填入/发送。TypeScript + Vue 3 + Pinia + Zod + Vite 构建，产物打包为单文件 `dist/index.js`，随扩展clone进酒馆真实安装目录后加载。
+SillyTavern 第三方扩展，基于 `tavern_extension_template` 二次开发。核心功能：单独调用 API 异步生成行动选项，供玩家点选后填入或发送。技术栈为 TypeScript + Vue 3 SFC + Pinia + Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production 构建还会生成 `dist/index.js.map`。扩展会随仓库安装到酒馆真实扩展目录后加载。
 
 ## 与我协作时的约定
 
 - 回复用中文。
-- 代码注释：简体中文、简洁、解释"为什么"而非"做什么"——尤其是覆盖规则、抽取算法、UI 状态机这类容易被后来者简化/写错的逻辑，注释要点出"为什么不能这样简化"。
-- 任何来自 `@sillytavern/...` 的导入，函数签名/导出名不允许凭记忆假设，必须先去clone进来的真实酒馆源码里核实（或查`TavernHelper`类型定义），核实方式和结论写进注释，方便复查。
-- `pnpm watch` 由我在独立终端全程跑着（`vite build --watch`，**不是 HMR**，只是自动重打包——agent 不要自己跑 `watch`，会卡住）。agent 用一次性 `pnpm build` 或 `vue-tsc --noEmit` 做类型/编译自查。改完代码等 watch 编译完成后**手动刷新酒馆页面**才生效。
-- 每次功能验证必须进行**实际的浏览器验证**（chrome-devtools-mcp），不要仅通过代码审查/静态分析判断"应该没问题"；并说明"如何在浏览器里手动确认"具体操作步骤。
-
+- **每次改动都要检查本文件（AGENTS.md）并在改动完成时同步更新**：任何会影响架构、目录结构、导出面、持久化格式、UI 状态机或验证/环境约定的改动，落实后要顺手把对应条目从“待办/规划”改成“现状”（或反之），防止文档随项目漂移——本文档先前就曾因为未同步积累了大量事实性错误。改动收尾前自查一遍：新引入的模块/字段/命令是否已写进目录或约束小节；已删除的功能是否仍被当“现状”描述。不要把等待实现的设计目标误写成已实现。
+- 代码注释使用简体中文、简洁，解释“为什么”而不是“做什么”；覆盖规则、抽取算法、UI 状态机等容易被简化写错的地方，注释必须说明不能直接简化的原因。
+- 任何来自 `@sillytavern/...` 的导入，函数签名和导出名都不允许凭记忆假设。实现前必须去当前 clone 的真实酒馆源码或 `TavernHelper` 类型定义核实，并把核实结论写进必要的代码注释，方便酒馆升级后复查。
+- `pnpm watch` 由用户在独立终端运行（`vite build --watch --mode development`，不是 HMR，只是自动重打包）；agent 不要自行运行常驻 watch。agent 使用一次性的 `pnpm build`、`npx vue-tsc --noEmit`、`pnpm lint` 等命令自查。watch 编译完成后还要手动刷新酒馆页面才会加载新产物。
+- 核心交互链路或 UI 改动需要实际浏览器验证；文案、样式微调、纯逻辑且不影响 UI 的小改动可由用户决定是否验证。需要验证时，说明在浏览器中的具体操作步骤，并检查 console。
 
 ## 关键架构约束
 
-- **技术栈边界**：严格用 TS + Vue 3 SFC + Pinia + Zod，不允许手写jQuery/直接DOM操作（`document.createElement`、`.innerHTML`拼接这类）。参考模板自带的Vue+Pinia+Zod示例风格。不引入 Tailwind/UnoCSS 等原子化 CSS 框架（样式方案为原生 CSS custom property，`src/theme.css` 定义全部 `--choice-*` 变量；`@tailwindcss/postcss` 等 devDep 为未接线残留，vite 配置无 postcss 插件，CSS 入口无 `@import "tailwindcss"`，勿引入 Tailwind）。
-- **设置一律走 Pinia store**：组件内不允许直接读写 `extension_settings`/`chat_metadata`/`character.data.extensions`，必须经过对应的 `useXxxStore()`。
-- **`@sillytavern` 导入的隔离原则**：这类导入（直接摸真实酒馆源码，不是npm包）只允许出现在 `src/core/` 下的文件里，不允许散落进Vue组件——酒馆升级导致导出改名时，改动范围收窄在这几个文件。
-- **禁止把TavernHelper/酒馆变量系统当作对第三方插件（柏宝书等）的硬依赖**：不直接读取任何第三方插件内部数据结构。后续如需联动柏宝书摘要/总结，做成可选的、检测式的桥接模块（`baibai-bridge.ts`），不影响主体功能可用性。
-- **提示词组装必须走角色结构，不允许拼成一整段字符串塞进单条user消息**：
-  - `system`（或`systemPrompt`）＝ 提示词编辑区设置的规则（第几人称、格式、字数等）
-  - `user`（或`prompt`）＝ 抽中的固定/随机条目素材 + 按轮数截取的上下文
-  - 可选 `assistant`（`prefill`）＝ 预填输出格式起手式（比如强制"- "开头）
-  - 优先用 `TavernHelper` 的 `generate`/`generateRaw`（`RolePrompt[]` / `overrides` / `injects`），或酒馆原生 `generateRaw({systemPrompt, prompt, prefill})`；不允许自己拼一整段字符串再整体当prompt参数传。
-- **条目池是 master_pool + PoolConfig 两层结构，不是三层覆盖**：
-  - **内容层**：`master_pool`（`PoolEntry[]`，全局 settings 唯一条目来源）— 条目内容（`id/type/content/rule/category`）只存在于 master_pool。
-  - **配置层**：多个 `PoolConfig`（`configs[]`），每个 config 决定"用哪些条目 + per-entry 覆盖 `pinned/weight`"。
-  - **config 选择是覆盖式**：`chat.config_id > character.config_id > default`，命中即用该 config，不要把多个 config 的 entries 合并。
-  - **条目内容是合并式**：`effectivePool` = master_pool 中被选中 config 引用的条目，叠加 config 的 `pinned/weight` 覆盖项。`content/type/rule/category` 只读 master_pool，config 不持有这些字段——不要从 config 读 content，会丢字段。
-  - **常见 footgun**：① 把多个 config 的 entries 合并；② 从 config 而非 master_pool 读条目内容；③ 忘记 master_pool 是内容唯一真相源。
-- **楼层持久化挂在消息对象上**：生成结果存进对应AI消息的 `message.extra['asyncActionOptions']`，按 `swipe_id` 再分一层（类似swipe机制），保证切楼层/切swipe时选项历史不串。同楼层多次生成走 `generations[]` + `currentIndex` 翻页，不跨楼层保留。
-- **聊天生成支持两种模式**：聊天内模式（与角色卡绑定，读取世界书和聊天记录）和全局模式（全局持久化，不读取世界书和聊天记录）。用户可手动切换。
-- **enrich 模块需置于 assistant 模块之上**，确保润色指令在 assistant_ack 之前发送。润色输出**固定第三人称**，每条选项字数 **30-80 个中文字符**。
-- **提示词同样走 config 选择**：`prompt_config_id` 的解析逻辑与条目池对称（`chat > character > default`），不要假设提示词模块是全局唯一。
+- **技术栈边界**：使用 TypeScript、Vue 3 SFC、Pinia、Zod 和原生 CSS custom property。不引入 jQuery 或手写 DOM 结构（例如 `document.createElement`、拼接 `.innerHTML`）。拖拽排序统一使用现有的 `sortablejs` 封装（`src/util/sortable.ts` + `shared/DragHandle.vue`）。不引入 Tailwind/UnoCSS 等原子化 CSS 框架；仓库虽有 `tailwindcss` 与 `eslint-plugin-better-tailwindcss` 开发依赖，但 Vite 未接入 PostCSS，CSS 入口也没有 `@import "tailwindcss"`，不要把它们接入运行时样式。
+- **设置一律走 Pinia store**：组件不直接读写 `extension_settings`、`chat_metadata` 或 `character.data.extensions`；通过对应的 `useXxxStore()` 读写。与酒馆状态同步的实现集中在 `src/store/`。
+- **酒馆 API 导入边界**：`src/core/` 与 `src/store/` 是版本敏感酒馆 API 的主要隔离区。现有组件仍保留少量已核实且必要的稳定导入（例如 `uuidv4`、发送框或世界书相关调用），不要为了追求形式上的“零导入”而凭空改造接口；新增版本敏感的生成、世界书、正则引擎 API 时优先收敛到 core/store，并先核实真实签名。
+- **第三方桥接必须可选**：不能把 TavernHelper 或第三方插件内部数据结构当作柏宝书、数据库等插件的硬依赖。`baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts` 等桥接模块必须检测能力，不可用时主体功能仍可用。
+- **提示词组装必须走角色结构**，不能把整段内容拼成单条 user 消息：
+  - `system`/`systemPrompt` 放提示词编辑区的规则（人称、格式、字数等）。
+  - `user`/`prompt` 放抽中的固定/随机条目素材和按上下文模式截取的内容。
+  - 可选 `assistant`/`prefill` 放输出格式起手式。
+  - 优先使用已核实签名的 `TavernHelper` 或酒馆原生生成接口的角色消息结构；不要凭记忆假设 `generateRaw`、`generateQuietPrompt` 或 `AbortSignal` 参数。
+- **条目池是 `master_pool + PoolConfig` 两层结构**：
+  - `master_pool` 是全局唯一内容真相源，保存 `id/type/content/rule/category` 以及默认 `pinned/weight`。
+  - `configs[]` 是配置层，决定引用哪些条目，并可覆盖 `enabled/pinned/weight` 等配置项；配置不持有条目正文。
+  - config 选择是覆盖式：`chat.config_id > character.config_id > default`，命中后只使用该 config，不合并多个 config 的 entries。
+  - `effectivePool` 是 master_pool 中被选中的条目叠加配置覆盖后的结果。内容、类型、规则和分类必须从 master_pool 读取。
+  - 常见 footgun：合并多个 config；从 config 读取 content；忽略 `PoolConfigEntry.enabled`；把全局抽取参数误放回单条 config。
+- **提示词配置同样覆盖式选择**：`prompt_config_id` 遵循 `chat > character > default`，不要假设提示词配置全局唯一。
+- **楼层持久化挂在消息对象上**：结果写入对应 AI 消息的 `message.extra['choice']`，再按 `swipe_id` 分层，避免切楼层或切 swipe 时串历史。同一楼层多次生成使用 `generations[] + currentIndex` 翻页；润色结果另有 `enrichGenerations` / `enrichCurrentIndex`。
+- **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only` 控制模块顺序和参与方式。上下文通过 `context_mode` 等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich` 模块必须排在 assistant 相关模块之前；人称和字数可配置，当前默认选项/润色范围为 10–60 个字符，不要把它写死成第三人称或 30–80 字。
 
 ## UI 设计系统与约定
 
-当前 UI 正在做系统性翻新（原因：`theme.css` 只有颜色 token，没有间距/字号体系，各组件各写各的 padding；`EntryPoolDialog.vue`/`PoolEditor.vue`/`PromptEditor.vue` 这类信息密集页面一行塞多个控件、头部堆多个纯图标按钮，是"混乱"感的主要来源）。以下是已确认的方向，改 UI 相关代码前先看这节，避免和已定方案冲突。
+### 已落地的设计原则
 
-### 设计原则
-- 不换主色调（`--choice-primary` 蓝色系已验证可用，`ActionOptionsPanel.vue` 是现有代码里视觉完成度最高的部分，只做细节打磨，不大改）。
-- 移动端优先：SillyTavern 大量用户在手机上用，任何新组件先在 ~380px 容器宽度下验证不错位，再扩展到桌面宽度。
-- 克制的卡片化 + 明确信息层级，不做玻璃拟态/强动效这类花哨效果。
+- 不更换主色调；`--choice-primary` 蓝色系和 `ActionOptionsPanel.vue` 的整体视觉作为基准，只做细节打磨。
+- 移动端优先：新组件先在约 380px 容器宽度验证，再扩展到桌面宽度。
+- 使用克制的卡片化和明确的信息层级，不做玻璃拟态或强动效。
+- `src/theme.css` 已包含颜色、间距、字号、圆角、阴影、层级和状态色 token。间距使用 `--choice-space-1`~`--choice-space-6`，字号使用 `--choice-text-xs/sm/base/lg/xl`，新增样式不要继续散落裸值。
+- 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。不要恢复硬编码 z-index。
 
-### 设计 token（扩展 `theme.css`，两套主题都要覆盖）
-在现有颜色/圆角/阴影变量基础上补充：
-- 间距：`--choice-space-1`~`--choice-space-6`（4px 基准网格：4/8/12/16/24/32px），替代所有随手写的 `padding`/`gap` 数值。
-- 字号：`--choice-text-xs/sm/base/lg/xl`，基于现有 `--choice-font-scale` 缩放，语义化命名替代裸 `font-size: 13px` 这类写法。
-- 层级：`--choice-z-panel`(10) / `--choice-z-dropdown`(100) / `--choice-z-dialog`(1000) / `--choice-z-floating`(9000) / `--choice-z-popover`(9500)，统一现在各处硬编码的 `z-index`（悬浮球现是硬编码 9999，需迁移）。
+### Shared 组件现状与待办
 
-改造验收标准：全仓库搜索裸 `padding: \d+px` / `gap: \d+px` / `font-size: \d+px`（未经过 `--choice-` 变量的），替换为对应 token。
+`src/components/shared/` 已有 `ChoiceSection.vue`、`ChoiceCard.vue`、`ChoiceField.vue`、`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`。其中 `useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；不要用 CSS `@container` 替代，因为部分移动 WebView 可能静默忽略该规则。
 
-### 共享基础组件（`src/components/shared/`，现有）
-`shared/` 包含设计系统基础组件，**新写的 UI 一律基于它们，不允许再裸写卡片/弹窗结构**：
-- `ChoiceSection.vue` — 分段容器，带标题+可选折叠。
-- `ChoiceCard.vue` — 列表行卡片，摘要行与操作/详情行分离（不像 `EntryPoolDialog.vue` 现在那样一行塞 6 个控件），slots：`#summary` `#badges` `#actions` `#details`。
-- `ChoiceField.vue` — 表单字段行，统一 label+input 间距对齐；窄容器下 row→stack 自动切换（见下方"响应式布局"，不用 CSS container query）。
-- `ChoiceDialog.vue` — 弹窗外壳，统一 `ConfirmDialog`/`CreateConfigDialog`/`SelectEntriesDialog`/`ImportPoolDialog`/`PoolGenDialog`/`EntryPoolDialog`/`FloatingSettings` 这些现在各自实现一遍 overlay/header/footer 的弹窗。
-- `useCompactLayout.ts` — 响应式布局 composable（基于 `useElementSize`，`COMPACT_BREAKPOINT = 420`）。
+目前只有 `ChoiceDialog` 在提示词导入等少数位置使用，`ChoiceSection`、`ChoiceCard`、`ChoiceField` 仍是预备的设计系统组件，不能在文档中当作已经完成全量迁移。其余弹窗仍可能保留独立 overlay/header/footer 样式；迁移时要逐个验证遮罩关闭、Escape 关闭、动画和窄屏布局，不要一次性假设全部组件已经统一。
 
-迁移完成的验收标准：上述弹窗组件各自文件里不应再出现独立的 overlay/header scoped CSS。
+### 悬浮球实际状态
 
-### 响应式布局：用 ResizeObserver，不用 `@container`
-**已确认结论，不要用 CSS container query 重新实现。** 原因：SillyTavern 是自建服务，插件方无法控制用户用什么内核打开——国内常见的微信内置浏览器/UC/QQ浏览器/部分安卓 ROM 系统 WebView 内核经常滞后于标准 Chromium，`@container` 一旦不支持是**静默失效**（规则整条被忽略、不报错），不会被察觉，反而制造新的"某些用户觉得插件显示乱"的问题。改用 `@vueuse/core`（已是仓库依赖，`FloatingBubble.vue` 已在用它的 `useDraggable`/`useStorage`）的 `useElementSize`：
+`FloatingBubble.vue` 当前实现的互斥状态是 `Disabled > Generating > Dragging > Idle`：
 
-```ts
-// src/components/shared/useCompactLayout.ts
-import { useElementSize } from '@vueuse/core';
-const COMPACT_BREAKPOINT = 420;
-export function useCompactLayout(target: Ref<HTMLElement | null>) {
-  const { width } = useElementSize(target);
-  const isCompact = computed(() => width.value > 0 && width.value < COMPACT_BREAKPOINT);
-  return { isCompact };
-}
-```
-`ChoiceField.vue` 用它给根节点绑 `is-compact` class，CSS 侧写两套规则，不依赖浏览器能力检测。
+- Disabled：API 解析失败或 `effectivePool` 为空。
+- Generating：`generatorState.loading === true`。
+- Dragging：拖动期间展示拖拽态。
+- Idle：默认态；已经实现贴边吸附和边界钳制。
 
-### 悬浮球（`FloatingBubble.vue`）状态机
-现状只有默认态和生成中脉冲两种视觉状态，点击永远打开设置弹窗。改造成状态指示器，状态互斥展示，优先级：`Disabled > Generating > 有新结果待查看 > Dragging > Idle`。
+右键菜单是当前快捷菜单入口；尚未实现基于 `onLongPress` 的长按状态机。`hasUnseenResult`、未读结果徽章和快速预览 popover 尚未接入；`ActionOptionsPanel.vue` 虽已有 `compact?: boolean` 预埋能力，但当前没有完整的悬浮球 popover 调用方。新增这些能力时，必须复用 `ActionOptionsPanel` 的选项选择与 behavior 逻辑，不要复制一套渲染逻辑。
 
-- **Idle**：贴边半隐藏，极慢速呼吸光晕（8s 周期，与 generating 的 3s 脉冲区分开，两套独立 keyframes）。
-- **Generating**：`generatorState.loading === true`，沿用现有脉冲动画。
-- **有新结果待查看**（新增状态）：`computed hasUnseenResult` = 最近一次 generation 完成时间戳 > 用户上次打开悬浮面板/点击气泡的时间戳。徽章弹入动效（`scale(0)→scale(1)`，`cubic-bezier(0.34, 1.56, 0.64, 1)`）。
-- **Disabled**：判断标准直接复用 `generator.ts` 里已有的校验，不新写逻辑——`resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)` 解析不到（对应现有报错"请先在设置中配置 API"），**或** `usePoolSelectorStore().effectivePool` 为空数组，两者任一为真即 Disabled。
+## 目录与职责（按当前源码，不把早期规划稿当标准）
 
-交互：
-- 点击：有未读结果时优先展开"最近一次生成结果的快速预览"popover；无未读结果时行为不变（打开设置）。
-- 长按（>500ms，用 VueUse 的 `onLongPress`，不手写 `pointerdown`/`setTimeout`）：呼出快捷菜单，"打开设置"/"隐藏悬浮球"。**"隐藏悬浮球"是永久关闭，写入 setting 持久化（等价于设置里悬浮球开关关掉），不是临时隐藏——否则用户刷新后没地方再打开它。**
-- 拖拽松手自动吸附最近屏幕边缘（现在只是 `clamp` 到边界内，不吸附），吸附/生成动画用带回弹感的 easing。
+- `src/core/`：`generator.ts`（结构化 role prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及 `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts` 等可选桥接和酒馆数据适配模块。
+- `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是 `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 46。
+- `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态 `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`；8 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括 `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
+- `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义和窄屏布局 composable。
+- `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
+- `src/util/`：文件选择、SortableJS 配置和 Zod 解析辅助。
+- 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。
 
-快速预览 popover 的实现原则：**复用 `ActionOptionsPanel.vue`，不新写一遍选项渲染/选择逻辑**（`onSelect`、behavior 切换、`sendTextareaMessage` 注入这些是核心交互，两处实现会有维护同步风险）。给它加一个 `compact?: boolean` prop，隐藏翻页器/重新生成/收起这些面板管理控件，只留选项列表 + behavior 切换条。新写的只是 popover 定位外壳（锚定悬浮球坐标、viewport clamp、点击外部关闭），不碰选项逻辑。`FloatingSettings.vue` 打开/关闭动画的 `transform-origin` 对准悬浮球坐标（从球体"生长"出来的空间关联感）。
+## 新手引导架构
 
-## 目录（按实际文件结构，注意与早期规划稿的差异）
+- 内容单一来源是 `src/core/guide-content.ts`：`GUIDE_CHAPTERS`（7 章）+ `PAGE_HINTS`（8 个 tab）+ `DIALOG_HINTS`（3 个弹窗）。组件中不要另写平行的引导文案。
+- `quick-start` 是唯一默认路径（配置 API → 生成），另有条目池、生成、提示词、世界书、过滤、外观 6 个进阶章。章内使用 `onboardingStepIndex`，当前章由 computed 解析。
+- `onboarding.ts` 负责自动打开、欢迎卡、API 配置召回、章节菜单、待处理 tab/弹窗动作等状态。自动生成路径遇 API 未配置时只提示并跳过，不抢焦点弹窗。
+- 设置面板 tab 栏的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`；不要用 `v-html` 注入引导内容。
+- `onboarding_done` 在欢迎卡或向导弹出时即置为 true。`data-tour` 锚点分散在 13 个组件模板中，增删向导步骤时要同步检查锚点。
+- `docs/choice-prompt-redesign-spec.md` 是当前仓库中可见的提示词设计参考；不要引用不存在的 `async-action-options-spec.md`、`choice-ui-redesign-spec.md` 或 `choice-floating-bubble-design.md`。`docs/` 下的方案文档是背景参考，不替代当前源码。
 
-- `src/core/` — `generator.ts`（单独调用API生成选项/条目池，结构化role prompt，支持取消，含 `resolveCustomApi` API 校验）、`pool-resolver.ts`（分组加权抽取，纯函数，接收已解析的 effectivePool）、`options-store.ts`（`message.extra`存取，含swipe维度、翻页）、`floating-state.ts`（悬浮球/悬浮面板共享状态）、`enrich-input.ts`（输入润色模式）、`api-client.ts`（API 请求封装）、`baibai-bridge.ts`（柏宝书可选桥接）、`panel-mount.ts`（面板挂载逻辑）、`theme-detector.ts`（主题检测）、`wand-menu.ts`（魔杖菜单集成）、`onboarding.ts`（引导状态与触发入口，见下节）、`guide-content.ts`（引导内容单一来源，见下节）。
-- `src/store/` — `global-settings.ts`（对应`extension_settings`）、`character-settings.ts`（对应角色卡`data.extensions`）、`chat-settings.ts`（对应`chat_metadata`）、`pool-selector.ts`（组合三个store，解析 master_pool + config 覆盖后的 `effectivePool`/`effectiveConfig`）、`prompt-config-selector.ts`（提示词配置选择，`prompt_config_id` 的 chat>character>default 解析）、`panel-state.ts`（面板展开/折叠、当前楼层/swipe追踪）。
-- `src/components/` — 主形态 `ActionOptionsPanel.vue`；悬浮形态 `FloatingBubble.vue` + `FloatingRoot.vue` + `FloatingSettings.vue` + `FloatingContextMenu.vue`；设置区 `FloatingSettings.vue` 内 8 个 tab 组件（`PoolEditor.vue`/`GenerationSettings.vue`/`PromptEditor.vue`/`ApiEditor.vue`/`WorldInfoEditor.vue`/`FilterEditor.vue`/`AppearanceSettings.vue`/`DebugSettings.vue`）；条目池管理 `EntryPoolDialog.vue`/`PoolGenDialog.vue`/`SelectEntriesDialog.vue`/`ImportPoolDialog.vue`/`FilterGroupPanel.vue`；新手引导 `OnboardingWizard.vue`（聚光灯向导+章节菜单）+ `WelcomeCard.vue`（首启欢迎卡）+ `GuidePopover.vue`（❓页内指引弹层）；通用 `ConfirmDialog.vue`/`CreateConfigDialog.vue`/`RegexLibraryDialog.vue`；`shared/`（设计系统基础组件，见上节）。
+## 条目池模型与抽取算法
 
-### 新手引导架构（分层引导，2026-09 重构）
+- `PoolEntry` 字段为 `id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`；`pinned`/`weight` 可被 `PoolConfigEntry` 覆盖。`rule` 是写作约束，不是选用门槛；v20 起删除 `condition`，v21 起候选条目必须交给 AI，`[规则: xxx]` 只约束该选项如何写。
+- 抽取顺序：解析 effectivePool → 拆分固定/非固定并处理固定条目溢出 → 按 category 分组并处理下溢 → 分组轮询、组内按 Efraimidis–Spirakis 加权无放回抽取 → 按 `oversamplePct` 为非固定条目补充菜单候选 → 送入 prompt 前整体 shuffle。加权 key 为 `random()^(1/weight)`；具体实现以 `src/core/pool-resolver.ts` 为准。
+- `cross_layer_fallback` 已删除，不要重新引入或在新代码中保留该兼容概念。抽取默认值和 schema 以 `src/type/settings.ts` 为准。
+- 选项去重在 `src/core/option-dedup.ts` 完成，使用相似度阈值和去重报告；调试信息由 `DebugSettings.vue` 展示。
 
-- **内容单一来源 `src/core/guide-content.ts`**：`GUIDE_CHAPTERS`（7 个章节的向导步骤）+ `PAGE_HINTS`（8 个 tab 的 ❓ 指引）+ `DIALOG_HINTS`（3 个弹窗指引）。所有引导文案只改这里——此前步骤/页内指引/弹窗说明三处平行维护出现过说法漂移与与实现相反的描述，禁止再在组件里内嵌引导文案。
-- **章节结构**：`quick-start`（配置API→生成，唯一默认路径，done 自动检测 2 处：API 保存成功、首次生成成功）+ 6 个进阶章（条目池/生成/提示词/世界书/过滤/外观）。`onboardingStepIndex` 是**章内**下标，当前章由 `onboardingChapter` computed 解析。
-- **触发与召回**（都在 `onboarding.ts`）：`maybeAutoOpenOnboarding`（首次打开设置面板→弹 quick-start）；`WelcomeCard`（启动 3s 后未完成引导→轻量欢迎卡）；`autoOpenApiOnboarding`（手动点生成遇 API 未配置→自动弹设置面板聚焦 API 步，**每会话至多一次**）；`openApiOnboarding`（面板空状态「去配置 API」按钮→同上但不节流）。自动生成路径（panel-mount）遇未配置 API 只 toastr 警告跳过，**不弹窗抢焦点**。
-- **入口**：设置面板 tab 栏 🎓 = `openChapterMenu()`（章节菜单，quick-start 章实时显示就绪徽章）；❓ = `GuidePopover` 渲染 `PAGE_HINTS` 结构化数据（brief + 要点列表，无 v-html）。
-- **`onboarding_done` 语义**：弹出瞬间（欢迎卡/向导）即置 true，中途刷新也视为看过；`data-tour` 聚光灯锚点分散在 12 个组件模板里，增删向导步骤时两处要同步。
-- `docs/` — 技术方案文档（`async-action-options-spec.md`）与早期MVP原型，作为背景参考，不是当前实现标准；UI 重构方案见另外维护的 `choice-ui-redesign-spec.md`（主体页面）与 `choice-floating-bubble-design.md`（悬浮球专项），本文件是二者的执行摘要，细节推理以那两份为准。
-
-## 条目池模型 & 抽取算法要点
-
-- 条目字段（`PoolEntry`）：`id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`。其中 `pinned`/`weight` 可被 `PoolConfigEntry` 覆盖；`rule` 语义 = 写作约束（v20 起删除 `condition` 字段；v21 起规则不再作为选用门槛——候选条目必须全部交给 AI 生成选项，`[规则: xxx]` 标记只约束该选项怎么写，不是跳过条目的理由）。
-- 抽取顺序：解析 effectivePool（config 选择 + 条目合并）→ 拆分固定/非固定，处理溢出（默认固定条目不砍，全发）→ 按category分组，处理下溢（默认有多少抽多少，不跨层兜底；`cross_layer_fallback` 为历史遗留字段，已无实际层级可兜底）→ 分组轮询+组内加权无放回抽取（Efraimidis-Spirakis算法：`key = random()^(1/weight)`，降序取）→ 送入prompt前整体shuffle一次（默认开启，避免固定条目位置固定造成AI顺序偏好）。
-- 详细算法与各开关的默认值见 `docs/async-action-options-spec.md` 第3节。
-
-## 构建与验证
+## 构建、格式化与验证
 
 ```bash
 pnpm install
-pnpm build          # 一次性打包，验证TS类型和构建是否通过
-npx vue-tsc --noEmit # 单独跑类型检查，退出码必须为 0（类型债已清零，勿新增）
+pnpm build             # 一次性 production 构建
+npx vue-tsc --noEmit   # 类型检查
+pnpm lint              # ESLint 检查
+pnpm format            # Prettier 写回格式
 ```
 
-**`pnpm watch` 由我在独立终端里全程跑着**，不需要agent自己调用——`watch`是常驻进程不会退出，agent的工具调用是"跑命令等结束"模式，扔给它一个不结束的命令会卡住。agent只需要用一次性的`pnpm build`（或`vue-tsc --noEmit`）自查有没有类型/编译错误。
+当前没有 Vitest/Jest 测试脚本；验证手段是类型检查、构建、lint/format 和按改动范围进行的浏览器验证。`pnpm watch` 是常驻的 development build，不要由 agent 启动。watch 会使用内联 sourcemap，可能覆盖本地 production 产物；这是正常的开发状态。远程 GitHub action 会在发布分支执行 production bundle 并提交 `[bot] Bundle`，提交时不要为了 map 或 CSS 产物状态额外重跑发布流程。
 
-因为`watch`已经在跑，代码改完会自动重新打包，**但浏览器仍然需要手动刷新**才能看到效果（无 HMR）。
-
-**dist 产物与提交约定（牢记，不要反复询问）**：本地`pnpm build`只作打包/类型验证，不是发布流程；`watch`是`--mode development`（内联 sourcemap、不出独立`index.js.map`），随时会覆盖任何 production 产物，属正常状态。推送后远程 GitHub 有 bot action 自动重打包（`[bot] Bundle` 提交，production 产物含独立 map），才是发布产物的最终来源。因此：提交时`dist/`处于任何模式的产物都**直接入库推送**，不要为 map 被删、js 内联 map 这类状态差异询问用户，也不要为提交前重跑 production 构建纠结。
+浏览器验证使用当前工作区可用的浏览器自动化工具和用户已有酒馆登录态；不要在仓库文档中假定某个平台的 Chrome 启动命令、MCP 注册方式或新开无痕实例。验证 UI 时至少确认：核心交互链路可操作、窄屏不横向溢出、console 没有新增 Vue/Pinia 报错。改动悬浮球、ActionOptionsPanel、弹窗或响应式布局时，按实际改动场景逐项操作，不要把尚未实现的未读结果态列为通过条件。
 
 ## 分支纪律（防三分支选项代码漂移）
 
-被动状态（`feat/passive-status`）未成熟、不能进 main/test 发布；但行动选项 bug fix 需持续发布。被动状态与 bug fix 都改 `settings.ts`/`global-settings.ts`，**必然文件重叠**——隔离只能靠分支职责 + 同步纪律，无法靠分文件。另一干扰源：bot bundle 在 main/test 都触发，两分支 dist 永远互相漂移，故同步纪律必须「只搬 src 不搬 dist」。
+- `main` 是发布线，只从 `test` 同步源码；dist 由 bot bundle 管理。
+- `test` 是行动选项 bug fix 和预发布验证主战场。
+- `feat/passive-status` 只做被动状态，成熟前不合并回 main/test；定期 rebase `origin/main` 获取 bug fix。
+- 行动选项 bug fix 只在 `test` 修并推送验证。
+- `test → main` 同步使用 `git cherry-pick -n <sha>`，只搬源码不搬 dist；发生 dist 冲突时保留 main 侧 dist，让 bot 重出产物。
+- `feat` rebase 时保留 main 的 fail-safe 与 feat 的被动状态；rebase 中 `ours` 是新 base（main）一侧，dist 使用 main 侧；feat 不触发 bot bundle。
+- 除 bot bundle 外，默认分支还有定期依赖更新 action，可能造成 main 与 test 的依赖版本漂移；同步前先检查远端 main 的最新提交。
+- `--ours/--theirs` 方向：cherry-pick 中 theirs 是被 pick 的提交；rebase 中 ours 是新 base（main）。
 
-### 分支职责
-- **main**：发布线。只从 test 同步 src；dist 由 bot bundle 自动管理。
-- **test**：行动选项 bug fix 主战场 + 预发布验证。
-- **feat/passive-status**：被动状态专用。定期 `git rebase origin/main` 获取 bug fix；成熟前永不合并回 main/test。
+## 实现前必须核实的酒馆接口
 
-### 核心纪律
-1. 行动选项 bug fix **只在 test 修** → push test 验证。
-2. test → main 同步：**cherry-pick src 不带 dist**——`git cherry-pick -n <sha>`，若 dist 冲突 `git checkout HEAD -- dist/`（保留 main 侧 dist，让 bot bundle 重出）→ commit → push main。**dist 永不跨分支搬移**。
-3. 被动状态改动**只在 feat**；feat 定期 `git rebase origin/main` 获取 bug fix。rebase 冲突解决总原则：main 的 fail-safe 与 feat 的被动状态**两边代码都保留**；dist 用 main 侧（`git checkout --ours dist/`，rebase 中 ours=新 base 即 main）；feat 不触发 bot bundle，dist 本地重 build。
-4. 被动状态成熟后：feat merge 进 main → test 同步 main → 才算发布。
-
-> `--ours/--theirs` 方向易搞反：**cherry-pick 中 theirs=被 pick 的 commit**；**rebase 中 ours=新 base（main 侧）**。
-
-### 用 Chrome DevTools MCP 自行验证，不要只做静态代码审查
-
-**浏览器验证前先暂停询问**：每次改动后不要默认自动开浏览器验证——先暂停询问用户本次是否需要浏览器验证；小改动（文案/样式微调/纯逻辑调整等）通常没必要，由用户决定。用户明确要求验证或改动涉及核心交互链路时再走完整验证流程。
-
-配了 Google 官方的 `chrome-devtools-mcp`（Puppeteer + Chrome DevTools Protocol，仓库 `ChromeDevTools/chrome-devtools-mcp`），改完 UI 相关代码，agent 应该自己打开本地酒馆实例点一遍，而不是"看代码觉得应该没问题"就算完成，也不要指望我去手动刷新确认。
-
-**接入方式**：推荐用 `--autoConnect` 挂到我本地已经开着、已登录的 Chrome 上（而不是每次启动一个全新的无痕实例），这样能保留 SillyTavern 的登录态和已打开的对话，不用每次重新走一遍进入酒馆的流程：
-
-```bash
-# 我这边先手动执行一次，启动带远程调试端口的 Chrome（只需启动一次，长期挂着）
-open -a "Google Chrome" --args --remote-debugging-port=9222
-```
-
-Agent 侧 MCP 配置指向这个已运行的实例（具体注册命令按 Kilo 实际支持的 MCP 配置方式来，核心参数是 `chrome-devtools-mcp@latest --autoConnect`，不要凭记忆假设 Kilo 的注册语法，先查 Kilo 自己的 MCP 接入文档）。
-
-**每次 UI 改动后的自检流程**：
-1. 确认 `pnpm build` 无报错（类型检查+打包）。
-2. 用 chrome-devtools-mcp 刷新已连接的酒馆页面（不要新开标签页/新实例，避免脱离已登录状态）。
-3. 针对改动到的部分，实际执行交互而不是只截图看静态状态：
-   - 改了 `ActionOptionsPanel.vue`：触发一次生成，点开选项，确认 behavior（发送/覆盖/尾附）三种模式都能正确写入`#send_textarea`。
-   - 改了悬浮球状态机：分别制造 idle/generating/有未读结果/disabled（拔掉API配置或清空条目池）四种场景，截图确认视觉状态和文档第5节描述的一致，且互斥展示没有叠加。
-   - 改了弹窗类组件（`ChoiceDialog`迁移后的）：确认打开/关闭动画、点击遮罩关闭、esc关闭这些通用行为没有在迁移中丢失。
-   - 涉及响应式布局（`ChoiceField`的`useCompactLayout`）：用 chrome-devtools-mcp 的设备模拟功能把视口收窄到 ~380px，确认 row→stack 切换生效，且没有横向溢出滚动条。
-4. 用 chrome-devtools-mcp 读一遍浏览器 console，确认没有新增的报错或警告（尤其是 Vue 的 prop 校验警告、Pinia store 未初始化访问这类改 UI 时容易踩的坑）。
-5. 自检发现的问题直接在当前改动里修，不要留到下一轮——"构建通过"不等于"验证通过"，两步都做完才算这项改动完成。
-
-## 已知需要在实现时核实、不要凭记忆假设的点
-
-- 生成函数（`TavernHelper`封装接口 / 酒馆源码里的`generateQuietPrompt`、`generateRaw`）的确切参数签名，是否支持`AbortSignal`。
-- `#send_textarea` / `#send_but` 等发送框DOM id 是否与实际安装的酒馆版本一致。
-- `character.data.extensions` 命名空间的读写API在目标版本的确切调用方式。
-- `TavernHelper`当前版本实际暴露了哪些变量/消息/生成相关接口，以其类型定义（`@types`）为准，不要以文档描述的能力范围直接猜函数名。
-- `@vueuse/core` 当前锁定版本（`^13.9.0`）里 `useElementSize`/`onLongPress` 的确切签名和边界行为（比如 `useElementSize` 初次挂载时机、`onLongPress` 是否需要额外处理触摸滚动冲突），改悬浮球交互前先查一遍而不是直接照抄本文档的示例代码。
+- `TavernHelper`、`generateQuietPrompt`、`generateRaw` 的当前签名及是否支持 `AbortSignal`。
+- `#send_textarea`、`#send_but` 等发送框 DOM id 是否与目标酒馆版本一致。
+- `character.data.extensions` 命名空间的真实读写 API。
+- 当前 `TavernHelper` 的实际导出面，以真实源码和类型定义为准，不要根据旧文档猜函数名。
+- 当前锁定版本 `@vueuse/core ^13.9.0` 中 `useElementSize`、`onLongPress` 的签名和触摸滚动边界行为；未实现的长按方案在重新设计前不要直接照抄旧示例。

@@ -261,7 +261,6 @@
               }}</span>
               <input
                 v-else
-                ref="renameInput"
                 v-model="renameText"
                 class="text_pole choice-rename-input"
                 @blur="finishRename(mod)"
@@ -397,6 +396,8 @@ const READONLY_MODULE_IDS = new Set([
   'world_info_after',
   'chat_history',
   'baibai_summary',
+  'wi_depth_before',
+  'wi_depth_after',
 ]);
 const DEPRECATED_MODULE_IDS = new Set(['baibai_state']);
 
@@ -563,8 +564,6 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
       exportedAt: new Date().toISOString(),
       modules,
       config: {
-        person_style: pr.person_style,
-        option_rules: pr.option_rules,
         option_person: pr.option_person,
         enrich_person: pr.enrich_person,
         enrich_person_style: pr.enrich_person_style,
@@ -647,8 +646,6 @@ function importPrompts() {
       const b = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
       const fileConfig: Record<string, string | number | boolean> = {};
       const cfgEntries: Array<[string, string | number | boolean | undefined]> = [
-        ['person_style', s(rawConfig.person_style)],
-        ['option_rules', s(rawConfig.option_rules)],
         ['option_person', s(rawConfig.option_person)],
         ['enrich_person', s(rawConfig.enrich_person)],
         ['enrich_person_style', s(rawConfig.enrich_person_style)],
@@ -776,8 +773,8 @@ const previewContent = (mod: PromptModule): string => {
     };
     return m[mod.id] ?? '[动态内容]';
   }
-  const t = mod.content.replace(/\{\{[^}]+\}\}/g, '...').slice(0, 80);
-  return t || '(空)';
+  const content = mod.content.replace(/\{\{[^}]+\}\}/g, '...').slice(0, 80);
+  return content || '(空)';
 };
 
 const onDragStart = (e: DragEvent, idx: number) => {

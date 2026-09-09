@@ -59,6 +59,18 @@
       </div>
     </div>
     <div class="choice-debug-section">
+      <h4>{{ t`占位符速查` }}</h4>
+      <p class="choice-debug-hint">
+        {{ t`模块内容里可写的变量，生成时自动替换成实际值（供复制到提示词模块中使用）` }}
+      </p>
+      <div class="choice-debug-ph-list">
+        <div v-for="ph in PLACEHOLDER_DOCS" :key="ph.syntax" class="choice-debug-ph">
+          <code class="choice-debug-ph-syntax">{{ ph.syntax }}</code>
+          <span class="choice-debug-ph-desc">{{ ph.desc }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="choice-debug-section">
       <h4>{{ t`危险操作` }}</h4>
       <button class="menu_button" :title="t`删除所有设置并恢复为插件出厂默认值`" @click="factoryReset">
         <i class="fa-solid fa-rotate-left"></i>
@@ -74,6 +86,27 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { lastBuildMessages, lastDedupReport } from '@/core/generator';
 
 const globalStore = useGlobalSettingsStore();
+
+/** 占位符速查表：名称 + 中文说明。说明必须与 generator.ts 的 sub() 替换语义一致，
+ *  新增占位符时两处同步（此处只是文档，替换逻辑以 sub() 为准）。 */
+const PLACEHOLDER_DOCS = [
+  { syntax: '{{count}}', desc: t`本轮要生成的选项/版本数量（数量设为区间时，是实际抽中的值）` },
+  { syntax: '{{count_minus_1}}', desc: t`数量减一（count - 1）` },
+  { syntax: '{{pinned_count}}', desc: t`固定条目的数量` },
+  { syntax: '{{pinned}}', desc: t`固定条目列表——本轮必须全部用上的素材（选项生成）` },
+  { syntax: '{{pool_selected}}', desc: t`候选条目列表——AI 从中挑选方向的素材（选项生成）` },
+  { syntax: '{{input}}', desc: t`待润色的用户原文（仅润色任务有值）` },
+  { syntax: '{{min_chars}}', desc: t`每条字数下限——选项/润色各自取各自的设置` },
+  { syntax: '{{max_chars}}', desc: t`每条字数上限——选项/润色各自取各自的设置` },
+  { syntax: '{{option_person}}', desc: t`选项叙述人称（如「第三人称」）` },
+  { syntax: '{{enrich_person}}', desc: t`润色人称` },
+  { syntax: '{{enrich_person_style}}', desc: t`润色人称风格整句（含人称与人设要求）` },
+  { syntax: '{{prev_options}}', desc: t`上一楼已生成选项的文本（默认提示词已不使用；自定义模块可引用作参照）` },
+  {
+    syntax: '{{user}} 等酒馆宏',
+    desc: t`由酒馆宏引擎替换（assistant 预填模块内同样执行）`,
+  },
+];
 
 function factoryReset() {
   if (
@@ -147,6 +180,37 @@ function truncate(s: string, n = 120): string {
   word-break: break-all;
   white-space: pre-wrap;
   color: var(--choice-text);
+}
+
+.choice-debug-hint {
+  color: var(--choice-text-muted);
+}
+
+.choice-debug-ph-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-debug-ph {
+  display: flex;
+  align-items: baseline;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-xs);
+  line-height: 1.4;
+}
+
+.choice-debug-ph-syntax {
+  flex-shrink: 0;
+  min-width: 150px;
+  font-family: monospace;
+  color: var(--choice-color-info);
+  word-break: break-all;
+}
+
+.choice-debug-ph-desc {
+  color: var(--choice-text-secondary);
+  word-break: break-all;
 }
 
 .choice-debug-dedup-details {

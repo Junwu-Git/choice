@@ -124,7 +124,7 @@
           <label>{{ t`防重复` }}</label>
         </div>
         <small class="choice-field-hint">{{
-          t`提示词不再注入上一轮选项（防污染）；生成后自动剔除与上一 AI 楼层/当前楼既有版本同标题或正文相似度≥阈值的条目，不足时自动补齐一次。阈值 0-1，越小越严格，0.6 默认。`
+          t`提示词不再注入上一轮选项（防污染）；生成后自动剔除与上一 AI 楼层/当前楼既有版本重复的选项——同标题需内容也相似才剔除，不同标题按正文相似度（≥阈值）判定。不足时自动补齐（最多 2 轮）。阈值 0-1，越小越严格，0.75 默认。`
         }}</small>
       </div>
       <div class="choice-count-row">
@@ -144,7 +144,7 @@
             style="width: 70px"
             type="number"
             step="0.05"
-            :title="t`0-1 的 bigram Jaccard 阈值；NaN 兜底 0.6；不 clamp 用户输入`"
+            :title="t`0-1 的 bigram Jaccard 阈值；NaN 兜底 0.75；不 clamp 用户输入`"
           />
         </label>
       </div>

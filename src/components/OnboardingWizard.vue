@@ -12,7 +12,7 @@
           {{ t`「快速上手」带你跑通 配置 API → 生成选项 的核心链路；其余章节按需深入了解各功能。` }}
         </p>
         <div class="choice-tour-menu-list choice-scrollbar">
-          <button v-for="ch in GUIDE_CHAPTERS" :key="ch.id" class="choice-tour-chapter" @click="openOnboarding(ch.id)">
+          <button v-for="ch in visibleChapters" :key="ch.id" class="choice-tour-chapter" @click="openOnboarding(ch.id)">
             <i :class="ch.icon"></i>
             <span class="choice-tour-chapter-text">
               <span class="choice-tour-chapter-title">{{ ch.title }}</span>
@@ -103,7 +103,7 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { resolveCustomApi, lastOptionsGeneratedAt } from '@/core/generator';
-import { GUIDE_CHAPTERS } from '@/core/guide-content';
+import { GUIDE_CHAPTERS, isAdvancedChapter } from '@/core/guide-content';
 import {
   onboardingChapter,
   onboardingMenuVisible,
@@ -117,6 +117,12 @@ import {
 
 const gs = useGlobalSettingsStore();
 const poolStore = usePoolSelectorStore();
+
+// 简化模式下章节菜单隐藏进阶章（prompt/worldinfo/filter，debug 无章节）。
+// startChapter 内另有拒直达守卫兜住隐藏入口之外的调用路径，这里只管菜单可见性
+const visibleChapters = computed(() =>
+  GUIDE_CHAPTERS.filter(ch => !isAdvancedChapter(ch.id) || gs.settings.ui.advanced_features_enabled),
+);
 
 // 与真实生成入口同一套校验（generateOptions 内即用 resolveCustomApi 判 API 可用性），
 // 徽章结论与用户实际点「生成」时的判定一致，避免"徽章亮了但仍生成失败"的口径分裂
