@@ -50,6 +50,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           release-branch: ''
           bump: ${{ steps.autotag_check.outputs.bump }}
+          with-v: 'true'
           dry-run: true
       - if: ${{ github.ref_type == 'tag' }}
         id: manual_tag
@@ -60,8 +61,11 @@ jobs:
           echo result=$TAG >> "$GITHUB_OUTPUT"
       - if: ${{ github.ref_type == 'tag' || steps.autotag_check.outputs.should_tag == 'true' }}
         id: package_version
+        shell: bash
         run: |-
-          echo 'result="version": "${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.autotag.outputs.new-tag }}"' >> "$GITHUB_OUTPUT"
+          # tag 统一 vX.Y.Z，写入文件时剥掉 v 前缀保持裸 semver
+          TAG='${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.autotag.outputs.new-tag }}'
+          echo "result=\"version\": \"${TAG#v}\"" >> "$GITHUB_OUTPUT"
       - if: ${{ github.ref_type == 'tag' || steps.autotag_check.outputs.should_tag == 'true' }}
         uses: jacobtomlinson/gha-find-replace@v3
         with:
