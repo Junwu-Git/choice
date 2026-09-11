@@ -16,12 +16,7 @@
            生成中且无旧结果时显示加载占位，有旧结果则保留旧选项不闪烁（同主面板约定） -->
       <div class="choice-floating-options-body">
         <template v-if="options.length > 0">
-          <button
-            v-for="(option, index) in options"
-            :key="index"
-            class="choice-float-option"
-            @click="onSelect(option)"
-          >
+          <button v-for="(option, index) in options" :key="index" class="choice-float-option" @click="onSelect(option)">
             <span class="choice-float-option-type">{{ parseOptionType(option.text) }}</span><!--
             --><span class="choice-float-option-content">{{ parseOptionContent(option.text) }}</span>
           </button>

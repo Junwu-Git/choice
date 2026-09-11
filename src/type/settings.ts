@@ -1123,9 +1123,7 @@ export const UISettings = z
      * 展示名与循环顺序见 src/core/theme-presets.ts，两处勿各自增删）。
      * 旧存档值是本枚举子集，直接兼容，无需迁移。
      */
-    theme_mode: z
-      .enum(['auto', 'st', 'dark', 'light', 'dusk', 'sakura', 'celadon', 'honey'])
-      .default('auto'),
+    theme_mode: z.enum(['auto', 'st', 'dark', 'light', 'dusk', 'sakura', 'celadon', 'honey']).default('auto'),
     opacity: z.number().min(0.3).max(1).default(0.88).catch(0.88),
     font_size: z.enum(['small', 'medium', 'large']).default('medium'),
     /**
