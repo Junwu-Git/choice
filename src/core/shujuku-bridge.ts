@@ -79,13 +79,6 @@ function resolveScopeKey(): string | null {
 }
 
 /**
- * SP·数据库 是否已安装且设置就绪。
- */
-export function isShujukuAvailable(): boolean {
-  return readShujukuSettings() !== null;
-}
-
-/**
  * 解析 SP·数据库 当前角色的注入目标世界书名。
  *
  * injectionTarget 语义（来自 shujuku settings-model.ts）：

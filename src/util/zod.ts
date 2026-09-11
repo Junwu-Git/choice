@@ -15,7 +15,7 @@ export function validateInplace<S extends z.ZodType>(schema: S, data: unknown): 
   return _.assign(data, result) as z.output<S>;
 }
 
-export function parsePrettified<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
+function parsePrettified<S extends z.ZodType>(schema: S, data: unknown): z.output<S> {
   const result = schema.safeParse(data);
   if (!result.success) {
     throw Error(z.prettifyError(result.error));

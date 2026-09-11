@@ -23,6 +23,14 @@ export const bubbleY = ref(window.innerHeight - bubbleSize.value - BUBBLE_MARGIN
 
 export const isBubbleContextMenuOpen = ref(false);
 
+// 气泡左键点击弹出的选项菜单 popover（FloatingOptions.vue）：与快捷菜单互斥，
+// 任一打开时另一方应关闭（见 FloatingBubble 的 handleClick / onContextMenu）
+export const isBubbleOptionsOpen = ref(false);
+
+export function closeBubbleOptions() {
+  isBubbleOptionsOpen.value = false;
+}
+
 export function toggleSettings() {
   isSettingsOpen.value = !isSettingsOpen.value;
 }

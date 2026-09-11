@@ -113,7 +113,7 @@ export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, s
  *  注意：单次尝试的 api.timeout 超时同样经 attemptController.abort() 抛 AbortError，
  *  与用户取消共用同一信号无法区分——按既有设计，超时与用户取消均不重试，
  *  仅 TypeError/5xx 进入重试路径。 */
-export function isRetryableError(e: unknown): boolean {
+function isRetryableError(e: unknown): boolean {
   if (e instanceof DOMException && e.name === 'AbortError') return false;
   if (e instanceof TypeError) return true;
   if (e instanceof Error) {

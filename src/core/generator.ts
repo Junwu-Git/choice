@@ -31,7 +31,7 @@ import type {
 } from '@/type/settings';
 import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
 
-export type GenerateTarget = { messageId: number; swipeId: number };
+type GenerateTarget = { messageId: number; swipeId: number };
 
 /** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（改 type/content/rule），否则为新增条目。
  *  replaceOriginal 仅用于 UI 预览被替换的原文，不参与注入逻辑。 */

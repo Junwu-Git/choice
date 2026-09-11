@@ -1,14 +1,14 @@
 // 生成后去重：标题判定 + 字符 bigram Jaccard，纯本地字符串运算，零 API 成本。
 // 参照集 = 上一 AI 楼层当前代 ∪ 当前楼层既有代（同楼重新生成也防）。
 
-export type DedupDetail = {
+type DedupDetail = {
   candidate: string;
   reason: 'title' | 'jaccard';
   matchedRef: string;
   score?: number;
 };
 
-export type DedupResult = {
+type DedupResult = {
   kept: string[];
   droppedCount: number;
   details: DedupDetail[];

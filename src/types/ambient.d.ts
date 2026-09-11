@@ -15,6 +15,10 @@ declare module 'vue' {
 }
 
 declare global {
+  /** 酒馆全局库（vite-plugin-external 外置为全局，见 vite.config.ts externals） */
+  const hljs: typeof import('highlight.js').default;
+  const Popper: typeof import('@popperjs/core');
+
   interface Window {
     /**
      * 酒馆主页面注入的稳定接口。仅声明扩展实际用到的最小面：

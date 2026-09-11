@@ -172,10 +172,10 @@ export function initPanelMount() {
     const $target = $('#rightSendForm');
     if ($target.length) {
       $enrichBtn.insertBefore('#send_but');
-      // 只有输入框有内容且开关开启时显示按钮
+      // 只有输入框有内容、聊天面板开启且开关开启时显示按钮
       $('#send_textarea').on('input', () => {
         const val = ($('#send_textarea').val() as string).trim();
-        $enrichBtn.toggle(gs.settings.ui.enrich_enabled && val.length > 0);
+        $enrichBtn.toggle(gs.settings.ui.chat_panel_enabled && gs.settings.ui.enrich_enabled && val.length > 0);
       });
     }
   };
@@ -184,10 +184,10 @@ export function initPanelMount() {
   setTimeout(tryInjectEnrichBtn, 1000);
   setTimeout(tryInjectEnrichBtn, 3000);
 
-  // 监听 enrich_enabled 开关变化，同步更新按钮显隐
+  // 监听 enrich_enabled / chat_panel_enabled 开关变化，同步更新按钮显隐
   const updateEnrichBtn = () => {
     const val = ($('#send_textarea').val() as string).trim();
-    $enrichBtn.toggle(gs.settings.ui.enrich_enabled && val.length > 0);
+    $enrichBtn.toggle(gs.settings.ui.chat_panel_enabled && gs.settings.ui.enrich_enabled && val.length > 0);
   };
   // 设置任何字段变化都触发：enrich 按钮显隐同步 + 面板停靠位置即时迁移
   // （reposition 自带幂等检查，非位置字段的变更不会造成 DOM 搬移）

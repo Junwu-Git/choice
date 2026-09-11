@@ -25,7 +25,7 @@ export type StRegexScript = {
 // /pattern/flags 字面量剥离，语义对齐酒馆编译行为（ST utils.js regexFromString：/body/flags → new RegExp(body, flags)）。
 // 锚定 + 贪婪：仅当整串是 "/body/flags" 形态才剥离（JS 正则字面量内的裸 "/" 必须转义，故取最后一个 "/" 切分是安全的），
 // 不匹配则原样返回（视为普通模式串）。flags 一律丢弃：本插件统一以 'gs' 编译，社区清理脚本的 flags 几乎全是 g/gs。
-export function stripRegexLiteral(input: string): string {
+function stripRegexLiteral(input: string): string {
   const m = input.match(/^\/(.+)\/([gimsuy]*)$/s);
   return m ? m[1] : input;
 }

@@ -1,12 +1,12 @@
 /* ===== 暗色主题（默认）— 暖灰系 ===== */
 :root {
-  --choice-bg: #1e1e24;
-  --choice-surface: #282830;
-  --choice-surface-2: #34343c;
+  --choice-bg: #202124;
+  --choice-surface: #2b2c30;
+  --choice-surface-2: #383a40;
 
-  --choice-text: #e2e2e8;
-  --choice-text-secondary: #b0b0b8;
-  --choice-text-muted: #888892;
+  --choice-text: #e5e6ea;
+  --choice-text-secondary: #b8bac2;
+  --choice-text-muted: #8f929c;
   --choice-text-hint: #c8a460;
   --choice-text-on-primary: #fff;
 
@@ -26,8 +26,8 @@
   --choice-color-info: #4a90d9;
   --choice-color-info-bg: rgba(74, 144, 217, 0.12);
 
-  --choice-border: rgba(255, 255, 255, 0.06);
-  --choice-border-strong: rgba(255, 255, 255, 0.1);
+  --choice-border: rgba(255, 255, 255, 0.08);
+  --choice-border-strong: rgba(255, 255, 255, 0.16);
   --choice-border-active: rgba(74, 144, 217, 0.4);
 
   /* 磨砂高光：容器上边缘的受光线，实色模拟雾面层次，不依赖 blur */
@@ -86,13 +86,13 @@
 
 /* ===== 亮色主题 — 暖白纸感磨砂 ===== */
 :root[data-choice-theme='light'] {
-  --choice-bg: #f5f2ec;
-  --choice-surface: #fdfcf9;
-  --choice-surface-2: #eae5da;
+  --choice-bg: #eef0f2;
+  --choice-surface: #f7f8f9;
+  --choice-surface-2: #dfe3e8;
 
-  --choice-text: #292621;
-  --choice-text-secondary: #55514a;
-  --choice-text-muted: #6d6960;
+  --choice-text: #202328;
+  --choice-text-secondary: #4d535c;
+  --choice-text-muted: #707780;
   --choice-text-hint: #7a6018;
   --choice-text-on-primary: #fff;
 
@@ -112,20 +112,20 @@
   --choice-color-info: #3872b4;
   --choice-color-info-bg: rgba(56, 114, 180, 0.08);
 
-  --choice-border: rgba(84, 72, 52, 0.13);
-  --choice-border-strong: rgba(84, 72, 52, 0.24);
+  --choice-border: rgba(72, 82, 94, 0.16);
+  --choice-border-strong: rgba(72, 82, 94, 0.3);
   --choice-border-active: rgba(56, 114, 180, 0.4);
 
-  --choice-frost-line: rgba(255, 255, 255, 0.85);
+  --choice-frost-line: rgba(255, 255, 255, 0.7);
 
-  --choice-shadow-sm: 0 1px 2px rgba(80, 64, 40, 0.07);
-  --choice-shadow-md: 0 2px 6px rgba(80, 64, 40, 0.09), 0 1px 2px rgba(80, 64, 40, 0.05);
-  --choice-shadow-lg: 0 8px 24px rgba(80, 64, 40, 0.14), 0 2px 6px rgba(80, 64, 40, 0.07);
+  --choice-shadow-sm: 0 1px 2px rgba(48, 58, 70, 0.1);
+  --choice-shadow-md: 0 3px 8px rgba(48, 58, 70, 0.13), 0 1px 2px rgba(48, 58, 70, 0.06);
+  --choice-shadow-lg: 0 8px 24px rgba(48, 58, 70, 0.18), 0 2px 6px rgba(48, 58, 70, 0.08);
   --choice-shadow-glow: 0 0 20px rgba(56, 114, 180, 0.2);
 
   --choice-overlay: rgba(58, 50, 38, 0.32);
 
-  --choice-bg-hover: rgba(84, 72, 52, 0.08);
+  --choice-bg-hover: rgba(72, 82, 94, 0.1);
   --choice-bg-active: rgba(56, 114, 180, 0.1);
 }
 
@@ -137,13 +137,13 @@
 
 /* 暮紫 dusk — 暗极性：深紫夜底 + 紫罗兰主色 */
 :root[data-choice-theme='dusk'] {
-  --choice-bg: #221e2e;
-  --choice-surface: #2d2839;
-  --choice-surface-2: #3a3348;
+  --choice-bg: #211d2c;
+  --choice-surface: #302a3e;
+  --choice-surface-2: #443a55;
 
-  --choice-text: #e6e2ee;
-  --choice-text-secondary: #b5aec4;
-  --choice-text-muted: #8d8699;
+  --choice-text: #eeeaf7;
+  --choice-text-secondary: #c1b9d2;
+  --choice-text-muted: #958ba8;
   --choice-text-hint: #c9a86a;
   --choice-text-on-primary: #fff;
 
@@ -163,8 +163,8 @@
   --choice-color-info: #9d7ce8;
   --choice-color-info-bg: rgba(157, 124, 232, 0.12);
 
-  --choice-border: rgba(210, 190, 255, 0.08);
-  --choice-border-strong: rgba(210, 190, 255, 0.12);
+  --choice-border: rgba(210, 190, 255, 0.12);
+  --choice-border-strong: rgba(210, 190, 255, 0.2);
   --choice-border-active: rgba(157, 124, 232, 0.4);
 
   --choice-frost-line: rgba(255, 255, 255, 0.06);
@@ -176,19 +176,19 @@
 
   --choice-overlay: rgba(10, 5, 25, 0.5);
 
-  --choice-bg-hover: rgba(210, 190, 255, 0.1);
+  --choice-bg-hover: rgba(210, 190, 255, 0.14);
   --choice-bg-active: rgba(157, 124, 232, 0.14);
 }
 
 /* 樱粉 sakura — 亮极性：粉白纸底 + 玫瑰粉主色（主色取深玫瑰保证 4.2:1 对比） */
 :root[data-choice-theme='sakura'] {
-  --choice-bg: #f7f0f1;
-  --choice-surface: #fdf9fa;
-  --choice-surface-2: #f0e2e5;
+  --choice-bg: #f3eaee;
+  --choice-surface: #fbf4f7;
+  --choice-surface-2: #e8d5dc;
 
-  --choice-text: #3a2529;
-  --choice-text-secondary: #6d5258;
-  --choice-text-muted: #8a6e74;
+  --choice-text: #35252b;
+  --choice-text-secondary: #684d57;
+  --choice-text-muted: #8a6d78;
   --choice-text-hint: #a05070;
   --choice-text-on-primary: #fff;
 
@@ -208,32 +208,32 @@
   --choice-color-info: #b84f77;
   --choice-color-info-bg: rgba(184, 79, 119, 0.08);
 
-  --choice-border: rgba(120, 70, 85, 0.13);
-  --choice-border-strong: rgba(120, 70, 85, 0.24);
+  --choice-border: rgba(120, 70, 85, 0.17);
+  --choice-border-strong: rgba(120, 70, 85, 0.3);
   --choice-border-active: rgba(184, 79, 119, 0.4);
 
-  --choice-frost-line: rgba(255, 255, 255, 0.85);
+  --choice-frost-line: rgba(255, 255, 255, 0.72);
 
-  --choice-shadow-sm: 0 1px 2px rgba(95, 55, 70, 0.07);
-  --choice-shadow-md: 0 2px 6px rgba(95, 55, 70, 0.09), 0 1px 2px rgba(95, 55, 70, 0.05);
-  --choice-shadow-lg: 0 8px 24px rgba(95, 55, 70, 0.14), 0 2px 6px rgba(95, 55, 70, 0.07);
+  --choice-shadow-sm: 0 1px 2px rgba(95, 55, 70, 0.1);
+  --choice-shadow-md: 0 3px 8px rgba(95, 55, 70, 0.13), 0 1px 2px rgba(95, 55, 70, 0.06);
+  --choice-shadow-lg: 0 8px 24px rgba(95, 55, 70, 0.18), 0 2px 6px rgba(95, 55, 70, 0.08);
   --choice-shadow-glow: 0 0 20px rgba(184, 79, 119, 0.2);
 
   --choice-overlay: rgba(70, 40, 50, 0.32);
 
-  --choice-bg-hover: rgba(120, 70, 85, 0.08);
+  --choice-bg-hover: rgba(120, 70, 85, 0.11);
   --choice-bg-active: rgba(184, 79, 119, 0.1);
 }
 
 /* 青瓷 celadon — 暗极性：墨绿釉底 + 青瓷主色 */
 :root[data-choice-theme='celadon'] {
-  --choice-bg: #1b2422;
-  --choice-surface: #253029;
-  --choice-surface-2: #31403a;
+  --choice-bg: #182522;
+  --choice-surface: #263832;
+  --choice-surface-2: #385047;
 
-  --choice-text: #e2ebe6;
-  --choice-text-secondary: #aec0b6;
-  --choice-text-muted: #87988e;
+  --choice-text: #e5f0ea;
+  --choice-text-secondary: #b5c9bd;
+  --choice-text-muted: #8ba397;
   --choice-text-hint: #cfa952;
   --choice-text-on-primary: #fff;
 
@@ -253,8 +253,8 @@
   --choice-color-info: #4aa8a0;
   --choice-color-info-bg: rgba(74, 168, 160, 0.12);
 
-  --choice-border: rgba(200, 235, 220, 0.07);
-  --choice-border-strong: rgba(200, 235, 220, 0.11);
+  --choice-border: rgba(200, 235, 220, 0.1);
+  --choice-border-strong: rgba(200, 235, 220, 0.18);
   --choice-border-active: rgba(74, 168, 160, 0.4);
 
   --choice-frost-line: rgba(255, 255, 255, 0.06);
@@ -266,20 +266,20 @@
 
   --choice-overlay: rgba(5, 15, 12, 0.5);
 
-  --choice-bg-hover: rgba(200, 235, 220, 0.09);
+  --choice-bg-hover: rgba(200, 235, 220, 0.13);
   --choice-bg-active: rgba(74, 168, 160, 0.12);
 }
 
 /* 蜜杏 honey — 亮极性：暖米纸底 + 蜜色主色（琥珀系天生居中亮度，
    主色取深蜜铜色换足对比，宁可偏铜也不要白字看不清） */
 :root[data-choice-theme='honey'] {
-  --choice-bg: #f6f1e6;
-  --choice-surface: #fdfaf3;
-  --choice-surface-2: #ece1c9;
+  --choice-bg: #f1eadb;
+  --choice-surface: #faf4e8;
+  --choice-surface-2: #e3d4b8;
 
-  --choice-text: #332a1c;
-  --choice-text-secondary: #665942;
-  --choice-text-muted: #837559;
+  --choice-text: #30281d;
+  --choice-text-secondary: #62523a;
+  --choice-text-muted: #807058;
   --choice-text-hint: #8a6414;
   --choice-text-on-primary: #fff;
 
@@ -299,20 +299,20 @@
   --choice-color-info: #96600f;
   --choice-color-info-bg: rgba(150, 96, 15, 0.08);
 
-  --choice-border: rgba(110, 88, 50, 0.13);
-  --choice-border-strong: rgba(110, 88, 50, 0.24);
+  --choice-border: rgba(110, 88, 50, 0.17);
+  --choice-border-strong: rgba(110, 88, 50, 0.3);
   --choice-border-active: rgba(150, 96, 15, 0.4);
 
-  --choice-frost-line: rgba(255, 255, 255, 0.85);
+  --choice-frost-line: rgba(255, 255, 255, 0.72);
 
-  --choice-shadow-sm: 0 1px 2px rgba(90, 70, 40, 0.07);
-  --choice-shadow-md: 0 2px 6px rgba(90, 70, 40, 0.09), 0 1px 2px rgba(90, 70, 40, 0.05);
-  --choice-shadow-lg: 0 8px 24px rgba(90, 70, 40, 0.14), 0 2px 6px rgba(90, 70, 40, 0.07);
+  --choice-shadow-sm: 0 1px 2px rgba(90, 70, 40, 0.1);
+  --choice-shadow-md: 0 3px 8px rgba(90, 70, 40, 0.13), 0 1px 2px rgba(90, 70, 40, 0.06);
+  --choice-shadow-lg: 0 8px 24px rgba(90, 70, 40, 0.18), 0 2px 6px rgba(90, 70, 40, 0.08);
   --choice-shadow-glow: 0 0 20px rgba(150, 96, 15, 0.2);
 
   --choice-overlay: rgba(58, 48, 30, 0.32);
 
-  --choice-bg-hover: rgba(110, 88, 50, 0.08);
+  --choice-bg-hover: rgba(110, 88, 50, 0.11);
   --choice-bg-active: rgba(150, 96, 15, 0.1);
 }
 

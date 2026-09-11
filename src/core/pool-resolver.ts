@@ -1,6 +1,6 @@
 import type { PoolEntry } from '@/type/settings';
 
-export type ResolvePoolInput = {
+type ResolvePoolInput = {
   effectivePool: PoolEntry[];
   count: number;
   categoriesEnabled: boolean;
@@ -17,7 +17,7 @@ export type ResolvePoolInput = {
   oversamplePct: number;
 };
 
-export type ResolvePoolResult = {
+type ResolvePoolResult = {
   pinned: PoolEntry[];
   drawn: PoolEntry[];
 };

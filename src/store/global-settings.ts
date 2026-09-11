@@ -1741,8 +1741,13 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   // enrich_count 从 number 转 string（预校验迁移，必须在 Zod 验证前执行）
   const rawUI = _.get(existing, 'ui');
+  let removedThemeNormalized = false;
   if (rawUI && typeof rawUI.enrich_count === 'number') {
     rawUI.enrich_count = String(rawUI.enrich_count);
+  }
+  if (rawUI && ['warm', 'cream', 'spacegray'].includes(rawUI.theme_mode)) {
+    rawUI.theme_mode = 'auto';
+    removedThemeNormalized = true;
   }
 
   // 注意：曾有一个 v14 迁移块把 chat_filter_groups.character_id 从字符串转 number，
@@ -1756,6 +1761,10 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   sanitizePromptRulesChars(existing);
 
   const validated = validateInplace(GlobalSettings, existing);
+  if (removedThemeNormalized) {
+    _.set(extension_settings, setting_field, klona(validated));
+    saveSettingsDebounced();
+  }
 
   // v19 提示词配置创建的分流依据，必须在 applyDefaults 置 SCHEMA_VERSION 前捕获：
   // 有旧存档（existing 非空）→ 经典 = 用户已有提示词的存档 + 简洁默认；
@@ -2420,8 +2429,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // ST 主题自动检测：当 theme_mode 为 'auto' 时，监听 ST 主题变化
   let stopThemeWatcher: (() => void) | null = null;
 
-  // 非 auto 档（含 dusk/sakura/celadon/honey 预设）原样直通，落到 data-choice-theme
-  // 属性上由 theme.css 的同名 token 块接管；只有 auto 需要 JS 检测 ST 亮暗极性
+  // 非 auto 档原样直通，落到 data-choice-theme 属性上由 theme.css 接管；
+  // 只有 auto 需要 JS 检测 ST 亮暗极性
   function resolveTheme(): 'st' | 'dark' | 'light' | 'dusk' | 'sakura' | 'celadon' | 'honey' {
     const mode = settings.value.ui.theme_mode;
     if (mode !== 'auto') return mode;

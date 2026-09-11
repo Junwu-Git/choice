@@ -196,9 +196,14 @@ import { nextThemeMode, themeLabel } from '@/core/theme-presets';
 import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
-import { sendTextareaMessage } from '@sillytavern/script';
+import { parseOptionType, parseOptionContent } from '@/util/option-format';
+import { applyOptionBehavior } from '@/util/option-action';
 
 const props = defineProps<{ compact?: boolean }>();
+
+// 点选选项完成（填入/发送等行为已执行）后发出；主面板（panel-mount 挂载）无人监听，
+// 悬浮球选项 popover（FloatingOptions.vue）借此在选中后自动收起
+const emit = defineEmits<{ select: [] }>();
 
 const panelEl = ref<HTMLElement | null>(null);
 // 窄容器（手机聊天区 <420px）时收紧排版并限高滚动。与 compact prop 是两套机制：
@@ -281,6 +286,11 @@ watch(collapsed, v => {
 });
 
 const visible = computed(() => {
+  // 聊天界面选项面板开关：关闭时整组隐藏（popover 等入口不受影响）。放在最前，
+  // 关闭状态下连带加载/生成中也不渲染——组件保持挂载，store 数据仍由 panel-mount 同步
+  if (!gs.settings.ui.chat_panel_enabled) {
+    return false;
+  }
   if (props.compact) {
     return true;
   }
@@ -362,71 +372,11 @@ const onEnrichNext = () => {
   panelStore.enrichGoTo(panelStore.enrichCurrentIndex + 1);
 };
 
-// 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
-const OPTION_SEP_RE = /[:：]\s/;
-
-// 匹配开头的 [标题] 或 【标题】 模式，标题为括号内文字，括号后紧跟内容
-const OPTION_TYPE_BRACKET_RE = /^[[【]([^\]】]+)[\]】]\s*/;
-
-const findOptionSep = (text: string): { idx: number; len: number } | null => {
-  const m = text.match(OPTION_SEP_RE);
-  return m ? { idx: m.index!, len: m[0].length } : null;
-};
-
-const parseOptionType = (text: string): string => {
-  const m = text.match(OPTION_TYPE_BRACKET_RE);
-  if (m) return m[1].replace(/"/g, '');
-  const sep = findOptionSep(text);
-  return sep ? text.slice(0, sep.idx).replace(/"/g, '') : text.replace(/"/g, '');
-};
-
-const parseOptionContent = (text: string): string => {
-  const m = text.match(OPTION_TYPE_BRACKET_RE);
-  if (m) return text.slice(m[0].length);
-  const sep = findOptionSep(text);
-  return sep ? text.slice(sep.idx + sep.len) : text;
-};
-
 const onSelect = async (option: ChoiceOption) => {
-  let content: string;
-  const m = option.text.match(OPTION_TYPE_BRACKET_RE);
-  if (m) {
-    content = option.text.slice(m[0].length);
-  } else {
-    const sep = findOptionSep(option.text);
-    content = sep ? option.text.slice(sep.idx + sep.len) : option.text;
-  }
-  const $textarea = $('#send_textarea');
-  if (behavior.value === 'insert') {
-    // 光标处插入：selectionStart/End 保留点选项按钮（textarea 失焦）前的 caret 位置——
-    // 浏览器规范行为，移动端同样适用。有选区时替换选区（标准文本插入），
-    // 无选区时纯插入；空输入框或 caret 在末尾时等价尾附，无需特判。
-    // textarea.value 的 setter 规范会把 caret 移到值末尾，故"从未手动聚焦"场景
-    // 自然退化为末尾插入，不会把内容塞到开头。
-    const el = $textarea[0] as HTMLTextAreaElement;
-    const pos = el.selectionStart ?? String($textarea.val() ?? '').length;
-    const end = el.selectionEnd ?? pos;
-    const cur = String($textarea.val() ?? '');
-    const next = cur.slice(0, pos) + content + cur.slice(end);
-    $textarea.val(next)[0].dispatchEvent(new Event('input', { bubbles: true }));
-    // 写值后 caret 会被重置，恢复到插入内容之后，方便用户接着编辑
-    const caret = pos + content.length;
-    try {
-      el.focus();
-      el.setSelectionRange(caret, caret);
-    } catch {
-      /* setSelectionRange 在极少数无 selection 的输入上可能抛错，忽略 */
-    }
-  } else if (behavior.value === 'append') {
-    $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
-  } else {
-    $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
-  }
-  if (behavior.value === 'send') {
-    await sendTextareaMessage();
-  }
+  await applyOptionBehavior(option, behavior.value);
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);
+  emit('select');
 };
 </script>
 
