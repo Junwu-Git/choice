@@ -6,15 +6,7 @@
  * auto/st/dark/light 是功能档（检测/跟随/覆盖），其余为独立预设主题。
  */
 interface ThemeOption {
-  id:
-    | 'auto'
-    | 'st'
-    | 'dark'
-    | 'light'
-    | 'dusk'
-    | 'sakura'
-    | 'celadon'
-    | 'honey';
+  id: 'auto' | 'st' | 'dark' | 'light' | 'dusk' | 'sakura' | 'celadon' | 'honey';
   label: string;
   /** mode = 功能档（检测/跟随/亮暗覆盖），preset = 独立预设主题（theme.css 完整 token 块） */
   kind: 'mode' | 'preset';

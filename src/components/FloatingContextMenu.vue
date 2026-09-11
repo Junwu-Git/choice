@@ -25,7 +25,14 @@
 </template>
 
 <script setup lang="ts">
-import { openSettings, isBubbleContextMenuOpen, isBubbleOptionsOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
+import {
+  openSettings,
+  isBubbleContextMenuOpen,
+  isBubbleOptionsOpen,
+  bubbleX,
+  bubbleY,
+  bubbleSize,
+} from '@/core/floating-state';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const MENU_WIDTH = 140;
