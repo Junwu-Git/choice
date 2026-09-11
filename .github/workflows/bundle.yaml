@@ -52,6 +52,16 @@ jobs:
           bump: ${{ steps.autotag_check.outputs.bump }}
           with-v: 'true'
           dry-run: true
+      - if: ${{ github.ref_type != 'tag' && steps.autotag_check.outputs.should_tag == 'true' }}
+        id: release_tag
+        shell: bash
+        run: |-
+          # autotag-action 的 new-tag 输出不带 v 前缀（with-v 只在其自行建 tag 时生效，
+          # 这里用 dry-run 后自己 git tag，v 会丢——v1.3.1 就出过裸 tag）。
+          # 统一在此补 v 前缀，保证发布 tag 恒为 vX.Y.Z，与历史 tag 约定一致。
+          TAG='${{ steps.autotag.outputs.new-tag }}'
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+          echo "result=${TAG}" >> "$GITHUB_OUTPUT"
       - if: ${{ github.ref_type == 'tag' }}
         id: manual_tag
         env:
@@ -64,7 +74,7 @@ jobs:
         shell: bash
         run: |-
           # tag 统一 vX.Y.Z，写入文件时剥掉 v 前缀保持裸 semver
-          TAG='${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.autotag.outputs.new-tag }}'
+          TAG='${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.release_tag.outputs.result }}'
           echo "result=\"version\": \"${TAG#v}\"" >> "$GITHUB_OUTPUT"
       - if: ${{ github.ref_type == 'tag' || steps.autotag_check.outputs.should_tag == 'true' }}
         uses: jacobtomlinson/gha-find-replace@v3
@@ -105,5 +115,5 @@ jobs:
       - if: ${{ github.ref_type == 'tag' || steps.autotag_check.outputs.should_tag == 'true' }}
         shell: bash
         run: |-
-          git tag ${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.autotag.outputs.new-tag }}
+          git tag ${{ github.ref_type == 'tag' && steps.manual_tag.outputs.result || steps.release_tag.outputs.result }}
           git push --tags
