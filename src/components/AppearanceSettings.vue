@@ -1,26 +1,53 @@
 <template>
   <div class="choice-appearance-editor">
-    <div class="choice-appearance-section">
-      <span class="choice-appearance-section-title">{{ t`面板` }}</span>
-      <!-- 高级功能开关放「面板」分区最前：appearance 是基础 tab，简化模式下它是
-           重新开启高级 tab 的唯一入口，必须任何模式下都可达。
-           纯 UI 分层语义：关闭只隐藏高级设置页入口，过滤规则/世界书注入等
-           运行时行为照常生效，文案不暗示"功能已关闭" -->
-      <div class="choice-behavior-grid" data-tour="appearance-floating">
-        <label class="choice-check">
-          <input v-model="ui.advanced_features_enabled" type="checkbox" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
-            <strong>{{ t`高级功能` }}</strong>
-            <small>{{ t`显示提示词、世界书、过滤、调试等进阶设置页` }}</small>
-          </span>
-        </label>
+    <!-- 悬浮窗分区：悬浮球开关 + 单击行为。data-tour 锚点挂在此区
+         （引导 chapter 的 appearance-floating 步骤聚焦悬浮窗相关设置） -->
+    <div class="choice-appearance-section" data-tour="appearance-floating">
+      <span class="choice-appearance-section-title">{{ t`悬浮窗` }}</span>
+      <div class="choice-behavior-grid">
         <label class="choice-check">
           <input v-model="ui.floating_enabled" type="checkbox" />
           <span class="choice-check-custom"></span>
           <span class="choice-check-label">
             <strong>{{ t`悬浮窗` }}</strong>
             <small>{{ t`在屏幕右下角显示快捷按钮` }}</small>
+          </span>
+        </label>
+      </div>
+      <!-- 悬浮球单击行为：options=单击切换选项弹窗，settings=单击打开设置面板。
+           右键/长按快捷菜单不受影响，两种模式下弹窗与设置都可达 -->
+      <div class="choice-theme-switch choice-position-switch">
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.bubble_click_action === 'options' }"
+          :title="t`单击悬浮球呼出选项弹窗`"
+          @click="ui.bubble_click_action = 'options'"
+        >
+          <i class="fa-solid fa-chess"></i>
+          {{ t`单击出选项` }}
+        </button>
+        <button
+          class="choice-theme-btn"
+          :class="{ active: ui.bubble_click_action === 'settings' }"
+          :title="t`单击悬浮球打开设置面板（右键/长按仍可查看选项）`"
+          @click="ui.bubble_click_action = 'settings'"
+        >
+          <i class="fa-solid fa-gear"></i>
+          {{ t`单击出设置` }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 聊天界面分区：聊天内选项面板 + 停靠位置 + 魔棒入口 -->
+    <div class="choice-appearance-section">
+      <span class="choice-appearance-section-title">{{ t`聊天界面` }}</span>
+      <div class="choice-behavior-grid">
+        <label class="choice-check">
+          <input v-model="ui.chat_panel_enabled" type="checkbox" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`选项面板` }}</strong>
+            <small>{{ t`在聊天界面显示选项面板；关闭后改用悬浮球弹窗查看选项` }}</small>
           </span>
         </label>
         <label class="choice-check">
@@ -53,6 +80,23 @@
           <i class="fa-solid fa-anchor"></i>
           {{ t`输入框上方` }}
         </button>
+      </div>
+    </div>
+
+    <!-- 高级功能分区：纯 UI 分层开关，独立成区——它是「设置页显示哪些 tab」的开关，
+         不属于悬浮窗或聊天界面任一类别。appearance 是基础 tab，简化模式下它是
+         重新开启高级 tab 的唯一入口，必须任何模式下都可达 -->
+    <div class="choice-appearance-section">
+      <span class="choice-appearance-section-title">{{ t`高级功能` }}</span>
+      <div class="choice-behavior-grid">
+        <label class="choice-check">
+          <input v-model="ui.advanced_features_enabled" type="checkbox" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`显示进阶设置页` }}</strong>
+            <small>{{ t`提示词、世界书、过滤、调试等设置页的显隐开关` }}</small>
+          </span>
+        </label>
       </div>
     </div>
 

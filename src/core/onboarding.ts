@@ -28,14 +28,14 @@ export const onboardingPendingTab = ref<TabId | null>(null);
  * （如 pool-library 只管开条目库），从"选择条目"回退到"条目库"时选择条目
  * 弹窗还开着叠在上面，用户看到的就是"没回到上一步的界面"
  */
-export type OnboardingAction = 'close-all' | 'pool-library' | 'pool-select-entries' | 'filter-library';
+type OnboardingAction = 'close-all' | 'pool-library' | 'pool-select-entries' | 'filter-library';
 export const onboardingPendingAction = ref<OnboardingAction | null>(null);
 
 /** 当前步骤下标（章内）。翻页只改这里，组件 watch 它驱动「切 tab → 开弹窗 → 等渲染 → 聚焦」链路 */
 export const onboardingStepIndex = ref(0);
 
 /** 当前章 id。步骤数据本体在 guide-content.ts 的 GUIDE_CHAPTERS，组件经此 computed 读取 */
-export const onboardingChapterId = ref<string>('quick-start');
+const onboardingChapterId = ref<string>('quick-start');
 
 export const onboardingChapter = computed(
   () => GUIDE_CHAPTERS.find(c => c.id === onboardingChapterId.value) ?? GUIDE_CHAPTERS[0],

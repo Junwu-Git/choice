@@ -13,7 +13,7 @@ export type ChoiceGeneration = {
   options: ChoiceOption[];
 };
 
-export type MessageChoiceData = {
+type MessageChoiceData = {
   generations: ChoiceGeneration[];
   currentIndex: number;
   enrichGenerations: ChoiceGeneration[];

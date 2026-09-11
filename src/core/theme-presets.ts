@@ -5,7 +5,7 @@
  * data-choice-theme token 块——漏 CSS 块会静默回落暗色默认 token，构建不报错。
  * auto/st/dark/light 是功能档（检测/跟随/覆盖），其余为独立预设主题。
  */
-export interface ThemeOption {
+interface ThemeOption {
   id: 'auto' | 'st' | 'dark' | 'light' | 'dusk' | 'sakura' | 'celadon' | 'honey';
   label: string;
   /** mode = 功能档（检测/跟随/亮暗覆盖），preset = 独立预设主题（theme.css 完整 token 块） */

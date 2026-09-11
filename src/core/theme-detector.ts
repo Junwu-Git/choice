@@ -75,7 +75,7 @@ function contrastRatio(a: [number, number, number], b: [number, number, number])
   return (hi + 0.05) / (lo + 0.05);
 }
 
-export interface STInkFallback {
+interface STInkFallback {
   text: string;
   secondary: string;
   muted: string;

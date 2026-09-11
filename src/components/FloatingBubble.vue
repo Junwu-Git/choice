@@ -49,6 +49,7 @@
       ></i>
     </div>
     <FloatingContextMenu v-if="isBubbleContextMenuOpen" />
+    <FloatingOptions v-if="isBubbleOptionsOpen" />
   </Teleport>
 </template>
 
@@ -58,14 +59,18 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import {
   toggleSettings,
+  closeSettings,
   isSettingsOpen,
   isBubbleContextMenuOpen,
+  isBubbleOptionsOpen,
+  closeBubbleOptions,
   bubbleX,
   bubbleY,
   bubbleSize,
   isMobileBubble,
 } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
+import FloatingOptions from '@/components/FloatingOptions.vue';
 
 // 气泡直径与移动端判定来自 floating-state 单一来源（详见该模块注释），本组件不再
 // 各自维护 MQL——避免与上下文菜单等处各自硬编码 60 而在移动端漂移
@@ -112,15 +117,18 @@ const isDisabled = computed(() => {
 });
 
 // disabled 态此前只是变暗，没有任何文字解释"为什么点它没用"。title 把具体缺什么
-// 说清楚（未配 API / 池空 / 都缺），点击行为不变（仍打开设置面板）
+// 说清楚（未配 API / 池空 / 都缺），并随 bubble_click_action 提示单击将打开什么
+// （选项弹窗 / 设置面板），避免文案与实际点击行为错位
 const bubbleTitle = computed(() => {
   const gs = useGlobalSettingsStore();
   const noApi = !resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
   const noPool = usePoolSelectorStore().effectivePool.length === 0;
-  if (noApi && noPool) return t`未配置 API 且条目池为空——点击打开设置`;
-  if (noApi) return t`未配置 API——点击打开设置`;
-  if (noPool) return t`条目池为空——点击打开设置`;
-  return t`行动选项设置`;
+  const opensSettings = gs.settings.ui.bubble_click_action === 'settings';
+  const actionHint = opensSettings ? t`点击打开设置` : t`点击查看选项`;
+  if (noApi && noPool) return t`未配置 API 且条目池为空——${actionHint}`;
+  if (noApi) return t`未配置 API——${actionHint}`;
+  if (noPool) return t`条目池为空——${actionHint}`;
+  return actionHint;
 });
 
 const bubbleState = computed(() => {
@@ -146,9 +154,20 @@ const handleClick = () => {
   isBubbleContextMenuOpen.value = false;
   bubbleX.value = posX.value;
   bubbleY.value = posY.value;
-  // 单击切换开/关：面板开着时点气泡应关闭，而不是反复置 true。
-  // 前提是气泡在遮罩之上（见 --above-overlay 的 z-index 提升），否则第二次点击被遮罩吞掉
-  toggleSettings();
+  // 单击行为由 ui.bubble_click_action 决定：
+  // - 'settings'：恢复"点击打开/关闭设置"的旧语义（弹窗不参与，保持关闭）；
+  // - 'options'：设置面板开着时点气泡关闭设置（气泡在遮罩之上可命中，第二次点击
+  //   需能收回），否则切换选项弹窗开/关
+  const gs = useGlobalSettingsStore();
+  if (gs.settings.ui.bubble_click_action === 'settings') {
+    toggleSettings();
+    return;
+  }
+  if (isSettingsOpen.value) {
+    closeSettings();
+  } else {
+    isBubbleOptionsOpen.value = !isBubbleOptionsOpen.value;
+  }
 };
 
 const { x, y, isDragging } = useDraggable(bubbleEl, {
@@ -241,6 +260,8 @@ const onPointerDown = (e: PointerEvent) => {
       isPressed.value = false;
       bubbleX.value = posX.value;
       bubbleY.value = posY.value;
+      // 快捷菜单与选项 popover 互斥：长按打开菜单时收起已弹出的选项
+      closeBubbleOptions();
       isBubbleContextMenuOpen.value = true;
     }, 500);
   }
@@ -260,6 +281,8 @@ const onContextMenu = (e: MouseEvent) => {
   e.preventDefault();
   bubbleX.value = posX.value;
   bubbleY.value = posY.value;
+  // 快捷菜单与选项 popover 互斥：右键打开菜单时收起已弹出的选项
+  closeBubbleOptions();
   isBubbleContextMenuOpen.value = true;
 };
 

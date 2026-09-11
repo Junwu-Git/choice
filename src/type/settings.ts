@@ -108,6 +108,9 @@ export type PoolConfig = z.infer<typeof PoolConfig>;
 /** 润色人称默认值。选项提示词不再有隐藏的 person_style/option_rules 双来源。 */
 export const DEFAULT_ENRICH_PERSON_STYLE = '统一使用{{enrich_person}} {{user}} 为主语';
 
+/** 选项/润色人称默认值（PromptConfig 与 PromptRules 共用，勿两处各自硬编码） */
+export const DEFAULT_OPTION_PERSON = '第三人称';
+
 export const PromptModule = z.object({
   id: z.string(),
   name: z.string(),
@@ -130,9 +133,9 @@ export const PromptConfig = z
     modules: z.array(PromptModule).prefault([]),
     /** @deprecated v35 起生成侧标量（人称/字数/轮数/预填充/柏宝书）不随配置切换。
      *  历史配置仍可能带这些字段，但当前运行时不再读取或写入。 */
-    option_person: z.string().default('第三人称'),
-    enrich_person: z.string().default('第三人称'),
-    enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
+    option_person: z.string().default(DEFAULT_OPTION_PERSON),
+    enrich_person: z.string().default(DEFAULT_OPTION_PERSON),
+    enrich_person_style: z.string().default(DEFAULT_ENRICH_PERSON_STYLE),
     option_min_chars: z
       .number()
       .min(CHARS_MIN_LIMIT)
@@ -353,9 +356,9 @@ export const PromptRules = z
     /** SP·数据库 记忆源总开关：关闭时 SP·数据库 的注入目标世界书不参与选项/润色生成 */
     shujuku_enabled: z.boolean().default(false),
     /** 选项人称（简单值），通过 {{option_person}} 直接注入 core_rules 模块 */
-    option_person: z.string().default('第三人称'),
+    option_person: z.string().default(DEFAULT_OPTION_PERSON),
     /** 润色人称（简单值），显示在生成页面。enrich_person_style 非空时优先 */
-    enrich_person: z.string().default('第三人称'),
+    enrich_person: z.string().default(DEFAULT_OPTION_PERSON),
     /** 输入润色提示词模板，使用 {{input}} 占位替代用户输入 */
     enrich_prompt: z.string().default(''),
     /** 选项字数下限 */
@@ -387,7 +390,7 @@ export const PromptRules = z
       .default(ENRICH_MAX_CHARS_DEFAULT)
       .catch(ENRICH_MAX_CHARS_DEFAULT),
     /** 润色人称视角，自由文本，通过 {{enrich_person_style}} 占位符注入 enrich_core_rules 模块 */
-    enrich_person_style: z.string().default('统一使用{{enrich_person}} {{user}} 为主语'),
+    enrich_person_style: z.string().default(DEFAULT_ENRICH_PERSON_STYLE),
     schema_version: z.number().default(0),
   })
   .prefault({});
@@ -1045,7 +1048,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 46;
+export const SCHEMA_VERSION = 47;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1083,6 +1086,26 @@ export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 export const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
+    /**
+     * 聊天界面选项面板开关：false 时主面板（#chat 内 / 输入框上方停靠）整组隐藏，
+     * 且 panel-mount 注入的润色按钮同步隐藏；弹窗（FloatingOptions）不提供润色。
+     * store 数据同步与自动生成照常运行（弹窗读同一 panelStore）。
+     * 老存档缺字段由 default(true) 补齐：升级零变化，无需 bump schema_version
+     */
+    chat_panel_enabled: z.boolean().default(true),
+    /**
+     * 悬浮球单击行为：options = 单击切换选项弹窗（FloatingOptions，现状）；
+     * settings = 单击打开/关闭设置面板。右键/长按快捷菜单不受影响，
+     * 始终提供「查看行动选项 / 打开设置」两个入口，两种模式下弹窗与设置都可达。
+     * 老存档缺字段由 default('options') 补齐，无需 bump schema_version
+     */
+    bubble_click_action: z.enum(['options', 'settings']).default('options'),
+    /**
+     * 悬浮球弹窗锁定时的「移出淡化」开关：false 时锁定态移出选项栏不降低透明度。
+     * 仅锁定 + 支持 hover 的设备生效（触屏无 hover 不淡化）。
+     * 老存档缺字段由 default(true) 补齐，无需 bump schema_version
+     */
+    floating_dim_enabled: z.boolean().default(true),
     /**
      * 酒馆输入框左侧魔棒（扩展程序）菜单里的「行动选项」入口显隐开关。
      * 仅控制 #extensionsMenu 中 #choice_wand_container 的显示（wand-menu.ts 订阅本字段

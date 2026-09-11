@@ -8,6 +8,10 @@
         '--choice-menu-y': menuY + 'px',
       }"
     >
+      <button class="choice-floating-context-item" @click.stop="onShowOptions">
+        <i class="fa-solid fa-chess"></i>
+        {{ t`查看行动选项` }}
+      </button>
       <button class="choice-floating-context-item" @click.stop="onOpenSettings">
         <i class="fa-solid fa-gear"></i>
         {{ t`打开设置` }}
@@ -21,7 +25,14 @@
 </template>
 
 <script setup lang="ts">
-import { openSettings, isBubbleContextMenuOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
+import {
+  openSettings,
+  isBubbleContextMenuOpen,
+  isBubbleOptionsOpen,
+  bubbleX,
+  bubbleY,
+  bubbleSize,
+} from '@/core/floating-state';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const MENU_WIDTH = 140;
@@ -42,6 +53,11 @@ const menuX = computed(() => {
 const menuY = computed(() => {
   return Math.max(8, bubbleY.value);
 });
+
+const onShowOptions = () => {
+  isBubbleContextMenuOpen.value = false;
+  isBubbleOptionsOpen.value = true;
+};
 
 const onOpenSettings = () => {
   isBubbleContextMenuOpen.value = false;

@@ -86,17 +86,28 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - Dragging：拖动期间展示拖拽态。
 - Idle：默认态；已经实现贴边吸附和边界钳制。
 
-右键菜单是当前快捷菜单入口；尚未实现基于 `onLongPress`
-的长按状态机。`hasUnseenResult`、未读结果徽章和快速预览 popover 尚未接入；`ActionOptionsPanel.vue` 虽已有
-`compact?: boolean` 预埋能力，但当前没有完整的悬浮球 popover 调用方。新增这些能力时，必须复用 `ActionOptionsPanel`
-的选项选择与 behavior 逻辑，不要复制一套渲染逻辑。
+右键菜单是当前快捷菜单入口（右键/触屏长按 500ms 呼出，含「查看行动选项 / 打开设置 / 隐藏悬浮球」，
+与选项 popover 互斥）；尚未实现基于 `onLongPress` 的长按状态机。
+**左键点击气泡行为由 `ui.bubble_click_action` 控制**：`options` = 切换选项弹窗、
+`settings` = 打开/关闭设置面板。选项弹窗（`FloatingOptions.vue`）是**独立 UI**，不复用
+`ActionOptionsPanel` 的版式：无标题栏、纯列表紧凑排版、底部工具条（分页/生成/锁/设置）；
+选项解析（`src/util/option-format.ts`）与行为应用（`src/util/option-action.ts`）是
+与主面板共用的共享层，弹窗内禁止再写一份解析/行为逻辑。弹窗锁读写全局 `panel_lock`
+（`off ↔ open` 二态），锁定时**弹窗常开**：点选项、点弹窗外部、Esc 均不关闭；
+仅支持 hover 的鼠标移出选项栏时弹窗**淡化**（`dimmed` 态 opacity 0.45，移入恢复），
+淡化开关为工具条锁右侧的 `floating_dim_enabled`（默认开，仅锁定 + hover 设备显示）；
+触屏不淡化；只能解锁或点击悬浮球开关收起；点工具条「设置」为例外仍关闭弹窗并打开设置面板。
+`chat_panel_enabled=false` 时主面板整组隐藏且润色按钮隐藏，但 store 数据同步与
+自动生成照常运行（弹窗读同一 panelStore）。
+popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-state.ts`，
+设置面板打开时自动收起。`hasUnseenResult`、未读结果徽章和快速预览 popover 尚未接入。
 
 ### 面板工具区与魔棒菜单入口
 
 - `ActionOptionsPanel.vue` 标题栏工具区右起为 [生成/润色][锁定][主题循环][设置]：设置按钮复用
   `openSettings`（`floating-state.ts`），与悬浮球/魔棒菜单共用同一开关。
 - `wand-menu.ts` 向酒馆输入框左侧的 `#extensionsMenu`
-  注入「行动选项」入口，点击打开设置面板。`ui.wand_menu_enabled`（AppearanceSettings「面板」分区开关，默认
+  注入「行动选项」入口，点击打开设置面板。`ui.wand_menu_enabled`（AppearanceSettings「聊天界面」分区开关，默认
   `true`，schema `src/type/settings.ts`）控制该入口显隐，通过全局设置 `$subscribe`
   即时同步；该开关只影响魔棒入口，不联动 `floating_enabled`、不影响选项面板/悬浮窗。
 
@@ -107,13 +118,14 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 46。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 47。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
-  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`；8 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
+  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；8 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义和窄屏布局 composable。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
-- `src/util/`：文件选择、SortableJS 配置和 Zod 解析辅助。
+- `src/util/`：文件选择、SortableJS 配置和 Zod 解析辅助；选项文本解析（`option-format.ts`）与
+  点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。
 
 ## 新手引导架构
@@ -127,9 +139,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - 设置面板 tab 栏的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`；不要用 `v-html` 注入引导内容。
 - `onboarding_done` 在欢迎卡或向导弹出时即置为 true。`data-tour`
   锚点分散在 13 个组件模板中，增删向导步骤时要同步检查锚点。
-- `docs/choice-prompt-redesign-spec.md` 是当前仓库中可见的提示词设计参考；不要引用不存在的
-  `async-action-options-spec.md`、`choice-ui-redesign-spec.md` 或 `choice-floating-bubble-design.md`。`docs/`
-  下的方案文档是背景参考，不替代当前源码。
+- `docs/` 下已无提示词设计参考文档；不要引用不存在的
+  `choice-prompt-redesign-spec.md`、`async-action-options-spec.md`、`choice-ui-redesign-spec.md`
+  或 `choice-floating-bubble-design.md`。当前源码是唯一标准。
 
 ## 条目池模型与抽取算法
 

@@ -191,6 +191,9 @@ const onModelBlur = () => {
 
 const selectApi = (id: string) => {
   selectedApiId.value = id;
+  // 下拉「生成 API」即渠道选择器：选中立即生效，否则 active_api_id 只会被「新建保存」改写，
+  // 导致生成永远使用最近创建的 API。store 深度 watch 会自动持久化该字段。
+  globalStore.settings.active_api_id = id;
   const api = globalStore.settings.apis.find(a => a.id === id);
   draftForm.value = api ? klona(api) : EMPTY_API();
   modelDropdownOpen.value = false;
