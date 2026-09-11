@@ -135,7 +135,11 @@ function buildUserSubjectEntries(): PoolEntry[] {
     createPoolEntry('用户主体', '目标推进', '由 {{user}} 朝自己的目标或牵挂的人事物迈出具体一步，不停留在空想或等待'),
     createPoolEntry('用户主体', '求助托付', '由 {{user}} 开口向可信的人求助、委派或托付一件事，把难题分出去一部分'),
     createPoolEntry('用户主体', '安抚示好', '由 {{user}} 先递台阶——安慰、道歉、道谢或以小动作示好，修补或拉近关系'),
-    createPoolEntry('用户主体', '观察等待', '由 {{user}} 不急于行动，先观察、倾听或按兵不动，给局面和对方留出变化的余地'),
+    createPoolEntry(
+      '用户主体',
+      '观察等待',
+      '由 {{user}} 不急于行动，先观察、倾听或按兵不动，给局面和对方留出变化的余地',
+    ),
     createPoolEntry('用户主体', '讨价还价', '由 {{user}} 就条件、代价或利益开口谈价，试探对方能让步的底线'),
   ];
 }
