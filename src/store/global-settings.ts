@@ -56,7 +56,7 @@ const LEGACY_DEFAULT_ENTRY_TYPES = new Set([
 
 /**
  * 分组名常量：条目 category 与 group_order 的唯一事实来源。
- * v46 起默认配置只引用「用户主体」分组（2 条 pinned 锚点），其余 7 组 opt-in，
+ * v46 起默认配置只引用「用户主体」分组（v47 起仅 1 条 pinned 锚点），其余 7 组 opt-in，
  * 只进 master_pool 条目库；分组轮询抽取（drawByCategories）按 category 分桶，
  * 独立成组保证各组特色获得稳定但不过分的出场占比。
  */
@@ -117,21 +117,26 @@ function buildGeneralEntries(): PoolEntry[] {
 }
 
 /**
- * 「用户主体」分组：8 条由 {{user}} 承担下一拍的方向素材。
+ * 「用户主体」分组：12 条由 {{user}} 承担下一拍的方向素材。
  * 提示词已"主体不固定"化，本组锚定"用户行动"这一主体维度，覆盖顺承/破局/冲突/
- * 试探/表露/肢体/意外/目标八个方向。前 2 条 pinned：每轮保证有"稳"（顺势行动）与
- * "破"（打破僵局）两个自主权锚点（承接旧「通用」锚点哲学）；其余参与随机抽取。
+ * 试探/表露/肢体/意外/目标/求助/安抚/观察/谈价 十二个方向。v47 起仅「顺势行动」
+ * 1 条 pinned：每轮保证一个"稳"的自主权锚点；「打破僵局」改为随机抽取——它是
+ * 情境性方向（场景不僵持时硬塞会别扭），且与「出人意料」语义部分重叠，不宜每轮必发。
  */
 function buildUserSubjectEntries(): PoolEntry[] {
   return [
     createPoolEntry('用户主体', '顺势行动', '由 {{user}} 紧承当前情境中最自然的一步，做出顺理成章的行动或回应', true),
-    createPoolEntry('用户主体', '打破僵局', '由 {{user}} 主动打破当前停滞或尴尬，让场景重新动起来', true),
+    createPoolEntry('用户主体', '打破僵局', '由 {{user}} 主动打破当前停滞或尴尬，让场景重新动起来'),
     createPoolEntry('用户主体', '正面交锋', '由 {{user}} 直面眼前的矛盾或人物，把话挑明、把事说破，不再迂回'),
     createPoolEntry('用户主体', '迂回试探', '由 {{user}} 旁敲侧击、以退为进，先探清对方的底细与态度'),
     createPoolEntry('用户主体', '吐露心声', '由 {{user}} 在此刻表露真实情绪或心事，可以坦诚，也可以半真半假'),
     createPoolEntry('用户主体', '身体先行', '由 {{user}} 以行动代替言语表态，让靠近、回避、递出或阻拦等动作传达态度'),
     createPoolEntry('用户主体', '出人意料', '由 {{user}} 做出有悖当下预期的事，为局面注入一个合理的新变量'),
     createPoolEntry('用户主体', '目标推进', '由 {{user}} 朝自己的目标或牵挂的人事物迈出具体一步，不停留在空想或等待'),
+    createPoolEntry('用户主体', '求助托付', '由 {{user}} 开口向可信的人求助、委派或托付一件事，把难题分出去一部分'),
+    createPoolEntry('用户主体', '安抚示好', '由 {{user}} 先递台阶——安慰、道歉、道谢或以小动作示好，修补或拉近关系'),
+    createPoolEntry('用户主体', '观察等待', '由 {{user}} 不急于行动，先观察、倾听或按兵不动，给局面和对方留出变化的余地'),
+    createPoolEntry('用户主体', '讨价还价', '由 {{user}} 就条件、代价或利益开口谈价，试探对方能让步的底线'),
   ];
 }
 
@@ -284,12 +289,12 @@ function buildNsfwEntries(): PoolEntry[] {
   ];
 }
 
-/** 构建默认条目（进默认 config 引用）：v46 起只有「用户主体」8 条。 */
+/** 构建默认条目（进默认 config 引用）：v47 起只有「用户主体」12 条。 */
 function buildDefaultEntries(): PoolEntry[] {
   return buildUserSubjectEntries();
 }
 
-/** 构建完整条目库：8 组 64 条，供 factoryReset 与空池迁移写入 master_pool。 */
+/** 构建完整条目库：8 组 68 条，供 factoryReset 与空池迁移写入 master_pool。 */
 function buildAllPoolEntries(): PoolEntry[] {
   return [
     ...buildDefaultEntries(),
@@ -853,7 +858,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       }
     }
 
-    // 如果没有任何配置，创建默认配置（条目库全量 8 组 64 条，默认配置只引用「用户主体」8 条）。
+    // 如果没有任何配置，创建默认配置（条目库全量 8 组 68 条，默认配置只引用「用户主体」12 条）。
     // 默认配置的 entry_id 必须取自已入 master_pool 的条目（同一数组派生），
     // 否则 buildAllPoolEntries 与 buildDefaultEntries 各自生成的 uuid 互不对应，引用成孤儿
     if (configs.length === 0) {
@@ -1674,6 +1679,130 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     if (userGroupIndex > 0) {
       validated.group_order.splice(userGroupIndex, 1);
       validated.group_order.unshift('用户主体');
+    }
+  }
+
+  // v47：提示词精简 + 用户主体条目池扩充。
+  // ① 四模块默认内容收敛：system_prompt/option_task/core_rules/thinking_prompt 删掉三处重复的
+  //    "主体/尺度不固定"段、thinking 5 步并 3 步、core_rules 4 段压 3 段、option_task 加
+  //    "行动维度不封闭"兜底。from 冻结为 v46 默认原文（字面量写死，防 DEFAULT_MODULES 改后
+  //    漂移），to 从新 DEFAULT_MODULES 取——迁移终态与 JSON 单一事实源零漂移，仿 v44
+  //    V44_CONTENT_PAIR_TARGETS；内容 === from 才换，用户自定义文本匹配不到、原样保留。
+  // ② 模块顺序重排：core_rules/thinking_prompt 移到 option_task（任务）之前、任务紧贴
+  //    assistant 起手式，避免 system 夹在 user 与 assistant 之间；润色链同理规则前置。
+  //    仅当仍处于旧默认相对序（用户未自定义过）时旋转 order 值，仿 v45 相邻检查。
+  // ③ 用户主体 8 条 → 12 条（补 求助托付/安抚示好/观察等待/讨价还价），「打破僵局」取消
+  //    pinned（情境性强不硬塞，仅「顺势行动」保留锚点）；默认配置未被用户改过
+  //    （8 个旧 type 全在）时重建引用，entry_id 取自已入 master_pool 的条目（v46 同款警告）。
+  // 幂等：内容精确替换、order 旋转后不再满足旧相对序、master_pool 按 type 去重、重建后
+  // 新 12 type 全在使 hasAllLegacy 判据失效，重复执行结果一致。
+  if ((validated.schema_version ?? 0) < 47) {
+    // ── ① 模块内容更新 ──
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V47_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'system_prompt',
+        `你是互动叙事的「候选方向」生成助手：你不扮演故事里的任何角色，也不续写正文。你只做一件事——根据当前场景（以 <current_scene> 标记的最新消息为准）生成一组可供挑选的下一拍候选，或者把 {{user}} 的原始输入改写成几个更顺口的版本。本轮是哪一种，由后续消息指明。\n\n候选的"主体"与"尺度"不固定，跟着当前场景和本轮素材走：它可以是 {{user}} 的一个动作、某个角色此刻的反应或内心视角、一段时间或环境的推移，也可以是一个计划或试探。关键只有一条——每条都是当下场景里立刻能落下去的具体下一拍，而不是抽象主题、作者评论或正文续写。允许整批候选里有不同主体、不同尺度的方向混在一起。\n\n只输出 <thinking> 与 <options> 两个标签内的内容，<options> 之外一个字都不写；发现自己开始写正文或扮演角色时立即停下，回到这两个标签。`,
+        newContentById.get('system_prompt') ?? '',
+      ],
+      [
+        'option_task',
+        `【任务：候选生成】根据当前场景（以 <current_scene> 标记的最新消息为准）生成恰好 {{count}} 条方向各异的下一拍候选，供 {{user}} 挑选。每条候选的主体与尺度由当前场景和本轮素材共同决定——不要求都是 {{user}} 的动作，也可以是一个角色的反应或视角、时间的推移、环境的演变、一个计划或试探；但每条必须是当下场景里立刻能落下去的具体方向。\n\n本轮素材：\n固定条目（列表为空就跳过这段；必须全部用上，带 [规则: xxx] 的守其写作约束）：\n{{pinned}}\n候选条目池（多于所需，挑最贴合当下场景的方向；带 [规则: xxx] 的选用了就守）：\n{{pool_selected}}\n\n数量硬约束：恰好 {{count}} 条，固定条目全含、候选每条至多用一次；优先用候选池给的方向，素材不足或与场景冲突时再自行组织贴场景的。其余格式、人称、自检规则见系统消息。`,
+        newContentById.get('option_task') ?? '',
+      ],
+      [
+        'core_rules',
+        `每条候选是当前场景里"下一拍"可走的具体方向：主体与尺度不固定，跟条目和场景走——可以是 {{user}} 的行动、某个角色的反应或视角、时间的推移、环境的演变，或一个计划/试探；每条落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。\n\n候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；候选只依赖其主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"，不直接使用幕后信息。\n\n含对话的用『……』直接引语，禁止"说……"式转述。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"。\n\n输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题]内容"（标题用[]包裹）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：\n1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么。\n2. 场景停在哪个留白上？顺着它走，下一拍怎样最自然。\n3. 回想：从最近一两层正文里挑 2-3 个能直接落进候选的细节（一件实物、一句没接完的话、一个没被回应的动作）。候选要踩在这些细节上，不凭空引入新设定。\n4. 本轮素材（固定+候选条目）分别指向什么方向？谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。\n5. 这批候选里有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？换掉。\n核对：恰好 {{count}} 条；每条 "[标题]内容"、{{min_chars}}-{{max_chars}} 字、按 {{option_person}} 人称。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV47ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V47_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV47ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV47ModuleContent(cfg.modules);
+
+    // ── ② 模块顺序重排（仅旧默认相对序才动，用户自定义序整组跳过）──
+    const rotateV47Orders = (modules: PromptModuleType[]): void => {
+      const byId = new Map(modules.map(m => [m.id, m]));
+      // 选项链：旧序 task → core → thinking，新序 core → thinking → task
+      const task = byId.get('option_task');
+      const core = byId.get('core_rules');
+      const think = byId.get('thinking_prompt');
+      if (task && core && think && task.order < core.order && core.order < think.order) {
+        const [t, c, k] = [task.order, core.order, think.order];
+        core.order = t;
+        think.order = c;
+        task.order = k;
+      }
+      // 润色链：旧序 prompt → core → output_spec → thinking，新序 core → output_spec → thinking → prompt
+      const ep = byId.get('enrich_prompt');
+      const ec = byId.get('enrich_core_rules');
+      const eo = byId.get('enrich_output_spec');
+      const et = byId.get('enrich_thinking');
+      if (ep && ec && eo && et && ep.order < ec.order && ec.order < eo.order && eo.order < et.order) {
+        const [p, c2, o, k2] = [ep.order, ec.order, eo.order, et.order];
+        ec.order = p;
+        eo.order = c2;
+        et.order = o;
+        ep.order = k2;
+      }
+    };
+    rotateV47Orders(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) rotateV47Orders(cfg.modules);
+
+    // ── ③ 条目池扩充 + 「打破僵局」取消 pinned ──
+    const V47_LEGACY_USER_TYPES = new Set([
+      '顺势行动',
+      '打破僵局',
+      '正面交锋',
+      '迂回试探',
+      '吐露心声',
+      '身体先行',
+      '出人意料',
+      '目标推进',
+    ]);
+    const existingTypes = new Set(validated.master_pool.map(entry => entry.type));
+    const newEntries = buildAllPoolEntries().filter(entry => {
+      if (existingTypes.has(entry.type)) return false;
+      existingTypes.add(entry.type);
+      return true;
+    });
+    validated.master_pool.push(...newEntries);
+    // pinned 是配置层覆盖项（effectivePool 取 cfg.pinned），故先改 master_pool 默认值、
+    // 再由下方重建的默认配置引用拿到新 pinned——顺序不能反。
+    for (const entry of validated.master_pool) {
+      if (entry.type === '打破僵局') entry.pinned = false;
+    }
+
+    const defaultConfig = validated.configs.find(config => config.is_default);
+    if (defaultConfig) {
+      const poolById = new Map(validated.master_pool.map(e => [e.id, e]));
+      const hasAllLegacy = [...V47_LEGACY_USER_TYPES].every(t =>
+        defaultConfig.entries.some(e => poolById.get(e.entry_id)?.type === t),
+      );
+      if (hasAllLegacy) {
+        defaultConfig.entries = validated.master_pool
+          .filter(entry => entry.category === '用户主体')
+          .map(entry => ({
+            entry_id: entry.id,
+            pinned: entry.pinned,
+            weight: entry.weight,
+            enabled: true,
+          }));
+      }
     }
   }
 
