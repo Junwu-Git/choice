@@ -13,7 +13,7 @@
           transition: isDragging ? 'none' : 'transform 0.3s ease-out',
         }"
       >
-        <div class="choice-floating-header" ref="headerEl" data-tour="settings-header">
+        <div ref="headerEl" class="choice-floating-header" data-tour="settings-header">
           <span class="choice-floating-title">
             <i class="fa-solid fa-chess"></i>
             {{ t`行动选项` }}

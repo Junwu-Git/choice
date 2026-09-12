@@ -35,6 +35,7 @@ withDefaults(
     maxHeight?: string;
   }>(),
   {
+    icon: '',
     width: '560px',
     maxHeight: '85vh',
   },

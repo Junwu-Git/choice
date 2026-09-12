@@ -15,7 +15,9 @@ withDefaults(
   defineProps<{
     label?: string;
   }>(),
-  {},
+  {
+    label: '',
+  },
 );
 
 const fieldEl = ref<HTMLElement | null>(null);

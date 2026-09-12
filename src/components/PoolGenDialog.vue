@@ -12,8 +12,8 @@
               ref="guideBtn"
               class="choice-poolgen-close"
               :title="t`页面指引`"
-              @click="showGuide = !showGuide"
               style="font-size: var(--choice-text-sm)"
+              @click="showGuide = !showGuide"
             >
               <i class="fa-solid fa-circle-question"></i>
             </button>
