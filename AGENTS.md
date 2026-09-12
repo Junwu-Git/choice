@@ -69,8 +69,8 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   使用的池条目 id 集合，随消息持久化，供未来条目级统计/智能权重分析）。
 - **行动选项统计**：全局一份（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化），
   只计行动选项视图——`generateOptions` 成功路径按实际保留条数计生成，`applyOptionBehavior`（option-action.ts）
-  在 `view='options'` 时计选择；润色视图完全不计入。统计页 `Statistics.vue`（高级 tab，位于过滤之后）展示
-  总量、选择率和文本/类型双榜，可清空。
+  在 `view='options'` 时计选择；润色视图完全不计入。统计页 `Statistics.vue`（基础 tab，位于过滤之后，
+  简化模式也显示）展示总量、选择率和文本/类型双榜，可清空。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`

@@ -1160,7 +1160,7 @@ export const UISettings = z
     panel_lock: z.enum(['off', 'open', 'collapsed']).default('off'),
     /**
      * 高级功能开关（纯 UI 分层）：false = 简化模式，设置面板只显示基础 tab
-     * （pool/generation/api/appearance），提示词/世界书/过滤/调试入口与对应引导章节隐藏；
+     * （pool/generation/api/stats/appearance），提示词/世界书/过滤/调试入口与对应引导章节隐藏；
      * true = 全量 tab。仅做 UI 隐藏——过滤规则/世界书注入等运行时行为照常生效，
      * 已配置数据不动。老存档（schema < 43）由迁移块统一置 true（升级零变化），
      * 全新档走 zod default(false) 即简化模式，降低新用户首启认知负荷。
