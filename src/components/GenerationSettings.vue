@@ -32,8 +32,8 @@
         <button
           class="choice-behavior-btn"
           :class="{ active: gs.settings.behavior === 'send' }"
-          @click="gs.settings.behavior = 'send'"
           :title="t`点击选项后直接发送消息`"
+          @click="gs.settings.behavior = 'send'"
         >
           <i class="fa-solid fa-paper-plane"></i>
           {{ t`发送` }}
@@ -41,8 +41,8 @@
         <button
           class="choice-behavior-btn"
           :class="{ active: gs.settings.behavior === 'fill' }"
-          @click="gs.settings.behavior = 'fill'"
           :title="t`点击选项后填入输入框（替换现有内容）`"
+          @click="gs.settings.behavior = 'fill'"
         >
           <i class="fa-solid fa-file-pen"></i>
           {{ t`覆盖` }}
@@ -50,8 +50,8 @@
         <button
           class="choice-behavior-btn"
           :class="{ active: gs.settings.behavior === 'append' }"
-          @click="gs.settings.behavior = 'append'"
           :title="t`点击选项后追加到输入框末尾`"
+          @click="gs.settings.behavior = 'append'"
         >
           <i class="fa-solid fa-plus"></i>
           {{ t`尾附` }}
@@ -59,8 +59,8 @@
         <button
           class="choice-behavior-btn"
           :class="{ active: gs.settings.behavior === 'insert' }"
-          @click="gs.settings.behavior = 'insert'"
           :title="t`点击选项后插入到输入框光标处`"
+          @click="gs.settings.behavior = 'insert'"
         >
           <i class="fa-solid fa-i-cursor"></i>
           {{ t`插入` }}

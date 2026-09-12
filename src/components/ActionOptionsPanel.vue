@@ -84,32 +84,32 @@
           <button
             class="choice-behavior-btn"
             :class="{ active: behavior === 'send' }"
-            @click="behavior = 'send'"
             :title="t`点击选项后发送消息`"
+            @click="behavior = 'send'"
           >
             {{ t`发送` }}
           </button>
           <button
             class="choice-behavior-btn"
             :class="{ active: behavior === 'fill' }"
-            @click="behavior = 'fill'"
             :title="t`点击选项后填入输入框`"
+            @click="behavior = 'fill'"
           >
             {{ t`覆盖` }}
           </button>
           <button
             class="choice-behavior-btn"
             :class="{ active: behavior === 'append' }"
-            @click="behavior = 'append'"
             :title="t`点击选项后追加到输入框末尾`"
+            @click="behavior = 'append'"
           >
             {{ t`尾附` }}
           </button>
           <button
             class="choice-behavior-btn"
             :class="{ active: behavior === 'insert' }"
-            @click="behavior = 'insert'"
             :title="t`点击选项后插入到输入框光标处`"
+            @click="behavior = 'insert'"
           >
             {{ t`插入` }}
           </button>

@@ -26,6 +26,21 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `@import "tailwindcss"`，不要把它们接入运行时样式。
 - **设置一律走 Pinia store**：组件不直接读写 `extension_settings`、`chat_metadata` 或
   `character.data.extensions`；通过对应的 `useXxxStore()` 读写。与酒馆状态同步的实现集中在 `src/store/`。
+- **角色绑定/解绑是唯一直接写 `character.data.extensions` 的例外**（角色卡设置无全局 store 可承载）：
+  入口（PoolEditor/PromptEditor 绑定按钮、ConfigBindings 解绑）**只同步写内存 + 通过
+  `useCharacterSettingsStore().setBinding()` 替换设置对象**（UI 即时响应），持久化仅由 character-settings
+  store 的 deep watch 统一排队落盘（单一通道：`scheduleCharacterPersist` → `persistCharacter`，直接 POST
+  `/api/characters/edit`，json_data 以角色加载时的完整卡 JSON 为基底合并最新 `data.extensions`）。
+  角色卡 JSON 序列化必须延后到 Vue 绘制之后，且同一角色的连续保存任务要合并、按最新 revision 顺序执行。
+  **入口不得再显式 `persistCharacter`**——否则一次点击会重复全量序列化/写卡，是「绑定卡顿」的根因；`onCreateConfig`
+  的 bindChar 同理只调用 `setBinding`。**禁止组件直接动态写 `settings[field]`**：必须走 `setBinding`，否则可能出现
+  store 已更新而编辑页 DOM 仍停留旧状态。**严禁用 `saveCharacterDebounced` 持久化扩展字段**：它触发表单提交，以加载时
+  的旧 json_data 快照重建 data，刚写入的字段会被旧快照覆盖（「绑定无效」根因）。
+  绑定/解绑入口不得把 `await` 网络持久化放在 store 更新之前，否则 UI 会迟钝；ConfigBindings 解绑的
+  当前角色判断用**对象引用比较**（`ch === getStCharacter(this_chid)`，与 store watch 落盘目标同源），
+  不用 chid 字符串/索引比较（chid 是数组扫描索引、currentCharacterId 是事件驱动的 this_chid 快照，
+  来源不同会失配导致 store 未清、标记残留）；非当前角色解绑的 `persistCharacter` 必须 fire-and-forget，
+  `revision++`/toastr 不阻塞在 await 之后。
 - **酒馆 API 导入边界**：`src/core/` 与 `src/store/`
   是版本敏感酒馆 API 的主要隔离区。现有组件仍保留少量已核实且必要的稳定导入（例如
   `uuidv4`、发送框或世界书相关调用），不要为了追求形式上的“零导入”而凭空改造接口；新增版本敏感的生成、世界书、正则引擎 API 时优先收敛到 core/store，并先核实真实签名。
@@ -34,7 +49,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - **提示词组装必须走角色结构**，不能把整段内容拼成单条 user 消息：
   - `system`/`systemPrompt` 放提示词编辑区的规则（人称、格式、字数等）。
   - `user`/`prompt` 放抽中的固定/随机条目素材和按上下文模式截取的内容。
-  - 可选 `assistant`/`prefill` 放输出格式起手式。
+  - 可选 `assistant`/`prefill` 放输出格式起手式；预填充开启时保持 `assistant`，关闭时仅将「思维链预填」与「润色应答」两个模块的角色转换为 `system`，其他模块与提示词顺序不变。
   - 优先使用已核实签名的 `TavernHelper` 或酒馆原生生成接口的角色消息结构；不要凭记忆假设
     `generateRaw`、`generateQuietPrompt` 或 `AbortSignal` 参数。
 - **条目池是 `master_pool + PoolConfig` 两层结构**：
@@ -70,7 +85,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 ### Shared 组件现状与待办
 
 `src/components/shared/` 已有
-`ChoiceSection.vue`、`ChoiceCard.vue`、`ChoiceField.vue`、`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`。其中
+`ChoiceSection.vue`、`ChoiceCard.vue`、`ChoiceField.vue`、`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
 `useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；不要用 CSS `@container`
 替代，因为部分移动 WebView 可能静默忽略该规则。
 
@@ -125,7 +140,9 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义和窄屏布局 composable。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
 - `src/util/`：文件选择、SortableJS 配置和 Zod 解析辅助；选项文本解析（`option-format.ts`）与
-  点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层。
+  点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
+  提供角色卡绑定扫描（`getBoundCharacters`）与可靠持久化（`persistCharacter`，直接 POST
+  `/api/characters/edit`，替代会丢扩展字段的 `saveCharacterDebounced`）。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。
 
 ## 新手引导架构
@@ -196,6 +213,9 @@ action 会在发布分支执行 production bundle 并提交 `[bot] Bundle`，提
 - `TavernHelper`、`generateQuietPrompt`、`generateRaw` 的当前签名及是否支持 `AbortSignal`。
 - `#send_textarea`、`#send_but` 等发送框 DOM id 是否与目标酒馆版本一致。
 - `character.data.extensions` 命名空间的真实读写 API。
+- `/api/characters/edit` 的 form-data 契约：`json_data` 必须是角色完整卡 JSON（`ch.json_data`
+  原始快照，形如 `{ spec, name, data: {...} }`），不能传 `ch.data` 子对象——后端
+  `charaFormatData` 会把它当顶层结构重建，扩展字段会脱离 `data.extensions` 而被读卡器丢弃。
 - 当前 `TavernHelper` 的实际导出面，以真实源码和类型定义为准，不要根据旧文档猜函数名。
 - 当前锁定版本 `@vueuse/core ^13.9.0` 中 `useElementSize`、`onLongPress`
   的签名和触摸滚动边界行为；未实现的长按方案在重新设计前不要直接照抄旧示例。

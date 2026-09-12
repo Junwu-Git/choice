@@ -20,7 +20,10 @@
           style="width: 60px"
         />
       </label>
-      <label class="choice-context-rounds" :title="t`关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型`">
+      <label
+        class="choice-context-rounds"
+        :title="t`关闭后仅将思维链预填和润色应答的 assistant 角色改为 system，其他模块与提示词顺序不变`"
+      >
         <input v-model="rules.prefill_enabled" type="checkbox" />
         {{ t`预填充` }}
       </label>
@@ -77,10 +80,13 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedPromptConfigId === characterStore.settings.prompt_config_id }"
+            :disabled="!currentCharAvailable"
             :title="
-              selectedPromptConfigId === characterStore.settings.prompt_config_id
-                ? t`当前角色已绑定（点击取消）`
-                : t`绑定到当前角色`
+              !currentCharAvailable
+                ? t`请先在酒馆中选择一个角色卡`
+                : selectedPromptConfigId === characterStore.settings.prompt_config_id
+                  ? t`当前角色已绑定（点击取消）`
+                  : t`绑定到当前角色`
             "
             @click="bindPromptCharacter"
           >
@@ -107,6 +113,9 @@
           t`角色`
         }}</span>
       </div>
+
+      <!-- 已绑定当前提示词配置的角色卡徽章（反向视角：角色卡→配置 的绑定关系列表，同过滤页角色卡区） -->
+      <ConfigBindings :config-id="selectedPromptConfigId" kind="prompt" />
     </div>
 
     <div class="choice-module-toolbar">
@@ -369,15 +378,18 @@
 
 <script setup lang="ts">
 import toastr from 'toastr';
+import { this_chid } from '@sillytavern/script';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { usePromptConfigSelectorStore } from '@/store/prompt-config-selector';
+import { getStCharacter } from '@/core/st-character';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import PromptImportDialog from '@/components/PromptImportDialog.vue';
+import ConfigBindings from '@/components/shared/ConfigBindings.vue';
 import type { PromptModule } from '@/type/settings';
-import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
+import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema, setting_field } from '@/type/settings';
 import { z } from 'zod';
 
 const globalStore = useGlobalSettingsStore();
@@ -506,9 +518,28 @@ function bindPromptChat() {
   chatStore.settings.prompt_config_id = chatStore.settings.prompt_config_id === id ? null : id;
 }
 
+// 无当前角色时绑定无意义（store watch 对 this_chid 为空会静默跳过写卡，造成「绑定无效」），
+// 按钮禁用 + bindPromptCharacter 内再 guard 双保险。
+// 依赖 store 的响应式 currentCharacterId 而非模块变量 this_chid：this_chid 非响应式，
+// computed 不会在切角色后自动重算（曾有实证：切到角色聊天后按钮仍停留 disabled 态）
+const currentCharAvailable = computed(() => globalStore.currentCharacterId != null);
+
 function bindPromptCharacter() {
   const id = selectedPromptConfigId.value;
-  characterStore.settings.prompt_config_id = characterStore.settings.prompt_config_id === id ? null : id;
+  if (!id) return;
+  const ch = getStCharacter(this_chid);
+  if (!ch) {
+    toastr.warning(t`请先在酒馆中选择一个角色卡`);
+    return;
+  }
+  const next = characterStore.settings.prompt_config_id === id ? null : id;
+  // 同步写内存（ConfigBindings 徽章扫描读 characters 数组，需立即生效）+ store
+  // （按钮高亮与「当前生效-角色」立即响应）。落盘统一交给 character-settings store
+  // 的 deep watch 单一通道，不在入口显式 persistCharacter——否则一次点击会并发两次
+  // /api/characters/edit（大卡 JSON 序列化 + 后端全量写卡双倍开销），是「绑定卡顿」的来源。
+  // 不用 saveCharacterDebounced（表单旧 json_data 快照会覆盖刚写的内容——「绑定无效」根因）。
+  _.set(ch, ['data', 'extensions', setting_field, 'prompt_config_id'], next);
+  characterStore.setBinding('prompt', next);
 }
 
 function removePromptConfig() {
@@ -525,7 +556,14 @@ function onCreatePromptConfig(payload: { name: string; isDefault: boolean; bindC
   const cfg = globalStore.createPromptConfig(payload.name, payload.isDefault);
   selectedPromptConfigId.value = cfg.id;
   if (payload.bindChat) chatStore.settings.prompt_config_id = cfg.id;
-  if (payload.bindChar) characterStore.settings.prompt_config_id = cfg.id;
+  if (payload.bindChar) {
+    // 编辑归属走角色卡扩展写入，无当前角色时绑定必失效（与 bindPromptCharacter 同一根因），防御提示
+    if (getStCharacter(this_chid)) {
+      characterStore.setBinding('prompt', cfg.id);
+    } else {
+      toastr.warning(t`未选择角色卡，「绑定角色」未生效`);
+    }
+  }
   showCreatePromptConfig.value = false;
 }
 

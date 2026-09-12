@@ -1,5 +1,32 @@
 <template>
   <div class="choice-pool-editor">
+    <!-- 抽取参数（全局）：页面级工具栏，置于配置栏之上（对齐提示词页 toolbar 布局）。
+         v35 起为全局参数（settings.generation），不属于任何条目池配置——池配置只管条目引用，
+         切换配置不得带动这些开关（历史耦合：曾绑 selectedConfig.generation，
+         切池配置分组抽取/固定溢出即跳变）。与生成设置页的冗余比例同源 -->
+    <div class="choice-inline-field">
+      <label class="choice-inline-label">{{ t`抽取参数（全局）` }}</label>
+      <div class="choice-inline-gen">
+        <label class="choice-check" :title="t`按条目分类分组轮流抽取，避免同组扎堆`">
+          <input v-model="globalStore.settings.generation.categories_enabled" type="checkbox" />
+          {{ t`分组抽取` }}
+        </label>
+        <label class="choice-check" :title="t`结果随机打乱，避免固定条目总在开头`">
+          <input v-model="globalStore.settings.generation.shuffle_final" type="checkbox" />
+          {{ t`打乱结果` }}
+        </label>
+        <label class="choice-inline-gen-item">
+          <span :title="t`固定条目超过数量上限时：全发=全部保留，截断=只取前N个`">{{ t`固定溢出` }}</span>
+          <select v-model="globalStore.settings.generation.pinned_overflow" class="text_pole">
+            <option value="send_all">{{ t`全发` }}</option>
+            <option value="trim">{{ t`截断` }}</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <hr class="sysHR" />
+
     <!-- 配置工具栏 -->
     <div class="choice-config-bar">
       <div class="choice-config-row">
@@ -27,8 +54,13 @@
           <button
             class="choice-btn-sm"
             :class="{ active: selectedConfigId === characterStore.settings.config_id }"
+            :disabled="!currentCharAvailable"
             :title="
-              selectedConfigId === characterStore.settings.config_id ? t`当前角色已绑定（点击取消）` : t`绑定到当前角色`
+              !currentCharAvailable
+                ? t`请先在酒馆中选择一个角色卡`
+                : selectedConfigId === characterStore.settings.config_id
+                  ? t`当前角色已绑定（点击取消）`
+                  : t`绑定到当前角色`
             "
             @click="bindCharacter"
           >
@@ -54,36 +86,15 @@
         <span v-if="characterStore.settings.config_id" class="choice-bound-badge choice-bound-char">{{ t`角色` }}</span>
         <span v-if="!effectiveConfig" class="choice-bound-badge choice-bound-fallback">{{ t`全部条目` }}</span>
       </div>
+
+      <!-- 已绑定当前配置的角色卡徽章（反向视角：角色卡→配置 的绑定关系列表，同过滤页角色卡区） -->
+      <ConfigBindings :config-id="selectedConfigId" kind="pool" />
     </div>
 
     <hr class="sysHR" />
 
     <!-- 配置编辑区域（始终可编辑） -->
     <div v-if="selectedConfig && configs.length > 0" class="choice-inline-edit">
-      <!-- 抽取参数（置顶）。v35 起为全局参数（settings.generation），不属于任何条目池配置——
-           池配置只管条目引用，切换配置不得带动这些开关（历史耦合：曾绑 selectedConfig.generation，
-           切池配置分组抽取/固定溢出即跳变）。与生成设置页的冗余比例同源 -->
-      <div class="choice-inline-field">
-        <label class="choice-inline-label">{{ t`抽取参数（全局）` }}</label>
-        <div class="choice-inline-gen">
-          <label class="choice-check" :title="t`按条目分类分组轮流抽取，避免同组扎堆`">
-            <input v-model="globalStore.settings.generation.categories_enabled" type="checkbox" />
-            {{ t`分组抽取` }}
-          </label>
-          <label class="choice-check" :title="t`结果随机打乱，避免固定条目总在开头`">
-            <input v-model="globalStore.settings.generation.shuffle_final" type="checkbox" />
-            {{ t`打乱结果` }}
-          </label>
-          <label class="choice-inline-gen-item">
-            <span :title="t`固定条目超过数量上限时：全发=全部保留，截断=只取前N个`">{{ t`固定溢出` }}</span>
-            <select v-model="globalStore.settings.generation.pinned_overflow" class="text_pole">
-              <option value="send_all">{{ t`全发` }}</option>
-              <option value="trim">{{ t`截断` }}</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
       <!-- 已选条目列表 -->
       <div class="choice-inline-field">
         <div class="choice-inline-field-head">
@@ -217,15 +228,18 @@
 import EntryPoolDialog from '@/components/EntryPoolDialog.vue';
 import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import SelectEntriesDialog from '@/components/SelectEntriesDialog.vue';
+import ConfigBindings from '@/components/shared/ConfigBindings.vue';
 import toastr from 'toastr';
+import { this_chid } from '@sillytavern/script';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import { getStCharacter } from '@/core/st-character';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { onboardingPendingAction } from '@/core/onboarding';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
-import { GenerationSettings } from '@/type/settings';
+import { GenerationSettings, setting_field } from '@/type/settings';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
@@ -302,7 +316,14 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
   configs.value.push(newConfig);
   selectedConfigId.value = id;
   if (payload.bindChat) chatStore.settings.config_id = id;
-  if (payload.bindChar) characterStore.settings.config_id = id;
+  if (payload.bindChar) {
+    // 编辑归属走角色卡扩展写入，无当前角色时绑定必失效（与 bindCharacter 同一根因），防御提示
+    if (getStCharacter(this_chid)) {
+      characterStore.setBinding('pool', id);
+    } else {
+      toastr.warning(t`未选择角色卡，「绑定角色」未生效`);
+    }
+  }
   showCreateDialog.value = false;
 };
 
@@ -331,9 +352,27 @@ const bindChat = () => {
   chatStore.settings.config_id = chatStore.settings.config_id === id ? null : id;
 };
 
+// 无当前角色时绑定无意义（store watch 对 this_chid 为空会静默跳过写卡，造成「绑定无效」），
+// 按钮禁用 + bindCharacter 内再 guard 双保险。
+// 依赖 store 的响应式 currentCharacterId 而非模块变量 this_chid：this_chid 非响应式，
+// computed 不会在切角色后自动重算（曾有实证：切到角色聊天后按钮仍停留 disabled 态）
+const currentCharAvailable = computed(() => globalStore.currentCharacterId != null);
+
 const bindCharacter = () => {
   const id = selectedConfigId.value;
-  characterStore.settings.config_id = characterStore.settings.config_id === id ? null : id;
+  if (!id) return;
+  const ch = getStCharacter(this_chid);
+  if (!ch) {
+    toastr.warning(t`请先在酒馆中选择一个角色卡`);
+    return;
+  }
+  const next = characterStore.settings.config_id === id ? null : id;
+  // 同步写内存（ConfigBindings 徽章扫描读 characters 数组，需立即生效）+ store
+  // （按钮高亮与「当前生效-角色」立即响应）。落盘统一交给 character-settings store
+  // 的 deep watch 单一通道，不在入口显式 persistCharacter——否则一次点击会并发两次
+  // /api/characters/edit（大卡 JSON 序列化 + 后端全量写卡双倍开销），是「绑定卡顿」的来源。
+  _.set(ch, ['data', 'extensions', setting_field, 'config_id'], next);
+  characterStore.setBinding('pool', next);
 };
 
 const removeConfig = () => {
@@ -343,7 +382,7 @@ const removeConfig = () => {
   if (idx === -1) return;
   configs.value.splice(idx, 1);
   if (chatStore.settings.config_id === cfg.id) chatStore.settings.config_id = null;
-  if (characterStore.settings.config_id === cfg.id) characterStore.settings.config_id = null;
+  if (characterStore.settings.config_id === cfg.id) characterStore.setBinding('pool', null);
   if (configs.value.length > 0) {
     selectedConfigId.value = effectiveConfig.value?.id ?? configs.value[0].id;
   }

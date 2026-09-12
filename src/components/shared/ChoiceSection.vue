@@ -31,6 +31,8 @@ const props = withDefaults(
     defaultOpen?: boolean;
   }>(),
   {
+    title: '',
+    icon: '',
     defaultOpen: true,
   },
 );

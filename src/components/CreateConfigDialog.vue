@@ -26,8 +26,8 @@
               <input v-model="bindChat" type="checkbox" />
               {{ t`绑定聊天` }}
             </label>
-            <label class="choice-check">
-              <input v-model="bindChar" type="checkbox" />
+            <label class="choice-check" :title="!hasChar ? t`请先在酒馆中选择一个角色卡` : ''">
+              <input v-model="bindChar" type="checkbox" :disabled="!hasChar" />
               {{ t`绑定角色` }}
             </label>
           </div>
@@ -44,6 +44,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const props = defineProps<{ open: boolean; existingNames?: string[] }>();
 
@@ -56,6 +57,11 @@ const name = ref('');
 const isDefault = ref(false);
 const bindChat = ref(false);
 const bindChar = ref(false);
+
+// 无当前角色时「绑定角色」不可勾选：绑定走角色卡 extensions 写入，this_chid 为空时
+// store watch 会静默跳过写卡（绑定无效的根因），禁用勾选把该路径堵死在入口。
+// 用 store 的响应式 currentCharacterId（this_chid 非响应式，computed 不会自动重算）
+const hasChar = computed(() => useGlobalSettingsStore().currentCharacterId != null);
 
 // 与现有配置重名（trim 后精确比较）时禁止创建，行内提示
 const isDup = computed(() => {

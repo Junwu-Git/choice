@@ -174,7 +174,6 @@ export const buildMessages = async (
 
   for (const mod of sorted) {
     if (!mod.enabled) continue;
-    if (!prefillEnabled && mod.role === 'assistant') continue;
     if (isEnrich && mod.option_only) continue;
 
     switch (mod.id) {
@@ -269,10 +268,29 @@ export const buildMessages = async (
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
-      case 'assistant_ack':
-      case 'assistant_thinking': {
+      case 'assistant_ack': {
         const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
+      case 'assistant_thinking': {
+        const content = substituteParams(sub(mod.content, augmentedCtx));
+        if (content) {
+          msgs.push({
+            role: prefillEnabled ? mod.role : 'system',
+            content,
+          });
+        }
+        break;
+      }
+      case 'enrich_assistant': {
+        const content = substituteParams(sub(mod.content, augmentedCtx));
+        if (content) {
+          msgs.push({
+            role: prefillEnabled ? mod.role : 'system',
+            content,
+          });
+        }
         break;
       }
       default: {

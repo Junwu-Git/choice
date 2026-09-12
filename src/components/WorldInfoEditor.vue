@@ -24,7 +24,7 @@
       <div class="choice-wi-section-title choice-wi-collapsible" @click="showGlobalExcl = !showGlobalExcl">
         <i class="fa-solid" :class="showGlobalExcl ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
         {{ t`全局排除` }}
-        <span class="choice-wi-count" v-if="globalExcludedBooks.length > 0">({{ globalExcludedBooks.length }})</span>
+        <span v-if="globalExcludedBooks.length > 0" class="choice-wi-count">({{ globalExcludedBooks.length }})</span>
       </div>
       <div v-if="showGlobalExcl" class="choice-wi-global-excl-body">
         <div v-if="globalExcludedBooks.length === 0" class="choice-empty-hint">
