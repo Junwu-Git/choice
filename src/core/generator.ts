@@ -172,33 +172,14 @@ export const buildMessages = async (
 
   const sorted = [...modules].sort((a, b) => a.order - b.order);
 
-  // 关闭预填充时，把最后一条 assistant 模块（选项模式=思维链预填、润色模式=润色应答）
-  // 降级为 system 发送：预填充本质是"以 assistant 结尾的起手式"，不支持 prefill 的模型
-  // 对 assistant 结尾敏感；但该引导语（<thinking> 开头）本身仍有格式约束价值，直接全丢
-  // 会弱化输出约束（历史教训），故只降级最后一条保住内容、角色不再以 assistant 收尾，
-  // 其余 assistant 模块（如应答声明）维持原角色正常输出。判定遍历与主循环同款过滤
-  // （enabled、isEnrich 时排除 option_only），按 order 升序覆盖即取最后一条。
-  let lastAssistantId: string | undefined;
-  if (!prefillEnabled) {
-    for (const mod of sorted) {
-      if (!mod.enabled) continue;
-      if (isEnrich && mod.option_only) continue;
-      if (mod.role === 'assistant') lastAssistantId = mod.id;
-    }
-  }
-
   for (const mod of sorted) {
     if (!mod.enabled) continue;
     if (isEnrich && mod.option_only) continue;
 
-    // 仅最后一条 assistant 模块降级，其余模块（含其他 assistant）角色原样保留
-    const effectiveRole: ChatMsg['role'] =
-      mod.role === 'assistant' && !prefillEnabled && mod.id === lastAssistantId ? 'system' : mod.role;
-
     switch (mod.id) {
       case 'system_prompt': {
         const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: effectiveRole, content });
+        if (content) msgs.push({ role: mod.role, content });
         break;
       }
       case 'world_info_before': {
@@ -279,23 +260,42 @@ export const buildMessages = async (
         // 以前按隐藏字段动态拼装，造成"编辑器显示 ≠ 实际发送"的双来源矛盾；
         // 该路径已整体删除，现在编辑器内容就是发送给 AI 的内容。
         const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: effectiveRole, content });
+        if (content) msgs.push({ role: mod.role, content });
         break;
       }
       case 'thinking_prompt': {
         const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: effectiveRole, content });
+        if (content) msgs.push({ role: mod.role, content });
         break;
       }
-      case 'assistant_ack':
+      case 'assistant_ack': {
+        const content = substituteParams(sub(mod.content, augmentedCtx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }
       case 'assistant_thinking': {
         const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: effectiveRole, content });
+        if (content) {
+          msgs.push({
+            role: prefillEnabled ? mod.role : 'system',
+            content,
+          });
+        }
+        break;
+      }
+      case 'enrich_assistant': {
+        const content = substituteParams(sub(mod.content, augmentedCtx));
+        if (content) {
+          msgs.push({
+            role: prefillEnabled ? mod.role : 'system',
+            content,
+          });
+        }
         break;
       }
       default: {
         const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: effectiveRole, content });
+        if (content) msgs.push({ role: mod.role, content });
         break;
       }
     }
