@@ -79,10 +79,7 @@ export async function persistCharacter(ch: StCharacter): Promise<boolean> {
   formData.set('json_data', JSON.stringify(base));
   formData.set('avatar_url', avatar);
   formData.set('chat', typeof legacy.chat === 'string' ? legacy.chat : '');
-  formData.set(
-    'create_date',
-    typeof legacy.create_date === 'string' ? legacy.create_date : new Date().toISOString(),
-  );
+  formData.set('create_date', typeof legacy.create_date === 'string' ? legacy.create_date : new Date().toISOString());
   try {
     const ctx = window.SillyTavern?.getContext?.();
     const headers = ctx?.getRequestHeaders?.({ omitContentType: true }) ?? {};

@@ -1,8 +1,6 @@
 <template>
   <div class="choice-config-bindings">
-    <span class="choice-config-bindings-label">
-      <i class="fa-solid fa-address-card"></i> {{ t`已绑定角色` }}:
-    </span>
+    <span class="choice-config-bindings-label"> <i class="fa-solid fa-address-card"></i> {{ t`已绑定角色` }}: </span>
     <template v-if="boundChars.length > 0">
       <span v-for="bc in boundChars" :key="bc.chid" class="choice-bound-badge choice-bound-char">
         <i class="fa-solid fa-address-card"></i>
