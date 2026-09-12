@@ -2414,7 +2414,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     const chatStore = useChatSettingsStore();
     const charStore = useCharacterSettingsStore();
     if (chatStore.settings.prompt_config_id === id) chatStore.settings.prompt_config_id = null;
-    if (charStore.settings.prompt_config_id === id) charStore.settings.prompt_config_id = null;
+    if (charStore.settings.prompt_config_id === id) charStore.setBinding('prompt', null);
     configs.splice(idx, 1);
   }
 
