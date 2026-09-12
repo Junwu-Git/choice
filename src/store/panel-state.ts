@@ -117,6 +117,8 @@ export const usePanelStateStore = defineStore('panel-state', () => {
         timestamp: Date.now(),
         count: options.length,
         options: options.map(text => ({ text, sourceEntryId: null })),
+        // 润色不消费池条目素材，poolEntryIds 置空（统计口径：润色不计入）
+        poolEntryIds: [],
       };
       storeEnrichGeneration(messageId.value, swipeId.value, generation);
       // 重新加载以同步 store 状态

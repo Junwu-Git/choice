@@ -191,7 +191,9 @@ const onNext = () => {
 };
 
 const onSelect = async (option: ChoiceOption) => {
-  await applyOptionBehavior(option, behavior.value);
+  // 弹窗是纯行动选项速选菜单（无润色视图），view 恒为 'options'，明确传入计价口径；
+  // 统计只计行动选项视图（见 option-action.ts / core/stats.ts）
+  await applyOptionBehavior(option, behavior.value, { view: 'options' });
   panelStore.autoSetCollapsed(true);
   // 锁定时点选项不收起（与主面板「锁定不被动收起」语义一致）；未锁定则选中即关
   if (!locked.value) {

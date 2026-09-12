@@ -11,6 +11,10 @@ export type ChoiceGeneration = {
   timestamp: number;
   count: number;
   options: ChoiceOption[];
+  /** 本轮实际抽取使用的池条目 id 集合：随消息持久化，供未来条目级统计/智能权重
+   *  分析用（选项是 AI 自由生成文本，无法逐项归因到单条，只能记轮次级集合）。
+   *  老消息可能缺该字段，读取处须用 ?? [] 兜底。 */
+  poolEntryIds: string[];
 };
 
 type MessageChoiceData = {

@@ -1,13 +1,19 @@
 import type { ChoiceOption } from '@/core/options-store';
 import { sendTextareaMessage } from '@sillytavern/script';
 import { parseOptionContent } from '@/util/option-format';
+import { recordOptionSelected } from '@/core/stats';
 
 /**
  * 选项点击后的行为应用（共享层）：主面板与悬浮球弹窗共用。behavior 语义：
  * insert = 光标处插入（有选区则替换）；append = 追加到输入框末尾；send = 覆盖后直接发送；
  * fill = 覆盖输入框内容。取值来源与设置页校验见 src/type/settings.ts 的 behavior 字段。
+ * opts.view 标记来源视图：统计口径仅行动选项视图计入，润色（enrich）完全不计。
  */
-export async function applyOptionBehavior(option: ChoiceOption, behavior: 'send' | 'fill' | 'append' | 'insert') {
+export async function applyOptionBehavior(
+  option: ChoiceOption,
+  behavior: 'send' | 'fill' | 'append' | 'insert',
+  opts?: { view?: 'options' | 'enrich' },
+) {
   const content = parseOptionContent(option.text);
   const $textarea = $('#send_textarea');
   if (behavior === 'insert') {
@@ -34,6 +40,12 @@ export async function applyOptionBehavior(option: ChoiceOption, behavior: 'send'
     $textarea.val($textarea.val() + content)[0].dispatchEvent(new Event('input', { bubbles: true }));
   } else {
     $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  // 统计埋点（共享层唯一计数点）：主面板与悬浮球弹窗都走这里，弹窗内禁止另写。
+  // 润色视图完全不计入；调用方须显式传 view='enrich'，默认 'options'
+  // （漏标只多计、不丢计，安全方向）
+  if ((opts?.view ?? 'options') === 'options') {
+    recordOptionSelected(option);
   }
   if (behavior === 'send') {
     await sendTextareaMessage();

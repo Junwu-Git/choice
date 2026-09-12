@@ -373,7 +373,10 @@ const onEnrichNext = () => {
 };
 
 const onSelect = async (option: ChoiceOption) => {
-  await applyOptionBehavior(option, behavior.value);
+  // view 标记来源：统计口径仅行动选项视图计入，润色视图的选择不计数（见 option-action.ts）
+  await applyOptionBehavior(option, behavior.value, {
+    view: activeView.value === 'enrich' ? 'enrich' : 'options',
+  });
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);
   emit('select');

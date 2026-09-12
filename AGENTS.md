@@ -65,7 +65,12 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   「编辑→刷新→切配置」场景的快照覆盖丢失。
 - **楼层持久化挂在消息对象上**：结果写入对应 AI 消息的 `message.extra['choice']`，再按 `swipe_id`
   分层，避免切楼层或切 swipe 时串历史。同一楼层多次生成使用 `generations[] + currentIndex` 翻页；润色结果另有
-  `enrichGenerations` / `enrichCurrentIndex`。
+  `enrichGenerations` / `enrichCurrentIndex`。`ChoiceGeneration` 含 `poolEntryIds`（本轮实际抽取
+  使用的池条目 id 集合，随消息持久化，供未来条目级统计/智能权重分析）。
+- **行动选项统计**：全局一份（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化），
+  只计行动选项视图——`generateOptions` 成功路径按实际保留条数计生成，`applyOptionBehavior`（option-action.ts）
+  在 `view='options'` 时计选择；润色视图完全不计入。统计页 `Statistics.vue`（高级 tab，位于过滤之后）展示
+  总量、选择率和文本/类型双榜，可清空。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
@@ -129,13 +134,13 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项生成/选择统计与排行榜聚合）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 47。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 48。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
-  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；8 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
+  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义和窄屏布局 composable。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
@@ -147,7 +152,7 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
 
 ## 新手引导架构
 
-- 内容单一来源是 `src/core/guide-content.ts`：`GUIDE_CHAPTERS`（7 章）+ `PAGE_HINTS`（8 个 tab）+
+- 内容单一来源是 `src/core/guide-content.ts`：`GUIDE_CHAPTERS`（7 章）+ `PAGE_HINTS`（9 个 tab）+
   `DIALOG_HINTS`（3 个弹窗）。组件中不要另写平行的引导文案。
 - `quick-start` 是唯一默认路径（配置 API → 生成），另有条目池、生成、提示词、世界书、过滤、外观 6 个进阶章。章内使用
   `onboardingStepIndex`，当前章由 computed 解析。

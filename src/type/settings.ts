@@ -1048,7 +1048,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 48;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1170,6 +1170,40 @@ export const UISettings = z
   .prefault({});
 export type UISettings = z.infer<typeof UISettings>;
 
+/** 行动选项统计（全局累计，随 extension_settings 持久化）：
+ *  - 口径严格限定「行动选项」视图：AI 每轮生成的选项（去重/补齐后实际保留条数）计生成，
+ *    用户点击应用计选择；润色视图（enrich）的生成与选择完全不计入（见 src/core/stats.ts）。
+ *  - by_text 键 = parseOptionContent 后的纯文本；by_type 键 = parseOptionType 的类型标签。
+ *  - by_text 容量由 stats.ts 的 MAX_TEXT_KEYS 控制，配合「清空统计」避免无限膨胀。 */
+export const StatsTextEntry = z
+  .object({
+    generated: z.number().min(0).default(0).catch(0),
+    selected: z.number().min(0).default(0).catch(0),
+    type: z.string().default(''),
+    last_selected_at: z.number().default(0),
+  })
+  .prefault({});
+export type StatsTextEntry = z.infer<typeof StatsTextEntry>;
+
+export const StatsTypeEntry = z
+  .object({
+    generated: z.number().min(0).default(0).catch(0),
+    selected: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+export type StatsTypeEntry = z.infer<typeof StatsTypeEntry>;
+
+export const StatsSettings = z
+  .object({
+    total_generated: z.number().min(0).default(0).catch(0),
+    total_selected: z.number().min(0).default(0).catch(0),
+    by_text: z.record(z.string(), StatsTextEntry).prefault({}),
+    by_type: z.record(z.string(), StatsTypeEntry).prefault({}),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type StatsSettings = z.infer<typeof StatsSettings>;
+
 export const GlobalSettings = z
   .object({
     schema_version: z.number().default(0),
@@ -1185,6 +1219,7 @@ export const GlobalSettings = z
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
+    stats: StatsSettings.prefault({}),
     retry_count: z.number().min(0).max(10).default(0).catch(0),
     /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
      *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */
