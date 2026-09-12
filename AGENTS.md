@@ -49,7 +49,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - **提示词组装必须走角色结构**，不能把整段内容拼成单条 user 消息：
   - `system`/`systemPrompt` 放提示词编辑区的规则（人称、格式、字数等）。
   - `user`/`prompt` 放抽中的固定/随机条目素材和按上下文模式截取的内容。
-  - 可选 `assistant`/`prefill` 放输出格式起手式。
+  - 可选 `assistant`/`prefill` 放输出格式起手式。关闭预填充（`prefill_enabled=false`）时不再整体跳过 assistant 模块，而是仅把最后一条 assistant 模块（选项模式=思维链预填、润色模式=润色应答，按 order 取参与生成的最后一个 assistant 模块）降级为 `system` 角色发送，其余 assistant 模块（如应答声明）维持原角色；历史消息角色不随该开关切换。
   - 优先使用已核实签名的 `TavernHelper` 或酒馆原生生成接口的角色消息结构；不要凭记忆假设
     `generateRaw`、`generateQuietPrompt` 或 `AbortSignal` 参数。
 - **条目池是 `master_pool + PoolConfig` 两层结构**：

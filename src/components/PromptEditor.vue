@@ -20,7 +20,10 @@
           style="width: 60px"
         />
       </label>
-      <label class="choice-context-rounds" :title="t`关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型`">
+      <label
+        class="choice-context-rounds"
+        :title="t`关闭后最后一条 assistant 预填消息（思维链预填/润色应答）改为 system 角色发送，其余 assistant 消息保持不变，兼容不支持 prefill 的模型`"
+      >
         <input v-model="rules.prefill_enabled" type="checkbox" />
         {{ t`预填充` }}
       </label>

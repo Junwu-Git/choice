@@ -240,7 +240,7 @@
   "生成的条目将注入到总条目库，可在配置中勾选后使用": "Generated entries will be injected into the master pool and can be selected in configs.",
   "轮数模式": "Rounds Mode",
   "仅可见消息": "Visible Only",
-  "关闭后不发送 assistant 预填充消息，兼容不支持 prefill 的模型": "Disable to skip assistant prefill message, for models that don't support prefill",
+  "关闭后最后一条 assistant 预填消息（思维链预填/润色应答）改为 system 角色发送，其余 assistant 消息保持不变，兼容不支持 prefill 的模型": "When disabled, the last assistant prefill message (chain-of-thought prefill / enrich response) is sent as a system message; other assistant messages are unchanged. For models that don't support prefill",
   "预填充": "Prefill",
   "开启后启用柏宝书记忆源（摘要+状态）作为提示词模块": "Enable Baibai book memory source (summary+status) as a prompt module",
   "柏宝书": "Baibai Book",
