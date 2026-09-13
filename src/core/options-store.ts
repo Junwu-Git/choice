@@ -11,10 +11,13 @@ export type ChoiceGeneration = {
   timestamp: number;
   count: number;
   options: ChoiceOption[];
-  /** 本轮实际抽取使用的池条目 id 集合：随消息持久化，供未来条目级统计/智能权重
-   *  分析用（选项是 AI 自由生成文本，无法逐项归因到单条，只能记轮次级集合）。
-   *  老消息可能缺该字段，读取处须用 ?? [] 兜底。 */
+  /** 本轮实际抽取使用的池条目 id 集合：随消息持久化，供条目级统计与建议归因
+   * （选项是 AI 自由生成文本，无法逐项归因到单条，只能记轮次级集合）。 */
   poolEntryIds: string[];
+  /** 生成时生效的统计维度（config.id；无 config 会话为 '__none__'）。
+   *  信息性字段：统计命中回写基于窗口 recent 的 gid 全局搜索定位，不依赖本字段；
+   *  老消息/润色结果可能缺省，读取处用 ?? 兜底。 */
+  scopeId?: string;
 };
 
 type MessageChoiceData = {

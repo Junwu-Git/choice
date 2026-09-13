@@ -238,6 +238,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { onboardingPendingAction } from '@/core/onboarding';
+import { focusPoolEntryId } from '@/core/floating-state';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
 import { GenerationSettings, setting_field } from '@/type/settings';
 import DragHandle from '@/components/shared/DragHandle.vue';
@@ -276,6 +277,19 @@ watch(onboardingPendingAction, a => {
     onboardingPendingAction.value = null;
   }
 });
+
+// 统计页「定位条目」：收到 focusPoolEntryId 后打开条目库弹窗（master_pool 全量视图）。
+// 目标条目可能不在当前 config 的 selectedEntries 中，config 视图定位不到，
+// 故定位到 EntryPoolDialog。PoolEditor 本身是 v-if 渲染（非 pool tab 时未挂载），
+// 用 immediate 让切到 pool tab 挂载时立即消费已设置的信号。
+// 不在此处置回 focusPoolEntryId——由 EntryPoolDialog 消费后置回（定位完成或失败）。
+watch(
+  focusPoolEntryId,
+  id => {
+    if (id) showEntryPool.value = true;
+  },
+  { immediate: true },
+);
 
 watch(
   [configs, effectiveConfig],

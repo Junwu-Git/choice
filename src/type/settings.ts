@@ -1048,7 +1048,23 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 49;
+export const SCHEMA_VERSION = 51;
+
+// ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
+/** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
+export const STATS_WINDOW_SIZE = 50;
+/** 建议最少样本轮次：窗口长度（或全量参与轮次）≥ 此值才出建议，样本不足只标「样本不足」 */
+export const SUGGEST_MIN_SAMPLES = 10;
+/** 建议阈值（超额命中率 = 实际命中率 - 期望命中率，期望 = Σ(1/count) 平均）：
+ *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）；
+ *  低于期望 30pp 且无一次命中 → 建议停用。启发式常量，随数据积累调参。 */
+export const SUGGEST_DOWNGRADE_EXCESS = -0.2;
+export const SUGGEST_UPGRADE_EXCESS = 0.15;
+export const SUGGEST_DISABLE_EXCESS = -0.3;
+/** 建议写入的权重边界：降权减半（下限 0.2）、提权翻倍（上限 5），
+ *  防反复提权/降权失控。这是自动化改写逻辑，不是对用户输入值的 clamp。 */
+export const SUGGEST_WEIGHT_MIN = 0.2;
+export const SUGGEST_WEIGHT_MAX = 5;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1170,38 +1186,107 @@ export const UISettings = z
   .prefault({});
 export type UISettings = z.infer<typeof UISettings>;
 
-/** 行动选项统计（全局累计，随 extension_settings 持久化）：
- *  - 口径严格限定「行动选项」视图：AI 每轮生成的选项（去重/补齐后实际保留条数）计生成，
- *    用户点击应用计选择；润色视图（enrich）的生成与选择完全不计入（见 src/core/stats.ts）。
- *  - 归因口径为「轮次共现」：选项是 AI 自由生成文本，无选项→条目精确映射，只能把每轮的
- *    生成/选择整轮归因到该轮全部参与条目（generation.poolEntryIds）。条目级「命中轮次」
- *    指该条目参与的轮次中、有选项被用户选中的轮次数（当轮有选择即计 1，同代重复点击去重，
- *    去重依据 StatsSettings.last_hit_generation_id）；命中率 = 命中轮次 / 参与轮次。
- *  - by_entry 键 = master_pool 条目 id；条目显示信息（type/category/content）读取时 join
- *    master_pool，已被删除的条目保留计数、显示「已删除条目」。 */
+// ── 行动选项统计（v51 起按 config 维度记录，随 extension_settings 持久化）───────────
+// 口径约定：
+//  - 「行动选项」视图：AI 每轮生成的选项（去重/补齐后实际保留条数）计生成，用户点击应用
+//    计选择；润色视图（enrich）完全不计入（见 src/core/stats.ts）。
+//  - 归因口径「轮次共现」：选项是 AI 自由生成文本，无选项→条目精确映射，每轮生成/选择
+//    整轮归因到该轮全部参与条目（generation.poolEntryIds）。条目级「命中轮次」= 参与的
+//    轮次中、有选项被选中的轮次数（同代重复点击去重，依据 last_hit_generation_id）。
+//  - 维度：entries 键 = 生效 config.id（无 config 会话 = '__none__'）。全局视图（汇总/
+//    趋势/条目榜「全局」档）由所有 scope 聚合推导，单一真相源，不双写。
+//  - 期望命中率：每轮参与条目的随机命中期望 = 1/count（count = 该轮实际输出条数）。
+//    expected_sum 累积 Σ(1/count)，超额命中率 = 命中率 - 期望命中率。建议引擎对比
+//    超额而非固定阈值——固定阈值在 count 变化时误判（count=4 随机基线 25%，count=10 为 10%）。
+//  - recent 为滑动窗口（上限 STATS_WINDOW_SIZE）：支持「近 N 轮命中率」与建议引擎；
+//    窗口内每轮记 {gid, ts, hit, count}，选择时按 gid 回写 hit。
+//  - 老档（v50 及更早）的 by_entry/daily 为跨维度混合数据，无法拆分归因，v51 迁移
+//    直接清零重来（用户确认），不保留 legacy 档。
+export const StatsRoundRecord = z
+  .object({
+    /** generation id：选择时按 gid 回写 hit（同一代生成/选择一一对应） */
+    gid: z.string().default(''),
+    /** 生成时间戳 */
+    ts: z.number().default(0),
+    /** 本轮是否有命中（recordOptionSelected 回写） */
+    hit: z.boolean().default(false),
+    /** 本轮实际输出选项条数（期望命中率 = 1/count） */
+    count: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({ gid: '', ts: 0, hit: false, count: 0 });
+export type StatsRoundRecord = z.infer<typeof StatsRoundRecord>;
+
+/** 单条目统计（按维度 scope 记录；条目显示信息读取时 join master_pool，已删除条目保留计数） */
 export const StatsEntryEntry = z
   .object({
     /** 参与生成轮次（该条目出现在 generation.poolEntryIds 的轮次数，精确） */
     rounds_included: z.number().min(0).default(0).catch(0),
     /** 命中轮次（参与的轮次中、发生用户选择的轮次数，整轮共现口径） */
     rounds_with_selection: z.number().min(0).default(0).catch(0),
+    /** 各参与轮期望命中率之和 Σ(1/count)：全量超额命中率 = rounds_with_selection/expected_sum - 1 */
+    expected_sum: z.number().min(0).default(0).catch(0),
+    /** 滑动窗口（FIFO，上限 STATS_WINDOW_SIZE）：窗口超额命中率由 recent 实时推导。
+     *  窗口滚动挤掉的旧代再被点击时全量计数照记、窗口回写跳过（滚动样本，可接受）。 */
+    recent: z.array(StatsRoundRecord).prefault([]),
     last_selected_at: z.number().default(0),
+    /** 最近一次命中时被选的选项正文（parse 后，去 [类型] 标头/分隔符）：
+     *  供统计页展示「最近选中」与未来选项→条目近似归因种子。单槽近似，非历史 log。 */
+    last_selected_text: z.string().default(''),
+    /** 最近参与生成的时间戳（recordOptionsGenerated 写入），供统计页展示「最近参与」 */
+    last_included_at: z.number().default(0),
   })
   .prefault({});
 export type StatsEntryEntry = z.infer<typeof StatsEntryEntry>;
 
-export const StatsSettings = z
+/** 单日生成/选择活动计数（scope.daily 的值，键为本地时区 YYYY-MM-DD） */
+export const DailyCount = z
+  .object({
+    generated: z.number().min(0).default(0).catch(0),
+    selected: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+export type DailyCount = z.infer<typeof DailyCount>;
+
+/** 单个统计维度（scope = 生效 config.id，无 config 会话为 '__none__'） */
+export const ScopeStats = z
   .object({
     total_generated: z.number().min(0).default(0).catch(0),
     total_selected: z.number().min(0).default(0).catch(0),
     by_entry: z.record(z.string(), StatsEntryEntry).prefault({}),
+    /** 按天活动计数（趋势图数据源，per-scope）：generated 跟随本 scope 实际保留条数、
+     *  selected 跟随点击次数（不做同代去重——反映"点击活跃度"） */
+    daily: z.record(z.string(), DailyCount).prefault({}),
+  })
+  .prefault({});
+export type ScopeStats = z.infer<typeof ScopeStats>;
+
+export const StatsSettings = z
+  .object({
+    /** 全局总量（所有 scope 之和，汇总卡片用；由 record 函数与 scope 同步累计） */
+    total_generated: z.number().min(0).default(0).catch(0),
+    total_selected: z.number().min(0).default(0).catch(0),
+    /** 按 config 维度统计：键 = 生效 config.id，无 config 会话 = '__none__'。
+     *  v51 起取代旧 by_entry + daily（老档由迁移块清零）。 */
+    entries: z.record(z.string(), ScopeStats).prefault({}),
     /** 最近一次命中（计了命中轮次）的 generation id：同代重复点击只计 1 次命中。
-     *  单槽近似——来回翻页 A→B→A 代各点一次会多计 1 次，实际场景极少，可接受。 */
+     *  全局单槽（generation id 全局唯一，跨 scope 无碰撞）。 */
     last_hit_generation_id: z.string().nullable().default(null),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白统计（v51 形态）：迁移清零与「清空统计」共用同一真相源，
+ *  避免两处各自构造默认对象造成形态漂移。纯数据构造，不依赖任何 store。 */
+export function createEmptyStats(): StatsSettings {
+  return {
+    total_generated: 0,
+    total_selected: 0,
+    entries: {},
+    last_hit_generation_id: null,
+    updated_at: Date.now(),
+  };
+}
 
 export const GlobalSettings = z
   .object({

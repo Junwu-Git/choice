@@ -65,18 +65,49 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   「编辑→刷新→切配置」场景的快照覆盖丢失。
 - **楼层持久化挂在消息对象上**：结果写入对应 AI 消息的 `message.extra['choice']`，再按 `swipe_id`
   分层，避免切楼层或切 swipe 时串历史。同一楼层多次生成使用 `generations[] + currentIndex` 翻页；润色结果另有
-  `enrichGenerations` / `enrichCurrentIndex`。`ChoiceGeneration` 含 `poolEntryIds`（本轮实际抽取
-  使用的池条目 id 集合，随消息持久化，供未来条目级统计/智能权重分析）。
-- **行动选项统计**：全局一份（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化），
+   `enrichGenerations` / `enrichCurrentIndex`。`ChoiceGeneration` 含 `poolEntryIds`（本轮实际抽取
+  使用的池条目 id 集合，随消息持久化，供条目级统计/智能权重分析）与 `scopeId`（生成时的统计
+  维度，信息性字段，可选）。
+- **行动选项统计**（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化）：
   只计行动选项视图——`generateOptions` 成功路径按实际保留条数计生成，`applyOptionBehavior`（option-action.ts）
-  在 `view='options'` 时计选择；润色视图完全不计入。**归因口径为轮次共现**：选项是 AI 自由文本、无
-  选项→条目精确映射，每轮生成/选择整轮归因到该轮 `poolEntryIds`（`by_entry` 键=条目 id，
-  `rounds_included`/`rounds_with_selection`，条目级「选择」= 命中轮次——参与的轮次中有选项被选即计 1，
-  同代重复点击由 `last_hit_generation_id` 去重）。统计页文案明确标注共现口径；条目榜按 category
-  分组折叠展示（有数据组默认展开，未参与组折叠，`entryGroups` 组顺序按 `group_order`），显示信息
-  读取时 join `master_pool`。统计页
-  `Statistics.vue`（基础 tab，位于过滤之后，简化模式也显示）展示总量、选择率和条目/类型双榜，可清空。
-  选项→条目的精确归因列为后续生成契约升级方向。
+  在 `view='options'` 时计选择；润色视图完全不计入。**v51 起按 config 维度记录**：
+  `stats.entries` 键 = 生效 `config.id`（`chat > character > default` 解析，无 config 会话 = `'__none__'`），
+  每条记录 `ScopeStats`（总量 + `by_entry` + 按天 `daily`）；全局视图（汇总卡片/趋势/条目榜「全局」档）
+  由 `buildStatsView(stats, '__global__')` 聚合推导、单一真相源，不双写。**归因口径为轮次共现**：
+  选项是 AI 自由文本、无选项→条目精确映射，每轮生成/选择整轮归因到该轮 `poolEntryIds`
+  （条目级「选择」= 命中轮次——参与的轮次中有选项被选即计 1，同代重复点击由
+  `last_hit_generation_id` 全局单槽去重）。
+  **期望命中率（相对基线）**：每轮每个参与条目 `expected_sum += 1/count`（count = 该轮实际输出条数，
+  随机基线 = 1/count），全量超额 = 命中轮次/参与轮次 − expected_sum/参与轮次；固定阈值（15%/60%）
+  已废弃——count 不同随机基线不同（4 条 25%、10 条 10%），固定阈值会误判。
+  **滑动窗口**：`recent`（FIFO，上限 `STATS_WINDOW_SIZE`=50）每轮记 `{gid, ts, hit, count}`，
+  选择时按 `gid` 回写 hit（窗口挤掉旧代则全量计数照记、窗口回写跳过）；命中归属 scope 优先 =
+  recent 含该 gid 的生成维度（`findHitScope` 全局搜索），防切 config 后回看旧楼层点击记错维度。
+  `by_entry` 记录含 `last_selected_text`（最近命中选项正文，parse 后去标头）与 `last_included_at`
+  （最近参与时间戳）——单槽近似，供 tooltip 与未来近似归因留种子。
+  **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、
+  否则全量）：超额 ≤−0.2 → 降权（`SUGGEST_WEIGHT_MIN`=0.2 下限，减半）；超额 ≥+0.15 → 提权
+  （上限 5，翻倍）；超额 ≤−0.3 且 0 命中 → 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、
+  不会自动恢复）；pinned 跳过（固定必发，权重无意义）。**应用走 config 覆盖层**：
+  `applySuggestions(scopeId, list)` 直写目标 config 的 `PoolConfigEntry`（weight/enabled），
+  应用前快照 `config.entries` 到模块级 `lastUndo`，`undoLastApply()` 单步撤销；不显式调
+  saveSettingsDebounced（settings deep watch 统一落盘）。**v51 迁移把老 stats 清零重来**（老档
+  `by_entry`/`daily` 是跨维度混合数据无法拆分，用户确认丢弃）。
+  统计页 `Statistics.vue`（基础 tab，位于过滤之后，简化模式也显示）提供：维度切换
+  （全局 / 未绑定档 / 各 config 下拉，默认当前生效维度；无 config 时引导创建 default config——
+  自动引用 master_pool 全量后即可应用建议）、6 张汇总卡片（生成/选择/选择率/活跃天数/池内参与率
+  /最近统计，均随维度）、样本量分布诊断（`entrySampleDistribution` 对照当前维度有效池：窗口或
+  全量 ≥10 轮 = 样本充足 / 参与 <10 = 不足 / 池内从未参与 = never——此前 never 恒 0 的 bug 已修）、
+  7/30 天趋势柱状图（纯 CSS，`dailySeries` 随维度）、条目榜搜索/排序/「只看有数据」
+  （`applyEntryFilters` 纯函数，组件只渲染）、命中率行附「期望」参照与近 10 轮窗口命中率、
+  洞察标签（`entryInsight` 由 `entrySuggestion` 派生：候选降权/建议停用/表现良好/样本不足；
+  **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，可撤销）、
+  「定位条目」操作闭环（行尾按钮 → `requestedTab`+`focusPoolEntryId` 信号 → 切 pool tab +
+  打开 `EntryPoolDialog`（master_pool 全量视图）+ `getBoundingClientRect` 滚动 + 短暂高亮）、
+  类型榜占比条、导出 JSON（Blob 下载，同 EntryPoolDialog/PromptEditor 先例，含全维度
+  `entries` 原始结构与当前维度条目榜 join 信息）与清空。
+  选项→条目的精确归因（文本相似度）、按角色/chat 维度的上下文统计、全自动改权重/启闭功能本体
+  均列为后续方向（半自动「建议 + 一键应用」已落地，阈值常量在 settings.ts 集中可调）。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
@@ -140,11 +171,11 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项生成/选择统计与排行榜聚合）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 49。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 51。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。

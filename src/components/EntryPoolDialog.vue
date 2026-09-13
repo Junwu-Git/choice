@@ -228,6 +228,7 @@ import type { PoolEntry } from '@/type/settings';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
 import Sortable from 'sortablejs';
+import { focusPoolEntryId } from '@/core/floating-state';
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -281,6 +282,14 @@ watch(
   },
 );
 
+// ── 统计页「定位条目」：滚动到目标条目并短暂高亮 ──
+// 定义与 watch 放在 groupedEntries 之后（scrollToFocusedEntry 引用 groupedEntries，
+// 避免 temporal dead zone）。watch 用 immediate 以覆盖「从其他 tab 跳转过来」场景：
+// PoolEditor 的 immediate watch 在 setup 期间同步设 showEntryPool=true，EntryPoolDialog
+// 挂载时 props.open 已是 true、focusPoolEntryId 已非 null——非 immediate 的 watch
+// 不会因「值未变化」而触发，导致定位不执行。immediate + nextTick 保证挂载即定位。
+let focusTimer: number | null = null;
+
 const categoryNames = computed(() => {
   const names = new Set<string>();
   for (const e of masterPool.value) {
@@ -320,6 +329,62 @@ const groupedEntries = computed<EntryGroup[]>(() => {
     return a.key.localeCompare(b.key);
   });
   return groups;
+});
+
+// ── 统计页「定位条目」实现（须在 groupedEntries 之后定义，避免 TDZ） ──
+const scrollToFocusedEntry = () => {
+  const id = focusPoolEntryId.value;
+  if (!id) return;
+  // 先确保目标条目所在分组展开——折叠组 max-height:4px + overflow:hidden，
+  // DOM 虽在但视觉不可见、getBoundingClientRect 异常，须先移除 is-collapsed
+  const group = groupedEntries.value.find(g => g.entries.some(e => e.id === id));
+  if (group) {
+    expanded.value.add(id);
+    expandedGroups.value.add(group.key);
+  }
+  nextTick(() => {
+    const el = document.querySelector<HTMLElement>(
+      `.choice-epool-entry[data-entry-id="${CSS.escape(id)}"]`,
+    );
+    const body = document.querySelector<HTMLElement>('.choice-epool-body');
+    if (!el || !body) {
+      // 目标条目已从 master_pool 删除或 DOM 未就绪：置回信号避免残留
+      focusPoolEntryId.value = null;
+      return;
+    }
+    // 禁用原生 scrollIntoView——它会连滚所有可滚祖先（含竖向），移动端会把弹窗
+    // 背后的酒馆页面一起拖走。参照 FloatingSettings 的 strip 滚动算法手算 scrollTop
+    const elRect = el.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    const target = body.scrollTop + (elRect.top - bodyRect.top) - (body.clientHeight - elRect.height) / 2;
+    body.scrollTop = Math.max(0, target);
+    el.classList.add('choice-epool-entry--focus');
+    if (focusTimer !== null) window.clearTimeout(focusTimer);
+    focusTimer = window.setTimeout(() => {
+      el.classList.remove('choice-epool-entry--focus');
+      focusTimer = null;
+    }, 1800);
+    // 消费完成，置回信号
+    focusPoolEntryId.value = null;
+  });
+};
+
+// immediate 覆盖「从 stats tab 跳转」场景：EntryPoolDialog 挂载时 open 和
+// focusPoolEntryId 均已是目标值（非变化），非 immediate 不会触发。
+watch(
+  [() => props.open, focusPoolEntryId],
+  ([open, id]) => {
+    if (open && id) scrollToFocusedEntry();
+  },
+  { immediate: true },
+);
+
+// 清理高亮定时器——PoolEditor 在非 pool tab 时会 unmount（v-if），连带卸载本组件
+onUnmounted(() => {
+  if (focusTimer !== null) {
+    window.clearTimeout(focusTimer);
+    focusTimer = null;
+  }
 });
 
 const entrySummary = (entry: PoolEntry): string => {
@@ -1079,6 +1144,17 @@ onUnmounted(() => {
   background: var(--choice-bg-card);
   box-shadow: inset 0 1px 0 var(--choice-frost-line);
   overflow: hidden;
+}
+
+/* 统计页定位高亮：边框 + 外发光，~1.8s 后移除（JS 定时器去 class） */
+.choice-epool-entry--focus {
+  border-color: var(--choice-color-info);
+  box-shadow:
+    0 0 0 2px var(--choice-color-info-bg),
+    inset 0 1px 0 var(--choice-frost-line);
+  transition:
+    border-color var(--choice-transition),
+    box-shadow var(--choice-transition);
 }
 
 .choice-epool-entry-head {

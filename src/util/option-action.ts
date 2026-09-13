@@ -46,9 +46,10 @@ export async function applyOptionBehavior(
   }
   // 统计埋点（共享层唯一计数点）：主面板与悬浮球弹窗都走这里，弹窗内禁止另写。
   // 润色视图完全不计入；调用方须显式传 view='enrich'，默认 'options'
-  // （漏标只多计、不丢计，安全方向）。整轮归因到所在轮条目集合，同代去重
+  // （漏标只多计、不丢计，安全方向）。整轮归因到所在轮条目集合，同代去重。
+  // content 为 parse 后的选项正文，写入 last_selected_text 供统计页展示与归因种子。
   if ((opts?.view ?? 'options') === 'options') {
-    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId);
+    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content);
   }
   if (behavior === 'send') {
     await sendTextareaMessage();

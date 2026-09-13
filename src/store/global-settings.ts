@@ -27,6 +27,7 @@ import {
   type RegexLibraryEntry,
   type FilterGroupEntry,
   sanitizePromptRulesChars,
+  createEmptyStats,
 } from '@/type/settings';
 // chat/character store 不反向依赖 global-settings，无循环导入；
 // 不能依赖 unplugin-auto-import——它只覆盖 vue/pinia/@vueuse/zod 等预设，
@@ -1808,6 +1809,15 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           }));
       }
     }
+  }
+
+  // v48/v49 为纯数据/文本演进，无结构迁移；v50 仅新增 StatsSettings.daily（按天活动计数，
+  // 趋势图数据源）。缺省由 zod prefault({}) 补齐为空，老档无需内容迁移，趋势从升级后开始累积。
+  // v51: 统计重构为按 config 维度记录（StatsSettings.entries by_scope，取代 by_entry + daily）。
+  // 老档 by_entry/daily 是跨 config 混合数据，无法拆分归因到具体维度，会污染 config 级建议
+  // 计算——用户确认升级清零重来，统计从本版起重新累积（不保留 legacy 档）。
+  if ((validated.schema_version ?? 0) < 51) {
+    validated.stats = createEmptyStats();
   }
 
   validated.schema_version = SCHEMA_VERSION;

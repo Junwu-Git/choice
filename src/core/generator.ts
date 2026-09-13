@@ -21,7 +21,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
-import { recordOptionsGenerated } from '@/core/stats';
+import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
 import type {
   ChatSettings,
   PoolEntry,
@@ -1010,20 +1010,24 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 本轮实际抽取使用的池条目 id 集合：随消息持久化，供条目级统计/智能权重分析
     // （选项是 AI 自由文本，只能记轮次级集合做整轮归因，无法逐项映射到单条）
     const poolEntryIds = pool.drawn.map(e => e.id);
+    // 生成时的统计维度：命中回写优先归到本维度，防止切 config 后回看旧楼层记错 scope
+    const scopeId = usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
     const generation: ChoiceGeneration = {
       id: gid,
       timestamp: Date.now(),
       count,
       options,
       poolEntryIds,
+      scopeId,
     };
     // 新手引导第 8 步"去生成第一组选项"的完成信号：只在选项生成成功时置位，
     // 润色（enrich-input）与条目生成（generatePoolEntries）不算——引导验证的是主链路
     lastOptionsGeneratedAt.value = Date.now();
     // 统计口径：仅行动选项生成成功（实际保留条数）计数，润色/条目生成不计入。
     // 与 lastOptionsGeneratedAt 同处成功路径，失败/取消/空解析不会走到这里；
-    // poolEntryIds 与 generation 同源，轮次共现归因到当轮全部参与条目
-    recordOptionsGenerated(options, poolEntryIds);
+    // poolEntryIds 与 generation 同源，轮次共现归因到当轮全部参与条目；
+    // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线
+    recordOptionsGenerated(options, poolEntryIds, gid);
     return generation;
   } catch (e) {
     if (cancelled) return null;

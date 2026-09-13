@@ -81,7 +81,7 @@ import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
 import { FLOATING_TABS, visibleTabs, ADVANCED_TAB_IDS, type TabId } from '@/components/shared/tab-definitions';
 import { PAGE_HINTS } from '@/core/guide-content';
-import { isSettingsOpen, closeSettings } from '@/core/floating-state';
+import { isSettingsOpen, closeSettings, requestedTab } from '@/core/floating-state';
 import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
@@ -134,6 +134,14 @@ watch(onboardingPendingTab, tab => {
   if (tab) {
     activeTab.value = tab;
     onboardingPendingTab.value = null;
+  }
+});
+
+// 统计页「定位条目」请求切 tab：与向导同模式但信号独立，并发不互相覆盖
+watch(requestedTab, tab => {
+  if (tab) {
+    activeTab.value = tab;
+    requestedTab.value = null;
   }
 });
 

@@ -1,3 +1,5 @@
+import type { TabId } from '@/components/shared/tab-definitions';
+
 export const isSettingsOpen = ref(false);
 
 // 气泡直径单一来源（手机窄触屏 48 / 其余 60）：FloatingBubble 的渲染尺寸与贴边 clamp、
@@ -41,4 +43,21 @@ export function openSettings() {
 
 export function closeSettings() {
   isSettingsOpen.value = false;
+}
+
+// 统计页「定位条目」→ 请求设置面板切到指定 tab（仿 onboardingPendingTab 但信号独立，
+// 避免与向导跳转耦合；由打开中的面板 watch 消费后置回 null）
+export const requestedTab = ref<TabId | null>(null);
+
+// 待定位的条目 id：PoolEditor 收到后打开条目库弹窗，EntryPoolDialog 消费后置回 null。
+// 统计页是全局视角，目标条目可能不在当前 config，故定位到 master_pool 全量视图
+// （EntryPoolDialog）而非 config 视图（PoolEditor 内联列表）
+export const focusPoolEntryId = ref<string | null>(null);
+
+export function requestTab(id: TabId) {
+  requestedTab.value = id;
+}
+
+export function focusPoolEntry(id: string) {
+  focusPoolEntryId.value = id;
 }
