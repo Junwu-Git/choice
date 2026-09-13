@@ -8,11 +8,14 @@ import { recordOptionSelected } from '@/core/stats';
  * insert = 光标处插入（有选区则替换）；append = 追加到输入框末尾；send = 覆盖后直接发送；
  * fill = 覆盖输入框内容。取值来源与设置页校验见 src/type/settings.ts 的 behavior 字段。
  * opts.view 标记来源视图：统计口径仅行动选项视图计入，润色（enrich）完全不计。
+ * opts.poolEntryIds 为被点选项所在轮的条目 id 集合（轮次共现归因的整轮归因依据），
+ * 由调用方从 panelStore.currentGeneration 传入；旧消息缺该字段时回退 []（只计总量）。
+ * opts.generationId 为被点选项所在代（同代重复点击只计 1 次命中轮次）。
  */
 export async function applyOptionBehavior(
   option: ChoiceOption,
   behavior: 'send' | 'fill' | 'append' | 'insert',
-  opts?: { view?: 'options' | 'enrich' },
+  opts?: { view?: 'options' | 'enrich'; poolEntryIds?: string[]; generationId?: string },
 ) {
   const content = parseOptionContent(option.text);
   const $textarea = $('#send_textarea');
@@ -43,9 +46,9 @@ export async function applyOptionBehavior(
   }
   // 统计埋点（共享层唯一计数点）：主面板与悬浮球弹窗都走这里，弹窗内禁止另写。
   // 润色视图完全不计入；调用方须显式传 view='enrich'，默认 'options'
-  // （漏标只多计、不丢计，安全方向）
+  // （漏标只多计、不丢计，安全方向）。整轮归因到所在轮条目集合，同代去重
   if ((opts?.view ?? 'options') === 'options') {
-    recordOptionSelected(option);
+    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId);
   }
   if (behavior === 'send') {
     await sendTextareaMessage();

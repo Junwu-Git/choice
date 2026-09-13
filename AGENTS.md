@@ -69,8 +69,14 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   使用的池条目 id 集合，随消息持久化，供未来条目级统计/智能权重分析）。
 - **行动选项统计**：全局一份（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化），
   只计行动选项视图——`generateOptions` 成功路径按实际保留条数计生成，`applyOptionBehavior`（option-action.ts）
-  在 `view='options'` 时计选择；润色视图完全不计入。统计页 `Statistics.vue`（基础 tab，位于过滤之后，
-  简化模式也显示）展示总量、选择率和文本/类型双榜，可清空。
+  在 `view='options'` 时计选择；润色视图完全不计入。**归因口径为轮次共现**：选项是 AI 自由文本、无
+  选项→条目精确映射，每轮生成/选择整轮归因到该轮 `poolEntryIds`（`by_entry` 键=条目 id，
+  `rounds_included`/`rounds_with_selection`，条目级「选择」= 命中轮次——参与的轮次中有选项被选即计 1，
+  同代重复点击由 `last_hit_generation_id` 去重）。统计页文案明确标注共现口径；条目榜按 category
+  分组折叠展示（有数据组默认展开，未参与组折叠，`entryGroups` 组顺序按 `group_order`），显示信息
+  读取时 join `master_pool`。统计页
+  `Statistics.vue`（基础 tab，位于过滤之后，简化模式也显示）展示总量、选择率和条目/类型双榜，可清空。
+  选项→条目的精确归因列为后续生成契约升级方向。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
@@ -138,7 +144,7 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 48。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 49。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。

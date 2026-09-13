@@ -373,9 +373,15 @@ const onEnrichNext = () => {
 };
 
 const onSelect = async (option: ChoiceOption) => {
-  // view 标记来源：统计口径仅行动选项视图计入，润色视图的选择不计数（见 option-action.ts）
+  // view 标记来源：统计口径仅行动选项视图计入，润色视图的选择不计数（见 option-action.ts）；
+  // poolEntryIds/generationId 取被点选项所在代（currentGeneration=generations[currentIndex]，
+  // 翻页后正确；generationId 用于同代重复点击的命中去重）
+  const isEnrich = activeView.value === 'enrich';
+  const gen = isEnrich ? null : panelStore.currentGeneration;
   await applyOptionBehavior(option, behavior.value, {
-    view: activeView.value === 'enrich' ? 'enrich' : 'options',
+    view: isEnrich ? 'enrich' : 'options',
+    poolEntryIds: gen?.poolEntryIds ?? [],
+    generationId: gen?.id,
   });
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);

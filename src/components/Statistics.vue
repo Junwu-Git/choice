@@ -25,55 +25,90 @@
     </div>
 
     <div class="choice-stats-section">
-      <h4>{{ t`生成榜（Top ${RANK_LIMIT}）` }}</h4>
-      <p class="choice-stats-brief">{{ t`按选项文本被 AI 生成的次数排行，同一句话反复生成越多排名越高` }}</p>
-      <div v-if="genRank.length === 0" class="choice-empty-hint">{{ t`暂无数据——生成一组选项后这里会出现排行` }}</div>
-      <div v-else class="choice-stats-rank">
-        <div v-for="(row, i) in genRank" :key="row.text" class="choice-stats-rank-row">
-          <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
-          <span class="choice-stats-type-badge" :class="{ 'choice-stats-type-badge--none': !row.type }">{{
-            row.type || t`未标注`
-          }}</span>
-          <span class="choice-stats-rank-text">{{ row.text }}</span>
-          <span class="choice-stats-rank-count">{{ row.generated }}</span>
-        </div>
+      <div class="choice-stats-section-head">
+        <h4>{{ t`条目榜` }}</h4>
+        <button
+          class="choice-icon-btn"
+          :title="allExpanded ? t`全部收起` : t`全部展开`"
+          @click="allExpanded ? collapseAll() : expandAll()"
+        >
+          <i :class="allExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
+        </button>
       </div>
-    </div>
-
-    <div class="choice-stats-section">
-      <h4>{{ t`选择榜（Top ${RANK_LIMIT}）` }}</h4>
-      <p class="choice-stats-brief">{{ t`按选项文本被用户点击应用的次数排行` }}</p>
-      <div v-if="selRank.length === 0" class="choice-empty-hint">
-        {{ t`暂无数据——点击应用一个选项后这里会出现排行` }}
+      <p class="choice-stats-brief">
+        {{
+          t`按分组统计条目本身：命中轮次 = 该条目参与的轮次中、有选项被选中的轮次数（当轮有选择即计 1，整轮共现），命中率 = 命中轮次 ÷ 参与轮次。有数据的分组默认展开。`
+        }}
+      </p>
+      <div v-if="groups.length === 0" class="choice-empty-hint">
+        {{ t`条目库为空——先在条目池页添加条目并生成一组选项` }}
       </div>
-      <div v-else class="choice-stats-rank">
-        <div v-for="(row, i) in selRank" :key="row.text" class="choice-stats-rank-row">
-          <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
-          <span class="choice-stats-type-badge" :class="{ 'choice-stats-type-badge--none': !row.type }">{{
-            row.type || t`未标注`
-          }}</span>
-          <span class="choice-stats-rank-text">{{ row.text }}</span>
-          <span class="choice-stats-rank-count">{{ row.selected }}</span>
+      <div v-else class="choice-stats-groups">
+        <div v-for="g in groups" :key="g.category" class="choice-stats-group">
+          <button class="choice-stats-group-head" @click="toggleGroup(g)">
+            <i class="fa-solid" :class="isExpanded(g) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+            <span class="choice-stats-group-name">{{ g.category }}</span>
+            <span class="choice-stats-group-summary">{{ groupSummary(g) }}</span>
+          </button>
+          <div v-if="isExpanded(g)" class="choice-stats-group-body">
+            <div v-for="row in g.rows" :key="row.entryId" class="choice-stats-rank-row">
+              <div class="choice-stats-rank-main">
+                <span
+                  class="choice-stats-type-badge"
+                  :class="{
+                    'choice-stats-type-badge--none': !row.type && !row.deleted,
+                    'choice-stats-type-badge--deleted': row.deleted,
+                  }"
+                  >{{ typeLabel(row) }}</span
+                >
+                <span class="choice-stats-rank-text">{{ entryText(row) }}</span>
+              </div>
+              <div class="choice-stats-rank-meta">
+                <span
+                  >{{ t`参与轮次` }} <b>{{ row.rounds_included }}</b></span
+                >
+                <span
+                  >{{ t`命中轮次` }} <b>{{ row.rounds_with_selection }}</b></span
+                >
+                <span class="choice-stats-meta-rate"
+                  >{{ t`命中率` }} <b>{{ rateText(row.rate) }}</b></span
+                >
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="choice-stats-section">
       <h4>{{ t`类型榜` }}</h4>
-      <p class="choice-stats-brief">{{ t`按 [类型标签] 聚合的生成/选择情况，选择率 = 选择 / 生成` }}</p>
+      <p class="choice-stats-brief">{{ t`按条目的类型标签聚合（整轮共现口径，未参与的类型不列出）` }}</p>
       <div v-if="typeRank.length === 0" class="choice-empty-hint">{{ t`暂无数据` }}</div>
-      <div v-else class="choice-stats-type-table">
-        <div class="choice-stats-type-head">
-          <span>{{ t`类型` }}</span>
-          <span>{{ t`生成` }}</span>
-          <span>{{ t`选择` }}</span>
-          <span>{{ t`选择率` }}</span>
-        </div>
-        <div v-for="row in typeRank" :key="row.type" class="choice-stats-type-row">
-          <span class="choice-stats-type-name">{{ row.type }}</span>
-          <span>{{ row.generated }}</span>
-          <span>{{ row.selected }}</span>
-          <span class="choice-stats-type-rate">{{ rateText(row.rate) }}</span>
+      <div v-else class="choice-stats-rank">
+        <div v-for="(row, i) in typeRank" :key="row.type" class="choice-stats-rank-row">
+          <div class="choice-stats-rank-main">
+            <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
+            <span
+              class="choice-stats-type-badge"
+              :class="{
+                'choice-stats-type-badge--none': row.type === '（未标注）',
+                'choice-stats-type-badge--deleted': row.type === '（已删除）',
+              }"
+              >{{ row.type }}</span
+            >
+            <span class="choice-stats-rank-text">{{ t`类型` }}</span>
+          </div>
+          <div class="choice-stats-rank-meta">
+            <span
+              >{{ t`参与轮次` }} <b>{{ row.rounds_included }}</b></span
+            >
+            <span
+              >{{ t`命中轮次` }} <b>{{ row.rounds_with_selection }}</b></span
+            >
+            <span class="choice-stats-meta-rate"
+              >{{ t`命中率` }} <b>{{ rateText(row.rate) }}</b></span
+            >
+          </div>
         </div>
       </div>
     </div>
@@ -104,13 +139,13 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { topTextEntries, topTypeEntries, clearStats } from '@/core/stats';
+import { entryGroups, typeLeaderboard, clearStats, type EntryGroup, type EntryRankRow } from '@/core/stats';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
-
-const RANK_LIMIT = 50;
 
 const gs = useGlobalSettingsStore();
 const stats = computed(() => gs.settings.stats);
+const masterPool = computed(() => gs.settings.master_pool);
+const groupOrder = computed(() => gs.settings.group_order);
 
 const selectRateText = computed(() => {
   const total = stats.value.total_generated;
@@ -118,11 +153,61 @@ const selectRateText = computed(() => {
   return Math.round((stats.value.total_selected / total) * 100) + '%';
 });
 
-const genRank = computed(() => topTextEntries(stats.value, 'generated', RANK_LIMIT));
-const selRank = computed(() => topTextEntries(stats.value, 'selected', RANK_LIMIT));
-const typeRank = computed(() => topTypeEntries(stats.value, RANK_LIMIT));
+const groups = computed(() => entryGroups(stats.value, masterPool.value, groupOrder.value));
+const typeRank = computed(() => typeLeaderboard(stats.value, masterPool.value));
+
+// 分组折叠状态（组件内存活，不持久化）：
+// - collapsed = 用户手动收起的组（默认展开的有数据组被收起后不再自动展开）；
+// - forced = 用户手动展开的组（未参与组也能点开展开）。
+// 生效规则：有数据的组默认展开，除非在 collapsed 里；其余组默认折叠，除非在 forced 里。
+const collapsed = ref<Set<string>>(new Set());
+const forced = ref<Set<string>>(new Set());
+
+const isExpanded = (g: EntryGroup): boolean =>
+  forced.value.has(g.category) || (g.rounds_included > 0 && !collapsed.value.has(g.category));
+
+const toggleGroup = (g: EntryGroup) => {
+  if (isExpanded(g)) {
+    collapsed.value.add(g.category);
+    forced.value.delete(g.category);
+  } else {
+    collapsed.value.delete(g.category);
+    forced.value.add(g.category);
+  }
+};
+
+const expandAll = () => {
+  collapsed.value = new Set();
+  forced.value = new Set(groups.value.map(g => g.category));
+};
+
+const collapseAll = () => {
+  collapsed.value = new Set(groups.value.map(g => g.category));
+  forced.value = new Set();
+};
+
+const allExpanded = computed(() => groups.value.length > 0 && groups.value.every(g => isExpanded(g)));
+
+const groupSummary = (g: EntryGroup): string => {
+  if (g.deletedGroup) return t`${g.rows.length} 条已删除`;
+  if (g.rounds_included > 0) {
+    const participated = g.rows.filter(r => r.rounds_included > 0).length;
+    return t`参与 ${participated} 条 · ${g.rounds_included} 轮 · 命中率 ${rateText(g.rate)}`;
+  }
+  return t`未参与（${g.rows.length} 条）`;
+};
 
 const rateText = (rate: number | null): string => (rate === null ? '–' : Math.round(rate * 100) + '%');
+
+const typeLabel = (row: EntryRankRow): string => {
+  if (row.deleted) return t`已删除`;
+  return row.type || t`未标注`;
+};
+
+const entryText = (row: EntryRankRow): string => {
+  if (row.deleted) return t`已删除条目 ${row.entryId.slice(0, 8)}…（${row.rounds_included} 轮）`;
+  return row.content || row.type || t`（空内容）`;
+};
 
 const showClearConfirm = ref(false);
 const onClearConfirmed = () => {
@@ -179,15 +264,87 @@ const onClearConfirmed = () => {
 }
 
 .choice-stats-section h4 {
-  margin: 0 0 var(--choice-space-1);
+  margin: 0;
   font-size: var(--choice-text-base);
   color: var(--choice-text);
+}
+
+.choice-stats-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--choice-space-2);
+  margin-bottom: var(--choice-space-1);
 }
 
 .choice-stats-brief {
   margin: 0 0 var(--choice-space-2);
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
+}
+
+.choice-stats-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-stats-group {
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-md);
+  overflow: hidden;
+  background: var(--choice-bg-element);
+}
+
+.choice-stats-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  width: 100%;
+  padding: var(--choice-space-2) var(--choice-space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--choice-text);
+  transition: background var(--choice-transition);
+}
+
+.choice-stats-group-head:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-stats-group-head > i {
+  flex-shrink: 0;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-stats-group-name {
+  flex-shrink: 0;
+  font-size: var(--choice-text-sm);
+  font-weight: 600;
+  color: var(--choice-text);
+}
+
+.choice-stats-group-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  text-align: right;
+}
+
+.choice-stats-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-1) var(--choice-space-2) var(--choice-space-2);
+  border-top: 1px solid var(--choice-border);
+  background: var(--choice-bg-panel);
 }
 
 .choice-stats-rank {
@@ -198,12 +355,19 @@ const onClearConfirmed = () => {
 
 .choice-stats-rank-row {
   display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
+  flex-direction: column;
+  gap: var(--choice-space-1);
   padding: var(--choice-space-2);
   background: var(--choice-bg-elevated);
   border-radius: var(--choice-radius-sm);
   border-left: 3px solid transparent;
+  min-width: 0;
+}
+
+.choice-stats-rank-main {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
   min-width: 0;
 }
 
@@ -248,6 +412,11 @@ const onClearConfirmed = () => {
   color: var(--choice-text-muted);
 }
 
+.choice-stats-type-badge--deleted {
+  background: var(--choice-color-error-bg);
+  color: var(--choice-color-error);
+}
+
 .choice-stats-rank-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -258,64 +427,21 @@ const onClearConfirmed = () => {
   color: var(--choice-text);
 }
 
-.choice-stats-rank-count {
-  flex-shrink: 0;
-  font-size: var(--choice-text-base);
-  font-weight: 700;
-  color: var(--choice-color-info);
-  min-width: 24px;
-  text-align: right;
-}
-
-.choice-stats-type-table {
+.choice-stats-rank-meta {
   display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-}
-
-.choice-stats-type-head,
-.choice-stats-type-row {
-  display: grid;
-  grid-template-columns: 1fr 56px 56px 64px;
-  gap: var(--choice-space-2);
-  align-items: center;
-  padding: var(--choice-space-1) var(--choice-space-2);
+  flex-wrap: wrap;
+  gap: var(--choice-space-2) var(--choice-space-3);
   font-size: var(--choice-text-xs);
-}
-
-.choice-stats-type-head {
   color: var(--choice-text-muted);
-  font-weight: 600;
-  border-bottom: 1px solid var(--choice-border);
+  padding-left: 0;
 }
 
-.choice-stats-type-head span:nth-child(2),
-.choice-stats-type-row > span:nth-child(2),
-.choice-stats-type-head span:nth-child(3),
-.choice-stats-type-row > span:nth-child(3) {
-  text-align: right;
-}
-
-.choice-stats-type-head span:last-child,
-.choice-stats-type-row > span:last-child {
-  text-align: right;
-}
-
-.choice-stats-type-row {
-  background: var(--choice-bg-elevated);
-  border-radius: var(--choice-radius-sm);
+.choice-stats-rank-meta b {
   color: var(--choice-text-secondary);
-}
-
-.choice-stats-type-name {
-  color: var(--choice-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.choice-stats-type-rate {
-  color: var(--choice-color-success);
   font-weight: 600;
+}
+
+.choice-stats-meta-rate b {
+  color: var(--choice-color-success);
 }
 </style>

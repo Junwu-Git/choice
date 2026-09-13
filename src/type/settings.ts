@@ -1048,7 +1048,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 48;
+export const SCHEMA_VERSION = 49;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1173,32 +1173,31 @@ export type UISettings = z.infer<typeof UISettings>;
 /** 行动选项统计（全局累计，随 extension_settings 持久化）：
  *  - 口径严格限定「行动选项」视图：AI 每轮生成的选项（去重/补齐后实际保留条数）计生成，
  *    用户点击应用计选择；润色视图（enrich）的生成与选择完全不计入（见 src/core/stats.ts）。
- *  - by_text 键 = parseOptionContent 后的纯文本；by_type 键 = parseOptionType 的类型标签。
- *  - by_text 容量由 stats.ts 的 MAX_TEXT_KEYS 控制，配合「清空统计」避免无限膨胀。 */
-export const StatsTextEntry = z
+ *  - 归因口径为「轮次共现」：选项是 AI 自由生成文本，无选项→条目精确映射，只能把每轮的
+ *    生成/选择整轮归因到该轮全部参与条目（generation.poolEntryIds）。条目级「命中轮次」
+ *    指该条目参与的轮次中、有选项被用户选中的轮次数（当轮有选择即计 1，同代重复点击去重，
+ *    去重依据 StatsSettings.last_hit_generation_id）；命中率 = 命中轮次 / 参与轮次。
+ *  - by_entry 键 = master_pool 条目 id；条目显示信息（type/category/content）读取时 join
+ *    master_pool，已被删除的条目保留计数、显示「已删除条目」。 */
+export const StatsEntryEntry = z
   .object({
-    generated: z.number().min(0).default(0).catch(0),
-    selected: z.number().min(0).default(0).catch(0),
-    type: z.string().default(''),
+    /** 参与生成轮次（该条目出现在 generation.poolEntryIds 的轮次数，精确） */
+    rounds_included: z.number().min(0).default(0).catch(0),
+    /** 命中轮次（参与的轮次中、发生用户选择的轮次数，整轮共现口径） */
+    rounds_with_selection: z.number().min(0).default(0).catch(0),
     last_selected_at: z.number().default(0),
   })
   .prefault({});
-export type StatsTextEntry = z.infer<typeof StatsTextEntry>;
-
-export const StatsTypeEntry = z
-  .object({
-    generated: z.number().min(0).default(0).catch(0),
-    selected: z.number().min(0).default(0).catch(0),
-  })
-  .prefault({});
-export type StatsTypeEntry = z.infer<typeof StatsTypeEntry>;
+export type StatsEntryEntry = z.infer<typeof StatsEntryEntry>;
 
 export const StatsSettings = z
   .object({
     total_generated: z.number().min(0).default(0).catch(0),
     total_selected: z.number().min(0).default(0).catch(0),
-    by_text: z.record(z.string(), StatsTextEntry).prefault({}),
-    by_type: z.record(z.string(), StatsTypeEntry).prefault({}),
+    by_entry: z.record(z.string(), StatsEntryEntry).prefault({}),
+    /** 最近一次命中（计了命中轮次）的 generation id：同代重复点击只计 1 次命中。
+     *  单槽近似——来回翻页 A→B→A 代各点一次会多计 1 次，实际场景极少，可接受。 */
+    last_hit_generation_id: z.string().nullable().default(null),
     updated_at: z.number().default(0),
   })
   .prefault({});
