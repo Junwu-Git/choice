@@ -343,9 +343,7 @@ const scrollToFocusedEntry = () => {
     expandedGroups.value.add(group.key);
   }
   nextTick(() => {
-    const el = document.querySelector<HTMLElement>(
-      `.choice-epool-entry[data-entry-id="${CSS.escape(id)}"]`,
-    );
+    const el = document.querySelector<HTMLElement>(`.choice-epool-entry[data-entry-id="${CSS.escape(id)}"]`);
     const body = document.querySelector<HTMLElement>('.choice-epool-body');
     if (!el || !body) {
       // 目标条目已从 master_pool 删除或 DOM 未就绪：置回信号避免残留

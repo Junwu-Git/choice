@@ -118,11 +118,7 @@ const findHitScope = (stats: StatsSettings, entryId: string, gid: string): strin
  *  命中归属 scope 优先 = 生成时所在维度（recent 含 gid），否则当前生效维度兜底。
  *  optionText 为被点选项的正文（已 parse 去标头），写入 last_selected_text 供展示；
  *  仅在真正计命中（非同代去重命中）时写入，保证与 rounds_with_selection 同步。 */
-export function recordOptionSelected(
-  poolEntryIds: string[],
-  generationId?: string,
-  optionText?: string,
-): void {
+export function recordOptionSelected(poolEntryIds: string[], generationId?: string, optionText?: string): void {
   const stats = useGlobalSettingsStore().settings.stats;
   stats.total_selected += 1;
   stats.updated_at = Date.now();
@@ -207,7 +203,15 @@ export function buildStatsView(stats: StatsSettings, scopeId: string): StatsView
         }
       }
     }
-    return { scopeId: GLOBAL_SCOPE, isGlobal: true, total_generated, total_selected, updated_at: stats.updated_at, daily, by_entry };
+    return {
+      scopeId: GLOBAL_SCOPE,
+      isGlobal: true,
+      total_generated,
+      total_selected,
+      updated_at: stats.updated_at,
+      daily,
+      by_entry,
+    };
   }
   const scope = stats.entries[scopeId];
   return {
@@ -437,7 +441,16 @@ export type Suggestion = {
  *  pinned 条目跳过（固定必发，权重不影响出现频率，改它无意义）。
  *  阈值是启发式常量（settings.ts），注释不重复解释，随数据积累调参。 */
 export function entrySuggestion(
-  row: Pick<EntryRankRow, 'entryId' | 'rounds_included' | 'rounds_with_selection' | 'expected_sum' | 'recent' | 'effectiveWeight' | 'effectivePinned'>,
+  row: Pick<
+    EntryRankRow,
+    | 'entryId'
+    | 'rounds_included'
+    | 'rounds_with_selection'
+    | 'expected_sum'
+    | 'recent'
+    | 'effectiveWeight'
+    | 'effectivePinned'
+  >,
 ): Suggestion | null {
   if (row.effectivePinned) return null;
   const w = windowMetrics(row);
@@ -498,7 +511,16 @@ export type EntryInsight = 'downgrade' | 'disable' | 'good' | 'insufficient' | n
 /** 洞察标签（展示层派生）：有建议 → 按其动作标「候选降权/建议停用/表现良好」；
  *  参与 >0 但样本不足 → 「样本不足」；无参与/无建议 → 无标签。只提示不改权重。 */
 export function entryInsight(
-  row: Pick<EntryRankRow, 'entryId' | 'rounds_included' | 'rounds_with_selection' | 'expected_sum' | 'recent' | 'effectiveWeight' | 'effectivePinned'>,
+  row: Pick<
+    EntryRankRow,
+    | 'entryId'
+    | 'rounds_included'
+    | 'rounds_with_selection'
+    | 'expected_sum'
+    | 'recent'
+    | 'effectiveWeight'
+    | 'effectivePinned'
+  >,
 ): EntryInsight {
   const s = entrySuggestion(row);
   if (s) return s.action === 'down' ? 'downgrade' : s.action === 'disable' ? 'disable' : 'good';
@@ -577,9 +599,7 @@ const entryComparator = (sortBy: EntrySortBy) => {
         a.entryId.localeCompare(b.entryId);
     case 'rate':
       return (a: EntryRankRow, b: EntryRankRow) =>
-        (b.rate ?? -1) - (a.rate ?? -1) ||
-        b.rounds_included - a.rounds_included ||
-        a.entryId.localeCompare(b.entryId);
+        (b.rate ?? -1) - (a.rate ?? -1) || b.rounds_included - a.rounds_included || a.entryId.localeCompare(b.entryId);
     case 'content':
       return (a: EntryRankRow, b: EntryRankRow) =>
         a.content.localeCompare(b.content) || a.entryId.localeCompare(b.entryId);

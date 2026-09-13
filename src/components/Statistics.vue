@@ -15,7 +15,9 @@
         {{ t`撤销上次应用` }}
       </button>
       <span v-if="view.isGlobal" class="choice-stats-dim-note">{{ t`全局 = 全部配置的混合统计` }}</span>
-      <span v-else-if="scopeId === NONE_SCOPE" class="choice-stats-dim-note">{{ t`未绑定配置档（无 config 会话）` }}</span>
+      <span v-else-if="scopeId === NONE_SCOPE" class="choice-stats-dim-note">{{
+        t`未绑定配置档（无 config 会话）`
+      }}</span>
       <span v-else class="choice-stats-dim-note">{{ t`仅该条目池配置生效会话计入` }}</span>
     </div>
 
@@ -36,7 +38,9 @@
       <div>
         <b>{{ t`当前会话未绑定条目池配置` }}</b>
         <p>
-          {{ t`本会话的统计记入「未绑定配置」档，可查看但无法应用建议。到条目池页绑定角色/聊天，或将某配置设为默认后回来。` }}
+          {{
+            t`本会话的统计记入「未绑定配置」档，可查看但无法应用建议。到条目池页绑定角色/聊天，或将某配置设为默认后回来。`
+          }}
         </p>
       </div>
       <button class="menu_button" @click="requestTab('pool')">
@@ -103,7 +107,10 @@
         <div class="choice-stats-sample-row">
           <span class="choice-stats-sample-label">{{ t`样本充足` }}</span>
           <div class="choice-stats-sample-track">
-            <div class="choice-stats-sample-fill choice-stats-sample-fill--good" :style="{ width: sampleGoodPct }"></div>
+            <div
+              class="choice-stats-sample-fill choice-stats-sample-fill--good"
+              :style="{ width: sampleGoodPct }"
+            ></div>
           </div>
           <b>{{ distribution.sufficient }}</b>
         </div>
@@ -117,7 +124,10 @@
         <div class="choice-stats-sample-row">
           <span class="choice-stats-sample-label">{{ t`从未参与` }}</span>
           <div class="choice-stats-sample-track">
-            <div class="choice-stats-sample-fill choice-stats-sample-fill--none" :style="{ width: sampleNeverPct }"></div>
+            <div
+              class="choice-stats-sample-fill choice-stats-sample-fill--none"
+              :style="{ width: sampleNeverPct }"
+            ></div>
           </div>
           <b>{{ distribution.never }}</b>
         </div>
@@ -269,11 +279,7 @@
                   :title="t`参与轮次不足 ${sampleMin} 轮，命中率噪声大，暂不判断质量`"
                   >{{ t`样本不足` }}</span
                 >
-                <span
-                  class="choice-stats-rank-text"
-                  :title="selectedTextTitle(row)"
-                  >{{ entryText(row) }}</span
-                >
+                <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ entryText(row) }}</span>
                 <button
                   v-if="suggestionOf(row) && canApply"
                   class="choice-icon-btn choice-stats-apply"
@@ -302,20 +308,22 @@
                 <span :title="includedTimeTitle(row)"
                   >{{ t`参与轮次` }} <b>{{ row.rounds_included }}</b></span
                 >
-                <span>{{ t`命中轮次` }} <b>{{ row.rounds_with_selection }}</b></span>
-                <span>{{ t`未命中轮次` }} <b class="choice-stats-meta-miss">{{ row.rounds_included - row.rounds_with_selection }}</b></span>
+                <span
+                  >{{ t`命中轮次` }} <b>{{ row.rounds_with_selection }}</b></span
+                >
+                <span
+                  >{{ t`未命中轮次` }}
+                  <b class="choice-stats-meta-miss">{{ row.rounds_included - row.rounds_with_selection }}</b></span
+                >
                 <span class="choice-stats-meta-rate"
                   >{{ t`命中率` }} <b>{{ rateText(row.rate) }}</b></span
                 >
                 <span class="choice-stats-meta-expected"
                   >{{ t`期望` }} <b>{{ expectedRateText(row) }}</b></span
                 >
-                <span
-                  v-if="windowMeta(row)"
-                  class="choice-stats-meta-window"
-                  :title="windowTitle(row)"
-                  >{{ windowMeta(row) }}</span
-                >
+                <span v-if="windowMeta(row)" class="choice-stats-meta-window" :title="windowTitle(row)">{{
+                  windowMeta(row)
+                }}</span>
               </div>
             </div>
           </div>
@@ -456,9 +464,7 @@ const hasNoneScopeData = computed(() => {
 });
 
 const scopeOptions = computed(() => {
-  const opts: Array<{ id: string; name: string }> = [
-    { id: GLOBAL_SCOPE, name: t`全局` },
-  ];
+  const opts: Array<{ id: string; name: string }> = [{ id: GLOBAL_SCOPE, name: t`全局` }];
   if (hasNoneScopeData.value || configs.value.length === 0) {
     opts.push({ id: NONE_SCOPE, name: t`未绑定配置` });
   }
@@ -484,7 +490,11 @@ const view = computed<StatsView>(() => buildStatsView(stats.value, scopeId.value
 const poolCapsule = computed(() => {
   const scoped = scopeId.value;
   if (scoped === GLOBAL_SCOPE || scoped === NONE_SCOPE) {
-    return { ids: new Set(masterPool.value.map(e => e.id)), size: masterPool.value.length, cfgMap: new Map<string, PoolConfigEntry>() };
+    return {
+      ids: new Set(masterPool.value.map(e => e.id)),
+      size: masterPool.value.length,
+      cfgMap: new Map<string, PoolConfigEntry>(),
+    };
   }
   const cfg = configs.value.find(c => c.id === scoped);
   if (!cfg) return { ids: new Set<string>(), size: 0, cfgMap: new Map<string, PoolConfigEntry>() };
@@ -537,13 +547,19 @@ const selectRateText = computed(() => {
 const activeDays = computed(() => Object.keys(view.value.daily).length);
 
 // ── 样本量分布诊断（为优化建议提供置信度参考；第三档「从未参与」基于有效池对照） ──
-const distribution = computed(() =>
-  entrySampleDistribution(view.value, poolCapsule.value.size, poolCapsule.value.ids),
+const distribution = computed(() => entrySampleDistribution(view.value, poolCapsule.value.size, poolCapsule.value.ids));
+const sampleTotal = computed(
+  () => distribution.value.sufficient + distribution.value.insufficient + distribution.value.never,
 );
-const sampleTotal = computed(() => distribution.value.sufficient + distribution.value.insufficient + distribution.value.never);
-const sampleGoodPct = computed(() => (sampleTotal.value > 0 ? Math.round((distribution.value.sufficient / sampleTotal.value) * 100) + '%' : '–'));
-const sampleMidPct = computed(() => (sampleTotal.value > 0 ? Math.round((distribution.value.insufficient / sampleTotal.value) * 100) + '%' : '–'));
-const sampleNeverPct = computed(() => (sampleTotal.value > 0 ? Math.round((distribution.value.never / sampleTotal.value) * 100) + '%' : '–'));
+const sampleGoodPct = computed(() =>
+  sampleTotal.value > 0 ? Math.round((distribution.value.sufficient / sampleTotal.value) * 100) + '%' : '–',
+);
+const sampleMidPct = computed(() =>
+  sampleTotal.value > 0 ? Math.round((distribution.value.insufficient / sampleTotal.value) * 100) + '%' : '–',
+);
+const sampleNeverPct = computed(() =>
+  sampleTotal.value > 0 ? Math.round((distribution.value.never / sampleTotal.value) * 100) + '%' : '–',
+);
 
 /** 池内参与率 = 当前维度 by_entry 中仍存在于有效池的条目数 ÷ 有效池大小 */
 const poolParticipationText = computed(() => {
@@ -576,9 +592,7 @@ const barHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / trendMax.v
 const showChartLabel = (i: number) => trendDays.value <= 7 || i % 5 === 0 || i === trend.value.length - 1;
 
 // ── 条目榜 ──
-const groups = computed(() =>
-  entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap),
-);
+const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
 
 const query = ref('');
 const sortBy = ref<EntrySortBy>('rounds');
@@ -720,10 +734,7 @@ const applyConfirmMessage = computed(() => {
     .map(s => {
       const row = groups.value.flatMap(g => g.rows).find(r => r.entryId === s.entryId);
       const name = (row?.content || s.entryId).slice(0, 24);
-      const change =
-        s.action === 'disable'
-          ? t`启用 → 停用`
-          : `${t`权重`} ${s.currentWeight} → ${s.newWeight}`;
+      const change = s.action === 'disable' ? t`启用 → 停用` : `${t`权重`} ${s.currentWeight} → ${s.newWeight}`;
       const basis = s.basis === '窗口' ? t`近 ${s.samples} 轮` : t`全量 ${s.samples} 轮`;
       return `· ${name}：${actionLabel(s)}（${change}；${basis}命中 ${rateText(s.rate)}，期望 ${rateText(s.expected)}）`;
     })
@@ -793,23 +804,25 @@ const exportStats = () => {
       entries: stats.value.entries,
     },
     leaderboard_scope: view.value.scopeId,
-    leaderboard: groups.value.flatMap(g => g.rows).map(r => ({
-      id: r.entryId,
-      deleted: r.deleted,
-      content: r.content,
-      type: r.type,
-      category: r.category,
-      rounds_included: r.rounds_included,
-      rounds_with_selection: r.rounds_with_selection,
-      expected_sum: r.expected_sum,
-      rate: r.rate,
-      recent: r.recent,
-      effective_weight: r.effectiveWeight,
-      effective_pinned: r.effectivePinned,
-      last_included_at: r.last_included_at,
-      last_selected_text: r.last_selected_text,
-      insight: insightOf(r),
-    })),
+    leaderboard: groups.value
+      .flatMap(g => g.rows)
+      .map(r => ({
+        id: r.entryId,
+        deleted: r.deleted,
+        content: r.content,
+        type: r.type,
+        category: r.category,
+        rounds_included: r.rounds_included,
+        rounds_with_selection: r.rounds_with_selection,
+        expected_sum: r.expected_sum,
+        rate: r.rate,
+        recent: r.recent,
+        effective_weight: r.effectiveWeight,
+        effective_pinned: r.effectivePinned,
+        last_included_at: r.last_included_at,
+        last_selected_text: r.last_selected_text,
+        insight: insightOf(r),
+      })),
   };
   const d = new Date();
   const stamp = `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
@@ -982,7 +995,9 @@ const onClearConfirmed = () => {
   padding: 2px 8px;
   border-radius: var(--choice-radius-sm);
   cursor: pointer;
-  transition: background var(--choice-transition), color var(--choice-transition);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
   white-space: nowrap;
 }
 
