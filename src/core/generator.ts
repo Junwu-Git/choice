@@ -21,7 +21,12 @@ import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration, type ChoiceOption } from '@/core/options-store';
+import {
+  getMessageSwipeId,
+  getMessageChoiceData,
+  type ChoiceGeneration,
+  type ChoiceOption,
+} from '@/core/options-store';
 import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
 import type {
   ChatSettings,

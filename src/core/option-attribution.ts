@@ -46,11 +46,7 @@ const startsWithType = (optionText: string, type: string): boolean => type.lengt
  * 2. type 前缀精确匹配 → 直接认定（用户数据 type 基本唯一，AI 常以 type 名作标题前缀）；
  * 3. 否则对全部候选算 2-gram Dice，最高分 ≥ threshold 取唯一归属；低于阈值返回 null。
  */
-export function matchOptionToEntry(
-  optionText: string,
-  candidates: PoolEntry[],
-  threshold: number,
-): string | null {
+export function matchOptionToEntry(optionText: string, candidates: PoolEntry[], threshold: number): string | null {
   const raw = optionText.trim();
   if (!raw || candidates.length === 0) return null;
   const bracket = raw.match(/^[[【]([^\]】]+)[\]】]\s*/);

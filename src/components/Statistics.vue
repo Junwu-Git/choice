@@ -380,7 +380,9 @@
             <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
               >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
             >
-            <span>{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span>
+            <span
+              >{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span
+            >
           </div>
         </div>
       </div>
