@@ -1007,9 +1007,11 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
     }
-    // 本轮实际抽取使用的池条目 id 集合：随消息持久化，供条目级统计/智能权重分析
-    // （选项是 AI 自由文本，只能记轮次级集合做整轮归因，无法逐项映射到单条）
-    const poolEntryIds = pool.drawn.map(e => e.id);
+    // 本轮实际进入候选菜单的池条目 id 集合（固定必发 pinned + 抽签 drawn）：随消息持久化，
+    // 供条目级统计/智能权重分析。此前只记 pool.drawn 漏掉 pinned——pinned 同样注入提示词
+    // 参与生成，漏记会让「参与数」与发给 AI 的候选不一致（选项是 AI 自由文本，只能记轮次
+    // 级集合做整轮归因，无法逐项映射到单条）。pool.pinned 已含 pinned_overflow 截断后的最终集
+    const poolEntryIds = [...pool.drawn, ...pool.pinned].map(e => e.id);
     // 生成时的统计维度：命中回写优先归到本维度，防止切 config 后回看旧楼层记错 scope
     const scopeId = usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
     const generation: ChoiceGeneration = {

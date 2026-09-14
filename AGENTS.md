@@ -67,9 +67,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   「编辑→刷新→切配置」场景的快照覆盖丢失。
 - **楼层持久化挂在消息对象上**：结果写入对应 AI 消息的 `message.extra['choice']`，再按 `swipe_id`
   分层，避免切楼层或切 swipe 时串历史。同一楼层多次生成使用 `generations[] + currentIndex` 翻页；润色结果另有
-   `enrichGenerations` / `enrichCurrentIndex`。`ChoiceGeneration` 含 `poolEntryIds`（本轮实际抽取
-  使用的池条目 id 集合，随消息持久化，供条目级统计/智能权重分析）与 `scopeId`（生成时的统计
-  维度，信息性字段，可选）。
+`enrichGenerations` / `enrichCurrentIndex`。`ChoiceGeneration` 含 `poolEntryIds`（本轮实际
+   进入候选菜单的池条目 id 集合——固定必发 pinned 与抽签候选均计入，随消息持久化，供条目级
+   统计/智能权重分析）与 `scopeId`（生成时的统计维度，信息性字段，可选）。
 - **行动选项统计**（`GlobalSettings.stats`，`src/core/stats.ts` 读写，随 extension_settings 持久化）：
   只计行动选项视图——`generateOptions` 成功路径按实际保留条数计生成，`applyOptionBehavior`（option-action.ts）
   在 `view='options'` 时计选择；润色视图完全不计入。**v51 起按 config 维度记录**：

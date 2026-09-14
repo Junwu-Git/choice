@@ -81,7 +81,10 @@
         </div>
         <div class="choice-stats-card-value">{{ activeDays }}</div>
       </div>
-      <div class="choice-stats-card">
+      <div
+        class="choice-stats-card"
+        :title="t`池内参与率 = 有效池中至少进入过一轮生成候选的条目数 ÷ 有效池条目数。候选被抽中即计参与（轮次共现归因）；AI 输出为自由文本、选项与条目无法精确一一对应，被 AI 舍弃的候选也会计入`"
+      >
         <div class="choice-stats-card-label">
           <i class="fa-solid fa-layer-group"></i>
           {{ t`池内参与率` }}
@@ -102,7 +105,7 @@
       <h4>{{ t`样本分布` }}</h4>
       <p class="choice-stats-brief">
         {{
-          t`当前维度有效池 ${effectivePoolSize} 条目的样本覆盖：参与 ≥${sampleMin} 轮命中率才可信（可出建议），不足的只标「样本不足」。充足占比越高，优化建议越可信。`
+          t`当前维度有效池 ${effectivePoolSize} 条目的样本覆盖：参与 ≥${sampleMin} 轮命中率才可信（可出建议），不足的只标「样本不足」。充足占比越高，优化建议越可信。「参与」指条目进入过生成轮的候选菜单（轮次共现），不代表选项一定出现在输出中。`
         }}
       </p>
       <div class="choice-stats-sample">
@@ -227,7 +230,7 @@
       </div>
       <p class="choice-stats-brief">
         {{
-          t`命中轮次 = 该条目参与的轮次中、有选项被选中的轮次数（整轮共现）；命中率与「期望」对比：期望 = 按每轮选项数推算的随机基准（4 条时 25%、10 条时 10%），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。`
+          t`命中轮次 = 该条目参与的轮次中、有选项被选中的轮次数（整轮共现）；命中率与「期望」对比：期望 = 按每轮选项数推算的随机基准（4 条时 25%、10 条时 10%），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`
         }}
       </p>
       <p v-if="view.isGlobal" class="choice-stats-brief choice-stats-brief--scope">
@@ -307,7 +310,7 @@
                 <div class="choice-stats-rate-fill" :style="{ width: rateWidth(row.rate) }"></div>
               </div>
               <div class="choice-stats-rank-meta">
-                <span :title="includedTimeTitle(row)"
+                <span :title="participationTitle(row)"
                   >{{ t`参与轮次` }} <b>{{ row.rounds_included }}</b></span
                 >
                 <span
@@ -709,6 +712,10 @@ const timeAgo = (ts: number): string => {
 };
 
 const includedTimeTitle = (row: EntryRankRow): string => t`最近参与：${timeAgo(row.last_included_at)}`;
+
+/** 参与轮次的语义说明 + 最近参与时间（共现归因：被 AI 舍弃的候选也算参与） */
+const participationTitle = (row: EntryRankRow): string =>
+  t`参与轮次 = 该条目被抽入候选菜单的轮次（轮次共现归因）；AI 输出为自由文本，被 AI 舍弃的候选也计参与。${includedTimeTitle(row)}`;
 
 const selectedTextTitle = (row: EntryRankRow): string | undefined =>
   row.last_selected_text ? t`最近选中：${row.last_selected_text.slice(0, 40)}` : undefined;
