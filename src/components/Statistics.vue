@@ -204,10 +204,7 @@
             <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
           </div>
         </div>
-        <div
-          v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0"
-          class="choice-empty-hint"
-        >
+        <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
           {{ rosterEmptyText }}
         </div>
       </div>
@@ -1003,7 +1000,7 @@ const rosterConfirmMessage = computed(() => {
 
 const applyRoster = () => {
   const p = rosterPlan.value;
-  if (!p || p.drops.length === 0 && p.promotes.length === 0) return;
+  if (!p || (p.drops.length === 0 && p.promotes.length === 0)) return;
   pendingRoster.value = p;
   showRosterConfirm.value = true;
 };

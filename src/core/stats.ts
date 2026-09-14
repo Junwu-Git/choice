@@ -680,12 +680,7 @@ export type RosterPlan = {
  *  按超额降序、样本不足排后（同级按最近参与倒序）；剩余空位按 ROSTER_EXPLORE_RATIO 上限
  *  从未被引用的 master_pool 条目补入（探索，确定性顺序避免 computed 重算抖动）。
  *  target 非法（<1 / NaN/Infinity）或条目库为空 → noop 空计划（不落出不补入、不崩溃）。 */
-export function planRoster(
-  view: StatsView,
-  masterPool: PoolEntry[],
-  config: PoolConfig,
-  target: number,
-): RosterPlan {
+export function planRoster(view: StatsView, masterPool: PoolEntry[], config: PoolConfig, target: number): RosterPlan {
   const scopeId = config.id;
   if (!Number.isFinite(target) || target < 1 || masterPool.length === 0) {
     return { scopeId, target, activeCount: 0, drops: [], promotes: [], exempt: 0, noop: true };
