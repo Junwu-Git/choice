@@ -10,7 +10,9 @@ import {
   SUGGEST_DISABLE_EXCESS,
   SUGGEST_WEIGHT_MIN,
   SUGGEST_WEIGHT_MAX,
+  ROSTER_EXPLORE_RATIO,
   type DailyCount,
+  type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
   type ScopeStats,
@@ -451,6 +453,38 @@ export function fullExpectedRate(row: Pick<EntryRankRow, 'rounds_included' | 'ex
   return row.expected_sum / row.rounds_included;
 }
 
+/** 条目评级解析（纯函数，建议引擎与阵容计划共用，防止两处解析逻辑漂移）：
+ *  数据源优先窗口（recent 长度 ≥ SUGGEST_MIN_SAMPLES），否则全量
+ *  （rounds_included ≥ SUGGEST_MIN_SAMPLES）；样本不足或无记录返回 null。
+ *  返回窗口/全量统一后的命中率、期望命中率与超额（rate - expected）。 */
+export function entryMetrics(
+  row: Pick<EntryRankRow, 'rounds_included' | 'rounds_with_selection' | 'expected_sum' | 'recent'>,
+): { samples: number; rate: number; expected: number; excess: number; basis: '窗口' | '全量' } | null {
+  if (!row || row.rounds_included <= 0 || !row.recent) return null;
+  const w = windowMetrics(row);
+  let samples: number;
+  let hits: number;
+  let expected: number;
+  let basis: '窗口' | '全量';
+  if (w && w.samples >= SUGGEST_MIN_SAMPLES) {
+    samples = w.samples;
+    hits = w.hits;
+    expected = w.expected;
+    basis = '窗口';
+  } else if (row.rounds_included >= SUGGEST_MIN_SAMPLES) {
+    samples = row.rounds_included;
+    hits = row.rounds_with_selection;
+    expected = row.expected_sum;
+    basis = '全量';
+  } else {
+    return null;
+  }
+  if (samples <= 0) return null;
+  const rate = hits / samples;
+  const expectedRate = expected / samples;
+  return { samples, rate, expected: expectedRate, excess: rate - expectedRate, basis };
+}
+
 // ── 建议引擎（只建议不改权重之外的东西；写入由 applySuggestions 显式触发） ───
 
 export type SuggestionAction = 'down' | 'up' | 'disable';
@@ -496,28 +530,9 @@ export function entrySuggestion(
   >,
 ): Suggestion | null {
   if (row.effectivePinned) return null;
-  const w = windowMetrics(row);
-  let samples: number;
-  let hits: number;
-  let expected: number;
-  let basis: Suggestion['basis'];
-  if (w && w.samples >= SUGGEST_MIN_SAMPLES) {
-    samples = w.samples;
-    hits = w.hits;
-    expected = w.expected;
-    basis = '窗口';
-  } else if (row.rounds_included >= SUGGEST_MIN_SAMPLES) {
-    samples = row.rounds_included;
-    hits = row.rounds_with_selection;
-    expected = row.expected_sum;
-    basis = '全量';
-  } else {
-    return null;
-  }
-  if (samples <= 0) return null;
-  const rate = hits / samples;
-  const expectedRate = expected / samples;
-  const excess = rate - expectedRate;
+  const m = entryMetrics(row);
+  if (!m) return null;
+  const { samples, rate, expected: expectedRate, excess, basis } = m;
   const base: Omit<Suggestion, 'action' | 'newWeight'> = {
     entryId: row.entryId,
     samples,
@@ -531,8 +546,9 @@ export function entrySuggestion(
   // 无新数据，不会自动恢复——UI 须提示用户可撤销。
   // 精确归因下另加「从未被采纳」停用：期望=0 说明其在输出中从未被匹配到（AI 从不采用），
   // 样本充足时直接给停用建议（被 AI 舍弃的条目）；历史共现数据 expected>0 不误触发
-  const neverAdopted = expected === 0 && hits === 0 && samples >= SUGGEST_MIN_SAMPLES;
-  if ((excess <= SUGGEST_DISABLE_EXCESS && hits === 0) || neverAdopted) {
+  // （rate/expected 均为按 samples 平均后的比率，与原始 hits/expected_sum 同零性）
+  const neverAdopted = expectedRate === 0 && rate === 0 && samples >= SUGGEST_MIN_SAMPLES;
+  if ((excess <= SUGGEST_DISABLE_EXCESS && rate === 0) || neverAdopted) {
     return { ...base, action: 'disable' };
   }
   if (excess <= SUGGEST_DOWNGRADE_EXCESS) {
@@ -620,6 +636,186 @@ export function undoLastApply(): boolean {
 
 /** 当前是否可撤销（组件据此显示撤销入口） */
 export const hasUndo = (): boolean => lastUndo !== null;
+
+// ── 阵容计划（固定名额：表现末尾落出、替补/未引用补入） ───────────────────────
+// 与建议引擎并存：建议引擎管权重（池内出现概率），阵容计划管成员资格（谁在池里）。
+// 落出 = config 层软停用（enabled=false，条目保留、统计不丢）；补入 = 引用进 config。
+// 一期半自动：planRoster 只算清单，applyRosterPlan 由用户显式触发、可撤销。
+
+export type RosterAction = {
+  entryId: string;
+  kind: 'drop' | 'promote';
+  reason: 'roster_overflow' | 'bench' | 'explore';
+  /** 超额命中率（仅可评级条目有；explore 无样本缺省） */
+  score?: number;
+  /** 依据样本轮数（仅可评级条目有） */
+  samples?: number;
+  /** 展示用（join master_pool） */
+  type: string;
+  content: string;
+};
+
+export type RosterPlan = {
+  /** 目标 config.id */
+  scopeId: string;
+  /** 目标在役条数 N */
+  target: number;
+  /** 当前在役（enabled 且存在于 master_pool）条数 */
+  activeCount: number;
+  /** 落出清单 */
+  drops: RosterAction[];
+  /** 补入清单 */
+  promotes: RosterAction[];
+  /** 因 pinned/样本不足豁免无法裁掉的溢出条数（仅说明用） */
+  exempt: number;
+  /** 无可执行动作（无需变动或条件不满足） */
+  noop: boolean;
+};
+
+/** 生成阵容计划（纯函数，组件只渲染）。
+ *  在役 = config 中 enabled 且 id ∈ master_pool（与 Statistics.vue poolCapsule 口径一致）；
+ *  落出：在役 > N 时从「可评级且非 pinned」中按超额升序（表现最差在前）裁末尾到 ≤N，
+ *  pinned/样本不足豁免导致的溢出接受（exempt 说明）；
+ *  补入：空位 = N − (在役 − 落出)，替补席（config 中 disabled 且 ∈ master_pool）优先，
+ *  按超额降序、样本不足排后（同级按最近参与倒序）；剩余空位按 ROSTER_EXPLORE_RATIO 上限
+ *  从未被引用的 master_pool 条目补入（探索，确定性顺序避免 computed 重算抖动）。
+ *  target 非法（<1 / NaN/Infinity）或条目库为空 → noop 空计划（不落出不补入、不崩溃）。 */
+export function planRoster(
+  view: StatsView,
+  masterPool: PoolEntry[],
+  config: PoolConfig,
+  target: number,
+): RosterPlan {
+  const scopeId = config.id;
+  if (!Number.isFinite(target) || target < 1 || masterPool.length === 0) {
+    return { scopeId, target, activeCount: 0, drops: [], promotes: [], exempt: 0, noop: true };
+  }
+  const poolMap = new Map(masterPool.map(e => [e.id, e]));
+  const cfgMap = new Map(config.entries.map(e => [e.entry_id, e]));
+  const effectivePinned = (id: string): boolean => cfgMap.get(id)?.pinned ?? poolMap.get(id)?.pinned ?? false;
+
+  const active: string[] = [];
+  const bench: string[] = [];
+  for (const ce of config.entries) {
+    if (!poolMap.has(ce.entry_id)) continue; // 已从 master_pool 删除的引用跳过
+    if (ce.enabled === false) bench.push(ce.entry_id);
+    else active.push(ce.entry_id);
+  }
+  const activeCount = active.length;
+
+  // 落出：只裁「可评级且非 pinned」的末尾；pinned 与样本不足豁免
+  const drops: RosterAction[] = [];
+  const over = activeCount - target;
+  if (over > 0) {
+    const rated = active
+      .filter(id => !effectivePinned(id))
+      .map(id => ({ id, m: entryMetrics(view.by_entry[id]) }))
+      .filter((x): x is { id: string; m: NonNullable<ReturnType<typeof entryMetrics>> } => x.m !== null)
+      .sort((a, b) => a.m.excess - b.m.excess); // 超额升序：表现最差在前
+    const dropCount = Math.min(over, rated.length);
+    for (const { id, m } of rated.slice(0, dropCount)) {
+      const e = poolMap.get(id)!;
+      drops.push({
+        entryId: id,
+        kind: 'drop',
+        reason: 'roster_overflow',
+        score: m.excess,
+        samples: m.samples,
+        type: e.type,
+        content: e.content,
+      });
+    }
+  }
+  const exempt = Math.max(0, over - drops.length);
+
+  // 补入：替补席优先，空位未尽走探索（上限 ROSTER_EXPLORE_RATIO，未填满保持空缺）
+  const promotes: RosterAction[] = [];
+  const slots = Math.max(0, target - (activeCount - drops.length));
+  if (slots > 0) {
+    const benchRated = bench
+      .filter(id => !effectivePinned(id))
+      .map(id => ({ id, m: entryMetrics(view.by_entry[id]), last: view.by_entry[id]?.last_included_at ?? 0 }))
+      .sort((a, b) => {
+        // 可评级按超额降序（表现好先归队）；无样本排后，按最近参与倒序
+        if (a.m && b.m) return b.m.excess - a.m.excess || b.last - a.last;
+        if (a.m) return -1;
+        if (b.m) return 1;
+        return b.last - a.last;
+      });
+    for (const { id, m } of benchRated.slice(0, slots)) {
+      const e = poolMap.get(id)!;
+      promotes.push({
+        entryId: id,
+        kind: 'promote',
+        reason: 'bench',
+        score: m?.excess,
+        samples: m?.samples,
+        type: e.type,
+        content: e.content,
+      });
+    }
+    const remaining = slots - promotes.length;
+    if (remaining > 0) {
+      // 探索：从未引用条目补入，上限 = ceil(剩余 × ROSTER_EXPLORE_RATIO)。
+      // 确定性：曾参与按最近时间倒序、其余按 id 序，避免 computed 反复求值时随机抖动
+      const exploreCap = Math.min(remaining, Math.ceil(remaining * ROSTER_EXPLORE_RATIO));
+      const referenced = new Set(config.entries.map(ce => ce.entry_id));
+      const unreferenced = masterPool
+        .filter(e => !referenced.has(e.id))
+        .sort(
+          (a, b) =>
+            (view.by_entry[b.id]?.last_included_at ?? 0) - (view.by_entry[a.id]?.last_included_at ?? 0) ||
+            a.id.localeCompare(b.id),
+        );
+      for (const e of unreferenced.slice(0, exploreCap)) {
+        promotes.push({ entryId: e.id, kind: 'promote', reason: 'explore', type: e.type, content: e.content });
+      }
+    }
+  }
+
+  return {
+    scopeId,
+    target,
+    activeCount,
+    drops,
+    promotes,
+    exempt,
+    noop: drops.length === 0 && promotes.length === 0,
+  };
+}
+
+/** 应用阵容计划到指定 config（scopeId = config.id）。快照应用前 entries 供撤销；
+ *  落出置 enabled=false（已停用/已删除跳过），补入若已引用置 enabled=true，
+ *  否则以 master_pool 的 pinned/weight 新建引用（与 onCreateDefaultConfig 形态对齐）；
+ *  目标条目已从 master_pool 删除的跳过。不显式 saveSettingsDebounced（deep watch 统一落盘）。 */
+export function applyRosterPlan(scopeId: string, plan: RosterPlan): SuggestionApplyResult {
+  const gs = useGlobalSettingsStore();
+  const config = gs.settings.configs.find(c => c.id === scopeId);
+  const total = plan.drops.length + plan.promotes.length;
+  if (!config) return { applied: 0, skipped: total };
+  lastUndo = { scopeId, entries: klona(config.entries) };
+  const masterMap = new Map(gs.settings.master_pool.map(e => [e.id, e]));
+  let applied = 0;
+  for (const a of plan.drops) {
+    const entry = config.entries.find(e => e.entry_id === a.entryId);
+    if (!entry || entry.enabled === false) continue;
+    entry.enabled = false;
+    applied += 1;
+  }
+  for (const a of plan.promotes) {
+    const master = masterMap.get(a.entryId);
+    if (!master) continue; // 已删除
+    const existing = config.entries.find(e => e.entry_id === a.entryId);
+    if (existing) {
+      if (existing.enabled === true) continue;
+      existing.enabled = true;
+    } else {
+      config.entries.push({ entry_id: a.entryId, pinned: master.pinned, weight: master.weight, enabled: true });
+    }
+    applied += 1;
+  }
+  return { applied, skipped: total - applied };
+}
 
 // ── 列表交互纯函数 ────────────────────────────────────────────────────────────
 

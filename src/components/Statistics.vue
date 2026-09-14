@@ -8,7 +8,7 @@
       <button
         v-if="undoAvailable"
         class="menu_button choice-stats-undo"
-        :title="t`撤销上一次应用到条目池配置的权重修改`"
+        :title="t`撤销上一次应用到条目池配置的修改`"
         @click="onUndo"
       >
         <i class="fa-solid fa-rotate-left"></i>
@@ -137,6 +137,78 @@
             ></div>
           </div>
           <b>{{ distribution.never }}</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- 阵容计划（固定名额：落出/补入，半自动） -->
+    <div v-if="canApply" class="choice-stats-section">
+      <div class="choice-stats-section-head">
+        <h4>{{ t`阵容计划` }}</h4>
+        <button
+          v-if="rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
+          class="menu_button choice-stats-apply-all"
+          :title="t`把落出/补入清单应用到当前配置`"
+          @click="applyRoster()"
+        >
+          <i class="fa-solid fa-users-gear"></i>
+          {{ t`应用阵容计划` }}
+          <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
+        </button>
+      </div>
+      <p class="choice-stats-brief">
+        {{
+          t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`
+        }}
+      </p>
+      <div class="choice-stats-roster-bar">
+        <label class="choice-stats-toggle">
+          <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
+          <span>{{ t`启用` }}</span>
+        </label>
+        <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
+          {{ t`目标在役条数` }}
+          <input
+            v-model="rosterSizeText"
+            class="text_pole choice-stats-roster-input"
+            type="number"
+            min="1"
+            step="1"
+            :placeholder="t`如 12`"
+          />
+        </label>
+      </div>
+      <div v-if="rosterPlan" class="choice-stats-roster-readout">
+        {{ t`在役 ${rosterPlan.activeCount} 条` }}
+        <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
+        · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
+      </div>
+      <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
+        <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
+            <i class="fa-solid fa-arrow-down"></i>
+            {{ t`落出 (${rosterPlan.drops.length})` }}
+          </div>
+          <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
+          </div>
+        </div>
+        <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
+            <i class="fa-solid fa-arrow-up"></i>
+            {{ t`补入 (${rosterPlan.promotes.length})` }}
+          </div>
+          <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
+          </div>
+        </div>
+        <div
+          v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0"
+          class="choice-empty-hint"
+        >
+          {{ rosterEmptyText }}
         </div>
       </div>
     </div>
@@ -422,6 +494,15 @@
       @confirm="onApplyConfirmed"
       @cancel="showApplyConfirm = false"
     />
+    <ConfirmDialog
+      :open="showRosterConfirm"
+      :title="t`应用阵容计划`"
+      :message="rosterConfirmMessage"
+      :confirm-text="t`应用`"
+      :cancel-text="t`取消`"
+      @confirm="onRosterConfirmed"
+      @cancel="showRosterConfirm = false"
+    />
   </div>
 </template>
 
@@ -444,12 +525,16 @@ import {
   windowMetrics,
   applySuggestions,
   undoLastApply,
+  planRoster,
+  applyRosterPlan,
   GLOBAL_SCOPE,
   NONE_SCOPE,
   type EntryGroup,
   type EntryRankRow,
   type EntrySortBy,
   type HitRankRow,
+  type RosterAction,
+  type RosterPlan,
   type Suggestion,
   type StatsView,
 } from '@/core/stats';
@@ -820,6 +905,121 @@ const onUndo = () => {
     undoAvailable.value = false;
     toastr.success(t`已撤销上次应用`);
   }
+};
+
+// ── 阵容计划（固定名额：落出/补入，半自动） ──
+// 与建议引擎并存：建议引擎管权重，阵容计划管成员资格；二者写同一 config 层、共用单槽撤销。
+
+const rosterEnabled = computed({
+  get: () => gs.settings.roster_enabled,
+  set: (v: boolean) => {
+    gs.settings.roster_enabled = v;
+  },
+});
+
+/** 用文本态承载目标条数，避免 type=number 的空串被 v-model.number 钳成 0；
+ *  解析失败/空串 → null（关闭计划），落盘时写入实际有限数或 null。
+ *  不 clamp 用户输入（项目约束）：任意 ≥1 的有限数均接受 */
+const rosterSizeText = ref(
+  gs.settings.roster_size !== null && gs.settings.roster_size !== undefined ? String(gs.settings.roster_size) : '',
+);
+const rosterTarget = computed<number | null>(() => {
+  const n = Number(rosterSizeText.value);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
+});
+watch(rosterTarget, v => {
+  gs.settings.roster_size = v;
+});
+
+/** 当前选中维度的配置（具体 config 才有写入目标） */
+const activeConfig = computed(() => configs.value.find(c => c.id === scopeId.value));
+
+/** 阵容计划（纯函数派生，随维度/池/统计/目标条数响应刷新） */
+const rosterPlan = computed<RosterPlan | null>(() => {
+  if (!rosterEnabled.value || rosterTarget.value === null || !activeConfig.value) return null;
+  return planRoster(view.value, masterPool.value, activeConfig.value, rosterTarget.value);
+});
+
+/** 替补席 = config 中 disabled 且仍存在于 master_pool 的条目数 */
+const benchCount = computed(() => {
+  const cfg = activeConfig.value;
+  if (!cfg) return 0;
+  const ids = new Set(masterPool.value.map(e => e.id));
+  return cfg.entries.filter(e => e.enabled === false && ids.has(e.entry_id)).length;
+});
+
+/** 未入池 = master_pool 中未被 config 引用的条目数 */
+const unreferencedCount = computed(() => {
+  const cfg = activeConfig.value;
+  if (!cfg) return 0;
+  const ref = new Set(cfg.entries.map(e => e.entry_id));
+  return masterPool.value.filter(e => !ref.has(e.id)).length;
+});
+
+/** 超额命中率展示（带符号、百分比） */
+const excessText = (v: number): string => (v >= 0 ? '+' : '') + Math.round(v * 100) + '%';
+
+const rosterTypeLabel = (a: RosterAction): string => typeLabel({ deleted: false, type: a.type });
+
+const rosterText = (a: RosterAction): string => a.content || a.type || t`（空内容）`;
+
+/** 落出/补入行 tooltip：附依据（口径/命中率/期望/超额） */
+const rosterReason = (a: RosterAction): string => {
+  const basis =
+    a.samples !== undefined && a.score !== undefined
+      ? t`近 ${a.samples} 轮超额 ${excessText(a.score)}`
+      : a.reason === 'explore'
+        ? t`未入池条目，探索补入`
+        : t`样本不足，替补补入`;
+  if (a.kind === 'drop') return t`落出：${basis}`;
+  return a.reason === 'bench' ? t`替补补入：${basis}` : t`探索补入：${basis}`;
+};
+
+/** 计划无可执行动作时的说明 */
+const rosterEmptyText = computed(() => {
+  const p = rosterPlan.value;
+  if (!p) return '';
+  if (p.activeCount > p.target) {
+    return t`在役 ${p.activeCount} 条超出目标 ${p.target}，但可落出的非 pinned 且样本充足的条目不足（其余被豁免），暂无可执行动作。`;
+  }
+  if (p.activeCount < p.target) {
+    return t`在役 ${p.activeCount} 条低于目标 ${p.target}，但替补席与未入池条目已无可补入（未入池按探索预算进一步降低填充）。`;
+  }
+  return t`当前在役 ${p.activeCount} 条，正符合目标，无需调整。`;
+});
+
+const pendingRoster = ref<RosterPlan | null>(null);
+const showRosterConfirm = ref(false);
+
+const rosterConfirmMessage = computed(() => {
+  const p = pendingRoster.value;
+  if (!p) return '';
+  const lines = [
+    ...p.drops.map(a => `· ${t`落出`} ${rosterText(a)}（${rosterReason(a)}）`),
+    ...p.promotes.map(a => `· ${t`补入`} ${rosterText(a)}（${rosterReason(a)}）`),
+  ];
+  return t`将应用到当前配置：\n${lines.join('\n')}\n\n落出为软停用（条目保留、统计不丢），可在条目池页手动重新启用。`;
+});
+
+const applyRoster = () => {
+  const p = rosterPlan.value;
+  if (!p || p.drops.length === 0 && p.promotes.length === 0) return;
+  pendingRoster.value = p;
+  showRosterConfirm.value = true;
+};
+
+const onRosterConfirmed = () => {
+  const p = pendingRoster.value;
+  showRosterConfirm.value = false;
+  pendingRoster.value = null;
+  if (!p || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
+  const res = applyRosterPlan(scopeId.value, p);
+  undoAvailable.value = res.applied > 0;
+  toastr.success(
+    res.skipped > 0
+      ? t`已应用 ${res.applied} 条阵容变更（跳过 ${res.skipped} 条，可在统计页撤销）`
+      : t`已应用 ${res.applied} 条阵容变更（可在统计页撤销）`,
+  );
 };
 
 // ── 命中榜（用户选择条目的排行） ──
@@ -1475,5 +1675,85 @@ const onClearConfirmed = () => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--choice-space-2);
+}
+
+/* ── 阵容计划 ── */
+.choice-stats-roster-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--choice-space-3);
+  margin-bottom: var(--choice-space-2);
+}
+
+.choice-stats-roster-size {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  white-space: nowrap;
+}
+
+.choice-stats-roster-size--off {
+  opacity: 0.5;
+}
+
+.choice-stats-roster-input {
+  width: 80px;
+  min-width: 0;
+}
+
+.choice-stats-roster-readout {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  margin-bottom: var(--choice-space-2);
+}
+
+.choice-stats-roster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-3);
+  margin-bottom: var(--choice-space-2);
+}
+
+.choice-stats-roster-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+}
+
+.choice-stats-roster-col-head {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  font-size: var(--choice-text-sm);
+  font-weight: 600;
+}
+
+.choice-stats-roster-col-head--drop {
+  color: var(--choice-color-error);
+}
+
+.choice-stats-roster-col-head--promote {
+  color: var(--choice-color-success);
+}
+
+.choice-stats-roster-item {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  padding: 2px 0;
+  min-width: 0;
+}
+
+.choice-stats-roster-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text);
 }
 </style>

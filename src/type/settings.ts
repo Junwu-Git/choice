@@ -1048,7 +1048,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 51;
+export const SCHEMA_VERSION = 52;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1065,6 +1065,9 @@ export const SUGGEST_DISABLE_EXCESS = -0.3;
  *  防反复提权/降权失控。这是自动化改写逻辑，不是对用户输入值的 clamp。 */
 export const SUGGEST_WEIGHT_MIN = 0.2;
 export const SUGGEST_WEIGHT_MAX = 5;
+/** 阵容计划补入探索上限：剩余空位 × 该比例（向上取整）后从未入池条目补入。
+ *  余下空位保持空缺——纯「杀低捧高」会把候选集收敛成少数几条，探索预算是多样性兜底。 */
+export const ROSTER_EXPLORE_RATIO = 0.5;
 
 /**
  * 选项→条目精确归因的文本相似度阈值（字符 2-gram Dice，见 option-attribution.ts）。
@@ -1321,6 +1324,12 @@ export const GlobalSettings = z
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
     stats: StatsSettings.prefault({}),
+    /** 阵容计划（固定名额落出/补入）：目标在役条数 N。null = 未设置（计划关闭）；
+     *  任意有限数均接受、不做 clamp（项目约束：不改写用户输入），N<1 时 planRoster 返回空计划。
+     *  一期为半自动：planRoster 只算清单，应用经统计页确认。 */
+    roster_size: z.number().nullable().prefault(null).catch(null),
+    /** 统计页阵容计划开关（UI 记忆用；roster_size 为 null 时计划仍不生效） */
+    roster_enabled: z.boolean().default(false),
     retry_count: z.number().min(0).max(10).default(0).catch(0),
     /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
      *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */

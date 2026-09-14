@@ -108,6 +108,18 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   应用前快照 `config.entries` 到模块级 `lastUndo`，`undoLastApply()` 单步撤销；不显式调
   saveSettingsDebounced（settings deep watch 统一落盘）。**v51 迁移把老 stats 清零重来**（老档
   `by_entry`/`daily` 是跨维度混合数据无法拆分，用户确认丢弃）。
+  **评级解析共用于建议引擎与阵容计划**（`entryMetrics` 纯函数：窗口 ≥10 轮优先、否则全量 ≥10 轮，
+  返回统一后的 samples/rate/expected/excess/basis；样本不足返回 null）。`entrySuggestion` 与
+  `planRoster` 均基于它，防止两处解析逻辑漂移。
+  **阵容计划**（`planRoster` 纯函数，半自动，与建议引擎并存）：建议引擎管权重（池内出现概率），
+  阵容计划管成员资格（谁在池里）。用户设目标在役条数 N（`settings.roster_size`，null=关闭；
+  `settings.roster_enabled` 开关），`planRoster` 生成落出/补入清单——落出 = config 层软停用
+  （`enabled=false`，条目保留、统计不丢），补入 = 引用进 config。落出：在役 > N 时从「可评级且
+  非 pinned」按超额升序（表现最差在前）裁末尾到 ≤N，pinned/样本不足豁免导致的溢出接受（exempt 说明）；
+  补入：空位由替补席（config 中 disabled 且 ∈ master_pool）优先（按超额降序、样本不足排后），
+  剩余空位按 `ROSTER_EXPLORE_RATIO`=0.5 上限从未入池条目探索补入（确定性顺序避免 computed 重算抖动）。
+  `applyRosterPlan(scopeId, plan)` 写 config 层，复用模块级 `lastUndo` 单槽撤销（与 applySuggestions
+  共用，后应用者覆盖快照）。target 非法（<1/NaN）或条目库为空 → noop 空计划。
   统计页 `Statistics.vue`（基础 tab，位于过滤之后，简化模式也显示）提供：维度切换
   （全局 / 未绑定档 / 各 config 下拉，默认当前生效维度；无 config 时引导创建 default config——
   自动引用 master_pool 全量后即可应用建议）、6 张汇总卡片（生成/选择/选择率/活跃天数/池内参与率
@@ -117,14 +129,16 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   （`applyEntryFilters` 纯函数，组件只渲染；勾选持久化在 `ui.stats_only_with_data`，切页/刷新不丢）、
   命中率行附「期望」参照与近 10 轮窗口命中率、
   洞察标签（`entryInsight` 由 `entrySuggestion` 派生：候选降权/建议停用/表现良好/样本不足；
-  **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，可撤销）、
+   **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，可撤销）、
+   阵容计划区（`planRoster` 派生：目标条数 N 输入 + 启用开关 + 在役/替补/未入池读数 +
+   落出/补入清单 + 一键应用经确认框写入，复用单槽撤销；仅具体 config 维度显示）、
   「定位条目」操作闭环（行尾按钮 → `requestedTab`+`focusPoolEntryId` 信号 → 切 pool tab +
   打开 `EntryPoolDialog`（master_pool 全量视图）+ `getBoundingClientRect` 滚动 + 短暂高亮）、
   命中榜（用户选择的条目排行，`hitLeaderboard` 纯函数）、导出 JSON（Blob 下载，同
   EntryPoolDialog/PromptEditor 先例，含全维度
   `entries` 原始结构与当前维度条目榜 join 信息）与清空。
   按角色/chat 维度的上下文统计、全自动改权重/启闭功能本体
-  均列为后续方向（半自动「建议 + 一键应用」已落地，阈值常量在 settings.ts 集中可调）。
+  均列为后续方向（半自动「建议 + 一键应用」与「阵容计划」已落地，阈值常量在 settings.ts 集中可调）。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
@@ -192,7 +206,7 @@ popover 状态 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于 `floating-sta
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 51。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 52。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
