@@ -232,7 +232,7 @@
       </div>
       <p class="choice-stats-brief">
         {{
-          t`命中轮次 = 该条目参与的轮次中、有选项被选中的轮次数（整轮共现）；命中率与「期望」对比：期望 = 按每轮选项数推算的随机基准（4 条时 25%、10 条时 10%），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`
+          t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 按每轮选项数推算的随机点选基准（4 条时 25%、10 条时 10%），仅当选项匹配到该条目时才算命中；高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`
         }}
       </p>
       <p v-if="view.isGlobal" class="choice-stats-brief choice-stats-brief--scope">
@@ -338,41 +338,49 @@
       </div>
     </div>
 
-    <!-- 类型榜 -->
+    <!-- 命中榜（用户选择条目的排行） -->
     <div class="choice-stats-section">
-      <h4>{{ t`类型榜` }}</h4>
-      <p class="choice-stats-brief">{{ t`按条目的类型标签聚合（整轮共现口径，未参与的类型不列出）` }}</p>
-      <div v-if="typeRank.length === 0" class="choice-empty-hint">{{ t`暂无数据` }}</div>
+      <h4>{{ t`命中榜` }}</h4>
+      <p class="choice-stats-brief">
+        {{
+          t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`
+        }}
+      </p>
+      <div v-if="hitRank.length === 0" class="choice-empty-hint">{{ t`尚未选择过任何条目` }}</div>
       <div v-else class="choice-stats-rank">
-        <div v-for="(row, i) in typeRank" :key="row.type" class="choice-stats-rank-row">
+        <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
           <div class="choice-stats-rank-main">
             <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
             <span
               class="choice-stats-type-badge"
               :class="{
-                'choice-stats-type-badge--none': row.type === '（未标注）',
-                'choice-stats-type-badge--deleted': row.type === '（已删除）',
+                'choice-stats-type-badge--none': !row.type && !row.deleted,
+                'choice-stats-type-badge--deleted': row.deleted,
               }"
-              >{{ row.type }}</span
+              >{{ row.deleted ? t`已删除` : row.type || t`未标注` }}</span
             >
-            <span class="choice-stats-rank-text">{{ t`类型` }}</span>
-          </div>
-          <div class="choice-stats-rate-track" :title="t`参与轮次占比`">
-            <div
-              class="choice-stats-rate-fill choice-stats-rate-fill--type"
-              :style="{ width: typeShareWidth(row.rounds_included) }"
-            ></div>
+            <span
+              class="choice-stats-rank-text"
+              :title="row.last_selected_text ? t`最近选中：${row.last_selected_text.slice(0, 40)}` : undefined"
+              >{{ hitText(row) }}</span
+            >
+            <button
+              v-if="!row.deleted"
+              class="choice-icon-btn choice-stats-locate"
+              :title="t`在条目库中定位`"
+              @click="locateEntry(row.entryId)"
+            >
+              <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
           </div>
           <div class="choice-stats-rank-meta">
             <span
-              >{{ t`参与轮次` }} <b>{{ row.rounds_included }}</b></span
+              >{{ t`命中次数` }} <b>{{ row.count }}</b></span
             >
-            <span
-              >{{ t`命中轮次` }} <b>{{ row.rounds_with_selection }}</b></span
+            <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
+              >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
             >
-            <span class="choice-stats-meta-rate"
-              >{{ t`命中率` }} <b>{{ rateText(row.rate) }}</b></span
-            >
+            <span>{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span>
           </div>
         </div>
       </div>
@@ -427,7 +435,7 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import {
   buildStatsView,
   entryGroups,
-  typeLeaderboard,
+  hitLeaderboard,
   clearStats,
   applyEntryFilters,
   entryInsight,
@@ -443,6 +451,7 @@ import {
   type EntryGroup,
   type EntryRankRow,
   type EntrySortBy,
+  type HitRankRow,
   type Suggestion,
   type StatsView,
 } from '@/core/stats';
@@ -616,7 +625,13 @@ const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrd
 
 const query = ref('');
 const sortBy = ref<EntrySortBy>('rounds');
-const onlyWithData = ref(false);
+// 「只看有数据」持久化到全局 UI 偏好：切 tab/关面板/刷新均不丢（随 extension_settings 落盘）
+const onlyWithData = computed({
+  get: () => gs.settings.ui.stats_only_with_data,
+  set: (v: boolean) => {
+    gs.settings.ui.stats_only_with_data = v;
+  },
+});
 const filteredGroups = computed(() =>
   applyEntryFilters(groups.value, {
     query: query.value,
@@ -806,13 +821,13 @@ const onUndo = () => {
   }
 };
 
-// ── 类型榜 ──
-const typeRank = computed(() => typeLeaderboard(view.value, masterPool.value));
+// ── 命中榜（用户选择条目的排行） ──
+const hitRank = computed(() => hitLeaderboard(view.value, masterPool.value));
 
-/** 类型占比条宽度：该类型参与轮次 ÷ 榜内最大值（最小值 4% 保证可见） */
-const typeShareWidth = (rounds: number) => {
-  const max = Math.max(1, ...typeRank.value.map(r => r.rounds_included));
-  return Math.max(rounds > 0 ? 4 : 0, Math.round((rounds / max) * 100)) + '%';
+/** 命中榜行文本：已删除条目显示占位，否则内容优先于 type */
+const hitText = (row: HitRankRow): string => {
+  if (row.deleted) return t`已删除条目 ${row.entryId.slice(0, 8)}…`;
+  return row.content || row.type || t`（空内容）`;
 };
 
 // ── 导出与管理 ──
@@ -1267,6 +1282,16 @@ const onClearConfirmed = () => {
   color: var(--choice-color-success);
 }
 
+/* 命中榜「最近选中」文本：单行截断，避免长选项挤爆行 */
+.choice-stats-meta-hit-text {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 /* ── 命中率 / 占比进度条 ── */
 .choice-stats-rate-track {
   height: 4px;
@@ -1280,11 +1305,6 @@ const onClearConfirmed = () => {
   border-radius: var(--choice-radius-full);
   background: var(--choice-color-success);
   transition: width var(--choice-transition);
-}
-
-/* 类型榜占比条用 info 色，与条目榜命中率（success）区分语义 */
-.choice-stats-rate-fill--type {
-  background: var(--choice-color-info);
 }
 
 .choice-stats-groups {

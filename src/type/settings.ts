@@ -1066,6 +1066,14 @@ export const SUGGEST_DISABLE_EXCESS = -0.3;
 export const SUGGEST_WEIGHT_MIN = 0.2;
 export const SUGGEST_WEIGHT_MAX = 5;
 
+/**
+ * 选项→条目精确归因的文本相似度阈值（字符 2-gram Dice，见 option-attribution.ts）。
+ * 生成时对每条输出选项与候选条目（type+content 信号）算相似度，≥ 阈值即认定归属该条目；
+ * 低于阈值视为 AI 自由发挥（matchedEntryId = null，不产生命中）。type 前缀精确匹配
+ * 优先于本阈值兜底（AI 常以 type 名开头写选项）。启发式常量，随真实数据表现调参。
+ */
+export const OPTION_MATCH_THRESHOLD = 0.25;
+
 export const WorldInfoGlobalSettings = z
   .object({
     enabled: z.boolean().default(true),
@@ -1129,6 +1137,11 @@ export const UISettings = z
      * 老存档缺字段由 default(true) 补齐：升级零变化，保持既有默认可见行为
      */
     wand_menu_enabled: z.boolean().default(true),
+    /**
+     * 统计页「只看有数据」筛选开关持久化：勾选后切 tab/关面板/刷新不丢。
+     * 老存档缺字段由 default(false) 补齐，无需 bump schema_version
+     */
+    stats_only_with_data: z.boolean().default(false),
     enrich_enabled: z.boolean().default(true),
     enrich_count: z.string().default('4'),
     /** @deprecated 已迁移到 theme_mode，保留用于向后兼容迁移 */

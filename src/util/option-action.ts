@@ -9,14 +9,20 @@ import { recordOptionSelected } from '@/core/stats';
  * insert = 光标处插入（有选区则替换）；append = 追加到输入框末尾；send = 覆盖后直接发送；
  * fill = 覆盖输入框内容。取值来源与设置页校验见 src/type/settings.ts 的 behavior 字段。
  * opts.view 标记来源视图：统计口径仅行动选项视图计入，润色（enrich）完全不计。
- * opts.poolEntryIds 为被点选项所在轮的条目 id 集合（轮次共现归因的整轮归因依据），
+ * opts.poolEntryIds 为被点选项所在轮的条目 id 集合（轮次共现整轮归因的兜底依据），
  * 由调用方从 panelStore.currentGeneration 传入；旧消息缺该字段时回退 []（只计总量）。
  * opts.generationId 为被点选项所在代（同代重复点击只计 1 次命中轮次）。
- */
+ * opts.matchedEntryId 为被点选项的精确归因条目（生成时文本匹配，见 option-attribution.ts）：
+ * 存在时统计「命中」只记该条目；缺失（旧代/未匹配）回退整轮共现。 */
 export async function applyOptionBehavior(
   option: ChoiceOption,
   behavior: 'send' | 'fill' | 'append' | 'insert',
-  opts?: { view?: 'options' | 'enrich'; poolEntryIds?: string[]; generationId?: string },
+  opts?: {
+    view?: 'options' | 'enrich';
+    poolEntryIds?: string[];
+    generationId?: string;
+    matchedEntryId?: string | null;
+  },
 ) {
   const content = parseOptionContent(option.text);
   const $textarea = $('#send_textarea');
@@ -54,10 +60,11 @@ export async function applyOptionBehavior(
   }
   // 统计埋点（共享层唯一计数点）：主面板与悬浮球弹窗都走这里，弹窗内禁止另写。
   // 润色视图完全不计入；调用方须显式传 view='enrich'，默认 'options'
-  // （漏标只多计、不丢计，安全方向）。整轮归因到所在轮条目集合，同代去重。
+  // （漏标只多计、不丢计，安全方向）。精确归因优先（matchedEntryId），
+  // 缺失时回退整轮共现到所在轮条目集合，同代去重。
   // content 为 parse 后的选项正文，写入 last_selected_text 供统计页展示与归因种子。
   if ((opts?.view ?? 'options') === 'options') {
-    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content);
+    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content, opts?.matchedEntryId);
   }
   if (behavior === 'send') {
     await sendTextareaMessage();

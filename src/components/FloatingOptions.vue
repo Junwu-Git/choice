@@ -198,6 +198,7 @@ const onSelect = async (option: ChoiceOption) => {
     view: 'options',
     poolEntryIds: panelStore.currentGeneration?.poolEntryIds ?? [],
     generationId: panelStore.currentGeneration?.id,
+    matchedEntryId: option.matchedEntryId,
   });
   panelStore.autoSetCollapsed(true);
   // 锁定时点选项不收起（与主面板「锁定不被动收起」语义一致）；未锁定则选中即关

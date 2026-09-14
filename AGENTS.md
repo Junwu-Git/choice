@@ -75,10 +75,14 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   在 `view='options'` 时计选择；润色视图完全不计入。**v51 起按 config 维度记录**：
   `stats.entries` 键 = 生效 `config.id`（`chat > character > default` 解析，无 config 会话 = `'__none__'`），
   每条记录 `ScopeStats`（总量 + `by_entry` + 按天 `daily`）；全局视图（汇总卡片/趋势/条目榜「全局」档）
-  由 `buildStatsView(stats, '__global__')` 聚合推导、单一真相源，不双写。**归因口径为轮次共现**：
-  选项是 AI 自由文本、无选项→条目精确映射，每轮生成/选择整轮归因到该轮 `poolEntryIds`
-  （条目级「选择」= 命中轮次——参与的轮次中有选项被选即计 1，同代重复点击由
-  `last_hit_generation_id` 全局单槽去重）。
+  由 `buildStatsView(stats, '__global__')` 聚合推导、单一真相源，不双写。**归因口径**：
+   参与（`rounds_included`）= 进入候选（轮次共现，每轮 `poolEntryIds` 全记，含 pinned）；
+   命中（`rounds_with_selection`）= 精确归因——生成时对每条输出选项与候选条目做文本相似度
+   匹配（`src/core/option-attribution.ts`：type 前缀精确匹配优先，字符 2-gram Dice 阈值
+   `OPTION_MATCH_THRESHOLD` 兜底），结果写入 `options[].matchedEntryId` 随消息持久化；点击只对
+   匹配条目计命中，被 AI 舍弃的候选不产生命中，匹配不上的选项（AI 自由发挥）不命中任何条目；
+   旧代（无 `matchedEntryId`）点击回退整轮共现兼容；同代重复点击由 `last_hit_generation_id`
+   全局单槽去重。
   **期望命中率（相对基线）**：每轮每个参与条目 `expected_sum += 1/count`（count = 该轮实际输出条数，
   随机基线 = 1/count），全量超额 = 命中轮次/参与轮次 − expected_sum/参与轮次；固定阈值（15%/60%）
   已废弃——count 不同随机基线不同（4 条 25%、10 条 10%），固定阈值会误判。
@@ -86,7 +90,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   选择时按 `gid` 回写 hit（窗口挤掉旧代则全量计数照记、窗口回写跳过）；命中归属 scope 优先 =
   recent 含该 gid 的生成维度（`findHitScope` 全局搜索），防切 config 后回看旧楼层点击记错维度。
   `by_entry` 记录含 `last_selected_text`（最近命中选项正文，parse 后去标头）与 `last_included_at`
-  （最近参与时间戳）——单槽近似，供 tooltip 与未来近似归因留种子。
+  （最近参与时间戳）——单槽近似（非历史 log），供条目榜 tooltip 与命中榜展示。
+  **命中榜纯函数**（`hitLeaderboard`）：只列精确命中 >0 的条目，按命中次数降序 → 最近选中
+  时间倒序，replace 了早期按 type 聚合的类型榜（type 在此扩展中多为条目标题、与条目榜重复）。
   **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、
   否则全量）：超额 ≤−0.2 → 降权（`SUGGEST_WEIGHT_MIN`=0.2 下限，减半）；超额 ≥+0.15 → 提权
   （上限 5，翻倍）；超额 ≤−0.3 且 0 命中 → 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、
@@ -101,14 +107,16 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   /最近统计，均随维度）、样本量分布诊断（`entrySampleDistribution` 对照当前维度有效池：窗口或
   全量 ≥10 轮 = 样本充足 / 参与 <10 = 不足 / 池内从未参与 = never——此前 never 恒 0 的 bug 已修）、
   7/30 天趋势柱状图（纯 CSS，`dailySeries` 随维度）、条目榜搜索/排序/「只看有数据」
-  （`applyEntryFilters` 纯函数，组件只渲染）、命中率行附「期望」参照与近 10 轮窗口命中率、
+  （`applyEntryFilters` 纯函数，组件只渲染；勾选持久化在 `ui.stats_only_with_data`，切页/刷新不丢）、
+  命中率行附「期望」参照与近 10 轮窗口命中率、
   洞察标签（`entryInsight` 由 `entrySuggestion` 派生：候选降权/建议停用/表现良好/样本不足；
   **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，可撤销）、
   「定位条目」操作闭环（行尾按钮 → `requestedTab`+`focusPoolEntryId` 信号 → 切 pool tab +
   打开 `EntryPoolDialog`（master_pool 全量视图）+ `getBoundingClientRect` 滚动 + 短暂高亮）、
-  类型榜占比条、导出 JSON（Blob 下载，同 EntryPoolDialog/PromptEditor 先例，含全维度
+  命中榜（用户选择的条目排行，`hitLeaderboard` 纯函数）、导出 JSON（Blob 下载，同
+  EntryPoolDialog/PromptEditor 先例，含全维度
   `entries` 原始结构与当前维度条目榜 join 信息）与清空。
-  选项→条目的精确归因（文本相似度）、按角色/chat 维度的上下文统计、全自动改权重/启闭功能本体
+  按角色/chat 维度的上下文统计、全自动改权重/启闭功能本体
   均列为后续方向（半自动「建议 + 一键应用」已落地，阈值常量在 settings.ts 集中可调）。
 - **生成模块是可排序、可启停的管线**：`prompt_rules.modules` 通过 `order`、`enabled`、`enrich_only`
   控制模块顺序和参与方式。上下文通过 `context_mode`

@@ -113,12 +113,18 @@ const findHitScope = (stats: StatsSettings, entryId: string, gid: string): strin
 };
 
 /** 记录用户点击应用一次行动选项（仅行动选项视图；调用方已按 view 过滤）。
- *  poolEntryIds 为被点选项所在轮的条目集合——整轮共现：每个参与条目命中轮次 +1。
+ *  poolEntryIds 为被点选项所在轮的条目集合——精确归因时仅 matchedEntryId 条目命中轮次 +1；
+ *  无 matchedEntryId（旧代点击 / 选项未匹配上候选）回退整轮共现，每个参与条目命中轮次 +1。
  *  generationId 用于同代去重（last_hit_generation_id 全局单槽）与窗口 hit 回写定位；
  *  命中归属 scope 优先 = 生成时所在维度（recent 含 gid），否则当前生效维度兜底。
  *  optionText 为被点选项的正文（已 parse 去标头），写入 last_selected_text 供展示；
  *  仅在真正计命中（非同代去重命中）时写入，保证与 rounds_with_selection 同步。 */
-export function recordOptionSelected(poolEntryIds: string[], generationId?: string, optionText?: string): void {
+export function recordOptionSelected(
+  poolEntryIds: string[],
+  generationId?: string,
+  optionText?: string,
+  matchedEntryId?: string | null,
+): void {
   const stats = useGlobalSettingsStore().settings.stats;
   stats.total_selected += 1;
   stats.updated_at = Date.now();
@@ -130,7 +136,10 @@ export function recordOptionSelected(poolEntryIds: string[], generationId?: stri
   if (poolEntryIds.length === 0) return;
   if (generationId && generationId === stats.last_hit_generation_id) return;
   const now = Date.now();
-  for (const entryId of poolEntryIds) {
+  // 精确归因：生成代带 matchedEntryId（options[].matchedEntryId，v53 起）时只计该条目命中，
+  // 被 AI 舍弃的候选不再产生命中；旧代/未匹配回退整轮共现，旧消息行为保持不变
+  const hitIds = matchedEntryId ? [matchedEntryId] : poolEntryIds;
+  for (const entryId of hitIds) {
     const hitScopeId = generationId ? (findHitScope(stats, entryId, generationId) ?? scopeId) : scopeId;
     const e = getEntryStats(getScopeStats(stats, hitScopeId), entryId);
     e.rounds_with_selection += 1;
@@ -345,38 +354,40 @@ export function entryGroups(
   return groups;
 }
 
-export type TypeRankRow = {
+export type HitRankRow = {
+  entryId: string;
+  deleted: boolean;
   type: string;
-  rounds_included: number;
-  rounds_with_selection: number;
-  rate: number | null;
+  content: string;
+  /** 命中次数（精确归因：选项被选中且匹配到该条目的轮次） */
+  count: number;
+  /** 最近一次选中正文（parse 后，去标头；'' = 无） */
+  last_selected_text: string;
+  /** 最近一次选中时间戳（0 = 无） */
+  last_selected_at: number;
 };
 
-/** 类型榜纯函数：由维度视图内参与了至少一轮的条目统计按条目 type 聚合推导（不落盘）；
- *  已删除条目（无类型可查）归入「（已删除）」桶 */
-export function typeLeaderboard(view: StatsView, masterPool: PoolEntry[]): TypeRankRow[] {
+/** 命中榜纯函数：只列用户选择过的条目（精确命中 > 0），按命中次数降序 →
+ *  最近选中时间倒序 → entryId。已删除条目（池中无此 id）保留计数并标 deleted。
+ *  展示字段 join master_pool（同条目榜），组件只渲染不重复实现逻辑。 */
+export function hitLeaderboard(view: StatsView, masterPool: PoolEntry[]): HitRankRow[] {
   const poolMap = new Map(masterPool.map(e => [e.id, e]));
-  const agg = new Map<string, TypeRankRow>();
+  const rows: HitRankRow[] = [];
   for (const [entryId, e] of Object.entries(view.by_entry)) {
-    if (e.rounds_included <= 0) continue;
+    if (e.rounds_with_selection <= 0) continue;
     const entry = poolMap.get(entryId);
-    const type = entry ? entry.type : '（已删除）';
-    const row = agg.get(type) ?? {
-      type,
-      rounds_included: 0,
-      rounds_with_selection: 0,
-      rate: null,
-    };
-    row.rounds_included += e.rounds_included;
-    row.rounds_with_selection += e.rounds_with_selection;
-    row.rate = row.rounds_included > 0 ? row.rounds_with_selection / row.rounds_included : null;
-    agg.set(type, row);
+    rows.push({
+      entryId,
+      deleted: !entry,
+      type: entry?.type ?? '',
+      content: entry?.content ?? '',
+      count: e.rounds_with_selection,
+      last_selected_text: e.last_selected_text,
+      last_selected_at: e.last_selected_at,
+    });
   }
-  return [...agg.values()].sort(
-    (a, b) =>
-      b.rounds_included - a.rounds_included ||
-      b.rounds_with_selection - a.rounds_with_selection ||
-      a.type.localeCompare(b.type),
+  return rows.sort(
+    (a, b) => b.count - a.count || b.last_selected_at - a.last_selected_at || a.entryId.localeCompare(b.entryId),
   );
 }
 

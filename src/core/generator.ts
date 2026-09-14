@@ -14,13 +14,14 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
+import { matchOptionToEntry } from '@/core/option-attribution';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
+import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration, type ChoiceOption } from '@/core/options-store';
 import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
 import type {
   ChatSettings,
@@ -30,7 +31,7 @@ import type {
   WIBookMode,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
-import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings, OPTION_MATCH_THRESHOLD } from '@/type/settings';
 
 type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -940,7 +941,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
     }
-    let options = parsed;
+    let options: ChoiceOption[] = parsed;
     const genCfg = gs.settings.generation;
     if (genCfg.dedup_enabled) {
       const r1 = dedupOptions(
@@ -1012,6 +1013,13 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 参与生成，漏记会让「参与数」与发给 AI 的候选不一致（选项是 AI 自由文本，只能记轮次
     // 级集合做整轮归因，无法逐项映射到单条）。pool.pinned 已含 pinned_overflow 截断后的最终集
     const poolEntryIds = [...pool.drawn, ...pool.pinned].map(e => e.id);
+    // 精确归因（v53）：对最终保留的每条选项与当轮候选条目（含 pinned）做文本匹配，
+    // 结果写入 option.matchedEntryId 随消息持久化——统计「命中」只记匹配条目，
+    // 被 AI 舍弃的候选不产生命中；匹配不上的选项（AI 自由发挥）为 null。
+    const matchCandidates = [...pool.drawn, ...pool.pinned];
+    for (const o of options) {
+      o.matchedEntryId = matchOptionToEntry(o.text, matchCandidates, OPTION_MATCH_THRESHOLD);
+    }
     // 生成时的统计维度：命中回写优先归到本维度，防止切 config 后回看旧楼层记错 scope
     const scopeId = usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
     const generation: ChoiceGeneration = {

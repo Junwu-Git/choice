@@ -385,6 +385,7 @@ const onSelect = async (option: ChoiceOption) => {
     view: isEnrich ? 'enrich' : 'options',
     poolEntryIds: gen?.poolEntryIds ?? [],
     generationId: gen?.id,
+    matchedEntryId: option.matchedEntryId,
   });
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);
