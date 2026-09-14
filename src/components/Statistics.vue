@@ -83,7 +83,9 @@
       </div>
       <div
         class="choice-stats-card"
-        :title="t`池内参与率 = 有效池中至少进入过一轮生成候选的条目数 ÷ 有效池条目数。候选被抽中即计参与（轮次共现归因）；AI 输出为自由文本、选项与条目无法精确一一对应，被 AI 舍弃的候选也会计入`"
+        :title="
+          t`池内参与率 = 有效池中至少进入过一轮生成候选的条目数 ÷ 有效池条目数。候选被抽中即计参与（轮次共现归因）；AI 输出为自由文本、选项与条目无法精确一一对应，被 AI 舍弃的候选也会计入`
+        "
       >
         <div class="choice-stats-card-label">
           <i class="fa-solid fa-layer-group"></i>
