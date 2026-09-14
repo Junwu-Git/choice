@@ -717,7 +717,12 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
  *  照 v9 迁移范式：chat_metadata + getStCharacter(this_chid) + save*Debounced。
  *  局限：仅愈合当前已加载的 chat/character 绑定（迁移在 store init 期跑，此时只有当前
  *  会话的 chat_metadata/角色可用）；其余 chat/character 的悬空绑定在加载该会话时由
- *  effectiveConfig 解析落空→回退默认（不崩溃），且 v31 幂等守卫已杜绝新增悬空。 */
+ *  effectiveConfig 解析落空→回退默认（不崩溃），且 v31 幂等守卫已杜绝新增悬空。
+ *  例外说明：此处用 saveCharacterDebounced 是迁移期受控例外——回写的 config_id 字段在
+ *  加载时的旧 json_data 快照中早已存在（旧架构绑定字段），旧快照重建不会覆盖它，
+ *  与「严禁用 saveCharacterDebounced 持久化新写入的扩展字段」不冲突。
+ *  禁止把本函数模式复制到实时绑定路径（PoolEditor/PromptEditor/ConfigBindings 仍只走
+ *  setBinding + scheduleCharacterPersist 单一通道）。 */
 const rebindConfigId = (removedIds: Set<string>, keptId: string) => {
   try {
     const cMeta = chat_metadata?.[setting_field];
@@ -742,6 +747,8 @@ const rebindConfigId = (removedIds: Set<string>, keptId: string) => {
   }
 };
 
+/** v33 提示词配置去重自愈的回写工具：同 rebindConfigId 的迁移期受控例外
+ *  （saveCharacterDebounced 回写旧快照已存在的 prompt_config_id 字段，实时绑定路径禁用）。 */
 const rebindPromptConfigId = (removedIds: Set<string>, keptId: string) => {
   try {
     const cMeta = chat_metadata?.[setting_field];

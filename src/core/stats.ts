@@ -140,7 +140,10 @@ export function recordOptionSelected(poolEntryIds: string[], generationId?: stri
     // 窗口滚动挤掉的旧代再被点击：全量计数照记，窗口回写跳过（窗口是滚动样本，可接受）
     if (rec) rec.hit = true;
   }
-  stats.last_hit_generation_id = generationId ?? null;
+  // 单槽只记录有 id 的命中代：无 id 点击（旧消息）不写也不清空。若用 `?? null`，
+  // 「点代 A → 点旧消息 → 回看代 A 再点」序列会把单槽清掉、代 A 被重复计命中，
+  // 破坏"同代重复点击只计 1 次"的口径（单槽按代记忆，与点击次数无关）
+  if (generationId) stats.last_hit_generation_id = generationId;
 }
 
 /** 清空全部统计（各维度总量、逐日计数、条目聚合、代去重记录、时间戳一并重置）。 */

@@ -1,4 +1,5 @@
 import type { ChoiceOption } from '@/core/options-store';
+import toastr from 'toastr';
 import { sendTextareaMessage } from '@sillytavern/script';
 import { parseOptionContent } from '@/util/option-format';
 import { recordOptionSelected } from '@/core/stats';
@@ -19,6 +20,13 @@ export async function applyOptionBehavior(
 ) {
   const content = parseOptionContent(option.text);
   const $textarea = $('#send_textarea');
+  // 发送框 DOM 缺失（酒馆重构/隐藏聊天界面）时短路：jQuery 空集的 .val() 是
+  // getter 语义不生效、insert 分支的 [0] 为 undefined 访问 selectionStart 会抛错。
+  // 统一在此拦截，行为不执行、统计也不计（选项并未真正应用）
+  if (!$textarea.length) {
+    toastr.error(t`发送框不可用，无法应用选项`);
+    return;
+  }
   if (behavior === 'insert') {
     // 光标处插入：selectionStart/End 保留点选项按钮（textarea 失焦）前的 caret 位置——
     // 浏览器规范行为，移动端同样适用。有选区时替换选区（标准文本插入），

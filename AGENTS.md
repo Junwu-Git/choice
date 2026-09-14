@@ -35,7 +35,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   **入口不得再显式 `persistCharacter`**——否则一次点击会重复全量序列化/写卡，是「绑定卡顿」的根因；`onCreateConfig`
   的 bindChar 同理只调用 `setBinding`。**禁止组件直接动态写 `settings[field]`**：必须走 `setBinding`，否则可能出现
   store 已更新而编辑页 DOM 仍停留旧状态。**严禁用 `saveCharacterDebounced` 持久化扩展字段**：它触发表单提交，以加载时
-  的旧 json_data 快照重建 data，刚写入的字段会被旧快照覆盖（「绑定无效」根因）。
+   的旧 json_data 快照重建 data，刚写入的字段会被旧快照覆盖（「绑定无效」根因）。
+   唯一受控例外是 v33/v44 迁移期的 `rebindConfigId`/`rebindPromptConfigId` 回写（回写
+   字段本就存在旧快照、不会被覆盖）；实时绑定路径严禁复制该模式。
   绑定/解绑入口不得把 `await` 网络持久化放在 store 更新之前，否则 UI 会迟钝；ConfigBindings 解绑的
   当前角色判断用**对象引用比较**（`ch === getStCharacter(this_chid)`，与 store watch 落盘目标同源），
   不用 chid 字符串/索引比较（chid 是数组扫描索引、currentCharacterId 是事件驱动的 this_chid 快照，

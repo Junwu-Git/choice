@@ -22,9 +22,12 @@ export function dedupOptions(candidates: string[], references: string[], thresho
     const m = s.match(/^\s*[[【]([^\]】]+)[\]】]/);
     return m ? m[1] : null;
   };
+  // 剥掉开头 [标题]/【标题】后返回正文：标头在开头时 search 恒返回 0，
+  // 不能拿它当下标切片（slice(0) 返回含标头的整串，标头 bigram 虚增标题相同
+  // 选项的 Jaccard 相似度导致误杀），必须 match 取整个匹配串再按其长度跳过
   const contentOf = (s: string): string => {
-    const idx = s.search(/^\s*[[【][^\]】]+[\]】]\s*/);
-    return idx >= 0 ? s.slice(idx).trim() : s.trim();
+    const m = s.match(/^\s*[[【][^\]】]+[\]】]\s*/);
+    return m ? s.slice(m[0].length).trim() : s.trim();
   };
   const normalize = (s: string): string => s.replace(/\s+/g, '').trim();
   const bigrams = (s: string): Set<string> => {

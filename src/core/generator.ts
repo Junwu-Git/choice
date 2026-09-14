@@ -1046,9 +1046,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
 export function cancelGeneration() {
   cancelled = true;
   genController?.abort();
-  genController = null;
-  generatorState.loading = false;
-  generatorState.generationId = null;
+  // 不复位 generatorState/genController：abort 触发的旧生成 finally 在微任务中
+  // 紧随执行并负责复位。若在此同步清空，会打开「取消 → 立即重新生成」竞态窗口——
+  // 旧 finally 晚于新生成同步段运行时，会把新代的 loading/controller/代 id 覆盖掉
+  //（新生成实际在跑但按钮态错乱、取消失效）。复位延迟一帧（<16ms）无感知。
 }
 
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
@@ -1385,6 +1386,6 @@ export async function generatePoolEntries(params: {
 
 export function cancelPoolGen() {
   poolGenController?.abort();
-  poolGenController = null;
-  poolGenState.loading = false;
+  // 同 cancelGeneration：状态复位交给 generatePoolEntries 的 finally（微任务紧随执行），
+  // 避免取消后立即再次生成时旧 finally 覆盖新池生成的 loading/controller。
 }

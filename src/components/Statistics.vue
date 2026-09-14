@@ -26,7 +26,7 @@
       <div>
         <b>{{ t`尚未创建任何条目池配置` }}</b>
         <p>
-          {{ t`统计优选建议会写入条目池配置的权重覆盖。创建默认配置（引用当前全部条目）后即可在统计页一键应用建议。` }}
+          {{ t`统计优选建议会写入条目池配置的权重覆盖。创建默认配置后，未绑定档的历史统计会自动并入新配置，即可在统计页应用建议。` }}
         </p>
       </div>
       <button class="menu_button" @click="onCreateDefaultConfig">
@@ -517,6 +517,9 @@ const canApply = computed(() => {
 
 // ── 无 config 引导 ──
 const onCreateDefaultConfig = () => {
+  // 清空既有 is_default：当前仅"无任何配置"场景可达，防御未来放开入口导致双 default
+  //（effectiveConfig 取 find(is_default) 首个，双 default 会造成绑定解析歧义）
+  for (const c of gs.settings.configs) c.is_default = false;
   const entries: PoolConfigEntry[] = masterPool.value.map(e => ({
     entry_id: e.id,
     pinned: e.pinned,
@@ -532,8 +535,18 @@ const onCreateDefaultConfig = () => {
     generation: GenerationSettings.parse({}),
   };
   gs.settings.configs.push(cfg);
+  // 迁移「未绑定档」历史统计到新配置维度：新配置成为 is_default 即生效，
+  // 后续会话不再记 NONE_SCOPE。若不迁移，历史数据留在未绑定档、新维度从零
+  // 开始，引导文案"创建后即可应用建议"因新维度样本不足而落空（数据断层）。
+  // 整块迁移保证建议引擎基于同一份历史样本、入榜数据不丢失
+  const stats = gs.settings.stats;
+  const noneScope = stats.entries[NONE_SCOPE];
+  if (noneScope && (noneScope.total_generated > 0 || Object.keys(noneScope.by_entry).length > 0)) {
+    stats.entries[cfg.id] = noneScope;
+    delete stats.entries[NONE_SCOPE];
+  }
   scopeId.value = cfg.id;
-  toastr.success(t`已创建默认配置，可在统计页应用优化建议`);
+  toastr.success(t`已创建默认配置（未绑定档历史统计已并入），可在统计页应用优化建议`);
 };
 
 // ── 汇总卡片 ──

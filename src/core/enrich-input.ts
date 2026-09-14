@@ -13,13 +13,6 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
 import { DEFAULT_MODULES } from '@/type/settings';
 
-const DEFAULT_ENRICH_PROMPT = `请将用户输入润色扩展为 {{count}} 个版本，保留原意和语气，版本间在描写方式、措辞风格上有明显差异。
-
-用户输入：
-{{input}}
-
-输出格式：每行一个版本，格式为 "[标题]内容"。严禁在版本内容中使用[]或【】符号。`;
-
 let enrichController: AbortController | null = null;
 
 export function cancelEnrich() {
@@ -41,11 +34,13 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
   let modules = sourceModules;
 
-  // 若 enrich_prompt 模块被禁用或不存在，用默认内容临时注入
+  // 若 enrich_prompt 模块被禁用或不存在，从 DEFAULT_MODULES 临时注入其 JSON 默认内容。
+  // 不再用代码常量覆盖 content：JSON 是模块内容的单一事实源（choice-prompts-optimized.json），
+  // 代码常量会让此路径回退到早已演进的旧文案，与编辑器/生成链路出现双来源漂移
   if (!modules.some(m => m.id === 'enrich_prompt')) {
     const defaultEnrich = DEFAULT_MODULES.find(m => m.id === 'enrich_prompt');
     if (defaultEnrich) {
-      modules = [...modules, { ...defaultEnrich, content: DEFAULT_ENRICH_PROMPT }];
+      modules = [...modules, { ...defaultEnrich }];
     }
   }
 

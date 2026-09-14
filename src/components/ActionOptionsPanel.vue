@@ -226,10 +226,13 @@ const {
 
 const isGenerating = computed(() => generatorState.loading);
 
-// 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
-// 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂
-const apiReady = computed(() => !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis));
 const gs = useGlobalSettingsStore();
+
+// 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
+// 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
+// gs 必须先于 apiReady 声明：getter 引用 gs，computed 惰性求值使当前运行时安全，
+// 但顺序倒置一旦有人同步读取 apiReady.value 就踩暂时性死区
+const apiReady = computed(() => !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis));
 
 // 停靠模式：面板固定在输入框上方（settings.ui.panel_position = 'input'，挂载点由
 // panel-mount 切换）。与 dense 正交——dense 由容器宽度触发只压排版，dock 由用户
