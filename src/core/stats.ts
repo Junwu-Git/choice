@@ -39,19 +39,28 @@ const getScopeStats = (stats: StatsSettings, scopeId: string): ScopeStats => {
 
 /** 取条目统计记录：不存在则创建。by_entry 只增，键数受用户实际使用过的条目数约束 */
 const getEntryStats = (scope: ScopeStats, entryId: string): StatsEntryEntry => {
-  const e = scope.by_entry[entryId];
-  if (e) return e;
-  const fresh: StatsEntryEntry = {
-    rounds_included: 0,
-    rounds_with_selection: 0,
-    expected_sum: 0,
-    recent: [],
-    last_selected_at: 0,
-    last_selected_text: '',
-    last_included_at: 0,
-  };
-  scope.by_entry[entryId] = fresh;
-  return fresh;
+  // 原型键守卫：by_entry 是普通对象，方括号读在无自有键时会命中原型链（如 "__proto__"），
+  // 篡改存档注入的 entryId 可借命中路径把计数写进 Object.prototype。hasOwn +
+  // defineProperty 确保只在自有键上读写（defineProperty 创建键不走 __proto__ 赋值器）
+  if (!Object.prototype.hasOwnProperty.call(scope.by_entry, entryId)) {
+    const fresh: StatsEntryEntry = {
+      rounds_included: 0,
+      rounds_with_selection: 0,
+      expected_sum: 0,
+      recent: [],
+      last_selected_at: 0,
+      last_selected_text: '',
+      last_included_at: 0,
+    };
+    Object.defineProperty(scope.by_entry, entryId, {
+      value: fresh,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    return fresh;
+  }
+  return scope.by_entry[entryId];
 };
 
 /** 本地时区 YYYY-MM-DD（趋势 daily 的键）。daily 是"哪一天发生了活动"，用户心智按本地日 */
@@ -62,11 +71,18 @@ const dailyKey = (date = new Date()): string => {
 
 /** 取当天计数记录：不存在则创建。daily 只增——键数受实际使用天数约束 */
 const getDaily = (scope: ScopeStats, key: string): DailyCount => {
-  const d = scope.daily[key];
-  if (d) return d;
-  const fresh = { generated: 0, selected: 0 };
-  scope.daily[key] = fresh;
-  return fresh;
+  // 与 getEntryStats 相同的原型键守卫（date 键为本地日期串，此处防御存档被篡改）
+  if (!Object.prototype.hasOwnProperty.call(scope.daily, key)) {
+    const fresh = { generated: 0, selected: 0 };
+    Object.defineProperty(scope.daily, key, {
+      value: fresh,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    return fresh;
+  }
+  return scope.daily[key];
 };
 
 /** 当前生效统计维度 id：绑定/默认 config.id，无 config 会话为 NONE_SCOPE */
@@ -74,9 +90,11 @@ export const currentScopeId = (): string => usePoolSelectorStore().effectiveConf
 
 /** 记录一轮行动选项生成成功（去重/补齐后实际保留条数）。仅行动选项视图计入。
  *  gid 为 generation id：写入窗口记录的定位锚，选择时按 gid 回写 hit。
- *  count = options.length（该轮实际输出条数）——期望命中率 = 1/count，
- *  与 total_generated 口径一致（不是请求条数）。轮次共现归因：每个参与条目
- *  rounds_included+1、expected_sum += 1/count。 */
+ *  count = options.length（该轮实际输出条数）。
+ *  参与（rounds_included）= 轮次共现：每个进入候选的条目 +1（与选项是否被采纳无关）。
+ *  期望 = 采纳感知随机基线：仅对「输出中被匹配到」的条目累计 1/count——AI 完全自由发挥
+ *  的轮次所有条目不累计期望（修正 v53 前期望恒按 1/count 累计、与精确命中不对称导致的
+ *  系统性负超额）；同条目被多条输出命中时按 1 计（命中按轮单槽，两点对齐）。 */
 export function recordOptionsGenerated(options: ChoiceOption[], poolEntryIds: string[], gid: string): void {
   const stats = useGlobalSettingsStore().settings.stats;
   stats.total_generated += options.length;
@@ -87,13 +105,19 @@ export function recordOptionsGenerated(options: ChoiceOption[], poolEntryIds: st
   getDaily(scope, dailyKey()).generated += options.length;
   const now = Date.now();
   const count = options.length;
+  // 本轮各条目在输出中被匹配到的选项数（精确归因；matchedEntryId 随消息持久化）
+  const matchedCounts = new Map<string, number>();
+  for (const o of options) {
+    const id = o.matchedEntryId;
+    if (id) matchedCounts.set(id, (matchedCounts.get(id) ?? 0) + 1);
+  }
   for (const id of poolEntryIds) {
     const e = getEntryStats(scope, id);
     e.rounds_included += 1;
     // count=0 理论上不会发生（成功路径必有输出），防御除零静默退化
-    e.expected_sum += count > 0 ? 1 / count : 0;
+    e.expected_sum += count > 0 && (matchedCounts.get(id) ?? 0) > 0 ? 1 / count : 0;
     e.last_included_at = now;
-    e.recent.push({ gid, ts: now, hit: false, count });
+    e.recent.push({ gid, ts: now, hit: false, count, matched: matchedCounts.get(id) ?? 0 });
     if (e.recent.length > STATS_WINDOW_SIZE) e.recent.shift();
   }
 }
@@ -394,7 +418,8 @@ export function hitLeaderboard(view: StatsView, masterPool: PoolEntry[]): HitRan
 // ── 命中率指标（全量/窗口 + 相对基线） ───────────────────────────────────────
 
 /** 窗口命中率指标（recent 非空时可用）：rate/expectedRate/excess 均基于窗口内
- *  每轮的 count 推导（期望 = Σ 1/count / 样本数），非固定阈值口径 */
+ *  每轮的 count 推导。期望 = 采纳感知随机基线：仅「该轮被匹配到」的记录计 1/count
+ *  （老代记录无 matched 字段回退 1/count 保持旧口径），非固定阈值口径 */
 export type WindowMetrics = {
   samples: number;
   hits: number;
@@ -411,7 +436,8 @@ export function windowMetrics(row: Pick<EntryRankRow, 'recent'>): WindowMetrics 
   let expected = 0;
   for (const r of recent) {
     if (r.hit) hits += 1;
-    if (r.count > 0) expected += 1 / r.count;
+    // 老代记录无 matched（旧口径每轮都计期望）；v53 起 matched>0 才计（采纳感知）
+    if (r.count > 0 && (r.matched ?? 1) > 0) expected += 1 / r.count;
   }
   const samples = recent.length;
   const rate = hits / samples;
@@ -452,6 +478,9 @@ export type Suggestion = {
  *  （rounds_included ≥ SUGGEST_MIN_SAMPLES），样本不足返回 null。
  *  阈值：超额命中率（rate - expected）≤ -0.3 且 0 命中 → 停用；≤ -0.2 → 降权
  *  （减半、下限 SUGGEST_WEIGHT_MIN）；≥ +0.15 → 提权（翻倍、上限 SUGGEST_WEIGHT_MAX）。
+ *  额外停用：期望=0 且样本充足且 0 命中 →「从未被采纳」直接建议停用（精确归因下
+ *  期望只在输出被匹配的轮次累计，AI 从不采用其方向时恒 0；历史共现数据期望恒 >0，
+ *  不会误触发）。
  *  pinned 条目跳过（固定必发，权重不影响出现频率，改它无意义）。
  *  阈值是启发式常量（settings.ts），注释不重复解释，随数据积累调参。 */
 export function entrySuggestion(
@@ -499,8 +528,11 @@ export function entrySuggestion(
     basis,
   };
   // 停用优先：更极端（超额极低且一次未命中）给更强动作；停用后不再进 effectivePool，
-  // 无新数据，不会自动恢复——UI 须提示用户可撤销
-  if (excess <= SUGGEST_DISABLE_EXCESS && hits === 0) {
+  // 无新数据，不会自动恢复——UI 须提示用户可撤销。
+  // 精确归因下另加「从未被采纳」停用：期望=0 说明其在输出中从未被匹配到（AI 从不采用），
+  // 样本充足时直接给停用建议（被 AI 舍弃的条目）；历史共现数据 expected>0 不误触发
+  const neverAdopted = expected === 0 && hits === 0 && samples >= SUGGEST_MIN_SAMPLES;
+  if ((excess <= SUGGEST_DISABLE_EXCESS && hits === 0) || neverAdopted) {
     return { ...base, action: 'disable' };
   }
   if (excess <= SUGGEST_DOWNGRADE_EXCESS) {

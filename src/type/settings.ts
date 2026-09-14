@@ -1223,8 +1223,11 @@ export const StatsRoundRecord = z
     ts: z.number().default(0),
     /** 本轮是否有命中（recordOptionSelected 回写） */
     hit: z.boolean().default(false),
-    /** 本轮实际输出选项条数（期望命中率 = 1/count） */
+    /** 本轮实际输出选项条数（期望命中率 = 该条目被匹配到输出时 1/count） */
     count: z.number().min(0).default(0).catch(0),
+    /** 本轮该条目在输出中被匹配到的选项数（v53 精确归因写入；老记录缺省 undefined →
+     *  窗口期望回退按 1/count 计，保持旧档口径不回归） */
+    matched: z.number().min(0).optional(),
   })
   .prefault({ gid: '', ts: 0, hit: false, count: 0 });
 export type StatsRoundRecord = z.infer<typeof StatsRoundRecord>;
@@ -1234,9 +1237,10 @@ export const StatsEntryEntry = z
   .object({
     /** 参与生成轮次（该条目出现在 generation.poolEntryIds 的轮次数，精确） */
     rounds_included: z.number().min(0).default(0).catch(0),
-    /** 命中轮次（参与的轮次中、发生用户选择的轮次数，整轮共现口径） */
+    /** 命中轮次（选项被选中且精确归因匹配到该条目的轮次；旧代无 matchedEntryId 的点击回退整轮共现） */
     rounds_with_selection: z.number().min(0).default(0).catch(0),
-    /** 各参与轮期望命中率之和 Σ(1/count)：全量超额命中率 = rounds_with_selection/expected_sum - 1 */
+    /** 期望命中率之和 = Σ(输出中被匹配轮的 1/count)（v53 采纳感知随机基线；
+     *  老数据混有旧口径 Σ(1/count)，混用期偏大属可接受过渡） */
     expected_sum: z.number().min(0).default(0).catch(0),
     /** 滑动窗口（FIFO，上限 STATS_WINDOW_SIZE）：窗口超额命中率由 recent 实时推导。
      *  窗口滚动挤掉的旧代再被点击时全量计数照记、窗口回写跳过（滚动样本，可接受）。 */

@@ -78,15 +78,22 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   由 `buildStatsView(stats, '__global__')` 聚合推导、单一真相源，不双写。**归因口径**：
    参与（`rounds_included`）= 进入候选（轮次共现，每轮 `poolEntryIds` 全记，含 pinned）；
    命中（`rounds_with_selection`）= 精确归因——生成时对每条输出选项与候选条目做文本相似度
-   匹配（`src/core/option-attribution.ts`：type 前缀精确匹配优先，字符 2-gram Dice 阈值
-   `OPTION_MATCH_THRESHOLD` 兜底），结果写入 `options[].matchedEntryId` 随消息持久化；点击只对
+   匹配（`src/core/option-attribution.ts`：type 前缀精确匹配优先——信号按 type 长度降序
+   保证最长优先；字符 2-gram Dice 阈值
+   `OPTION_MATCH_THRESHOLD` 兜底；候选信号由 `prepareMatchSignals` 每轮预计算一次复用），
+   结果写入 `options[].matchedEntryId` 随消息持久化；点击只对
    匹配条目计命中，被 AI 舍弃的候选不产生命中，匹配不上的选项（AI 自由发挥）不命中任何条目；
    旧代（无 `matchedEntryId`）点击回退整轮共现兼容；同代重复点击由 `last_hit_generation_id`
    全局单槽去重。
-  **期望命中率（相对基线）**：每轮每个参与条目 `expected_sum += 1/count`（count = 该轮实际输出条数，
-  随机基线 = 1/count），全量超额 = 命中轮次/参与轮次 − expected_sum/参与轮次；固定阈值（15%/60%）
+**期望命中率（采纳感知随机基线）**：期望只在该条目被 AI 采纳输出的轮次累计
+   `expected_sum += 1/count`（count = 该轮实际输出条数；同条目被多条输出命中按 1 计、
+   与命中单槽对齐）——AI 完全自由发挥的轮次所有条目不累计期望也不产生命中，避免
+   v53 前「期望恒 1/count、命中仅精确」的不对称系统性负超额；
+   全量超额 = 命中轮次/参与轮次 − expected_sum/参与轮次；固定阈值（15%/60%）
   已废弃——count 不同随机基线不同（4 条 25%、10 条 10%），固定阈值会误判。
-  **滑动窗口**：`recent`（FIFO，上限 `STATS_WINDOW_SIZE`=50）每轮记 `{gid, ts, hit, count}`，
+  **滑动窗口**：`recent`（FIFO，上限 `STATS_WINDOW_SIZE`=50）每轮记
+   `{gid, ts, hit, count, matched}`（matched = 该条目本轮被匹配到的输出数，老记录缺省按 1 回退旧口径），
+   窗口期望同采纳感知口径；
   选择时按 `gid` 回写 hit（窗口挤掉旧代则全量计数照记、窗口回写跳过）；命中归属 scope 优先 =
   recent 含该 gid 的生成维度（`findHitScope` 全局搜索），防切 config 后回看旧楼层点击记错维度。
   `by_entry` 记录含 `last_selected_text`（最近命中选项正文，parse 后去标头）与 `last_included_at`
@@ -95,7 +102,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   时间倒序，replace 了早期按 type 聚合的类型榜（type 在此扩展中多为条目标题、与条目榜重复）。
   **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、
   否则全量）：超额 ≤−0.2 → 降权（`SUGGEST_WEIGHT_MIN`=0.2 下限，减半）；超额 ≥+0.15 → 提权
-  （上限 5，翻倍）；超额 ≤−0.3 且 0 命中 → 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、
+  （上限 5，翻倍）；超额 ≤−0.3 且 0 命中，或样本充足且期望=0（输出中从未被采纳）→ 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、
   不会自动恢复）；pinned 跳过（固定必发，权重无意义）。**应用走 config 覆盖层**：
   `applySuggestions(scopeId, list)` 直写目标 config 的 `PoolConfigEntry`（weight/enabled），
   应用前快照 `config.entries` 到模块级 `lastUndo`，`undoLastApply()` 单步撤销；不显式调

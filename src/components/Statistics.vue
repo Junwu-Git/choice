@@ -232,7 +232,7 @@
       </div>
       <p class="choice-stats-brief">
         {{
-          t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 按每轮选项数推算的随机点选基准（4 条时 25%、10 条时 10%），仅当选项匹配到该条目时才算命中；高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`
+          t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按 1/选项数累计；AI 完全自由发挥的轮次不累计期望也不产生命中），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`
         }}
       </p>
       <p v-if="view.isGlobal" class="choice-stats-brief choice-stats-brief--scope">
@@ -357,13 +357,9 @@
                 'choice-stats-type-badge--none': !row.type && !row.deleted,
                 'choice-stats-type-badge--deleted': row.deleted,
               }"
-              >{{ row.deleted ? t`已删除` : row.type || t`未标注` }}</span
+              >{{ typeLabel(row) }}</span
             >
-            <span
-              class="choice-stats-rank-text"
-              :title="row.last_selected_text ? t`最近选中：${row.last_selected_text.slice(0, 40)}` : undefined"
-              >{{ hitText(row) }}</span
-            >
+            <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ hitText(row) }}</span>
             <button
               v-if="!row.deleted"
               class="choice-icon-btn choice-stats-locate"
@@ -704,7 +700,9 @@ const windowTitle = (row: EntryRankRow): string | undefined => {
   return t`近 ${w.samples} 轮命中 ${w.hits} 次，期望 ${rateText(w.expectedRate)}`;
 };
 
-const typeLabel = (row: EntryRankRow): string => {
+/** 类型徽标：已删除条目标「已删除」，否则 type（可空标「未标注」）。
+ *  参数取最小结构：条目榜与命中榜共用，避免两处内联复刻后函数更新不同步 */
+const typeLabel = (row: { deleted: boolean; type: string }): string => {
   if (row.deleted) return t`已删除`;
   return row.type || t`未标注`;
 };
@@ -736,7 +734,8 @@ const includedTimeTitle = (row: EntryRankRow): string => t`最近参与：${time
 const participationTitle = (row: EntryRankRow): string =>
   t`参与轮次 = 该条目被抽入候选菜单的轮次（轮次共现归因）；AI 输出为自由文本，被 AI 舍弃的候选也计参与。${includedTimeTitle(row)}`;
 
-const selectedTextTitle = (row: EntryRankRow): string | undefined =>
+/** 最近选中文本 tooltip（条目榜与命中榜共用；参数取最小结构，两榜行为同源） */
+const selectedTextTitle = (row: { last_selected_text: string | undefined }): string | undefined =>
   row.last_selected_text ? t`最近选中：${row.last_selected_text.slice(0, 40)}` : undefined;
 
 const locateEntry = (entryId: string) => {
@@ -828,7 +827,7 @@ const hitRank = computed(() => hitLeaderboard(view.value, masterPool.value));
 
 /** 命中榜行文本：已删除条目显示占位，否则内容优先于 type */
 const hitText = (row: HitRankRow): string => {
-  if (row.deleted) return t`已删除条目 ${row.entryId.slice(0, 8)}…`;
+  if (row.deleted) return t`已删除条目 ${row.entryId.slice(0, 8)}…（命中 ${row.count} 次）`;
   return row.content || row.type || t`（空内容）`;
 };
 
