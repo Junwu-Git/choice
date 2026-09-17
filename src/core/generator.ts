@@ -456,6 +456,22 @@ type WIBuckets = {
  *  取 2：D0/D1/D2 归"历史后"，D3+ 归"历史前"（用户指定）。 */
 const WI_DEPTH_AFTER_MAXDEPTH = 2;
 
+/** 对 buckets 的 7 个 content 字段并行展宏 + 执行 EJS（开关由调用方判断）。
+ *  纯提取自 buildWI 的渲染回填块；返回新对象，原 buckets 不被原地改写以保持纯函数性。
+ *  renderWorldInfoContent 内部对无 <% 的纯文本短路、未装提示词模板插件时降级为只展宏 */
+const renderWIBuckets = async (buckets: WIBuckets): Promise<WIBuckets> => {
+  const [before, after, anBefore, anAfter, em, depthBefore, depthAfter] = await Promise.all([
+    renderWorldInfoContent(buckets.before),
+    renderWorldInfoContent(buckets.after),
+    renderWorldInfoContent(buckets.anBefore),
+    renderWorldInfoContent(buckets.anAfter),
+    renderWorldInfoContent(buckets.em),
+    renderWorldInfoContent(buckets.depthBefore),
+    renderWorldInfoContent(buckets.depthAfter),
+  ]);
+  return { before, after, anBefore, anAfter, em, depthBefore, depthAfter };
+};
+
 const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
   const empty: WIBuckets = {
@@ -534,23 +550,7 @@ const buildWI = async (): Promise<WIBuckets> => {
     // 降级为只展宏（<% 原样保留），不比现状差。depthBefore/depthAfter 已是单串，并入同一轮
     // Promise.all 渲染回填即可（迁出历史后注入逻辑对渲染结果无感）
     if (gs.settings.world_info.render_world_info_ejs) {
-      [
-        buckets.before,
-        buckets.after,
-        buckets.anBefore,
-        buckets.anAfter,
-        buckets.em,
-        buckets.depthBefore,
-        buckets.depthAfter,
-      ] = await Promise.all([
-        renderWorldInfoContent(buckets.before),
-        renderWorldInfoContent(buckets.after),
-        renderWorldInfoContent(buckets.anBefore),
-        renderWorldInfoContent(buckets.anAfter),
-        renderWorldInfoContent(buckets.em),
-        renderWorldInfoContent(buckets.depthBefore),
-        renderWorldInfoContent(buckets.depthAfter),
-      ]);
+      Object.assign(buckets, await renderWIBuckets(buckets));
     }
 
     return buckets;
@@ -677,7 +677,7 @@ export const applyWIExcl = async (
 /** 思维链标签块剥离正则：parseOptions 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-export const STRIP_REASONING_TAGS_RE =
+const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 /** 标签堆叠间隙判定：标题括号闭合后到同一下一个括号之间，仅含空白和/或 emoji 才算堆叠。
@@ -695,6 +695,35 @@ export const STRIP_REASONING_TAGS_RE =
  *  正文都写完了才出现的括号只可能是下一条选项的标题，哪怕内容以 emoji 收尾
  *  （"内容A🎞️ [B]…"）也按新选项拆 */
 const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
+
+/** 尝试把 `<options>` 块文本当 JSON 数组解析（纯回退路径，prompt 不要求 AI 输出 JSON）。
+ *  返回解析出的选项字符串数组，或 null（非数组 / 解析失败 / 解析后全空）。
+ *  兼容多种元素形态：纯字符串、{text}、{option}、{t,c}、{type,content}。
+ *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
+const parseJsonOptionArray = (c: string): string[] | null => {
+  try {
+    // 处理 JSON 尾随逗号（LLM 常见错误）
+    const fc = c.replace(/,(\s*[\]}])/g, '$1');
+    const p = JSON.parse(fc);
+    if (!Array.isArray(p)) return null;
+    const items = p
+      .map(x => {
+        if (typeof x === 'string') return x.trim();
+        return (
+          x?.text?.trim() ??
+          x?.option?.trim() ??
+          // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
+          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
+          (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
+        );
+      })
+      .filter(Boolean);
+    return items.length ? items : null;
+  } catch {
+    /* not JSON */
+    return null;
+  }
+};
 
 export function parseOptions(text: string, count: number): string[] {
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
@@ -730,29 +759,10 @@ export function parseOptions(text: string, count: number): string[] {
     .trim();
 
   // 尝试 JSON 解析（纯回退路径，prompt 不要求 AI 输出 JSON）
-  if (c.startsWith('['))
-    try {
-      // 处理 JSON 尾随逗号（LLM 常见错误）
-      const fc = c.replace(/,(\s*[\]}])/g, '$1');
-      const p = JSON.parse(fc);
-      if (Array.isArray(p)) {
-        const i = p
-          .map(x => {
-            if (typeof x === 'string') return x.trim();
-            return (
-              x?.text?.trim() ??
-              x?.option?.trim() ??
-              // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
-              (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
-              (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
-            );
-          })
-          .filter(Boolean);
-        if (i.length) return i.slice(0, count);
-      }
-    } catch (err) {
-      /* not JSON */
-    }
+  if (c.startsWith('[')) {
+    const jsonParsed = parseJsonOptionArray(c);
+    if (jsonParsed) return jsonParsed.slice(0, count);
+  }
 
   // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
   // 边界判定按提示词契约"每条选项独占一行"做行锚定：只有行首（间隙含换行或正文）的
@@ -1162,7 +1172,7 @@ const stripTrailingCommas = (s: string): string => {
   return out;
 };
 
-export function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
+function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹

@@ -34,7 +34,7 @@ export function normalizeApiUrl(url: string): string {
  *  脚本的场景完全惰性。是否附带由全局开关 api_tool_choice_none 控制（默认开）。
  *  复查锚点：若脚本改掉该契约（fetch wrapper 标记 __keminiAntiTruncation__、函数
  *  callerControlsTools），从这段注释重新核实。 */
-export async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> {
+async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> {
   const body: Record<string, unknown> = {
     chat_completion_source: 'openai',
     reverse_proxy: normalizeApiUrl(api.apiurl),

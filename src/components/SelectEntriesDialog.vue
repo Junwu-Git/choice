@@ -86,6 +86,7 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
+import { entrySummaryText } from '@/util/entry-preview';
 
 const props = defineProps<{
   open: boolean;
@@ -144,15 +145,8 @@ const groupedEntries = computed<EntryGroup[]>(() => {
   return groups;
 });
 
-// 折叠摘要只显示条目标识，与 PoolEditor.entrySummary 同格式；完整内容/规则仅在展开详情出现
-const entrySummary = (entry: PoolEntry): string => {
-  const type = entry.type.trim();
-  if (type) return type.replace(/"/g, '').slice(0, 50);
-  const content = entry.content.trim();
-  // 无类型的条目以内容首段充当标识，否则折叠行全空白
-  if (content) return content.replace(/"/g, '').slice(0, 30);
-  return t`<空条目>`;
-};
+// 折叠摘要只显示条目标识，与 PoolEditor.entrySummary 同格式（共享 helper）；完整内容/规则仅在展开详情出现
+const entrySummary = (entry: PoolEntry): string => entrySummaryText(entry.type, entry.content, t`<空条目>`);
 
 type DetailField = { label: string; value: string };
 

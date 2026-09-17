@@ -201,11 +201,7 @@ function buildAttributionPrompt(
 
 /** 解析归因结果：剥代码围栏/截取首个 JSON 数组后 parse；任一元素非法（越界 index、
  *  entryId 不在候选集、index 重复）→ 整体返回 null（宁可保留 Dice 结果，不部分采用） */
-export function parseAttributionResult(
-  raw: string,
-  optionCount: number,
-  candidateIds: Set<string>,
-): AttributionResult | null {
+function parseAttributionResult(raw: string, optionCount: number, candidateIds: Set<string>): AttributionResult | null {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')

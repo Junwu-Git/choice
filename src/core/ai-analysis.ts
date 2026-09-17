@@ -19,8 +19,10 @@ import {
   AI_REASON_MAX_CHARS,
   SUGGEST_MIN_SAMPLES,
   type AiAnalysisEntry,
+  type GlobalSettings,
   type PoolConfigEntry,
   type PoolEntry,
+  type SecondaryApi,
 } from '@/type/settings';
 
 export type AiAnalysisProgress = {
@@ -58,7 +60,7 @@ const scopeUpdatedAt = (scopeId: string, view: StatsView): number => {
 
 /** 判断当前维度是否需要重新分析。只有本维度统计数据产生新活动才失效，配置写入不触发重跑。
  *  rows 可传已收集的建议行（runAiAnalysis 内部复用，避免同轮两次 collectSuggestionRows 重复计算）。 */
-export function aiAnalysisNeeded(
+function aiAnalysisNeeded(
   scopeId: string,
   view: StatsView,
   rows?: Array<EntryRankRow & { suggestion: Suggestion }>,
@@ -151,34 +153,8 @@ export async function runAiAnalysis(scopeId: string, force = false, signal?: Abo
   aiAnalysisState.running = true;
   aiAnalysisState.done = 0;
   aiAnalysisState.total = batches.length;
-  const results: Record<string, AiAnalysisEntry> = {};
-  let succeeded = false;
   try {
-    for (const batch of batches) {
-      if (signal?.aborted) break; // 取消：停止后续批次，不写缓存（用户可重跑）
-      try {
-        const raw = await callSecondaryApiWithRetry(
-          buildAnalysisPrompt(batch),
-          api,
-          gs.settings.retry_count,
-          gs.settings.retry_interval,
-          signal,
-          true, // quiet：重试进度不 toastr，进展由 aiAnalysisState 呈现
-        );
-        const parsed = parseAnalysisResult(raw, new Set(batch.map(item => item.entryId)));
-        if (parsed) {
-          for (const [id, entry] of Object.entries(parsed)) {
-            // 指纹随条目落缓存：展示侧校验当前建议指纹一致才显示理由（R2）
-            results[id] = { ...entry, suggestion_key: keyById.get(id) ?? '' };
-          }
-          succeeded = true;
-        }
-      } catch {
-        // 单批失败不阻塞其余批次；成功批次仍可展示，整体结果写入后可手动重跑失败批次
-      } finally {
-        aiAnalysisState.done += 1;
-      }
-    }
+    const { results, succeeded } = await executeAnalysisBatches(batches, api, gs.settings, signal, keyById);
     if (signal?.aborted) return false;
     // 全部批次失败：不写缓存（保留旧结果），下次数据更新/手动按钮仍可重试；
     // 手动点击（force）给失败反馈，自动路径静默（下次数据活动会再试）
@@ -198,6 +174,47 @@ export async function runAiAnalysis(scopeId: string, force = false, signal?: Abo
   } finally {
     aiAnalysisState.running = false;
   }
+}
+
+/** 串行执行分析批次，返回各条目理由结果与是否有任一成功标志。
+ *  纯提取自 runAiAnalysis 的批次循环：每批构建 prompt → 调次级 API（重试静默）→
+ *  解析 → 按当前建议指纹落 suggestion_key。单批 try/catch 不阻塞其余批次；
+ *  aiAnalysisState.done 在每批 finally 推进，供进度 UI 呈现；取消时 break 不写结果 */
+async function executeAnalysisBatches(
+  batches: AnalysisPayload[][],
+  api: SecondaryApi,
+  settings: GlobalSettings,
+  signal: AbortSignal | undefined,
+  keyById: Map<string, string>,
+): Promise<{ results: Record<string, AiAnalysisEntry>; succeeded: boolean }> {
+  const results: Record<string, AiAnalysisEntry> = {};
+  let succeeded = false;
+  for (const batch of batches) {
+    if (signal?.aborted) break; // 取消：停止后续批次，不写缓存（用户可重跑）
+    try {
+      const raw = await callSecondaryApiWithRetry(
+        buildAnalysisPrompt(batch),
+        api,
+        settings.retry_count,
+        settings.retry_interval,
+        signal,
+        true, // quiet：重试进度不 toastr，进展由 aiAnalysisState 呈现
+      );
+      const parsed = parseAnalysisResult(raw, new Set(batch.map(item => item.entryId)));
+      if (parsed) {
+        for (const [id, entry] of Object.entries(parsed)) {
+          // 指纹随条目落缓存：展示侧校验当前建议指纹一致才显示理由（R2）
+          results[id] = { ...entry, suggestion_key: keyById.get(id) ?? '' };
+        }
+        succeeded = true;
+      }
+    } catch {
+      // 单批失败不阻塞其余批次；成功批次仍可展示，整体结果写入后可手动重跑失败批次
+    } finally {
+      aiAnalysisState.done += 1;
+    }
+  }
+  return { results, succeeded };
 }
 
 function collectSuggestionRows(scopeId: string, view: StatsView): Array<EntryRankRow & { suggestion: Suggestion }> {

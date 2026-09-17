@@ -575,7 +575,7 @@
                 >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
               >
               <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
-                h.entry.ts ? timeAgo(h.entry.ts) : '–'
+                h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
               }}</span>
               <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
               <button
@@ -671,7 +671,7 @@
             <i class="fa-solid fa-download"></i>
             {{ t`导出 JSON` }}
           </button>
-          <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="showClearConfirm = true">
+          <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="onClearStats">
             <i class="fa-solid fa-broom"></i>
             {{ t`清空统计` }}
           </button>
@@ -679,33 +679,9 @@
       </div>
     </div>
 
-    <ConfirmDialog
-      :open="showClearConfirm"
-      :title="t`清空统计`"
-      :message="t`确定要清空所有统计数据和排行榜吗？此操作不可撤销。`"
-      :confirm-text="t`清空`"
-      :cancel-text="t`取消`"
-      @confirm="onClearConfirmed"
-      @cancel="showClearConfirm = false"
-    />
-    <ConfirmDialog
-      :open="showApplyConfirm"
-      :title="t`应用统计建议`"
-      :message="applyConfirmMessage"
-      :confirm-text="t`应用`"
-      :cancel-text="t`取消`"
-      @confirm="onApplyConfirmed"
-      @cancel="showApplyConfirm = false"
-    />
-    <ConfirmDialog
-      :open="showRosterConfirm"
-      :title="t`应用阵容计划`"
-      :message="rosterConfirmMessage"
-      :confirm-text="t`应用`"
-      :cancel-text="t`取消`"
-      @confirm="onRosterConfirmed"
-      @cancel="showRosterConfirm = false"
-    />
+    <ConfirmDialog :open="clearOpen" @confirm="confirmClear" @cancel="cancelClear" />
+    <ConfirmDialog :open="applyOpen" @confirm="confirmApply" @cancel="cancelApply" />
+    <ConfirmDialog :open="rosterOpen" @confirm="confirmRoster" @cancel="cancelRoster" />
   </div>
 </template>
 
@@ -748,9 +724,12 @@ import {
   type WindowMetrics,
 } from '@/core/stats';
 import { requestTab, focusPoolEntry } from '@/core/floating-state';
+import { EMPTY_DISPLAY } from '@/core/constants';
+import { formatDateTime, isoTimestamp, pad2 } from '@/util/time';
 import { aiAnalysisState, runAiAnalysis } from '@/core/ai-analysis';
 import { aiAttributionState } from '@/core/ai-attribution';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
+import { useConfirm } from '@/components/shared/useConfirm';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import {
   SCHEMA_VERSION,
@@ -791,8 +770,6 @@ const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选�
 const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
-
-const pad2 = (n: number) => String(n).padStart(2, '0');
 
 // ── 维度 ──
 // 默认选中当前生效维度（有 config → 该 config；无 → NONE_SCOPE 并显示引导），
@@ -1005,7 +982,7 @@ const onCreateDefaultConfig = () => {
 // ── 汇总卡片 ──
 const selectRateText = computed(() => {
   const total = view.value.total_generated;
-  if (total <= 0) return '–';
+  if (total <= 0) return EMPTY_DISPLAY;
   return Math.round((view.value.total_selected / total) * 100) + '%';
 });
 
@@ -1018,19 +995,19 @@ const sampleTotal = computed(
   () => distribution.value.sufficient + distribution.value.insufficient + distribution.value.never,
 );
 const sampleGoodPct = computed(() =>
-  sampleTotal.value > 0 ? Math.round((distribution.value.sufficient / sampleTotal.value) * 100) + '%' : '–',
+  sampleTotal.value > 0 ? Math.round((distribution.value.sufficient / sampleTotal.value) * 100) + '%' : EMPTY_DISPLAY,
 );
 const sampleMidPct = computed(() =>
-  sampleTotal.value > 0 ? Math.round((distribution.value.insufficient / sampleTotal.value) * 100) + '%' : '–',
+  sampleTotal.value > 0 ? Math.round((distribution.value.insufficient / sampleTotal.value) * 100) + '%' : EMPTY_DISPLAY,
 );
 const sampleNeverPct = computed(() =>
-  sampleTotal.value > 0 ? Math.round((distribution.value.never / sampleTotal.value) * 100) + '%' : '–',
+  sampleTotal.value > 0 ? Math.round((distribution.value.never / sampleTotal.value) * 100) + '%' : EMPTY_DISPLAY,
 );
 
 /** 池内参与率 = 当前维度 by_entry 中仍存在于有效池的条目数 ÷ 有效池大小 */
 const poolParticipationText = computed(() => {
   const total = poolCapsule.value.size;
-  if (total === 0) return '–';
+  if (total === 0) return EMPTY_DISPLAY;
   const poolIds = poolCapsule.value.ids;
   const participated = [...Object.entries(view.value.by_entry)].filter(
     ([id, e]) => e.rounds_included > 0 && poolIds.has(id),
@@ -1040,9 +1017,8 @@ const poolParticipationText = computed(() => {
 
 const updatedAtText = computed(() => {
   const ts = view.value.updated_at;
-  if (!ts) return '–';
-  const d = new Date(ts);
-  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  if (!ts) return EMPTY_DISPLAY;
+  return formatDateTime(ts);
 });
 
 // ── 趋势图 ──
@@ -1140,7 +1116,7 @@ const groupSummary = (g: EntryGroup): string => {
 /** 组头「N 条建议」徽标：该组当前可应用建议的条数（仅具体 config 维度 + 被引用的条目） */
 const groupSuggestCount = (g: EntryGroup): number => (canApply.value ? g.rows.filter(r => canApplyRow(r)).length : 0);
 
-const rateText = (rate: number | null): string => (rate === null ? '–' : Math.round(rate * 100) + '%');
+const rateText = (rate: number | null): string => (rate === null ? EMPTY_DISPLAY : Math.round(rate * 100) + '%');
 const rateWidth = (rate: number) => Math.max(4, Math.round(rate * 100)) + '%';
 const expectedRateText = (row: EntryRankRow): string => rateText(metaOf(row).expectedRate);
 
@@ -1301,7 +1277,7 @@ const applyableCount = computed(() =>
 );
 
 const pending = ref<Suggestion[] | null>(null);
-const showApplyConfirm = ref(false);
+const { open: applyOpen, show: showApplyConfirm, confirm: confirmApply, cancel: cancelApply } = useConfirm();
 
 /** 当前维度可撤销的批次计数（持久历史派生，切维度/刷新后仍正确）。
  *  只数「目标 config 仍存活」的历史槽——config 已删除的槽点击撤销会静默失败
@@ -1348,10 +1324,7 @@ const jumpTo = (anchor: string): void => {
   el?.scrollIntoView({ block: 'start' });
 };
 
-const historyTimeTitle = (ts: number): string => {
-  const d = new Date(ts);
-  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-};
+const historyTimeTitle = (ts: number): string => formatDateTime(ts);
 
 const undoHistoryEntry = (entryId: string) => {
   if (undoApply(entryId)) {
@@ -1377,10 +1350,28 @@ const applyConfirmMessage = computed(() => {
   return t`将应用到当前配置：\n${lines}\n\n停用后该条目不再参与生成，不会自动恢复（可在条目池页手动重新启用）。`;
 });
 
-const applyOne = (s: Suggestion) => {
-  pending.value = [s];
-  showApplyConfirm.value = true;
+/** 应用一批建议：设 pending → 弹确认 → 确认后写入。取消/外层守卫失败则只复位 pending。
+ *  showApplyConfirm 弹窗的确认/取消分别走 confirmApply/cancelApply（关闭弹窗 + resolve），
+ *  applyConfirmMessage 在 pending 已设后 show() 时同步求值，与原 computed 行为等价 */
+const runApply = async (list: Suggestion[]) => {
+  pending.value = list;
+  const ok = await showApplyConfirm({
+    title: t`应用统计建议`,
+    message: applyConfirmMessage.value,
+    confirmText: t`应用`,
+    cancelText: t`取消`,
+  });
+  pending.value = null;
+  if (!ok || list.length === 0 || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
+  const res = applySuggestions(scopeId.value, list);
+  toastr.success(
+    res.skipped > 0
+      ? t`已应用 ${res.applied} 条建议（跳过 ${res.skipped} 条，可在统计页撤销）`
+      : t`已应用 ${res.applied} 条建议（可在统计页撤销）`,
+  );
 };
+
+const applyOne = (s: Suggestion) => runApply([s]);
 
 /** 行内应用按钮（模板无法用非空断言，包装一层判空） */
 const applySuggestion = (row: EntryRankRow) => {
@@ -1398,25 +1389,12 @@ const reEnable = (row: EntryRankRow) => {
 };
 
 const applyAll = () => {
-  pending.value = filteredGroups.value
+  const list = filteredGroups.value
     .flatMap(g => g.rows)
     .filter(r => canApplyRow(r))
     .map(r => suggestionOf(r))
     .filter((s): s is Suggestion => s !== null);
-  showApplyConfirm.value = true;
-};
-
-const onApplyConfirmed = () => {
-  const list = pending.value ?? [];
-  showApplyConfirm.value = false;
-  pending.value = null;
-  if (list.length === 0 || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
-  const res = applySuggestions(scopeId.value, list);
-  toastr.success(
-    res.skipped > 0
-      ? t`已应用 ${res.applied} 条建议（跳过 ${res.skipped} 条，可在统计页撤销）`
-      : t`已应用 ${res.applied} 条建议（可在统计页撤销）`,
-  );
+  void runApply(list);
 };
 
 const onUndo = () => {
@@ -1514,7 +1492,7 @@ const rosterEmptyText = computed(() => {
 });
 
 const pendingRoster = ref<RosterPlan | null>(null);
-const showRosterConfirm = ref(false);
+const { open: rosterOpen, show: showRosterConfirm, confirm: confirmRoster, cancel: cancelRoster } = useConfirm();
 
 const rosterConfirmMessage = computed(() => {
   const p = pendingRoster.value;
@@ -1526,18 +1504,20 @@ const rosterConfirmMessage = computed(() => {
   return t`将应用到当前配置：\n${lines.join('\n')}\n\n落出为软停用（条目保留、统计不丢），可在条目池页手动重新启用。`;
 });
 
-const applyRoster = () => {
+/** 应用阵容计划：设 pendingRoster → 弹确认 → 确认后写入。取消/守卫失败只复位 pending。
+ *  rosterConfirmMessage 在 pendingRoster 已设后 show() 时同步求值，与原 computed 行为等价 */
+const applyRoster = async () => {
   const p = rosterPlan.value;
   if (!p || (p.drops.length === 0 && p.promotes.length === 0)) return;
   pendingRoster.value = p;
-  showRosterConfirm.value = true;
-};
-
-const onRosterConfirmed = () => {
-  const p = pendingRoster.value;
-  showRosterConfirm.value = false;
+  const ok = await showRosterConfirm({
+    title: t`应用阵容计划`,
+    message: rosterConfirmMessage.value,
+    confirmText: t`应用`,
+    cancelText: t`取消`,
+  });
   pendingRoster.value = null;
-  if (!p || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
+  if (!ok || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
   const res = applyRosterPlan(scopeId.value, p);
   toastr.success(
     res.skipped > 0
@@ -1558,7 +1538,7 @@ const hitText = (row: HitRankRow): string => {
 // ── 导出与管理 ──
 const exportStats = () => {
   const payload = {
-    exported_at: new Date().toISOString(),
+    exported_at: isoTimestamp(),
     schema_version: SCHEMA_VERSION,
     stats: {
       // 顶级 total_* 已废弃不再持续写入（全局总量由各 scope 聚合推导）：
@@ -1607,10 +1587,17 @@ const exportStats = () => {
   toastr.success(t`已导出统计 JSON`);
 };
 
-const showClearConfirm = ref(false);
-const onClearConfirmed = () => {
+const { open: clearOpen, show: showClearConfirm, confirm: confirmClear, cancel: cancelClear } = useConfirm();
+/** 清空统计：弹确认 → 确认后清空。取消只关闭弹窗（无 pending 状态） */
+const onClearStats = async () => {
+  const ok = await showClearConfirm({
+    title: t`清空统计`,
+    message: t`确定要清空所有统计数据和排行榜吗？此操作不可撤销。`,
+    confirmText: t`清空`,
+    cancelText: t`取消`,
+  });
+  if (!ok) return;
   clearStats();
-  showClearConfirm.value = false;
   toastr.success(t`已清空统计`);
 };
 </script>

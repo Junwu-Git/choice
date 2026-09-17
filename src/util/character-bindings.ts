@@ -4,8 +4,9 @@ import { setting_field } from '@/type/settings';
 /** 绑定类型：pool = 条目池配置（CharacterSettings.config_id），prompt = 提示词配置（prompt_config_id） */
 export type BindKind = 'pool' | 'prompt';
 
-/** kind → CharacterSettings 字段名（schema 见 src/type/settings.ts:1211-1217） */
-const KIND_FIELD: Record<BindKind, 'config_id' | 'prompt_config_id'> = {
+/** kind → CharacterSettings 字段名（schema 见 src/type/settings.ts:1211-1217）。
+ *  导出供 bindings.ts 切换逻辑复用（同一字段映射的单一来源） */
+export const KIND_FIELD: Record<BindKind, 'config_id' | 'prompt_config_id'> = {
   pool: 'config_id',
   prompt: 'prompt_config_id',
 };
@@ -52,7 +53,7 @@ export function getBoundCharacters(kind: BindKind, configId: string): BoundChara
  * 合并（live 覆盖同路径），保证既有扩展字段不被旧快照冲掉。
  * 返回是否成功；成功后同步刷新 ch.json_data 快照，杜绝后续旧快照路径覆盖。
  */
-export async function persistCharacter(ch: StCharacter): Promise<boolean> {
+async function persistCharacter(ch: StCharacter): Promise<boolean> {
   const avatar = ch.avatar || '';
   if (!avatar) {
     console.warn('[Choice] persistCharacter skipped: missing avatar', ch.name);

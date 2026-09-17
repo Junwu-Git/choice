@@ -9,8 +9,8 @@ export const setting_field = 'choice';
 // watcher 落盘前 sanitize、前端 input 钳制四处共用，禁止各自硬编码 10/500。
 // 为什么必须集中：历史上 schema 用 .min(10) 对"已存在的非法值"fail-closed（.default 只补
 // 缺失字段、不补非法值），用户在 UI 输入 <10 经无校验 watcher 落盘后，下次加载即整扩展崩溃。
-export const CHARS_MIN_LIMIT = 10;
-export const CHARS_MAX_LIMIT = 500;
+const CHARS_MIN_LIMIT = 10;
+const CHARS_MAX_LIMIT = 500;
 export const OPTION_MIN_CHARS_DEFAULT = 10;
 export const OPTION_MAX_CHARS_DEFAULT = 60;
 export const ENRICH_MIN_CHARS_DEFAULT = 10;
@@ -133,7 +133,7 @@ export type ApplyHistoryEntry = z.infer<typeof ApplyHistoryEntry>;
 export const DEFAULT_ENRICH_PERSON_STYLE = '统一使用{{enrich_person}} {{user}} 为主语';
 
 /** 选项/润色人称默认值（PromptConfig 与 PromptRules 共用，勿两处各自硬编码） */
-export const DEFAULT_OPTION_PERSON = '第三人称';
+const DEFAULT_OPTION_PERSON = '第三人称';
 
 export const PromptModule = z.object({
   id: z.string(),
@@ -263,7 +263,7 @@ export const DEFAULT_MODULES = defaultModulesJson.modules as unknown as PromptMo
 
 /** 「简洁」基准内容涉及的模块 id。默认提示词（choice-prompts-optimized.json）本身就是简洁版，
  *  这里只圈出 v19 迁移简化映射涉及的四个模块，供提取单一事实源。 */
-export const SIMPLE_MODULE_IDS = new Set(['core_rules', 'thinking_prompt', 'enrich_core_rules', 'enrich_thinking']);
+const SIMPLE_MODULE_IDS = new Set(['core_rules', 'thinking_prompt', 'enrich_core_rules', 'enrich_thinking']);
 
 /** 「简洁」基准内容（core_rules/thinking_prompt/enrich_core_rules/enrich_thinking）。
  *  单一事实源：从 DEFAULT_MODULES 派生，v19 老存档迁移的简化映射复用它，
@@ -280,7 +280,7 @@ export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 // 顺序不依赖规则排列——提取规则保留 <标签>…</标签> 整段并舍弃其余，之后现有 tag/regex
 // 规则继续在提取结果上运行，形成"提取后再二次过滤"的新手友好管线。
 // extract 仅对 assistant 消息执行，user 消息跳过（纯文本 user 输入无目标标签会被整条丢弃）
-export const ChatFilterRule = z.discriminatedUnion('type', [
+const ChatFilterRule = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tag'),
     start: z.string().default(''),
@@ -302,7 +302,7 @@ export const ChatFilterRule = z.discriminatedUnion('type', [
     tag_name: z.string().default(''),
   }),
 ]);
-export type ChatFilterRule = z.infer<typeof ChatFilterRule>;
+type ChatFilterRule = z.infer<typeof ChatFilterRule>;
 
 // 过滤规则分组：按用途（不同卡/预设的正则）组织规则，每组可独立启用/禁用
 export const ChatFilterGroup = z.object({
@@ -352,7 +352,7 @@ export const FilterGroup = z.object({
 });
 export type FilterGroup = z.infer<typeof FilterGroup>;
 
-export const FilterSettings = z.object({
+const FilterSettings = z.object({
   regex_library: z.array(RegexLibraryEntry).default([]),
   groups: z.array(FilterGroup).default([]),
   library_groups: z.array(z.string()).default([]),
@@ -361,9 +361,9 @@ export const FilterSettings = z.object({
    *  assistant 失去配对分隔而相邻合并，受此困扰的用户可整体关掉酒馆正则。 */
   st_regex_enabled: z.boolean().default(true),
 });
-export type FilterSettings = z.infer<typeof FilterSettings>;
+type FilterSettings = z.infer<typeof FilterSettings>;
 
-export const PromptRules = z
+const PromptRules = z
   .object({
     system_prompt: z.string().default(''),
     core_rules: z.string().default(''),
@@ -418,7 +418,7 @@ export const PromptRules = z
     schema_version: z.number().default(0),
   })
   .prefault({});
-export type PromptRules = z.infer<typeof PromptRules>;
+type PromptRules = z.infer<typeof PromptRules>;
 
 export const SecondaryApi = z
   .object({
@@ -1152,7 +1152,7 @@ export const WorldInfoChatSettings = z
 export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
 export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 
-export const UISettings = z
+const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
     /**
@@ -1242,7 +1242,7 @@ export const UISettings = z
     advanced_features_enabled: z.boolean().default(false),
   })
   .prefault({});
-export type UISettings = z.infer<typeof UISettings>;
+type UISettings = z.infer<typeof UISettings>;
 
 // ── 行动选项统计（v51 起按 config 维度记录，随 extension_settings 持久化）───────────
 // 口径约定：
@@ -1334,14 +1334,14 @@ export type AiAnalysisEntry = z.infer<typeof AiAnalysisEntry>;
 /** AI 建议分析单维度缓存（stats.ai_analysis[scope]）：最近一次运行的整体快照。
  *  data_updated_at 为运行时 stats.updated_at 快照，用于「有新数据才重算」失效判定；
  *  entries 键 = entryId（只含「有统计建议的条目」，其余不分析）。新运行整体覆盖旧结果。 */
-export const AiAnalysisScope = z.object({
+const AiAnalysisScope = z.object({
   /** 本次分析完成时间戳 */
   updated_at: z.number().default(0),
   /** 分析时的 stats.updated_at 快照：stats.updated_at > 此值 = 有新数据、需要重算 */
   data_updated_at: z.number().default(0),
   entries: z.record(z.string(), AiAnalysisEntry).prefault({}),
 });
-export type AiAnalysisScope = z.infer<typeof AiAnalysisScope>;
+type AiAnalysisScope = z.infer<typeof AiAnalysisScope>;
 
 /** 单个统计维度（scope = 生效 config.id，无 config 会话为 '__none__'） */
 export const ScopeStats = z

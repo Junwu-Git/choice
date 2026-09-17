@@ -14,7 +14,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `TavernHelper` 类型定义核实，并把核实结论写进必要的代码注释，方便酒馆升级后复查。
 - `pnpm watch`
   由用户在独立终端运行（`vite build --watch --mode development`，不是 HMR，只是自动重打包）；agent 不要自行运行常驻 watch。agent 使用一次性的
-  `pnpm build`、`npx vue-tsc --noEmit`、`pnpm lint` 等命令自查。watch 编译完成后还要手动刷新酒馆页面才会加载新产物。
+  `pnpm build`、`pnpm typecheck`、`pnpm lint` 等命令自查。watch 编译完成后还要手动刷新酒馆页面才会加载新产物。
 - 核心交互链路或 UI 改动需要实际浏览器验证；文案、样式微调、纯逻辑且不影响 UI 的小改动可由用户决定是否验证。需要验证时，说明在浏览器中的具体操作步骤，并检查 console。
 
 ## 关键架构约束
@@ -171,12 +171,12 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 ### Shared 组件现状与待办
 
 `src/components/shared/` 已有
-`ChoiceSection.vue`、`ChoiceCard.vue`、`ChoiceField.vue`、`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
+`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
 `useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；不要用 CSS `@container`
-替代，因为部分移动 WebView 可能静默忽略该规则。
+替代，因为部分移动 WebView 可能静默忽略该规则。（`ChoiceSection.vue`/`ChoiceCard.vue`/`ChoiceField.vue`
+三个曾作为设计系统预备的零引用组件已于死代码清理中删除，git 历史可回溯。）
 
-目前只有 `ChoiceDialog` 在提示词导入等少数位置使用，`ChoiceSection`、`ChoiceCard`、`ChoiceField`
-仍是预备的设计系统组件，不能在文档中当作已经完成全量迁移。其余弹窗仍可能保留独立 overlay/header/footer 样式；迁移时要逐个验证遮罩关闭、Escape 关闭、动画和窄屏布局，不要一次性假设全部组件已经统一。
+目前只有 `ChoiceDialog` 在提示词导入等少数位置使用，其余设计系统组件仍是预备态，不能在文档中当作已经完成全量迁移。其余弹窗仍可能保留独立 overlay/header/footer 样式；迁移时要逐个验证遮罩关闭、Escape 关闭、动画和窄屏布局，不要一次性假设全部组件已经统一。
 
 ### 悬浮球实际状态
 
@@ -212,7 +212,7 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`，以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
@@ -220,9 +220,9 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
-- `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义和窄屏布局 composable。
+- `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义、窄屏布局 composable 与 `useConfirm.ts`（确认弹窗 Promise 化封装，Statistics 清空/应用建议/应用阵容三处使用）。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
-- `src/util/`：文件选择、SortableJS 配置和 Zod 解析辅助；选项文本解析（`option-format.ts`）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
+- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
   提供角色卡绑定扫描（`getBoundCharacters`）与可靠持久化（`persistCharacter`，直接 POST
   `/api/characters/edit`，替代会丢扩展字段的 `saveCharacterDebounced`）。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。
@@ -260,9 +260,11 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 ```bash
 pnpm install
 pnpm build             # 一次性 production 构建
-npx vue-tsc --noEmit   # 类型检查
+pnpm typecheck         # 类型检查（等价 npx vue-tsc --noEmit）
 pnpm lint              # ESLint 检查
 pnpm format            # Prettier 写回格式
+npx knip               # 死代码扫描（未用导出/文件/依赖；klona/pinia/toastr 因 unplugin-auto-import
+                       # 与酒馆全局注入列入 knip.json ignoreDependencies，勿手动移除）
 ```
 
 当前没有 Vitest/Jest 测试脚本；验证手段是类型检查、构建、lint/format 和按改动范围进行的浏览器验证。`pnpm watch`

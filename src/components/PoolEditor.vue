@@ -240,10 +240,12 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import { onboardingPendingAction } from '@/core/onboarding';
 import { focusPoolEntryId } from '@/core/floating-state';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
-import { GenerationSettings, setting_field } from '@/type/settings';
+import { GenerationSettings } from '@/type/settings';
+import { toggleChatBinding, toggleCharacterBinding } from '@/core/bindings';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
+import { entrySummaryText } from '@/util/entry-preview';
 import Sortable from 'sortablejs';
 
 const globalStore = useGlobalSettingsStore();
@@ -361,33 +363,15 @@ const setDefault = () => {
   }
 };
 
-const bindChat = () => {
-  const id = selectedConfigId.value;
-  chatStore.settings.config_id = chatStore.settings.config_id === id ? null : id;
-};
+const bindChat = () => toggleChatBinding('pool', selectedConfigId.value);
 
 // 无当前角色时绑定无意义（store watch 对 this_chid 为空会静默跳过写卡，造成「绑定无效」），
-// 按钮禁用 + bindCharacter 内再 guard 双保险。
+// 按钮禁用 + toggleCharacterBinding 内再 guard 双保险。
 // 依赖 store 的响应式 currentCharacterId 而非模块变量 this_chid：this_chid 非响应式，
 // computed 不会在切角色后自动重算（曾有实证：切到角色聊天后按钮仍停留 disabled 态）
 const currentCharAvailable = computed(() => globalStore.currentCharacterId != null);
 
-const bindCharacter = () => {
-  const id = selectedConfigId.value;
-  if (!id) return;
-  const ch = getStCharacter(this_chid);
-  if (!ch) {
-    toastr.warning(t`请先在酒馆中选择一个角色卡`);
-    return;
-  }
-  const next = characterStore.settings.config_id === id ? null : id;
-  // 同步写内存（ConfigBindings 徽章扫描读 characters 数组，需立即生效）+ store
-  // （按钮高亮与「当前生效-角色」立即响应）。落盘统一交给 character-settings store
-  // 的 deep watch 单一通道，不在入口显式 persistCharacter——否则一次点击会并发两次
-  // /api/characters/edit（大卡 JSON 序列化 + 后端全量写卡双倍开销），是「绑定卡顿」的来源。
-  _.set(ch, ['data', 'extensions', setting_field, 'config_id'], next);
-  characterStore.setBinding('pool', next);
-};
+const bindCharacter = () => toggleCharacterBinding('pool', selectedConfigId.value);
 
 const removeConfig = () => {
   const cfg = selectedConfig.value;
@@ -431,12 +415,7 @@ const getEntryCategory = (entryId: string): string => {
 const entrySummary = (entryId: string): string => {
   const entry = masterEntryOf(entryId);
   if (!entry) return t`<空条目>`;
-  const type = entry.type.trim();
-  if (type) return type.replace(/"/g, '').slice(0, 50);
-  const content = entry.content.trim();
-  // 无类型的条目以内容首段充当标识，否则折叠行全空白
-  if (content) return content.replace(/"/g, '').slice(0, 30);
-  return t`<空条目>`;
+  return entrySummaryText(entry.type, entry.content, t`<空条目>`);
 };
 
 type DetailField = { label: string; value: string };

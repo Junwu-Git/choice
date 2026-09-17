@@ -1,6 +1,7 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import { CATEGORY_DELETED, CATEGORY_UNGROUPED, DELETED_GROUP_PREFIX } from '@/core/constants';
 import type { ChoiceOption } from '@/core/options-store';
 import {
   APPLY_HISTORY_LIMIT,
@@ -93,7 +94,7 @@ const getDaily = (scope: ScopeStats, key: string): DailyCount => {
 };
 
 /** 当前生效统计维度 id：绑定/默认 config.id，无 config 会话为 NONE_SCOPE */
-export const currentScopeId = (): string => usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
+const currentScopeId = (): string => usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
 
 /** 记录一轮行动选项生成成功（去重/补齐后实际保留条数）。仅行动选项视图计入。
  *  gid 为 generation id：写入窗口记录的定位锚，选择时按 gid 回写 hit。
@@ -474,6 +475,38 @@ export type EntryGroup = {
   rate: number | null;
 };
 
+/** 构建条目榜单行（join 统计 + master_pool + config 覆盖）。
+ *  纯提取自 entryGroups 的内联 rowFor：可读性（23 行装配逻辑不再埋在主流程里）。
+ *  entry 为 undefined 表示已删除条目（池中已无此 id），行仍保留历史计数并标 deleted */
+const rowFor = (
+  view: StatsView,
+  cfgEntryMap: Map<string, PoolConfigEntry>,
+  entryId: string,
+  entry: PoolEntry | undefined,
+): EntryRankRow => {
+  const e = view.by_entry[entryId];
+  const cfg = entry ? cfgEntryMap.get(entry.id) : undefined;
+  return {
+    entryId,
+    deleted: !entry,
+    type: entry?.type ?? '',
+    category: entry?.category ?? '',
+    content: entry?.content ?? '',
+    rounds_included: e?.rounds_included ?? 0,
+    rounds_with_selection: e?.rounds_with_selection ?? 0,
+    rate: e && e.rounds_included > 0 ? e.rounds_with_selection / e.rounds_included : null,
+    expected_sum: e?.expected_sum ?? 0,
+    recent: e?.recent ?? [],
+    last_included_at: e?.last_included_at ?? 0,
+    last_selected_text: e?.last_selected_text ?? '',
+    effectiveWeight: cfg?.weight ?? entry?.weight ?? 1,
+    effectivePinned: cfg?.pinned ?? entry?.pinned ?? false,
+    effectiveEnabled: cfg?.enabled ?? true,
+    referenced: entry ? cfgEntryMap.has(entry.id) : false,
+    last_weight_changed_at: e?.last_weight_changed_at ?? 0,
+  };
+};
+
 /** 条目榜分组纯函数：按 category 分组的折叠列表数据源。
  *  组顺序：groupOrder（条目库分组顺序）优先 → 未列入的自定义/未分组按名称 → 已删除组末尾。
  *  组内排序：参与轮次降序 → 命中轮次降序 → entryId。排序/分组逻辑单一真相源，组件只渲染。
@@ -488,37 +521,14 @@ export function entryGroups(
   const poolMap = new Map(masterPool.map(e => [e.id, e]));
   const byCat = new Map<string, EntryRankRow[]>();
   const deletedRows: EntryRankRow[] = [];
-  const rowFor = (entryId: string, entry: PoolEntry | undefined): EntryRankRow => {
-    const e = view.by_entry[entryId];
-    const cfg = entry ? cfgEntryMap.get(entry.id) : undefined;
-    return {
-      entryId,
-      deleted: !entry,
-      type: entry?.type ?? '',
-      category: entry?.category ?? '',
-      content: entry?.content ?? '',
-      rounds_included: e?.rounds_included ?? 0,
-      rounds_with_selection: e?.rounds_with_selection ?? 0,
-      rate: e && e.rounds_included > 0 ? e.rounds_with_selection / e.rounds_included : null,
-      expected_sum: e?.expected_sum ?? 0,
-      recent: e?.recent ?? [],
-      last_included_at: e?.last_included_at ?? 0,
-      last_selected_text: e?.last_selected_text ?? '',
-      effectiveWeight: cfg?.weight ?? entry?.weight ?? 1,
-      effectivePinned: cfg?.pinned ?? entry?.pinned ?? false,
-      effectiveEnabled: cfg?.enabled ?? true,
-      referenced: entry ? cfgEntryMap.has(entry.id) : false,
-      last_weight_changed_at: e?.last_weight_changed_at ?? 0,
-    };
-  };
   for (const entry of masterPool) {
-    const cat = entry.category.trim() || '未分组';
+    const cat = entry.category.trim() || CATEGORY_UNGROUPED;
     const list = byCat.get(cat) ?? [];
-    list.push(rowFor(entry.id, entry));
+    list.push(rowFor(view, cfgEntryMap, entry.id, entry));
     byCat.set(cat, list);
   }
   for (const [entryId] of Object.entries(view.by_entry)) {
-    if (!poolMap.has(entryId)) deletedRows.push(rowFor(entryId, undefined));
+    if (!poolMap.has(entryId)) deletedRows.push(rowFor(view, cfgEntryMap, entryId, undefined));
   }
   const makeGroup = (category: string, deletedGroup: boolean, rows: EntryRankRow[]): EntryGroup => {
     const rounds_included = rows.reduce((s, r) => s + r.rounds_included, 0);
@@ -526,7 +536,7 @@ export function entryGroups(
     return {
       category,
       // 唯一键（见类型注释）：已删除组可能与用户分类「已删除」撞名，需前缀区分
-      key: deletedGroup ? `del:${category}` : category,
+      key: deletedGroup ? `${DELETED_GROUP_PREFIX}${category}` : category,
       deletedGroup,
       rows: rows.sort(
         (a, b) =>
@@ -553,7 +563,7 @@ export function entryGroups(
     groups.push(makeGroup(cat, false, byCat.get(cat)!));
   }
   if (deletedRows.length) {
-    groups.push(makeGroup('已删除', true, deletedRows));
+    groups.push(makeGroup(CATEGORY_DELETED, true, deletedRows));
   }
   return groups;
 }
@@ -643,7 +653,7 @@ export function fullExpectedRate(row: Pick<EntryRankRow, 'rounds_included' | 'ex
  *  ① 避免建议基于旧权重下的表现（新权重还没积累足够样本）；② 缩短窗口期限天然形成
  *  「调整后需观察 N 轮」的冷却，防止 1↔2↔4 权重颠簸。全量兜底此时不可用（全量含
  *  变更前数据，正是要排除的）。从未调整（=0）的条目走原有窗口→全量路径，行为不变。 */
-export function entryMetrics(
+function entryMetrics(
   row: Pick<
     EntryRankRow,
     'rounds_included' | 'rounds_with_selection' | 'expected_sum' | 'recent' | 'last_weight_changed_at'
@@ -689,7 +699,7 @@ export function entryMetrics(
 
 // ── 建议引擎（只建议不改权重之外的东西；写入由 applySuggestions 显式触发） ───
 
-export type SuggestionAction = 'down' | 'up' | 'disable';
+type SuggestionAction = 'down' | 'up' | 'disable';
 
 export type Suggestion = {
   entryId: string;
@@ -1115,6 +1125,18 @@ export type RosterPlan = {
   noop: boolean;
 };
 
+/** 替补席排序比较器：可评级按超额降序（表现好先归队）；无样本排后，按最近参与倒序。
+ *  纯提取自 planRoster 的内联比较器（排序规则单一真相，勿改语义） */
+const benchComparator = (
+  a: { m: NonNullable<ReturnType<typeof entryMetrics>> | null; last: number },
+  b: { m: NonNullable<ReturnType<typeof entryMetrics>> | null; last: number },
+): number => {
+  if (a.m && b.m) return b.m.excess - a.m.excess || b.last - a.last;
+  if (a.m) return -1;
+  if (b.m) return 1;
+  return b.last - a.last;
+};
+
 /** 生成阵容计划（纯函数，组件只渲染）。
  *  在役 = config 中 enabled 且 id ∈ master_pool（与 Statistics.vue poolCapsule 口径一致）；
  *  落出：在役 > N 时从「可评级且非 pinned」中按超额升序（表现最差在前）裁末尾到 ≤N，
@@ -1173,13 +1195,7 @@ export function planRoster(view: StatsView, masterPool: PoolEntry[], config: Poo
     const benchRated = bench
       .filter(id => !effectivePinned(id))
       .map(id => ({ id, m: entryMetrics(view.by_entry[id]), last: view.by_entry[id]?.last_included_at ?? 0 }))
-      .sort((a, b) => {
-        // 可评级按超额降序（表现好先归队）；无样本排后，按最近参与倒序
-        if (a.m && b.m) return b.m.excess - a.m.excess || b.last - a.last;
-        if (a.m) return -1;
-        if (b.m) return 1;
-        return b.last - a.last;
-      });
+      .sort(benchComparator);
     for (const { id, m } of benchRated.slice(0, slots)) {
       const e = poolMap.get(id)!;
       promotes.push({

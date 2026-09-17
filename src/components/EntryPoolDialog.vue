@@ -226,6 +226,7 @@ import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { PoolEntry } from '@/type/settings';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
+import { isoTimestamp } from '@/util/time';
 import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
 import Sortable from 'sortablejs';
 import { focusPoolEntryId } from '@/core/floating-state';
@@ -612,7 +613,7 @@ const onExportPool = () => {
     {
       version: 1,
       type: 'choice-pool-export',
-      exportedAt: new Date().toISOString(),
+      exportedAt: isoTimestamp(),
       partial,
       data: {
         master_pool: pool,

@@ -389,7 +389,9 @@ import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import PromptImportDialog from '@/components/PromptImportDialog.vue';
 import ConfigBindings from '@/components/shared/ConfigBindings.vue';
 import type { PromptModule } from '@/type/settings';
-import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema, setting_field } from '@/type/settings';
+import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
+import { isoTimestamp } from '@/util/time';
+import { toggleChatBinding, toggleCharacterBinding } from '@/core/bindings';
 import { z } from 'zod';
 
 const globalStore = useGlobalSettingsStore();
@@ -514,32 +516,17 @@ function setPromptDefault() {
 }
 
 function bindPromptChat() {
-  const id = selectedPromptConfigId.value;
-  chatStore.settings.prompt_config_id = chatStore.settings.prompt_config_id === id ? null : id;
+  toggleChatBinding('prompt', selectedPromptConfigId.value);
 }
 
 // 无当前角色时绑定无意义（store watch 对 this_chid 为空会静默跳过写卡，造成「绑定无效」），
-// 按钮禁用 + bindPromptCharacter 内再 guard 双保险。
+// 按钮禁用 + toggleCharacterBinding 内再 guard 双保险。
 // 依赖 store 的响应式 currentCharacterId 而非模块变量 this_chid：this_chid 非响应式，
 // computed 不会在切角色后自动重算（曾有实证：切到角色聊天后按钮仍停留 disabled 态）
 const currentCharAvailable = computed(() => globalStore.currentCharacterId != null);
 
 function bindPromptCharacter() {
-  const id = selectedPromptConfigId.value;
-  if (!id) return;
-  const ch = getStCharacter(this_chid);
-  if (!ch) {
-    toastr.warning(t`请先在酒馆中选择一个角色卡`);
-    return;
-  }
-  const next = characterStore.settings.prompt_config_id === id ? null : id;
-  // 同步写内存（ConfigBindings 徽章扫描读 characters 数组，需立即生效）+ store
-  // （按钮高亮与「当前生效-角色」立即响应）。落盘统一交给 character-settings store
-  // 的 deep watch 单一通道，不在入口显式 persistCharacter——否则一次点击会并发两次
-  // /api/characters/edit（大卡 JSON 序列化 + 后端全量写卡双倍开销），是「绑定卡顿」的来源。
-  // 不用 saveCharacterDebounced（表单旧 json_data 快照会覆盖刚写的内容——「绑定无效」根因）。
-  _.set(ch, ['data', 'extensions', setting_field, 'prompt_config_id'], next);
-  characterStore.setBinding('prompt', next);
+  toggleCharacterBinding('prompt', selectedPromptConfigId.value);
 }
 
 function removePromptConfig() {
@@ -599,7 +586,7 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
     {
       version: 3,
       mode,
-      exportedAt: new Date().toISOString(),
+      exportedAt: isoTimestamp(),
       modules,
       config: {
         option_person: pr.option_person,
