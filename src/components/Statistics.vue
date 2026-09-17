@@ -41,11 +41,10 @@
           </label>
         </template>
       </div>
-      <p
-        v-if="statsEnabled && automationEnabled && aiAttributionEnabled"
-        class="choice-stats-sub choice-stats-ai-l1"
-      >
-        {{ t`归因队列 ${aiAttributionState.queued} · 已修正 ${aiAttributionState.corrected} 条次 · 迁移命中 ${aiAttributionState.migrated} 条次` }}
+      <p v-if="statsEnabled && automationEnabled && aiAttributionEnabled" class="choice-stats-sub choice-stats-ai-l1">
+        {{
+          t`归因队列 ${aiAttributionState.queued} · 已修正 ${aiAttributionState.corrected} 条次 · 迁移命中 ${aiAttributionState.migrated} 条次`
+        }}
       </p>
       <p v-if="statsEnabled && automationEnabled && aiCacheEntryCount > 0" class="choice-stats-sub">
         {{ t`已为 ${aiCacheEntryCount} 条建议生成理由（${aiCacheTimeText}）· 数据更新后自动重算` }}
@@ -87,19 +86,17 @@
         <span v-else class="choice-stats-dim-note">{{ t`仅该条目池配置生效会话计入` }}</span>
       </div>
       <div v-if="jumpTargets.length > 1" class="choice-stats-jump-bar">
-        <button
-          v-for="j in jumpTargets"
-          :key="j.anchor"
-          class="choice-stats-jump-pill"
-          @click="jumpTo(j.anchor)"
-        >
+        <button v-for="j in jumpTargets" :key="j.anchor" class="choice-stats-jump-pill" @click="jumpTo(j.anchor)">
           {{ j.label }}
         </button>
       </div>
     </div>
 
     <!-- 无 config 引导：应用建议需要 config 作为写入目标（关闭态隐藏——建议应用不可达） -->
-    <div v-if="statsEnabled && automationEnabled && scopeId === NONE_SCOPE && configs.length === 0" class="choice-stats-guide">
+    <div
+      v-if="statsEnabled && automationEnabled && scopeId === NONE_SCOPE && configs.length === 0"
+      class="choice-stats-guide"
+    >
       <div>
         <b>{{ t`尚未创建任何条目池配置` }}</b>
         <p>
@@ -172,7 +169,9 @@
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"><i class="fa-solid fa-calendar"></i></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
+              ><i class="fa-solid fa-calendar"></i
+            ></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`活跃天数` }}</div>
               <div class="choice-stats-card-value">{{ activeDays }}</div>
@@ -184,14 +183,18 @@
               t`池内参与率 = 有效池中至少进入过一轮生成候选的条目数 ÷ 有效池条目数。候选被抽中即计参与（轮次共现归因）；AI 输出为自由文本、选项与条目无法精确一一对应，被 AI 舍弃的候选也会计入`
             "
           >
-            <span class="choice-stats-card-icon choice-stats-card-icon--info"><i class="fa-solid fa-layer-group"></i></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--info"
+              ><i class="fa-solid fa-layer-group"></i
+            ></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`池内参与率` }}</div>
               <div class="choice-stats-card-value">{{ poolParticipationText }}</div>
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"><i class="fa-solid fa-clock"></i></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
+              ><i class="fa-solid fa-clock"></i
+            ></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`最近统计` }}</div>
               <div class="choice-stats-card-value choice-stats-card-value--sm">{{ updatedAtText }}</div>
@@ -223,7 +226,10 @@
             <div class="choice-stats-sample-row">
               <span class="choice-stats-sample-label">{{ t`样本不足` }}</span>
               <div class="choice-stats-sample-track">
-                <div class="choice-stats-sample-fill choice-stats-sample-fill--mid" :style="{ width: sampleMidPct }"></div>
+                <div
+                  class="choice-stats-sample-fill choice-stats-sample-fill--mid"
+                  :style="{ width: sampleMidPct }"
+                ></div>
               </div>
               <b>{{ distribution.insufficient }}</b>
             </div>
@@ -926,9 +932,7 @@ const aiAnalyzeLabel = computed(() => {
  *  只监听当前维度的活动时间戳——其他维度活动不再触发本维度的防抖（R1）。 */
 let aiAutoTimer: ReturnType<typeof setTimeout> | null = null;
 const scopeActivityTs = computed(() =>
-  scopeId.value === GLOBAL_SCOPE
-    ? stats.value.updated_at
-    : (stats.value.entries[scopeId.value]?.updated_at ?? 0),
+  scopeId.value === GLOBAL_SCOPE ? stats.value.updated_at : (stats.value.entries[scopeId.value]?.updated_at ?? 0),
 );
 const scheduleAiAnalysis = () => {
   if (aiAutoTimer) clearTimeout(aiAutoTimer);
@@ -1305,7 +1309,10 @@ const showApplyConfirm = ref(false);
 const undoCount = computed(() => {
   if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return 0;
   const alive = new Set(configs.value.map(c => c.id));
-  return gs.settings.apply_history.reduce((n, e) => (e.scope_id === scopeId.value && alive.has(e.scope_id) ? n + 1 : n), 0);
+  return gs.settings.apply_history.reduce(
+    (n, e) => (e.scope_id === scopeId.value && alive.has(e.scope_id) ? n + 1 : n),
+    0,
+  );
 });
 
 /** 应用历史面板数据：当前 config 维度的批次（新→旧），join 变更摘要。

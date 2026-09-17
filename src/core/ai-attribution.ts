@@ -10,9 +10,7 @@ import type { PoolEntry, ScopeStats, SecondaryApi } from '@/type/settings';
  *  用注册而非直接 import 解耦 core 与 store 的循环依赖——ai-attribution 若 import
  *  panel-state 会成环（panel-state→enrich-input→generator→ai-attribution）。未注册时 no-op。 */
 let panelRefreshHook: ((messageId: number, swipeId: number) => void) | null = null;
-export function setAttributionPanelRefreshHook(
-  fn: ((messageId: number, swipeId: number) => void) | null,
-): void {
+export function setAttributionPanelRefreshHook(fn: ((messageId: number, swipeId: number) => void) | null): void {
   panelRefreshHook = fn;
 }
 

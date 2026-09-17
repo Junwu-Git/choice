@@ -105,7 +105,8 @@ export async function runAiAnalysis(scopeId: string, force = false, signal?: Abo
       data_updated_at: scopeUpdatedAt(scopeId, view),
       entries: {},
     };
-    if (force) toastr.info(t`当前维度没有可生成理由的统计建议（参与 ≥${SUGGEST_MIN_SAMPLES} 轮且建议引擎出建议的条目）`);
+    if (force)
+      toastr.info(t`当前维度没有可生成理由的统计建议（参与 ≥${SUGGEST_MIN_SAMPLES} 轮且建议引擎出建议的条目）`);
     return true;
   }
   if (!force && !aiAnalysisNeeded(scopeId, view, rows)) return false;

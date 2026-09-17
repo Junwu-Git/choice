@@ -921,11 +921,7 @@ function touchChangedMarker(gs: ReturnType<typeof useGlobalSettingsStore>, scope
 /** 清理受影响条目的 AI 理由缓存：配置写入路径（建议应用/阵容落出补入/重新启用）
  *  刻意不触发整维重跑（成本），但改写的条目其建议与理由必然过期——直接删缓存条目，
  *  展示侧在下次分析前不再显示旧理由（配合 suggestionKey 指纹双保险）。 */
-function invalidateAiReasons(
-  gs: ReturnType<typeof useGlobalSettingsStore>,
-  scopeId: string,
-  entryIds: string[],
-): void {
+function invalidateAiReasons(gs: ReturnType<typeof useGlobalSettingsStore>, scopeId: string, entryIds: string[]): void {
   const cached = gs.settings.stats.ai_analysis[scopeId];
   if (!cached) return;
   for (const id of entryIds) {

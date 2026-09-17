@@ -21,9 +21,7 @@ export function initPanelMount() {
   const panelStore = usePanelStateStore(pinia);
   // 注册 L1 归因写回后的面板刷新钩子：ai-attribution 不直接 import panel-state（会成环），
   // 改由面板层在此注入 refreshFromMessageIfCurrent，写回消息后同步面板持有的 generation 副本
-  setAttributionPanelRefreshHook((messageId, swipeId) =>
-    panelStore.refreshFromMessageIfCurrent(messageId, swipeId),
-  );
+  setAttributionPanelRefreshHook((messageId, swipeId) => panelStore.refreshFromMessageIfCurrent(messageId, swipeId));
 
   const getPanelMessageId = (): number | null => {
     try {
