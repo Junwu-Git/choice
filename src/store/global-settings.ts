@@ -1827,6 +1827,50 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     validated.stats = createEmptyStats();
   }
 
+  // v53：含对话选项恢复直接引语教学——v44 中性化 core_rules 时只留一句"含对话的用『……』
+  // 直接引语"，丢掉 v28 时代"正例示范引语 + 反例示范转述"的 few-shot 教法，模型重新滑向
+  // "询问她是否知道……"式转述（用户实测复现）。本版给默认文本补硬规则+正反例与 thinking
+  // 自检；exact-match（内容 === v47 后默认才换，同 v44/v47 模式）保证用户自定义过的模块不动。
+  // from 字面量冻结 JSON 改动前的默认原文，to 取自 DEFAULT_MODULES（改动后即新默认），
+  // 迁移终态与 JSON 单一事实源零漂移；覆盖工作副本 + 所有配置快照，防切配置后旧文本复活。
+  // 用 v53 而非 v52：SCHEMA_VERSION 在上一版已升到 52 并随旧默认文本发布，存量 v52 档
+  // 正是本迁移的目标（携带旧文本）。gate 必须高于 52 才能命中它们——`< 52` 会把已升 52 的
+  // 存档跳过、永远保留旧文本（deploy-safety 复查发现）。新统计/AI 字段由 zod default 兼容、不需迁移
+  if ((validated.schema_version ?? 0) < 53) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V52_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。含对话的用『……』直接引语，禁止"说……"式转述。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题]内容"（标题用[]包裹）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？主体、切入点、风险是否拉开差距？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV52ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V52_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV52ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV52ModuleContent(cfg.modules);
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 

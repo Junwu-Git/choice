@@ -77,10 +77,13 @@
   --choice-z-floating: 30000;
   --choice-z-popover: 30300;
 
-  /* 兼容映射：旧变量名 → 新语义 */
+  /* 兼容映射：旧变量名 → 新语义。
+     bg-elevated 此前被 Statistics/DebugSettings 引用却从未定义（行背景回退透明），
+     此处惰性引用各主题块覆盖的 --choice-surface-2，无需逐主题重复补 */
   --choice-bg-panel: var(--choice-bg);
   --choice-bg-card: var(--choice-surface);
   --choice-bg-element: var(--choice-surface-2);
+  --choice-bg-elevated: var(--choice-surface-2);
   --choice-warning: var(--choice-color-warning);
 }
 

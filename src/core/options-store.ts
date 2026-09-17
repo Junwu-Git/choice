@@ -19,8 +19,8 @@ export type ChoiceGeneration = {
    *  随消息持久化，供条目级统计与参与/期望归因；精确逐项归因见 options[].matchedEntryId */
   poolEntryIds: string[];
   /** 生成时生效的统计维度（config.id；无 config 会话为 '__none__'）。
-   *  信息性字段：统计命中回写基于窗口 recent 的 gid 全局搜索定位，不依赖本字段；
-   *  老消息/润色结果可能缺省，读取处用 ?? 兜底。 */
+   *  命中回写优先直用本字段（避免点击时切 config 记错维度）；旧消息缺省时统计层
+   *  回退窗口 recent 的 gid 全局搜索定位（findHitScope）。 */
   scopeId?: string;
 };
 

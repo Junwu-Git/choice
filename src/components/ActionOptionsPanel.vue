@@ -386,6 +386,7 @@ const onSelect = async (option: ChoiceOption) => {
     poolEntryIds: gen?.poolEntryIds ?? [],
     generationId: gen?.id,
     matchedEntryId: option.matchedEntryId,
+    scopeId: gen?.scopeId,
   });
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);

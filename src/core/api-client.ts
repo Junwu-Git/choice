@@ -128,13 +128,16 @@ function isRetryableError(e: unknown): boolean {
 
 /** 带重试的副 API 调用入口：根据 retryCount 自动重试可恢复错误。
  *  每次尝试独立 AbortController + 超时，外部取消信号联动所有尝试。
- *  重试间隔由 retryInterval（秒）控制，失败时通过 toastr 提示进度。 */
+ *  重试间隔由 retryInterval（秒）控制，失败时通过 toastr 提示进度。
+ *  quiet=true：重试进度不 toastr（供后台 fire-and-forget 任务使用——L1 归因/L2 理由
+ *  是后台增强，重试提示会打扰用户，且其失败已由各自模块级状态留痕）。 */
 export async function callSecondaryApiWithRetry(
   messages: ChatMsg[],
   api: SecondaryApi,
   retryCount: number,
   retryInterval: number,
   externalSignal?: AbortSignal,
+  quiet = false,
 ): Promise<string> {
   const maxAttempts = retryCount + 1;
   let lastError: unknown;
@@ -164,7 +167,7 @@ export async function callSecondaryApiWithRetry(
         // 且 toastr 已显示"正在重试"造成误导。这里提前拦截，取消立即生效。
         if (externalSignal?.aborted) throw e;
         const delaySec = Math.max(0, retryInterval);
-        toastr.info(`正在重试 (${attempt + 1}/${retryCount})，${delaySec}s 后重试...`);
+        if (!quiet) toastr.info(`正在重试 (${attempt + 1}/${retryCount})，${delaySec}s 后重试...`);
         await new Promise(resolve => setTimeout(resolve, delaySec * 1000));
         // sleep 期间若被取消则直接终止，避免醒来后又发起一次注定被 abort 的请求
         if (externalSignal?.aborted) throw e;

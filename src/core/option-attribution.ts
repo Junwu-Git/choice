@@ -62,6 +62,14 @@ export function prepareMatchSignals(candidates: PoolEntry[]): EntryMatchSignal[]
     .sort((a, b) => b.type.length - a.type.length);
 }
 
+/** 前缀精确匹配 → { via: 'prefix' }；Dice 兜底命中 → { via: 'dice' }；未命中 → { id: null, via: null }。
+ *  匹配方式供 L1 AI 归因「前置快检」使用：全部选项都经 type 前缀命中（Dice 已高置信、
+ *  AI 结果几乎必然一致）时直接跳过外部请求，不重复打 API。 */
+export type OptionMatch = {
+  id: string | null;
+  via: 'prefix' | 'dice' | null;
+};
+
 /**
  * 匹配单条选项到候选条目：
  * 1. 提取括号标题壳（parse 主路径会保留 [标题]/【标题】，标题即 AI 给选项起的方向名），
@@ -69,15 +77,15 @@ export function prepareMatchSignals(candidates: PoolEntry[]): EntryMatchSignal[]
  * 2. type 前缀精确匹配（信号已按 type 长度降序，取首个命中 = 最长 type）→ 直接认定；
  * 3. 否则对全部候选算 2-gram Dice（bigram 预计算复用），最高分 ≥ threshold 取唯一归属。
  */
-export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal[], threshold: number): string | null {
+export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal[], threshold: number): OptionMatch {
   const raw = optionText.trim();
-  if (!raw || signals.length === 0) return null;
+  if (!raw || signals.length === 0) return { id: null, via: null };
   const bracket = raw.match(/^[[【]([^\]】]+)[\]】]\s*/);
   const title = bracket ? bracket[1].trim() : '';
   const body = bracket ? raw.slice(bracket[0].length) : raw;
   const checkText = title ? `${title} ${body}`.trim() : raw;
   for (const s of signals) {
-    if (startsWithType(checkText, s.type)) return s.id;
+    if (startsWithType(checkText, s.type)) return { id: s.id, via: 'prefix' };
   }
   const text = normalize(checkText);
   const optionBigrams = bigrams(text);
@@ -90,5 +98,5 @@ export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal
       bestId = s.id;
     }
   }
-  return bestScore >= threshold ? bestId : null;
+  return { id: bestScore >= threshold ? bestId : null, via: bestScore >= threshold ? 'dice' : null };
 }

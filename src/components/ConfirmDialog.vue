@@ -119,6 +119,9 @@ const emit = defineEmits<{
   color: var(--choice-text-secondary);
   margin: 0;
   line-height: 1.5;
+  /* 应用建议/阵容计划的确认文案是多行拼接（\n 分隔条目清单）：不设 pre-line 会
+     渲染成一段长句。pre-line 只作用于换行符，不含 \n 的既有调用零影响 */
+  white-space: pre-line;
 }
 
 .choice-cfdlg-footer {

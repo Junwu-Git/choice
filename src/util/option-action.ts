@@ -13,7 +13,11 @@ import { recordOptionSelected } from '@/core/stats';
  * 由调用方从 panelStore.currentGeneration 传入；旧消息缺该字段时回退 []（只计总量）。
  * opts.generationId 为被点选项所在代（同代重复点击只计 1 次命中轮次）。
  * opts.matchedEntryId 为被点选项的精确归因条目（生成时文本匹配，见 option-attribution.ts）：
- * 存在时统计「命中」只记该条目；缺失（旧代/未匹配）回退整轮共现。 */
+ * 保留三态不归一化——string 时统计「命中」只记该条目；null（新代显式未匹配 / L1 AI 归因写回
+ * 的自由发挥）不命中任何条目；undefined（旧代消息无该字段）回退整轮共现。勿在此处 `?? null`
+ * 归一，否则旧代会从「共现回退」误变为「不命中」（见 core/stats.ts recordOptionSelected 注释）。
+ * opts.scopeId 为被点选项所在代的生成维度（ChoiceGeneration.scopeId）：命中回写直接归到
+ * 该维度，避免点击时切了 config 导致记错；旧代消息缺该字段时由统计层兜底搜索。 */
 export async function applyOptionBehavior(
   option: ChoiceOption,
   behavior: 'send' | 'fill' | 'append' | 'insert',
@@ -22,6 +26,7 @@ export async function applyOptionBehavior(
     poolEntryIds?: string[];
     generationId?: string;
     matchedEntryId?: string | null;
+    scopeId?: string;
   },
 ) {
   const content = parseOptionContent(option.text);
@@ -60,11 +65,11 @@ export async function applyOptionBehavior(
   }
   // 统计埋点（共享层唯一计数点）：主面板与悬浮球弹窗都走这里，弹窗内禁止另写。
   // 润色视图完全不计入；调用方须显式传 view='enrich'，默认 'options'
-  // （漏标只多计、不丢计，安全方向）。精确归因优先（matchedEntryId），
-  // 缺失时回退整轮共现到所在轮条目集合，同代去重。
+  // （漏标只多计、不丢计，安全方向）。精确归因优先（matchedEntryId 三态），
+  // 命中口径由 core/stats.ts 判定（string 命中 / null 不命中 / undefined 旧代回退共现）。
   // content 为 parse 后的选项正文，写入 last_selected_text 供统计页展示与归因种子。
   if ((opts?.view ?? 'options') === 'options') {
-    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content, opts?.matchedEntryId);
+    recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content, opts?.matchedEntryId, opts?.scopeId);
   }
   if (behavior === 'send') {
     await sendTextareaMessage();

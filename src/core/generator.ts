@@ -28,6 +28,7 @@ import {
   type ChoiceOption,
 } from '@/core/options-store';
 import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
+import { enqueueAttributionAnalysis } from '@/core/ai-attribution';
 import type {
   ChatSettings,
   PoolEntry,
@@ -1026,8 +1027,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 被 AI 舍弃的候选不产生命中；匹配不上的选项（AI 自由发挥）为 null。
     // 候选信号预计算一次（bigram 集合复用），前缀匹配按最长 type 优先
     const matchSignals = prepareMatchSignals(roundEntries);
+    // 全部选项均按 type 前缀精确命中 = Dice 已高置信、AI 语义纠偏空间趋零：
+    // 作为 L1 归因的前置快检信号（enqueue 据此跳过外部请求，省成本）。
+    // 任一选项走 Dice 兜底或未匹配（AI 自由发挥），语义归属仍存疑 → 需要 AI 复核。
+    let allPrefixMatched = options.length > 0;
     for (const o of options) {
-      o.matchedEntryId = matchOptionToEntry(o.text, matchSignals, OPTION_MATCH_THRESHOLD);
+      const m = matchOptionToEntry(o.text, matchSignals, OPTION_MATCH_THRESHOLD);
+      o.matchedEntryId = m?.id ?? null;
+      if (m?.via !== 'prefix') allPrefixMatched = false;
     }
     // 生成时的统计维度：命中回写优先归到本维度，防止切 config 后回看旧楼层记错 scope
     const scopeId = usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
@@ -1045,8 +1052,13 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 统计口径：仅行动选项生成成功（实际保留条数）计数，润色/条目生成不计入。
     // 与 lastOptionsGeneratedAt 同处成功路径，失败/取消/空解析不会走到这里；
     // poolEntryIds 与 generation 同源，轮次共现归因到当轮全部参与条目；
-    // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线
-    recordOptionsGenerated(options, poolEntryIds, gid);
+    // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线；
+    // scopeId 传入生成时维度（与 generation.scopeId 同源），统计层不再二次解析
+    recordOptionsGenerated(options, poolEntryIds, gid, scopeId);
+    // L1 AI 归因增强：生成成功后异步入队（fire-and-forget，不进关键路径）。开关关/无 API
+    // 时 enqueue 内部 no-op；失败静默保留 Dice 结果——主体功能对 AI 零依赖。
+    // allPrefixMatched=true 时整轮前缀高置信命中，enqueue 直接跳过（省一次外部请求）。
+    enqueueAttributionAnalysis(generation, _target.messageId, _target.swipeId, allPrefixMatched);
     return generation;
   } catch (e) {
     if (cancelled) return null;
