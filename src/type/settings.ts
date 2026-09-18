@@ -1072,7 +1072,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 54;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1240,6 +1240,12 @@ const UISettings = z
      * 全新档走 zod default(false) 即简化模式，降低新用户首启认知负荷。
      */
     advanced_features_enabled: z.boolean().default(false),
+    /**
+     * 选项 HUD 化总开关：false = 关闭分级色条/悬停增强/滑入动画/已选打勾全部视觉增强
+     * （选项仍按基础卡片样式渲染）。AI 输出侧是否带风险档位标注不受本字段影响——
+     * 关闭时标注存在也按中性显示。老存档缺字段由 default(true) 补齐，无需 bump schema_version
+     */
+    hud_enabled: z.boolean().default(true),
   })
   .prefault({});
 type UISettings = z.infer<typeof UISettings>;

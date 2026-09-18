@@ -7,6 +7,7 @@
       'choice-panel--compact': compact,
       'choice-panel--dense': isDense,
       'choice-panel--docked': isDocked && !compact,
+      'choice-panel--hud': hudEnabled,
     }"
   >
     <div class="choice-panel-header" @click="panelStore.setCollapsed(!collapsed)">
@@ -144,12 +145,19 @@
               <i class="fa-solid fa-chevron-right"></i>
             </button>
           </span>
+          <!-- 风险档位图例：HUD 开启且当前代存在带档位标注的选项时显示。
+               原生 title tooltip（触屏长按可见），不占用常驻布局 -->
+          <span v-if="hasGradedOptions" class="choice-bar-legend" :title="legendTitle">
+            <i class="fa-solid fa-circle-info"></i>
+          </span>
         </div>
         <button
           v-for="(option, index) in visibleOptions"
-          :key="index"
+          :key="`${generationId}:${index}`"
           class="choice-option-btn"
-          @click="onSelect(option)"
+          :class="optionBtnClass(option, index)"
+          :style="optionBtnStyle(index)"
+          @click="onSelect(option, index)"
         >
           <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
           <span class="choice-option-divider"></span>
@@ -196,7 +204,7 @@ import { nextThemeMode, themeLabel } from '@/core/theme-presets';
 import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
-import { parseOptionType, parseOptionContent } from '@/util/option-format';
+import { parseOptionType, parseOptionContent, parseOptionStyle } from '@/util/option-format';
 import { applyOptionBehavior } from '@/util/option-action';
 
 const props = defineProps<{ compact?: boolean }>();
@@ -227,6 +235,50 @@ const {
 const isGenerating = computed(() => generatorState.loading);
 
 const gs = useGlobalSettingsStore();
+
+// 选项 HUD 化总开关（外观页「聊天界面」分区）：关闭时分级色条/悬停增强/滑入动画/已选
+// 打勾整体停用，选项回到基础卡片样式。AI 输出侧档位标注仍可存在，关闭时按中性显示
+const hudEnabled = computed(() => gs.settings.ui.hud_enabled);
+
+// 已选打勾：同一代内点过的选项加 ✓ 并半透明（纯视觉反馈，不持久化、不影响统计口径）。
+// key 用「generation id + 行号」而非选项文本——文本会跨代重复，label 会误标未点过的
+const selectedKeys = ref<ReadonlySet<string>>(new Set());
+const currentEnrichGen = computed(() => panelStore.currentEnrichGeneration);
+const generationId = computed(() =>
+  activeView.value === 'enrich'
+    ? (currentEnrichGen.value?.id ?? 'enrich')
+    : (panelStore.currentGeneration?.id ?? 'none'),
+);
+const markOptionSelected = (index: number) => {
+  const key = `${generationId.value}:${index}`;
+  if (selectedKeys.value.has(key)) return;
+  selectedKeys.value = new Set(selectedKeys.value).add(key);
+};
+
+// 档位 → 选项行样式类（theme.css 的 --choice-risk-* 别名；无档位不加类 = 中性）。
+// 关闭 HUD 时全部不加，基础卡片样式不变
+const optionBtnClass = (option: ChoiceOption, index: number) => {
+  if (!hudEnabled.value) return {};
+  const grade = parseOptionStyle(option.text);
+  return {
+    'choice-option-btn--conservative': grade === 'conservative',
+    'choice-option-btn--balanced': grade === 'balanced',
+    'choice-option-btn--bold': grade === 'bold',
+    'choice-option-btn--selected': selectedKeys.value.has(`${generationId.value}:${index}`),
+  };
+};
+
+// 逐条滑入延迟（staggered 60ms/条）；HUD 关闭时动画整体停用（CSS 由 --hud 类门控）
+const optionBtnStyle = (index: number): Record<string, string> => {
+  if (!hudEnabled.value) return {};
+  return { animationDelay: `${index * 60}ms` };
+};
+
+// 风险档位图例：仅选项视图且存在带档位标注的选项时显示（enrich 视图不带档位）
+const hasGradedOptions = computed(
+  () => activeView.value === 'options' && hudEnabled.value && visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
+);
+const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
 // 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
@@ -375,7 +427,7 @@ const onEnrichNext = () => {
   panelStore.enrichGoTo(panelStore.enrichCurrentIndex + 1);
 };
 
-const onSelect = async (option: ChoiceOption) => {
+const onSelect = async (option: ChoiceOption, index: number) => {
   // view 标记来源：统计口径仅行动选项视图计入，润色视图的选择不计数（见 option-action.ts）；
   // poolEntryIds/generationId 取被点选项所在代（currentGeneration=generations[currentIndex]，
   // 翻页后正确；generationId 用于同代重复点击的命中去重）
@@ -388,6 +440,8 @@ const onSelect = async (option: ChoiceOption) => {
     matchedEntryId: option.matchedEntryId,
     scopeId: gen?.scopeId,
   });
+  // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
+  markOptionSelected(index);
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);
   emit('select');
@@ -699,10 +753,42 @@ const onSelect = async (option: ChoiceOption) => {
   /* 列向 flex item 的 min-width:auto 会拿内容 min-content 当下限——长无空格 token
      （英文串/URL）会把按钮撑出容器宽，body 的 overflow-x:auto 顺势冒横向滚动条 */
   min-width: 0;
+  /* HUD 分级色条（::before 左缘）与悬停箭头（::after）的定位基准 */
+  position: relative;
   transition:
     transform var(--choice-transition),
     border-color var(--choice-transition),
     box-shadow var(--choice-transition);
+}
+
+/* 左缘分级色条：透明占位（width 过渡不跳变），--hud 门控下按档位上色 */
+.choice-option-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: var(--choice-radius-sm) 0 0 var(--choice-radius-sm);
+  background: transparent;
+  transition:
+    background var(--choice-transition),
+    width var(--choice-transition);
+}
+
+/* 悬停箭头：绝对定位在行尾，hover 才浮现（不占布局，opacity 过渡无位移跳变） */
+.choice-option-btn::after {
+  content: '›';
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  font-weight: 700;
+  color: var(--choice-primary);
+  opacity: 0;
+  transition:
+    opacity var(--choice-transition),
+    transform var(--choice-transition);
 }
 
 .choice-option-btn:hover {
@@ -713,6 +799,90 @@ const onSelect = async (option: ChoiceOption) => {
 
 .choice-option-btn:active {
   transform: scale(0.985);
+}
+
+/* ===== 选项 HUD 化（ui.hud_enabled，--hud 类整体门控）=====
+   关闭开关 = 不加 --hud 类，以下全部规则不生效，回到基础卡片样式。档位样式类
+   只在 parseOptionStyle 命中受控词表时由 optionBtnClass 加，中性选项无类 */
+.choice-panel--hud .choice-option-btn {
+  /* 逐条滑入：v-for key 含 generation id，切代/翻页重建元素时重放一次；
+     animation-delay 由 optionBtnStyle 逐条 60ms 错开 */
+  animation: choice-option-enter 220ms ease-out both;
+}
+
+@keyframes choice-option-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.choice-panel--hud .choice-option-btn--conservative::before {
+  background: var(--choice-risk-conservative);
+}
+
+.choice-panel--hud .choice-option-btn--balanced::before {
+  background: var(--choice-risk-balanced);
+}
+
+.choice-panel--hud .choice-option-btn--bold::before {
+  background: var(--choice-risk-bold);
+}
+
+/* 悬停增强：加深浮起 + 色条加宽 + 行尾浮现箭头 */
+.choice-panel--hud .choice-option-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--choice-shadow-md),
+    inset 0 1px 0 var(--choice-frost-line);
+}
+
+.choice-panel--hud .choice-option-btn:hover::before {
+  width: 5px;
+}
+
+.choice-panel--hud .choice-option-btn:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 已选打勾：同代内点过的选项降透明度 + 虚线描边 + 类型前 ✓。
+   再次点击仍可正常触发行为，仅视觉标记 */
+.choice-panel--hud .choice-option-btn--selected {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.choice-panel--hud .choice-option-btn--selected .choice-option-type::before {
+  content: '✓';
+  margin-right: 3px;
+  color: var(--choice-color-success);
+  font-weight: 700;
+}
+
+/* 风险档位图例（行为栏右端，分页器之后）：muted 图标 + hover 主色，
+   与行为栏内小按钮同密度 */
+.choice-bar-legend {
+  margin-left: 2px;
+  padding: 2px var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  cursor: help;
+}
+
+.choice-bar-legend:hover {
+  color: var(--choice-primary);
+}
+
+/* 动画尊重系统减弱动态偏好：关闭逐条滑入，其余 HUD 样式保留 */
+@media (prefers-reduced-motion: reduce) {
+  .choice-panel--hud .choice-option-btn {
+    animation: none;
+  }
 }
 
 .choice-option-type {

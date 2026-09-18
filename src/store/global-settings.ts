@@ -1871,6 +1871,48 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const cfg of validated.prompt_configs) migrateV52ModuleContent(cfg.modules);
   }
 
+  // v54：选项 HUD 化配套的风险档位标注（保守/平衡/大胆）写进默认提示词——core_rules
+  // 补"标题内竖线标注档位"的输出格式说明 + "整批档位错开"要求，thinking_prompt 自检句补
+  // 档位核对。exact-match（内容 === v53 后默认才换，同 v53 模式）保证用户自定义过的模块
+  // 不动；from 字面量冻结 JSON 改动前的默认原文，to 取自 DEFAULT_MODULES（改动后即新默认），
+  // 迁移终态与 JSON 单一事实源零漂移；覆盖工作副本 + 所有配置快照。旧 v52 档在上一块
+  // （<53）已被收敛为 v53 默认，正好是 v54 的 from，链式收敛到新默认。
+  // 视觉 HUD 化本身（ui.hud_enabled）由 zod default(true) 补齐，无需迁移。
+  if ((validated.schema_version ?? 0) < 54) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V53_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题]内容"（标题用[]包裹）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV53ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V53_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV53ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV53ModuleContent(cfg.modules);
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 

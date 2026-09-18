@@ -3,7 +3,7 @@
     <div
       ref="popoverEl"
       class="choice-floating-options"
-      :class="{ 'choice-floating-options--dimmed': dimmed }"
+      :class="{ 'choice-floating-options--dimmed': dimmed, 'choice-floating-options--hud': hudEnabled }"
       :style="{
         '--choice-popover-x': popoverX + 'px',
         '--choice-popover-y': popoverY + 'px',
@@ -16,7 +16,14 @@
            生成中且无旧结果时显示加载占位，有旧结果则保留旧选项不闪烁（同主面板约定） -->
       <div class="choice-floating-options-body">
         <template v-if="options.length > 0">
-          <button v-for="(option, index) in options" :key="index" class="choice-float-option" @click="onSelect(option)">
+          <button
+            v-for="(option, index) in options"
+            :key="`${generationId}:${index}`"
+            class="choice-float-option"
+            :class="optionBtnClass(option, index)"
+            :style="optionBtnStyle(index)"
+            @click="onSelect(option, index)"
+          >
             <span class="choice-float-option-type">{{ parseOptionType(option.text) }}</span><!--
             --><span class="choice-float-option-content">{{ parseOptionContent(option.text) }}</span>
           </button>
@@ -80,6 +87,10 @@
         >
           <i class="fa-solid fa-circle-half-stroke"></i>
         </button>
+        <!-- 风险档位图例：HUD 开启且当前代存在带档位标注的选项时显示，紧贴设置按钮左侧 -->
+        <span v-if="hasGradedOptions" class="choice-float-bar-legend" :title="legendTitle">
+          <i class="fa-solid fa-circle-info"></i>
+        </span>
         <button class="choice-float-bar-btn" :title="t`打开设置`" @click="openSettings">
           <i class="fa-solid fa-gear"></i>
         </button>
@@ -97,7 +108,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { openSettings, closeBubbleOptions, isSettingsOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
-import { parseOptionType, parseOptionContent } from '@/util/option-format';
+import { parseOptionType, parseOptionContent, parseOptionStyle } from '@/util/option-format';
 import { applyOptionBehavior } from '@/util/option-action';
 
 // 选项 popover 宽度：320px 封顶（放得下类型标签 + 内容），窄屏让给视口
@@ -137,6 +148,40 @@ const generations = computed(() => panelStore.generations);
 const isGenerating = computed(() => generatorState.loading);
 const locked = computed(() => gs.settings.ui.panel_lock !== 'off');
 const dimEnabled = computed(() => gs.settings.ui.floating_dim_enabled);
+
+// 选项 HUD 化总开关（与主面板同源）：关闭时分级色条/悬停增强/滑入动画/已选打勾停用
+const hudEnabled = computed(() => gs.settings.ui.hud_enabled);
+
+// 已选打勾：同代内点过的选项加 ✓ 并半透明（纯视觉反馈，不持久化）。弹窗无润色视图，
+// generationId 直接用当前选项代；key 用「generation id + 行号」避免跨代误标
+const generationId = computed(() => panelStore.currentGeneration?.id ?? 'none');
+const selectedKeys = ref<ReadonlySet<string>>(new Set());
+const markOptionSelected = (index: number) => {
+  const key = `${generationId.value}:${index}`;
+  if (selectedKeys.value.has(key)) return;
+  selectedKeys.value = new Set(selectedKeys.value).add(key);
+};
+
+const optionBtnClass = (option: ChoiceOption, index: number) => {
+  if (!hudEnabled.value) return {};
+  const grade = parseOptionStyle(option.text);
+  return {
+    'choice-float-option--conservative': grade === 'conservative',
+    'choice-float-option--balanced': grade === 'balanced',
+    'choice-float-option--bold': grade === 'bold',
+    'choice-float-option--selected': selectedKeys.value.has(`${generationId.value}:${index}`),
+  };
+};
+
+const optionBtnStyle = (index: number): Record<string, string> => {
+  if (!hudEnabled.value) return {};
+  return { animationDelay: `${index * 60}ms` };
+};
+
+const hasGradedOptions = computed(
+  () => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null),
+);
+const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"
 watch(dimEnabled, enabled => {
@@ -190,7 +235,7 @@ const onNext = () => {
   panelStore.goTo(panelStore.currentIndex + 1);
 };
 
-const onSelect = async (option: ChoiceOption) => {
+const onSelect = async (option: ChoiceOption, index: number) => {
   // 弹窗是纯行动选项速选菜单（无润色视图），view 恒为 'options'，明确传入计价口径；
   // poolEntryIds/generationId 取被点选项所在代，供统计整轮归因与同代去重
   // （见 option-action.ts / core/stats.ts）
@@ -201,6 +246,8 @@ const onSelect = async (option: ChoiceOption) => {
     matchedEntryId: option.matchedEntryId,
     scopeId: panelStore.currentGeneration?.scopeId,
   });
+  // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
+  markOptionSelected(index);
   panelStore.autoSetCollapsed(true);
   // 锁定时点选项不收起（与主面板「锁定不被动收起」语义一致）；未锁定则选中即关
   if (!locked.value) {
@@ -322,10 +369,42 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   cursor: pointer;
   line-height: 1.4;
   min-width: 0;
+  /* HUD 分级色条（::before 左缘）与悬停箭头（::after）的定位基准 */
+  position: relative;
   transition:
     transform var(--choice-transition),
     border-color var(--choice-transition),
     box-shadow var(--choice-transition);
+}
+
+/* 左缘分级色条：透明占位（width 过渡不跳变），--hud 门控下按档位上色（同主面板约定） */
+.choice-float-option::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: var(--choice-radius-sm) 0 0 var(--choice-radius-sm);
+  background: transparent;
+  transition:
+    background var(--choice-transition),
+    width var(--choice-transition);
+}
+
+/* 悬停箭头：绝对定位在行尾，hover 才浮现（不占布局） */
+.choice-float-option::after {
+  content: '›';
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  font-weight: 700;
+  color: var(--choice-primary);
+  opacity: 0;
+  transition:
+    opacity var(--choice-transition),
+    transform var(--choice-transition);
 }
 
 .choice-float-option:hover {
@@ -336,6 +415,82 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .choice-float-option:active {
   transform: scale(0.985);
+}
+
+/* ===== 选项 HUD 化（ui.hud_enabled，--hud 类整体门控，同主面板约定）===== */
+.choice-floating-options--hud .choice-float-option {
+  animation: choice-option-enter 220ms ease-out both;
+}
+
+@keyframes choice-option-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.choice-floating-options--hud .choice-float-option--conservative::before {
+  background: var(--choice-risk-conservative);
+}
+
+.choice-floating-options--hud .choice-float-option--balanced::before {
+  background: var(--choice-risk-balanced);
+}
+
+.choice-floating-options--hud .choice-float-option--bold::before {
+  background: var(--choice-risk-bold);
+}
+
+.choice-floating-options--hud .choice-float-option:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--choice-shadow-md),
+    inset 0 1px 0 var(--choice-frost-line);
+}
+
+.choice-floating-options--hud .choice-float-option:hover::before {
+  width: 5px;
+}
+
+.choice-floating-options--hud .choice-float-option:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 已选打勾：同代内点过的选项降透明度 + 虚线描边 + 类型徽标前 ✓ */
+.choice-floating-options--hud .choice-float-option--selected {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.choice-floating-options--hud .choice-float-option--selected .choice-float-option-type::before {
+  content: '✓';
+  margin-right: 3px;
+  color: var(--choice-color-success);
+  font-weight: 700;
+}
+
+/* 风险档位图例（底部工具条，设置按钮左侧）：muted 图标 + hover 主色 */
+.choice-float-bar-legend {
+  padding: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  cursor: help;
+}
+
+.choice-float-bar-legend:hover {
+  color: var(--choice-primary);
+}
+
+/* 动画尊重系统减弱动态偏好：关闭逐条滑入，其余 HUD 样式保留 */
+@media (prefers-reduced-motion: reduce) {
+  .choice-floating-options--hud .choice-float-option {
+    animation: none;
+  }
 }
 
 /* 类型徽标：行内块（inline-flex）紧贴内容，宽度随文字自适应，不占独立列——

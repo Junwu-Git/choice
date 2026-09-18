@@ -164,6 +164,8 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - 不更换主色调；`--choice-primary` 蓝色系和 `ActionOptionsPanel.vue` 的整体视觉作为基准，只做细节打磨。
 - 移动端优先：新组件先在约 380px 容器宽度验证，再扩展到桌面宽度。
 - 使用克制的卡片化和明确的信息层级，不做玻璃拟态或强动效。
+- **选项 HUD 化**（`ui.hud_enabled`，默认开）：选项行左缘 3px 风险档位色条（保守/平衡/大胆 →
+  `--choice-risk-*` 别名，惰性引用各主题的 success/info/warning 语义色）、悬停增强（加深浮起 + 色条加宽 + 行尾箭头）、生成后逐条滑入动画（staggered 60ms/条，v-for key 含 generation id 保证切代重放；`prefers-reduced-motion` 下关闭）、同代已选打勾（✓ + 半透明虚线，组件内存态不持久化）。全部由面板根类的 `--hud` 修饰类整体门控，关闭开关即回基础卡片样式；两处 UI 的档位样式类前缀不同（`choice-option-btn--*` / `choice-float-option--*`）但语义一致。
 - `src/theme.css` 已包含颜色、间距、字号、圆角、阴影、层级和状态色 token。间距使用
   `--choice-space-1`~`--choice-space-6`，字号使用 `--choice-text-xs/sm/base/lg/xl`，新增样式不要继续散落裸值。
 - 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。不要恢复硬编码 z-index。
@@ -190,7 +192,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 右键菜单是当前快捷菜单入口（右键/触屏长按 500ms 呼出，含「查看行动选项 / 打开设置 / 隐藏悬浮球」，与选项 popover 互斥）；尚未实现基于
 `onLongPress` 的长按状态机。 **左键点击气泡行为由 `ui.bubble_click_action` 控制**：`options` = 切换选项弹窗、 `settings`
 = 打开/关闭设置面板。选项弹窗（`FloatingOptions.vue`）是**独立 UI**，不复用 `ActionOptionsPanel`
-的版式：无标题栏、纯列表紧凑排版、底部工具条（分页/生成/锁/设置）；选项解析（`src/util/option-format.ts`）与行为应用（`src/util/option-action.ts`）是与主面板共用的共享层，弹窗内禁止再写一份解析/行为逻辑。弹窗锁读写全局
+的版式：无标题栏、纯列表紧凑排版、底部工具条（分页/生成/锁/设置/条件显示的档位图例）；选项解析（`src/util/option-format.ts`）与行为应用（`src/util/option-action.ts`）是与主面板共用的共享层，弹窗内禁止再写一份解析/行为逻辑。弹窗锁读写全局
 `panel_lock` （`off ↔ open`
 二态），锁定时**弹窗常开**：点选项、点弹窗外部、Esc 均不关闭；仅支持 hover 的鼠标移出选项栏时弹窗**淡化**（`dimmed`
 态 opacity 0.45，移入恢复），淡化开关为工具条锁右侧的 `floating_dim_enabled`（默认开，仅锁定 +
@@ -216,13 +218,13 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 53。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 54。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义、窄屏布局 composable 与 `useConfirm.ts`（确认弹窗 Promise 化封装，Statistics 清空/应用建议/应用阵容三处使用）。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
-- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
+- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`：`parseOptionType`/`parseOptionContent`/`parseOptionStyle`，后者的风险档位分级——`[标题|保守/平衡/大胆]` 竖线标注，词表外/无标注返回 null 中性显示，受控词表与 prompt core_rules 输出格式同步）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
   提供角色卡绑定扫描（`getBoundCharacters`）与可靠持久化（`persistCharacter`，直接 POST
   `/api/characters/edit`，替代会丢扩展字段的 `saveCharacterDebounced`）。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。

@@ -540,5 +540,8 @@
   "把 JSON 内容粘贴到这里（支持 Ctrl+V）": "Paste JSON content here (Ctrl+V supported)",
   "解析并合并导入": "Parse & Merge Import",
   "替换整个条目库…": "Replace entire entry pool…",
-  "固定：勾选后该条目固定生成": "Pinned: checked entries are always included in generation"
+  "固定：勾选后该条目固定生成": "Pinned: checked entries are always included in generation",
+  "选项 HUD 化": "Option HUD",
+  "分级色条（保守/平衡/大胆）/ 悬停增强 / 滑入动画 / 已选标记": "Risk color bars (Conservative/Balanced/Bold) / hover enhancement / entrance animation / selected marks",
+  "风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）": "Risk grade: Conservative (green) / Balanced (blue) / Bold (orange)"
 }

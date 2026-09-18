@@ -85,6 +85,12 @@
   --choice-bg-element: var(--choice-surface-2);
   --choice-bg-elevated: var(--choice-surface-2);
   --choice-warning: var(--choice-color-warning);
+
+  /* 风险档位分级色（选项 HUD 化）：惰性引用各主题块已覆盖的语义色，
+     不在 6 套主题块重复定义——逐主题块已有 success/info/warning 的亮暗双值 */
+  --choice-risk-conservative: var(--choice-color-success);
+  --choice-risk-balanced: var(--choice-color-info);
+  --choice-risk-bold: var(--choice-color-warning);
 }
 
 /* ===== 亮色主题 — 暖白纸感磨砂 ===== */

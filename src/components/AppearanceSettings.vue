@@ -58,6 +58,14 @@
             <small>{{ t`在扩展程序（魔棒）菜单中显示行动选项入口` }}</small>
           </span>
         </label>
+        <label class="choice-check">
+          <input v-model="ui.hud_enabled" type="checkbox" />
+          <span class="choice-check-custom"></span>
+          <span class="choice-check-label">
+            <strong>{{ t`选项 HUD 化` }}</strong>
+            <small>{{ t`分级色条（保守/平衡/大胆）/ 悬停增强 / 滑入动画 / 已选标记` }}</small>
+          </span>
+        </label>
       </div>
       <!-- 面板停靠位置：切换由 panel-mount 监听设置变更即时迁移挂载点。
            输入框上方 = 停靠模式，展开限高滚动，选项再多不覆盖整屏 -->
