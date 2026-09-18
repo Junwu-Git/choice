@@ -9,8 +9,8 @@ export const setting_field = 'choice';
 // watcher 落盘前 sanitize、前端 input 钳制四处共用，禁止各自硬编码 10/500。
 // 为什么必须集中：历史上 schema 用 .min(10) 对"已存在的非法值"fail-closed（.default 只补
 // 缺失字段、不补非法值），用户在 UI 输入 <10 经无校验 watcher 落盘后，下次加载即整扩展崩溃。
-export const CHARS_MIN_LIMIT = 10;
-export const CHARS_MAX_LIMIT = 500;
+const CHARS_MIN_LIMIT = 10;
+const CHARS_MAX_LIMIT = 500;
 export const OPTION_MIN_CHARS_DEFAULT = 10;
 export const OPTION_MAX_CHARS_DEFAULT = 60;
 export const ENRICH_MIN_CHARS_DEFAULT = 10;
@@ -105,11 +105,35 @@ export const PoolConfig = z
   .prefault(() => ({ id: '', name: '', entries: [] }));
 export type PoolConfig = z.infer<typeof PoolConfig>;
 
+/** 自动化应用历史条目（GlobalSettings.apply_history 的元素）：
+ *  记录一次「建议应用」或「阵容计划应用」对受影响条目的前后局部快照
+ *  （entries_before/entries_after 只含本批实际改写的条目 id，非 config.entries 全量——
+ *  全量快照在大池下会让历史体积随条目数膨胀，而撤销/摘要只依赖受影响集），
+ *  供持久多槽撤销（undoLastApply）与后续「变更前后对照」（D 铺路）。
+ *  只对具体 config 产生（建议/阵容应用均要求 canApply），scope_id 必为 config.id。 */
+export const ApplyHistoryEntry = z.object({
+  id: z.string(),
+  /** 目标 config.id */
+  scope_id: z.string(),
+  /** 批次来源：suggestions = 建议引擎应用，roster = 阵容计划应用 */
+  kind: z.enum(['suggestions', 'roster']),
+  /** 应用时间戳（Date.now） */
+  ts: z.number().default(0),
+  /** 应用前受影响条目的局部快照（undo 恢复依据；未受影响条目不入快照） */
+  entries_before: z.array(PoolConfigEntry).prefault([]),
+  /** 应用后受影响条目的局部快照（D 铺路：变更对照/展示用） */
+  entries_after: z.array(PoolConfigEntry).prefault([]),
+  /** 受影响条目应用前的 last_weight_changed_at（undo 连带回滚冷却标记，
+   *  避免「撤销后条目被冷却卡住无法再建议」） */
+  markers_before: z.record(z.string(), z.number()).prefault({}),
+});
+export type ApplyHistoryEntry = z.infer<typeof ApplyHistoryEntry>;
+
 /** 润色人称默认值。选项提示词不再有隐藏的 person_style/option_rules 双来源。 */
 export const DEFAULT_ENRICH_PERSON_STYLE = '统一使用{{enrich_person}} {{user}} 为主语';
 
 /** 选项/润色人称默认值（PromptConfig 与 PromptRules 共用，勿两处各自硬编码） */
-export const DEFAULT_OPTION_PERSON = '第三人称';
+const DEFAULT_OPTION_PERSON = '第三人称';
 
 export const PromptModule = z.object({
   id: z.string(),
@@ -239,7 +263,7 @@ export const DEFAULT_MODULES = defaultModulesJson.modules as unknown as PromptMo
 
 /** 「简洁」基准内容涉及的模块 id。默认提示词（choice-prompts-optimized.json）本身就是简洁版，
  *  这里只圈出 v19 迁移简化映射涉及的四个模块，供提取单一事实源。 */
-export const SIMPLE_MODULE_IDS = new Set(['core_rules', 'thinking_prompt', 'enrich_core_rules', 'enrich_thinking']);
+const SIMPLE_MODULE_IDS = new Set(['core_rules', 'thinking_prompt', 'enrich_core_rules', 'enrich_thinking']);
 
 /** 「简洁」基准内容（core_rules/thinking_prompt/enrich_core_rules/enrich_thinking）。
  *  单一事实源：从 DEFAULT_MODULES 派生，v19 老存档迁移的简化映射复用它，
@@ -256,7 +280,7 @@ export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 // 顺序不依赖规则排列——提取规则保留 <标签>…</标签> 整段并舍弃其余，之后现有 tag/regex
 // 规则继续在提取结果上运行，形成"提取后再二次过滤"的新手友好管线。
 // extract 仅对 assistant 消息执行，user 消息跳过（纯文本 user 输入无目标标签会被整条丢弃）
-export const ChatFilterRule = z.discriminatedUnion('type', [
+const ChatFilterRule = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tag'),
     start: z.string().default(''),
@@ -278,7 +302,7 @@ export const ChatFilterRule = z.discriminatedUnion('type', [
     tag_name: z.string().default(''),
   }),
 ]);
-export type ChatFilterRule = z.infer<typeof ChatFilterRule>;
+type ChatFilterRule = z.infer<typeof ChatFilterRule>;
 
 // 过滤规则分组：按用途（不同卡/预设的正则）组织规则，每组可独立启用/禁用
 export const ChatFilterGroup = z.object({
@@ -328,7 +352,7 @@ export const FilterGroup = z.object({
 });
 export type FilterGroup = z.infer<typeof FilterGroup>;
 
-export const FilterSettings = z.object({
+const FilterSettings = z.object({
   regex_library: z.array(RegexLibraryEntry).default([]),
   groups: z.array(FilterGroup).default([]),
   library_groups: z.array(z.string()).default([]),
@@ -337,9 +361,9 @@ export const FilterSettings = z.object({
    *  assistant 失去配对分隔而相邻合并，受此困扰的用户可整体关掉酒馆正则。 */
   st_regex_enabled: z.boolean().default(true),
 });
-export type FilterSettings = z.infer<typeof FilterSettings>;
+type FilterSettings = z.infer<typeof FilterSettings>;
 
-export const PromptRules = z
+const PromptRules = z
   .object({
     system_prompt: z.string().default(''),
     core_rules: z.string().default(''),
@@ -394,7 +418,7 @@ export const PromptRules = z
     schema_version: z.number().default(0),
   })
   .prefault({});
-export type PromptRules = z.infer<typeof PromptRules>;
+type PromptRules = z.infer<typeof PromptRules>;
 
 export const SecondaryApi = z
   .object({
@@ -1048,7 +1072,52 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 47;
+export const SCHEMA_VERSION = 53;
+
+// ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
+/** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
+export const STATS_WINDOW_SIZE = 50;
+/** 建议最少样本轮次：窗口长度（或全量参与轮次）≥ 此值才出建议，样本不足只标「样本不足」 */
+export const SUGGEST_MIN_SAMPLES = 10;
+/** 建议阈值（超额命中率 = 实际命中率 - 期望命中率，期望 = Σ(matched/count) 平均）：
+ *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）；
+ *  低于期望 30pp 且无一次命中 → 建议停用。启发式常量，随数据积累调参。 */
+export const SUGGEST_DOWNGRADE_EXCESS = -0.2;
+export const SUGGEST_UPGRADE_EXCESS = 0.15;
+export const SUGGEST_DISABLE_EXCESS = -0.3;
+/** 建议写入的权重边界：降权减半（下限 0.2）、提权按 SUGGEST_UPGRADE_MULTIPLIER
+ *  （上限 5），防反复提权/降权失控。这是自动化改写逻辑，不是对用户输入值的 clamp。 */
+export const SUGGEST_WEIGHT_MIN = 0.2;
+export const SUGGEST_WEIGHT_MAX = 5;
+/** 建议提权幅度：表现良好条目 × 此倍率（保守化 1.5，非翻倍）——
+ *  提权不改变期望基线（期望只依赖输出条数与匹配），高权重条目曝光更多匹配机会、
+ *  稳定采用时易持续提权；放缓幅度让权重向 MAX 收敛变慢，缓解权重分散度劣化。
+ *  降权仍按减半（与提权不对称是刻意设计：降权应果断，提权应保守）。 */
+export const SUGGEST_UPGRADE_MULTIPLIER = 1.5;
+/** 阵容计划补入探索上限：剩余空位 × 该比例（向上取整）后从未入池条目补入。
+ *  余下空位保持空缺——纯「杀低捧高」会把候选集收敛成少数几条，探索预算是多样性兜底。 */
+export const ROSTER_EXPLORE_RATIO = 0.5;
+/** 自动化应用历史槽上限：超过后 FIFO 丢最旧，保证撤销入口始终指向最近 N 次写入 */
+export const APPLY_HISTORY_LIMIT = 20;
+/** AI 建议分析单批条数上限：一次请求只发送 ≤ 此数的条目（控制单次 token 与输出解析难度） */
+export const AI_ANALYSIS_BATCH_SIZE = 20;
+/** AI 建议分析单个维度条目上限：有建议条目超过此数时按参与轮次截断（避免无限请求） */
+export const AI_ANALYSIS_MAX_ENTRIES = 100;
+/** 统计页自动分析的防抖毫秒数：快速切维度时不连发请求，停稳后才评估 */
+export const AI_ANALYSIS_DEBOUNCE_MS = 1000;
+/** AI 理由最大字符数：prompt 约束与展示截断共用，防止单条理由刷屏 */
+export const AI_REASON_MAX_CHARS = 60;
+/** L1 AI 归因后台队列上限：超出后丢最旧（宁可丢失不积压）——坏 API 串行重试可能
+ *  阻塞队列数分钟，无上限会让积压请求无限膨胀且刷新即丢，丢了反正静默保留 Dice 结果 */
+export const AI_ATTRIBUTION_QUEUE_MAX = 32;
+
+/**
+ * 选项→条目精确归因的文本相似度阈值（字符 2-gram Dice，见 option-attribution.ts）。
+ * 生成时对每条输出选项与候选条目（type+content 信号）算相似度，≥ 阈值即认定归属该条目；
+ * 低于阈值视为 AI 自由发挥（matchedEntryId = null，不产生命中）。type 前缀精确匹配
+ * 优先于本阈值兜底（AI 常以 type 名开头写选项）。启发式常量，随真实数据表现调参。
+ */
+export const OPTION_MATCH_THRESHOLD = 0.25;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1083,7 +1152,7 @@ export const WorldInfoChatSettings = z
 export type WorldInfoChatSettings = z.infer<typeof WorldInfoChatSettings>;
 export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 
-export const UISettings = z
+const UISettings = z
   .object({
     floating_enabled: z.boolean().default(true),
     /**
@@ -1113,6 +1182,11 @@ export const UISettings = z
      * 老存档缺字段由 default(true) 补齐：升级零变化，保持既有默认可见行为
      */
     wand_menu_enabled: z.boolean().default(true),
+    /**
+     * 统计页「只看有数据」筛选开关持久化：勾选后切 tab/关面板/刷新不丢。
+     * 老存档缺字段由 default(false) 补齐，无需 bump schema_version
+     */
+    stats_only_with_data: z.boolean().default(false),
     enrich_enabled: z.boolean().default(true),
     enrich_count: z.string().default('4'),
     /** @deprecated 已迁移到 theme_mode，保留用于向后兼容迁移 */
@@ -1160,7 +1234,7 @@ export const UISettings = z
     panel_lock: z.enum(['off', 'open', 'collapsed']).default('off'),
     /**
      * 高级功能开关（纯 UI 分层）：false = 简化模式，设置面板只显示基础 tab
-     * （pool/generation/api/appearance），提示词/世界书/过滤/调试入口与对应引导章节隐藏；
+     * （pool/generation/api/stats/appearance），提示词/世界书/过滤/调试入口与对应引导章节隐藏；
      * true = 全量 tab。仅做 UI 隐藏——过滤规则/世界书注入等运行时行为照常生效，
      * 已配置数据不动。老存档（schema < 43）由迁移块统一置 true（升级零变化），
      * 全新档走 zod default(false) 即简化模式，降低新用户首启认知负荷。
@@ -1168,7 +1242,155 @@ export const UISettings = z
     advanced_features_enabled: z.boolean().default(false),
   })
   .prefault({});
-export type UISettings = z.infer<typeof UISettings>;
+type UISettings = z.infer<typeof UISettings>;
+
+// ── 行动选项统计（v51 起按 config 维度记录，随 extension_settings 持久化）───────────
+// 口径约定：
+//  - 「行动选项」视图：AI 每轮生成的选项（去重/补齐后实际保留条数）计生成，用户点击应用
+//    计选择；润色视图（enrich）完全不计入（见 src/core/stats.ts）。
+//  - 归因口径「轮次共现」：选项是 AI 自由生成文本，无选项→条目精确映射，每轮生成/选择
+//    整轮归因到该轮全部参与条目（generation.poolEntryIds）。条目级「命中轮次」= 参与的
+//    轮次中、有选项被选中的轮次数（同代重复点击去重，依据 last_hit_generation_id）。
+//  - 维度：entries 键 = 生效 config.id（无 config 会话 = '__none__'）。全局视图（汇总/
+//    趋势/条目榜「全局」档）由所有 scope 聚合推导，单一真相源，不双写。
+//  - 期望命中率：该条目在输出中被匹配到 k 条时，用户随机点选的命中概率 = k/count
+//    （count = 该轮实际输出条数；匹配 1 条即 1/count，匹配多条基线随之抬高）。
+//    expected_sum 累积 Σ(matched/count)，超额命中率 = 命中率 - 期望命中率。建议引擎
+//    对比超额而非固定阈值——固定阈值在 count 变化时误判（count=4 随机基线 25%，
+//    count=10 为 10%）。v53 前旧口径按恒 1/count 计，多输出条目基线偏低、
+//    超额系统性偏高，新数据按 matched/count 修正。
+//  - recent 为滑动窗口（上限 STATS_WINDOW_SIZE）：支持「近 N 轮命中率」与建议引擎；
+//    窗口内每轮记 {gid, ts, hit, count}，选择时按 gid 回写 hit。
+//  - 老档（v50 及更早）的 by_entry/daily 为跨维度混合数据，无法拆分归因，v51 迁移
+//    直接清零重来（用户确认），不保留 legacy 档。
+export const StatsRoundRecord = z
+  .object({
+    /** generation id：选择时按 gid 回写 hit（同一代生成/选择一一对应） */
+    gid: z.string().default(''),
+    /** 生成时间戳 */
+    ts: z.number().default(0),
+    /** 本轮是否有命中（recordOptionSelected 回写） */
+    hit: z.boolean().default(false),
+    /** 本轮实际输出选项条数（期望命中率分母：该条目被匹配到输出时按 matched/count） */
+    count: z.number().min(0).default(0).catch(0),
+    /** 本轮该条目在输出中被匹配到的选项数（v53 精确归因写入；老记录缺省 undefined →
+     *  窗口期望回退按 1/count 计——与新代 matched=1 数值一致，保持旧档口径不回归） */
+    matched: z.number().min(0).optional(),
+  })
+  .prefault({ gid: '', ts: 0, hit: false, count: 0 });
+export type StatsRoundRecord = z.infer<typeof StatsRoundRecord>;
+
+/** 单条目统计（按维度 scope 记录；条目显示信息读取时 join master_pool，已删除条目保留计数） */
+export const StatsEntryEntry = z
+  .object({
+    /** 参与生成轮次（该条目出现在 generation.poolEntryIds 的轮次数，精确） */
+    rounds_included: z.number().min(0).default(0).catch(0),
+    /** 命中轮次（选项被选中且精确归因匹配到该条目的轮次；旧代无 matchedEntryId 的点击回退整轮共现） */
+    rounds_with_selection: z.number().min(0).default(0).catch(0),
+    /** 期望命中率之和 = Σ(输出中被匹配轮的 matched/count)（采纳感知随机基线：
+     *  该条目被匹配到的输出数 ÷ 输出条数，用户随机点选命中其任一输出的概率；
+     *  老数据混有旧口径 Σ(1/count)，混用期偏小属可接受过渡） */
+    expected_sum: z.number().min(0).default(0).catch(0),
+    /** 滑动窗口（FIFO，上限 STATS_WINDOW_SIZE）：窗口超额命中率由 recent 实时推导。
+     *  窗口滚动挤掉的旧代再被点击时全量计数照记、窗口回写跳过（滚动样本，可接受）。 */
+    recent: z.array(StatsRoundRecord).prefault([]),
+    last_selected_at: z.number().default(0),
+    /** 最近一次命中时被选的选项正文（parse 后，去 [类型] 标头/分隔符）：
+     *  供统计页展示「最近选中」与未来选项→条目近似归因种子。单槽近似，非历史 log。 */
+    last_selected_text: z.string().default(''),
+    /** 最近参与生成的时间戳（recordOptionsGenerated 写入），供统计页展示「最近参与」 */
+    last_included_at: z.number().default(0),
+    /** 最近一次自动化调整（建议应用/阵容落出/补入改写 weight 或 enabled）的时间戳。
+     *  0 = 从未被自动化调整过。建议引擎冷却依据：有该标记时 entryMetrics 只统计
+     *  此时间戳之后的窗口记录，不足 SUGGEST_MIN_SAMPLES 轮新数据视为「冷却中」不出
+     *  建议——防止 1↔2↔4 权重颠簸，且保证建议永远基于新权重下的真实表现。
+     *  老档缺字段由 default(0) 补齐，行为等同从未调整，无需 bump schema_version。 */
+    last_weight_changed_at: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+export type StatsEntryEntry = z.infer<typeof StatsEntryEntry>;
+
+/** 单日生成/选择活动计数（scope.daily 的值，键为本地时区 YYYY-MM-DD） */
+export const DailyCount = z
+  .object({
+    generated: z.number().min(0).default(0).catch(0),
+    selected: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+export type DailyCount = z.infer<typeof DailyCount>;
+
+/** AI 建议分析单条目结果（stats.ai_analysis[scope].entries 的值）：
+ *  reason 为自然语言理由（仅展示，不参与动作判定），confidence 为 0-1 置信度。
+ *  suggestion_key 为分析时该条目建议的稳定指纹（见 stats.suggestionKey）：展示侧
+ *  校验「当前建议指纹 === 缓存指纹」才显示理由——建议消失/变化（配置写入等不触发
+ *  重跑的路径）后旧理由立即隐藏，杜绝「建议停用的理由挂在已无建议/改目标的条目上」。 */
+export const AiAnalysisEntry = z.object({
+  reason: z.string().default(''),
+  confidence: z.number().min(0).max(1).default(0).catch(0),
+  suggestion_key: z.string().default(''),
+});
+export type AiAnalysisEntry = z.infer<typeof AiAnalysisEntry>;
+
+/** AI 建议分析单维度缓存（stats.ai_analysis[scope]）：最近一次运行的整体快照。
+ *  data_updated_at 为运行时 stats.updated_at 快照，用于「有新数据才重算」失效判定；
+ *  entries 键 = entryId（只含「有统计建议的条目」，其余不分析）。新运行整体覆盖旧结果。 */
+const AiAnalysisScope = z.object({
+  /** 本次分析完成时间戳 */
+  updated_at: z.number().default(0),
+  /** 分析时的 stats.updated_at 快照：stats.updated_at > 此值 = 有新数据、需要重算 */
+  data_updated_at: z.number().default(0),
+  entries: z.record(z.string(), AiAnalysisEntry).prefault({}),
+});
+type AiAnalysisScope = z.infer<typeof AiAnalysisScope>;
+
+/** 单个统计维度（scope = 生效 config.id，无 config 会话为 '__none__'） */
+export const ScopeStats = z
+  .object({
+    total_generated: z.number().min(0).default(0).catch(0),
+    total_selected: z.number().min(0).default(0).catch(0),
+    /** 本维度最近一次活动（生成/选择）时间戳：AI 建议分析按它做失效判定——
+     *  全局 stats.updated_at 会被其他维度活动带动，导致无关维度缓存误失效、全量重跑 */
+    updated_at: z.number().default(0),
+    by_entry: z.record(z.string(), StatsEntryEntry).prefault({}),
+    /** 按天活动计数（趋势图数据源，per-scope）：generated 跟随本 scope 实际保留条数、
+     *  selected 跟随点击次数（不做同代去重——反映"点击活跃度"） */
+    daily: z.record(z.string(), DailyCount).prefault({}),
+  })
+  .prefault({});
+export type ScopeStats = z.infer<typeof ScopeStats>;
+
+export const StatsSettings = z
+  .object({
+    /** 全局总量（所有 scope 之和，汇总卡片用）。已废弃不再写入（record 只写 scope 级，
+     *  不再与顶级字段同步累计），全局视图由 buildStatsView 聚合推导；字段保留仅为旧存档兼容 */
+    total_generated: z.number().min(0).default(0).catch(0),
+    total_selected: z.number().min(0).default(0).catch(0),
+    /** 按 config 维度统计：键 = 生效 config.id，无 config 会话 = '__none__'。
+     *  v51 起取代旧 by_entry + daily（老档由迁移块清零）。 */
+    entries: z.record(z.string(), ScopeStats).prefault({}),
+    /** 最近一次命中（计了命中轮次）的 generation id：同代重复点击只计 1 次命中。
+     *  全局单槽（generation id 全局唯一，跨 scope 无碰撞）。 */
+    last_hit_generation_id: z.string().nullable().default(null),
+    /** AI 建议分析缓存（键 = 统计维度 scopeId）：见 AiAnalysisScope 注释。
+     *  只读展示数据，不参与建议引擎/阵容计划判定；清空统计时一并清除。 */
+    ai_analysis: z.record(z.string(), AiAnalysisScope).prefault({}),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白统计（v51 形态）：迁移清零与「清空统计」共用同一真相源，
+ *  避免两处各自构造默认对象造成形态漂移。纯数据构造，不依赖任何 store。 */
+export function createEmptyStats(): StatsSettings {
+  return {
+    total_generated: 0,
+    total_selected: 0,
+    entries: {},
+    last_hit_generation_id: null,
+    ai_analysis: {},
+    updated_at: Date.now(),
+  };
+}
 
 export const GlobalSettings = z
   .object({
@@ -1185,6 +1407,48 @@ export const GlobalSettings = z
     active_api_id: z.string().default(''),
     world_info: WorldInfoGlobalSettings.prefault({}),
     ui: UISettings.prefault({}),
+    stats: StatsSettings.prefault({}),
+    /**
+     * 统计采集开关（默认关）：关 = 不采集任何统计（recordOptionsGenerated /
+     * recordOptionSelected 早退），统计页只显示「统计未开启」横幅 + 历史只读；
+     * 开 = 自开启时刻起积累新数据，既有历史数据保留。
+     * 与 automation_enabled（自动化开关）相互独立：只想看统计报表的用户开本开关、
+     * 不开自动化即可。老档由 default(false) 补齐，无需 bump schema_version
+     */
+    stats_enabled: z.boolean().default(false),
+    /**
+     * 自动化开关（默认关，与统计开关相互独立；仅统计开启时有意义）：
+     * 关 = 建议引擎/阵容计划/L1 AI 归因/L2 AI 建议理由全部停用，统计页显示纯报表
+     * （卡片/趋势/条目榜/命中榜/管理），隐藏 AI 增强/阵容计划/应用历史/建议徽标/
+     * 洞察标签等全部自动化区块；开 = 在统计数据基础上启用上述自动化。
+     * 只想看统计的用户开 stats_enabled 即可，无需启用本开关。
+     * 老档由 default(false) 补齐，无需 bump schema_version
+     */
+    automation_enabled: z.boolean().default(false),
+    /** 阵容计划（固定名额落出/补入）：目标在役条数 N。null = 未设置（计划关闭）；
+     *  任意有限数均接受、不做 clamp（项目约束：不改写用户输入），N<1 时 planRoster 返回空计划。
+     *  一期为半自动：planRoster 只算清单，应用经统计页确认。 */
+    roster_size: z.number().nullable().prefault(null).catch(null),
+    /** 统计页阵容计划开关（UI 记忆用；roster_size 为 null 时计划仍不生效） */
+    roster_enabled: z.boolean().default(false),
+    /**
+     * AI 归因增强开关：开 = 每轮行动选项生成后后台异步调 AI 做「选项→候选条目」语义归因，
+     * 结果与本地 Dice 归因 diff 后对称修正统计（期望/命中）。默认关：每轮一次外部请求属
+     * 持续成本，且把条目内容送往 API；用户显式开启才生效。未配置 API/解析失败时静默降级
+     * 为纯 Dice 归因，主功能零依赖。老存档由 default(false) 补齐，无需 bump schema_version
+     */
+    ai_attribution_enabled: z.boolean().default(false),
+    /**
+     * AI 建议理由开关：开 = 统计页打开/切维度按需调 AI，为有统计建议的条目生成自然语言
+     * 理由（仅展示）；默认开（只在用户查看统计页且数据有更新时触发，频率低、成本可控）。
+     * 与归因开关相互独立。老存档由 default(true) 补齐，无需 bump schema_version
+     */
+    ai_analysis_enabled: z.boolean().default(true),
+    /** 自动化应用历史（建议应用/阵容计划应用的持久撤销槽）：按 config 维度记录
+     *  应用前/后 entries 快照与冷却标记快照，刷新不丢；上限 APPLY_HISTORY_LIMIT。
+     *  放顶层而非 stats 内：「清空统计」不清撤销历史（历史是 config 写入记录，
+     *  与统计数据解耦）。老档缺字段由 prefault([]) 补齐，无需 bump schema_version。 */
+    apply_history: z.array(ApplyHistoryEntry).prefault([]),
     retry_count: z.number().min(0).max(10).default(0).catch(0),
     /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
      *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */

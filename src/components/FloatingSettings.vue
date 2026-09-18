@@ -55,6 +55,7 @@
           <ApiEditor v-else-if="activeTab === 'api'" />
           <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
           <FilterEditor v-else-if="activeTab === 'filter'" />
+          <Statistics v-else-if="activeTab === 'stats'" />
           <AppearanceSettings v-else-if="activeTab === 'appearance'" />
           <DebugSettings v-else-if="activeTab === 'debug'" />
         </div>
@@ -74,12 +75,13 @@ import GenerationSettings from '@/components/GenerationSettings.vue';
 import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import FilterEditor from '@/components/FilterEditor.vue';
+import Statistics from '@/components/Statistics.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
 import { FLOATING_TABS, visibleTabs, ADVANCED_TAB_IDS, type TabId } from '@/components/shared/tab-definitions';
 import { PAGE_HINTS } from '@/core/guide-content';
-import { isSettingsOpen, closeSettings } from '@/core/floating-state';
+import { isSettingsOpen, closeSettings, requestedTab } from '@/core/floating-state';
 import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
@@ -100,22 +102,12 @@ const onTabClick = (id: TabId) => {
 };
 
 // 简化模式守卫：开关关闭瞬间，若当前停在高级 tab 则弹回条目池，避免内容区空白。
-// watch 开关只能捕获"开关变化"瞬间，兜不住其它写入路径（onboardingPendingTab 直跳、
-// 开关关闭期间设置隐藏 tab 后再打开面板等）——所以同时 watch activeTab：
-// 任何时刻 activeTab 指向隐藏 tab 都会被弹回。两处不冲突，同一 tick 内幂等
-watch(
-  () => gs.settings.ui.advanced_features_enabled,
-  advanced => {
-    if (!advanced && ADVANCED_TAB_IDS.includes(activeTab.value as (typeof ADVANCED_TAB_IDS)[number])) {
-      activeTab.value = 'pool';
-    }
-  },
-);
-watch(activeTab, tab => {
-  if (
-    !gs.settings.ui.advanced_features_enabled &&
-    ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])
-  ) {
+// 同时 watch 开关与 activeTab 两个源（合并为一个 watcher）：开关变化捕获"关闭瞬间"，
+// activeTab 变化兜住其它写入路径（onboardingPendingTab 直跳、开关关闭期间设置隐藏 tab
+// 后再打开面板等）——任何时刻 activeTab 指向隐藏 tab 都会被弹回。两源任一触发走同一守卫，
+// 同一 tick 内幂等（已弹回 pool 后再次触发是 no-op）
+watch([() => gs.settings.ui.advanced_features_enabled, activeTab], ([advanced, tab]) => {
+  if (!advanced && ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])) {
     activeTab.value = 'pool';
   }
 });
@@ -132,6 +124,14 @@ watch(onboardingPendingTab, tab => {
   if (tab) {
     activeTab.value = tab;
     onboardingPendingTab.value = null;
+  }
+});
+
+// 统计页「定位条目」请求切 tab：与向导同模式但信号独立，并发不互相覆盖
+watch(requestedTab, tab => {
+  if (tab) {
+    activeTab.value = tab;
+    requestedTab.value = null;
   }
 });
 

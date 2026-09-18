@@ -14,13 +14,21 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
+import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import { getMessageSwipeId, getMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
+import {
+  getMessageSwipeId,
+  getMessageChoiceData,
+  type ChoiceGeneration,
+  type ChoiceOption,
+} from '@/core/options-store';
+import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
+import { enqueueAttributionAnalysis } from '@/core/ai-attribution';
 import type {
   ChatSettings,
   PoolEntry,
@@ -29,7 +37,7 @@ import type {
   WIBookMode,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
-import { DEFAULT_MODULES, GenerationSettings } from '@/type/settings';
+import { DEFAULT_MODULES, GenerationSettings, OPTION_MATCH_THRESHOLD } from '@/type/settings';
 
 type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -448,6 +456,22 @@ type WIBuckets = {
  *  取 2：D0/D1/D2 归"历史后"，D3+ 归"历史前"（用户指定）。 */
 const WI_DEPTH_AFTER_MAXDEPTH = 2;
 
+/** 对 buckets 的 7 个 content 字段并行展宏 + 执行 EJS（开关由调用方判断）。
+ *  纯提取自 buildWI 的渲染回填块；返回新对象，原 buckets 不被原地改写以保持纯函数性。
+ *  renderWorldInfoContent 内部对无 <% 的纯文本短路、未装提示词模板插件时降级为只展宏 */
+const renderWIBuckets = async (buckets: WIBuckets): Promise<WIBuckets> => {
+  const [before, after, anBefore, anAfter, em, depthBefore, depthAfter] = await Promise.all([
+    renderWorldInfoContent(buckets.before),
+    renderWorldInfoContent(buckets.after),
+    renderWorldInfoContent(buckets.anBefore),
+    renderWorldInfoContent(buckets.anAfter),
+    renderWorldInfoContent(buckets.em),
+    renderWorldInfoContent(buckets.depthBefore),
+    renderWorldInfoContent(buckets.depthAfter),
+  ]);
+  return { before, after, anBefore, anAfter, em, depthBefore, depthAfter };
+};
+
 const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
   const empty: WIBuckets = {
@@ -526,23 +550,7 @@ const buildWI = async (): Promise<WIBuckets> => {
     // 降级为只展宏（<% 原样保留），不比现状差。depthBefore/depthAfter 已是单串，并入同一轮
     // Promise.all 渲染回填即可（迁出历史后注入逻辑对渲染结果无感）
     if (gs.settings.world_info.render_world_info_ejs) {
-      [
-        buckets.before,
-        buckets.after,
-        buckets.anBefore,
-        buckets.anAfter,
-        buckets.em,
-        buckets.depthBefore,
-        buckets.depthAfter,
-      ] = await Promise.all([
-        renderWorldInfoContent(buckets.before),
-        renderWorldInfoContent(buckets.after),
-        renderWorldInfoContent(buckets.anBefore),
-        renderWorldInfoContent(buckets.anAfter),
-        renderWorldInfoContent(buckets.em),
-        renderWorldInfoContent(buckets.depthBefore),
-        renderWorldInfoContent(buckets.depthAfter),
-      ]);
+      Object.assign(buckets, await renderWIBuckets(buckets));
     }
 
     return buckets;
@@ -669,7 +677,7 @@ export const applyWIExcl = async (
 /** 思维链标签块剥离正则：parseOptions 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-export const STRIP_REASONING_TAGS_RE =
+const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 /** 标签堆叠间隙判定：标题括号闭合后到同一下一个括号之间，仅含空白和/或 emoji 才算堆叠。
@@ -687,6 +695,35 @@ export const STRIP_REASONING_TAGS_RE =
  *  正文都写完了才出现的括号只可能是下一条选项的标题，哪怕内容以 emoji 收尾
  *  （"内容A🎞️ [B]…"）也按新选项拆 */
 const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
+
+/** 尝试把 `<options>` 块文本当 JSON 数组解析（纯回退路径，prompt 不要求 AI 输出 JSON）。
+ *  返回解析出的选项字符串数组，或 null（非数组 / 解析失败 / 解析后全空）。
+ *  兼容多种元素形态：纯字符串、{text}、{option}、{t,c}、{type,content}。
+ *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
+const parseJsonOptionArray = (c: string): string[] | null => {
+  try {
+    // 处理 JSON 尾随逗号（LLM 常见错误）
+    const fc = c.replace(/,(\s*[\]}])/g, '$1');
+    const p = JSON.parse(fc);
+    if (!Array.isArray(p)) return null;
+    const items = p
+      .map(x => {
+        if (typeof x === 'string') return x.trim();
+        return (
+          x?.text?.trim() ??
+          x?.option?.trim() ??
+          // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
+          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
+          (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
+        );
+      })
+      .filter(Boolean);
+    return items.length ? items : null;
+  } catch {
+    /* not JSON */
+    return null;
+  }
+};
 
 export function parseOptions(text: string, count: number): string[] {
   // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
@@ -722,29 +759,10 @@ export function parseOptions(text: string, count: number): string[] {
     .trim();
 
   // 尝试 JSON 解析（纯回退路径，prompt 不要求 AI 输出 JSON）
-  if (c.startsWith('['))
-    try {
-      // 处理 JSON 尾随逗号（LLM 常见错误）
-      const fc = c.replace(/,(\s*[\]}])/g, '$1');
-      const p = JSON.parse(fc);
-      if (Array.isArray(p)) {
-        const i = p
-          .map(x => {
-            if (typeof x === 'string') return x.trim();
-            return (
-              x?.text?.trim() ??
-              x?.option?.trim() ??
-              // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
-              (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
-              (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
-            );
-          })
-          .filter(Boolean);
-        if (i.length) return i.slice(0, count);
-      }
-    } catch (err) {
-      /* not JSON */
-    }
+  if (c.startsWith('[')) {
+    const jsonParsed = parseJsonOptionArray(c);
+    if (jsonParsed) return jsonParsed.slice(0, count);
+  }
 
   // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
   // 边界判定按提示词契约"每条选项独占一行"做行锚定：只有行首（间隙含换行或正文）的
@@ -939,7 +957,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
     }
-    let options = parsed;
+    let options: ChoiceOption[] = parsed;
     const genCfg = gs.settings.generation;
     if (genCfg.dedup_enabled) {
       const r1 = dedupOptions(
@@ -1006,10 +1024,51 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
     }
-    const generation = { id: gid, timestamp: Date.now(), count, options };
+    // 本轮实际进入候选菜单的池条目 id 集合（固定必发 pinned + 抽签 drawn）：随消息持久化，
+    // 供条目级统计/智能权重分析。此前只记 pool.drawn 漏掉 pinned——pinned 同样注入提示词
+    // 参与生成，漏记会让「参与数」与发给 AI 的候选不一致（选项是 AI 自由文本，只能记轮次
+    // 级集合做整轮归因，无法逐项映射到单条）。pool.pinned 已含 pinned_overflow 截断后的最终集。
+    // 单一来源 roundEntries：poolEntryIds（统计口径）与 matchSignals（精确归因候选）
+    // 同源派生，新增候选来源时只改一处，避免统计与匹配静默失配
+    const roundEntries = [...pool.drawn, ...pool.pinned];
+    const poolEntryIds = roundEntries.map(e => e.id);
+    // 精确归因（v53）：对最终保留的每条选项与当轮候选条目（含 pinned）做文本匹配，
+    // 结果写入 option.matchedEntryId 随消息持久化——统计「命中」只记匹配条目，
+    // 被 AI 舍弃的候选不产生命中；匹配不上的选项（AI 自由发挥）为 null。
+    // 候选信号预计算一次（bigram 集合复用），前缀匹配按最长 type 优先
+    const matchSignals = prepareMatchSignals(roundEntries);
+    // 全部选项均按 type 前缀精确命中 = Dice 已高置信、AI 语义纠偏空间趋零：
+    // 作为 L1 归因的前置快检信号（enqueue 据此跳过外部请求，省成本）。
+    // 任一选项走 Dice 兜底或未匹配（AI 自由发挥），语义归属仍存疑 → 需要 AI 复核。
+    let allPrefixMatched = options.length > 0;
+    for (const o of options) {
+      const m = matchOptionToEntry(o.text, matchSignals, OPTION_MATCH_THRESHOLD);
+      o.matchedEntryId = m?.id ?? null;
+      if (m?.via !== 'prefix') allPrefixMatched = false;
+    }
+    // 生成时的统计维度：命中回写优先归到本维度，防止切 config 后回看旧楼层记错 scope
+    const scopeId = usePoolSelectorStore().effectiveConfig?.id ?? NONE_SCOPE;
+    const generation: ChoiceGeneration = {
+      id: gid,
+      timestamp: Date.now(),
+      count,
+      options,
+      poolEntryIds,
+      scopeId,
+    };
     // 新手引导第 8 步"去生成第一组选项"的完成信号：只在选项生成成功时置位，
     // 润色（enrich-input）与条目生成（generatePoolEntries）不算——引导验证的是主链路
     lastOptionsGeneratedAt.value = Date.now();
+    // 统计口径：仅行动选项生成成功（实际保留条数）计数，润色/条目生成不计入。
+    // 与 lastOptionsGeneratedAt 同处成功路径，失败/取消/空解析不会走到这里；
+    // poolEntryIds 与 generation 同源，轮次共现归因到当轮全部参与条目；
+    // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线；
+    // scopeId 传入生成时维度（与 generation.scopeId 同源），统计层不再二次解析
+    recordOptionsGenerated(options, poolEntryIds, gid, scopeId);
+    // L1 AI 归因增强：生成成功后异步入队（fire-and-forget，不进关键路径）。开关关/无 API
+    // 时 enqueue 内部 no-op；失败静默保留 Dice 结果——主体功能对 AI 零依赖。
+    // allPrefixMatched=true 时整轮前缀高置信命中，enqueue 直接跳过（省一次外部请求）。
+    enqueueAttributionAnalysis(generation, _target.messageId, _target.swipeId, allPrefixMatched);
     return generation;
   } catch (e) {
     if (cancelled) return null;
@@ -1028,9 +1087,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
 export function cancelGeneration() {
   cancelled = true;
   genController?.abort();
-  genController = null;
-  generatorState.loading = false;
-  generatorState.generationId = null;
+  // 不复位 generatorState/genController：abort 触发的旧生成 finally 在微任务中
+  // 紧随执行并负责复位。若在此同步清空，会打开「取消 → 立即重新生成」竞态窗口——
+  // 旧 finally 晚于新生成同步段运行时，会把新代的 loading/controller/代 id 覆盖掉
+  //（新生成实际在跑但按钮态错乱、取消失效）。复位延迟一帧（<16ms）无感知。
 }
 
 /** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
@@ -1112,7 +1172,7 @@ const stripTrailingCommas = (s: string): string => {
   return out;
 };
 
-export function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
+function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
   // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
   let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
   // 去掉可能的代码块包裹
@@ -1367,6 +1427,6 @@ export async function generatePoolEntries(params: {
 
 export function cancelPoolGen() {
   poolGenController?.abort();
-  poolGenController = null;
-  poolGenState.loading = false;
+  // 同 cancelGeneration：状态复位交给 generatePoolEntries 的 finally（微任务紧随执行），
+  // 避免取消后立即再次生成时旧 finally 覆盖新池生成的 loading/controller。
 }

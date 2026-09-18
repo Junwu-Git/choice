@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/index.ts"],
+  "project": ["src/**/*.{ts,vue}"],
+  "ignoreDependencies": [
+    // klona/pinia 由 vite.config.ts 的 unplugin-auto-import 全局注入（无需源码 import），
+    // knip 无法追踪 unplugin 配置，实际消费方遍布全库（klona(...) / defineStore(...) 等）
+    "klona",
+    "pinia",
+    // toastr 由酒馆以全局变量提供（vite.config.ts externals 外置为 toastr），
+    // 非 npm 依赖：import toastr from 'toastr' 直接取全局对象
+    "toastr"
+  ]
+}

@@ -1,3 +1,5 @@
+import type { TabId } from '@/components/shared/tab-definitions';
+
 export const isSettingsOpen = ref(false);
 
 // 气泡直径单一来源（手机窄触屏 48 / 其余 60）：FloatingBubble 的渲染尺寸与贴边 clamp、
@@ -41,4 +43,66 @@ export function openSettings() {
 
 export function closeSettings() {
   isSettingsOpen.value = false;
+}
+
+// 统计页「定位条目」→ 请求设置面板切到指定 tab（仿 onboardingPendingTab 但信号独立，
+// 避免与向导跳转耦合；由打开中的面板 watch 消费后置回 null）
+export const requestedTab = ref<TabId | null>(null);
+
+// 待定位的条目 id：PoolEditor 收到后打开条目库弹窗，EntryPoolDialog 消费后置回 null。
+// 统计页是全局视角，目标条目可能不在当前 config，故定位到 master_pool 全量视图
+// （EntryPoolDialog）而非 config 视图（PoolEditor 内联列表）
+export const focusPoolEntryId = ref<string | null>(null);
+
+export function requestTab(id: TabId) {
+  requestedTab.value = id;
+}
+
+export function focusPoolEntry(id: string) {
+  focusPoolEntryId.value = id;
+}
+
+/** 贴边吸附时球体外露量 = 球径/3（四舍五入）。snapBubblePosition 与 FloatingBubble 的
+ *  初始吸附态推断/resize 保持吸附钳制共用——改吸附外观只改这一处，勿在两处各自硬编码 */
+export const getSnapOffset = (size: number): number => Math.round(size / 3);
+
+/** 贴边吸附纯计算：给定逻辑坐标与球径，返回吸附后的位置与吸附侧。
+ *  纯提取自 FloatingBubble 的 onEnd 内联逻辑（吸附规则单一真相，勿改语义）：
+ *  - 球心距左缘 < SNAP_THRESHOLD → 贴左（外露 getSnapOffset(size)）；
+ *  - 距右缘 < SNAP_THRESHOLD → 贴右（同上，右侧对称）；
+ *  - 否则自由位置，钳制在视口内。
+ *  y 始终钳制在视口内。viewport 由调用方传入（window 尺寸，便于测试） */
+export function snapBubblePosition(
+  x: number,
+  y: number,
+  size: number,
+  viewport: { width: number; height: number },
+): { x: number; y: number; snappedLeft: boolean; snappedRight: boolean } {
+  const SNAP_THRESHOLD = 100;
+  const SNAP_OFFSET = getSnapOffset(size);
+  const centerX = x + size / 2;
+  const distToLeft = centerX;
+  const distToRight = viewport.width - centerX;
+  let snappedX: number;
+  let snappedLeft: boolean;
+  let snappedRight: boolean;
+  if (distToLeft < SNAP_THRESHOLD) {
+    snappedX = -SNAP_OFFSET;
+    snappedLeft = true;
+    snappedRight = false;
+  } else if (distToRight < SNAP_THRESHOLD) {
+    snappedX = viewport.width - size + SNAP_OFFSET;
+    snappedLeft = false;
+    snappedRight = true;
+  } else {
+    snappedX = Math.max(0, Math.min(x, viewport.width - size));
+    snappedLeft = false;
+    snappedRight = false;
+  }
+  return {
+    x: snappedX,
+    y: Math.max(0, Math.min(y, viewport.height - size)),
+    snappedLeft,
+    snappedRight,
+  };
 }

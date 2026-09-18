@@ -31,7 +31,7 @@ interface EjsTemplateApi {
  * choice 直接调函数、不走它的事件 hook，插件 enabled 管的是它在主生成流程里的行为，与 choice
  * 无关。插件未安装 / 被酒馆禁用未加载时返回 null，调用方据此降级为只展宏。
  */
-export function getEjsTemplate(): EjsTemplateApi | null {
+function getEjsTemplate(): EjsTemplateApi | null {
   const api = (globalThis as unknown as { EjsTemplate?: Partial<EjsTemplateApi> }).EjsTemplate;
   if (api && typeof api.prepareContext === 'function' && typeof api.evalTemplate === 'function') {
     return api as EjsTemplateApi;

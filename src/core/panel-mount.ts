@@ -7,6 +7,7 @@ import { cancelEnrich } from '@/core/enrich-input';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
+import { setAttributionPanelRefreshHook } from '@/core/ai-attribution';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 
 export function initPanelMount() {
@@ -18,6 +19,9 @@ export function initPanelMount() {
   app.mount($container[0]);
 
   const panelStore = usePanelStateStore(pinia);
+  // 注册 L1 归因写回后的面板刷新钩子：ai-attribution 不直接 import panel-state（会成环），
+  // 改由面板层在此注入 refreshFromMessageIfCurrent，写回消息后同步面板持有的 generation 副本
+  setAttributionPanelRefreshHook((messageId, swipeId) => panelStore.refreshFromMessageIfCurrent(messageId, swipeId));
 
   const getPanelMessageId = (): number | null => {
     try {

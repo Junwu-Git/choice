@@ -26,8 +26,10 @@
 <script setup lang="ts">
 defineProps<{
   open: boolean;
-  title: string;
-  message: string;
+  // title/message 可选：useConfirm 路径在 show() 时写入弹窗内状态，模板只绑 :open 与事件；
+  // 其余直传路径仍显式传入，行为不变。缺省渲染为空串（Vue 对可选 prop 不警告）
+  title?: string;
+  message?: string;
   confirmText?: string;
   cancelText?: string;
 }>();
@@ -119,6 +121,9 @@ const emit = defineEmits<{
   color: var(--choice-text-secondary);
   margin: 0;
   line-height: 1.5;
+  /* 应用建议/阵容计划的确认文案是多行拼接（\n 分隔条目清单）：不设 pre-line 会
+     渲染成一段长句。pre-line 只作用于换行符，不含 \n 的既有调用零影响 */
+  white-space: pre-line;
 }
 
 .choice-cfdlg-footer {

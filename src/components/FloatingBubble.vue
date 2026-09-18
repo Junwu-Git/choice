@@ -68,6 +68,8 @@ import {
   bubbleY,
   bubbleSize,
   isMobileBubble,
+  snapBubblePosition,
+  getSnapOffset,
 } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 import FloatingOptions from '@/components/FloatingOptions.vue';
@@ -79,7 +81,7 @@ const isMobilePointer = isMobileBubble;
 // 贴边隐藏量 = 直径的 1/3（露 2/3）：按比例而非固定 px——桌面 60px 藏 20px 是
 // 长期验证的观感基准；早先手机沿用固定露出 40px，48px 球只藏 8px 几乎全露
 // （真机反馈"露出来太多"）。取 1/3 直径后两档观感一致
-const SNAP_OFFSET = computed(() => Math.round(BUBBLE_SIZE.value / 3));
+const SNAP_OFFSET = computed(() => getSnapOffset(BUBBLE_SIZE.value));
 // 点击/长按共用的指针净位移阈值：松手时位移小于它视为点击，大于它视为拖拽意图（取消长按）
 const TAP_SLOP = 8;
 const STORAGE_KEY_X = 'choice_floating_bubble_x';
@@ -187,33 +189,18 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
     isPressed.value = false;
     clearSuppressSelect();
 
-    const SNAP_THRESHOLD = 100;
-    const centerX = finalPos.x + BUBBLE_SIZE.value / 2;
-    const distToLeft = centerX;
-    const distToRight = window.innerWidth - centerX;
-
-    let snappedX: number;
-    if (distToLeft < SNAP_THRESHOLD) {
-      snappedX = -SNAP_OFFSET.value;
-      isSnappedLeft.value = true;
-      isSnappedRight.value = false;
-    } else if (distToRight < SNAP_THRESHOLD) {
-      snappedX = window.innerWidth - BUBBLE_SIZE.value + SNAP_OFFSET.value;
-      isSnappedLeft.value = false;
-      isSnappedRight.value = true;
-    } else {
-      snappedX = Math.max(0, Math.min(finalPos.x, window.innerWidth - BUBBLE_SIZE.value));
-      isSnappedLeft.value = false;
-      isSnappedRight.value = false;
-    }
-
-    posX.value = snappedX;
-    posY.value = Math.max(0, Math.min(finalPos.y, window.innerHeight - BUBBLE_SIZE.value));
-    x.value = snappedX;
-    y.value = posY.value;
-
-    bubbleX.value = snappedX;
-    bubbleY.value = posY.value;
+    const snapped = snapBubblePosition(finalPos.x, finalPos.y, BUBBLE_SIZE.value, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    posX.value = snapped.x;
+    posY.value = snapped.y;
+    x.value = snapped.x;
+    y.value = snapped.y;
+    isSnappedLeft.value = snapped.snappedLeft;
+    isSnappedRight.value = snapped.snappedRight;
+    bubbleX.value = snapped.x;
+    bubbleY.value = snapped.y;
 
     // 点击判定用指针净位移而非元素位置差：元素位置被视觉位移污染（见 isPressed 注释），
     // 指针位移才是"点击意图"的正确度量。8px 容忍触摸抖动，与长按取消共用同一阈值

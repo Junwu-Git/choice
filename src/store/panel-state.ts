@@ -117,6 +117,8 @@ export const usePanelStateStore = defineStore('panel-state', () => {
         timestamp: Date.now(),
         count: options.length,
         options: options.map(text => ({ text, sourceEntryId: null })),
+        // 润色不消费池条目素材，poolEntryIds 置空（统计口径：润色不计入）
+        poolEntryIds: [],
       };
       storeEnrichGeneration(messageId.value, swipeId.value, generation);
       // 重新加载以同步 store 状态
@@ -154,6 +156,17 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     collapsed.value = v;
   }
 
+  /** 外部（L1 归因写回消息 extra 后）同步刷新面板当前 generation：仅当面板正显示该
+   *  消息+swipe 时从消息重载，否则 no-op（面板下次 load 时自然取到最新）。
+   *  writeBackAttribution 只改了消息 extra，面板的 generations ref 是另一份克隆（非响应式
+   *  源自 chat），不刷新则点击会读到旧 Dice matchedEntryId、而统计已按 AI 修正——
+   *  期望/命中来源分裂（同进同出设计的第三源缺口）。 */
+  const refreshFromMessageIfCurrent = (message_id: number, swipe_id: number) => {
+    if (messageId.value === message_id && swipeId.value === swipe_id) {
+      load(message_id, swipe_id);
+    }
+  };
+
   return {
     messageId,
     swipeId,
@@ -179,5 +192,6 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     setActiveView,
     enrichGoTo,
     triggerEnrich,
+    refreshFromMessageIfCurrent,
   };
 });

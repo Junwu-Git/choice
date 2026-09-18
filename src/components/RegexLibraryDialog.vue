@@ -207,6 +207,7 @@ import { mapStScriptToLibraryEntry } from '@/core/st-regex-source';
 import StRegexImportDialog from '@/components/StRegexImportDialog.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { DRAG_HANDLE_GROUP_SELECTOR, DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
+import { isoTimestamp } from '@/util/time';
 import Sortable from 'sortablejs';
 
 const props = withDefaults(
@@ -378,7 +379,7 @@ const onExport = () => {
     toastr.warning(t`没有可导出的正则（库为空或未勾选任何条目）`);
     return;
   }
-  const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), partial, entries }, null, 2);
+  const json = JSON.stringify({ version: 1, exportedAt: isoTimestamp(), partial, entries }, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
