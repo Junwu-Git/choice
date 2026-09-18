@@ -178,9 +178,7 @@ const optionBtnStyle = (index: number): Record<string, string> => {
   return { animationDelay: `${index * 60}ms` };
 };
 
-const hasGradedOptions = computed(
-  () => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null),
-);
+const hasGradedOptions = computed(() => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null));
 const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"

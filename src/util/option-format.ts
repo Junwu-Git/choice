@@ -37,7 +37,10 @@ const STYLE_GRADE_WORDS: Readonly<Record<string, OptionStyleGrade>> = {
 const splitBracketTitle = (rawTitle: string): { title: string; style: OptionStyleGrade | null } => {
   const pipeIdx = rawTitle.indexOf('|');
   if (pipeIdx === -1) return { title: rawTitle, style: null };
-  const styleWord = rawTitle.slice(pipeIdx + 1).trim().replace(/"/g, '');
+  const styleWord = rawTitle
+    .slice(pipeIdx + 1)
+    .trim()
+    .replace(/"/g, '');
   const style = STYLE_GRADE_WORDS[styleWord] ?? null;
   return style ? { title: rawTitle.slice(0, pipeIdx).trim(), style } : { title: rawTitle, style: null };
 };

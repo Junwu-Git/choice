@@ -276,7 +276,10 @@ const optionBtnStyle = (index: number): Record<string, string> => {
 
 // 风险档位图例：仅选项视图且存在带档位标注的选项时显示（enrich 视图不带档位）
 const hasGradedOptions = computed(
-  () => activeView.value === 'options' && hudEnabled.value && visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
+  () =>
+    activeView.value === 'options' &&
+    hudEnabled.value &&
+    visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
 );
 const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
 
