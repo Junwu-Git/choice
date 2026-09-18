@@ -235,7 +235,10 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
   `onboardingStepIndex`，当前章由 computed 解析。
 - `onboarding.ts`
   负责自动打开、欢迎卡、API 配置召回、章节菜单、待处理 tab/弹窗动作等状态。自动生成路径遇 API 未配置时只提示并跳过，不抢焦点弹窗。
-- 设置面板 tab 栏的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`；不要用 `v-html` 注入引导内容。
+- 设置面板 tab 栏的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`；页内指引必须结构化渲染。唯一受控的
+  `v-html` 例外是 `OnboardingWizard` 的步骤富文本（`GUIDE_CHAPTERS[].html`）：内容 100% 来自
+  `guide-content.ts` 编译期静态脚本，无用户输入/无插值/无运行时拼接，组件内该处带显式 lint 豁免注释；
+  不要把用户可控数据传进 `step.html`，新增引导文案优先走结构化字段。
 - `onboarding_done` 在欢迎卡或向导弹出时即置为 true。`data-tour`
   锚点分散在 13 个组件模板中，增删向导步骤时要同步检查锚点。
 - `docs/` 下已无提示词设计参考文档；不要引用不存在的

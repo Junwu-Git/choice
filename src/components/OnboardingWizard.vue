@@ -74,6 +74,10 @@
             <span>{{ poolReady ? t`条目池就绪，可正常生成` : t`条目池为空——添加条目后才能生成选项` }}</span>
           </div>
 
+          <!-- 向导步骤富文本的唯一 v-html：内容 100% 来自 guide-content.ts 编译期静态脚本
+               （无用户输入、无插值、无运行时拼接），不存在注入面；页内指引 PAGE_HINTS
+               已结构化渲染（无 v-html）。此例外显式豁免，勿把用户可控数据传入 step.html -->
+          <!-- eslint-disable-next-line vue/no-v-html -->
           <div class="choice-tour-html" v-html="step.html"></div>
         </div>
 
