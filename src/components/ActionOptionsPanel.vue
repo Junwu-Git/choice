@@ -159,9 +159,19 @@
           :style="optionBtnStyle(index)"
           @click="onSelect(option, index)"
         >
-          <span class="choice-option-type">{{ parseOptionType(option.text) }}</span>
-          <span class="choice-option-divider"></span>
-          <span class="choice-option-content">{{ parseOptionContent(option.text) }}</span>
+          <span class="choice-option-type">{{ parseOptionType(option.text) }}</span><!--
+          --><span
+            v-if="activeView === 'options' && rateOf(option) !== null"
+            class="choice-option-rate"
+            :class="rateClass(rateOf(option)!)"
+            >{{ rateOf(option) }}%</span
+          ><span class="choice-option-divider"></span>
+          <span class="choice-option-content">{{ parseOptionContent(option.text) }}<i
+            v-if="rollOf(index)"
+            class="choice-roll-chip"
+            :class="`choice-roll-chip--${rollOf(index)}`"
+            >{{ rollLabel(rollOf(index)!) }}</i
+          ></span>
         </button>
         <div v-if="!compact && activeView === 'options' && underflow" class="choice-panel-hint">
           {{ t`本轮选项少于设定数量` }}
@@ -204,8 +214,9 @@ import { nextThemeMode, themeLabel } from '@/core/theme-presets';
 import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
-import { parseOptionType, parseOptionContent, parseOptionStyle } from '@/util/option-format';
+import { parseOptionType, parseOptionContent, parseOptionStyle, resolveOptionSuccessRate } from '@/util/option-format';
 import { applyOptionBehavior } from '@/util/option-action';
+import type { DiceOutcome } from '@/core/dice';
 
 const props = defineProps<{ compact?: boolean }>();
 
@@ -274,6 +285,25 @@ const optionBtnStyle = (index: number): Record<string, string> => {
   return { animationDelay: `${index * 60}ms` };
 };
 
+// 骰子判定（v55）：成功率徽标与行内判定 chip 的总开关（独立于 HUD 开关）。
+// 徽标显示规则 = 骰子开 + 选项可解析出成功率（AI 标注或档位兜底），且仅选项视图
+// （润色视图不掷骰，也不显示成功率，口径与 option-action.ts 判定分支一致）
+const diceEnabled = computed(() => gs.settings.dice.enabled);
+const rateOf = (option: ChoiceOption): number | null =>
+  diceEnabled.value ? resolveOptionSuccessRate(option.text) : null;
+// 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）蓝 / 低（<40）橙——
+// 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*
+const rateClass = (rate: number): string =>
+  rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
+
+// 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
+// key 用「generation id + 行号」，切代/翻页自然失效（同 selectedKeys 机制）
+const rollResults = ref<ReadonlyMap<string, DiceOutcome>>(new Map());
+const rollOf = (index: number): DiceOutcome | null =>
+  rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+const rollLabel = (o: DiceOutcome): string =>
+  o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
+
 // 风险档位图例：仅选项视图且存在带档位标注的选项时显示（enrich 视图不带档位）
 const hasGradedOptions = computed(
   () =>
@@ -281,7 +311,9 @@ const hasGradedOptions = computed(
     hudEnabled.value &&
     visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
 );
-const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
+const legendTitle = computed(() =>
+  t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
+);
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
 // 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
@@ -436,13 +468,17 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 翻页后正确；generationId 用于同代重复点击的命中去重）
   const isEnrich = activeView.value === 'enrich';
   const gen = isEnrich ? null : panelStore.currentGeneration;
-  await applyOptionBehavior(option, behavior.value, {
+  const dice = await applyOptionBehavior(option, behavior.value, {
     view: isEnrich ? 'enrich' : 'options',
     poolEntryIds: gen?.poolEntryIds ?? [],
     generationId: gen?.id,
     matchedEntryId: option.matchedEntryId,
     scopeId: gen?.scopeId,
   });
+  // 行内判定 chip（v55 骰子结果；润色视图恒返回 null，不标记）
+  if (dice) {
+    rollResults.value = new Map(rollResults.value).set(`${generationId.value}:${index}`, dice.outcome);
+  }
   // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
   markOptionSelected(index);
   // 锁定展开时点选项后面板不收起（常开）
@@ -907,6 +943,71 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   border-left: 1px dashed var(--choice-border-strong);
   flex-shrink: 0;
   margin-right: var(--choice-space-2);
+}
+
+/* ===== v55 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
+/* 成功率徽标：类型徽标与分隔线之间，flex 不换行，彩色加粗文字按把握分档着色 */
+.choice-option-rate {
+  flex-shrink: 0;
+  margin-left: var(--choice-space-1);
+  margin-right: var(--choice-space-1);
+  font-size: calc(12px * var(--choice-font-scale));
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.choice-option-rate--high {
+  color: var(--choice-color-success);
+}
+
+.choice-option-rate--mid {
+  color: var(--choice-color-info);
+}
+
+.choice-option-rate--low {
+  color: var(--choice-color-warning);
+}
+
+/* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留；
+   父级 .choice-option-btn 已是 absolute 定位基准 */
+.choice-roll-chip {
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: var(--choice-text-xs);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-sm);
+  animation: choice-roll-chip-fade 3s ease forwards;
+}
+
+.choice-roll-chip--success,
+.choice-roll-chip--crit_success {
+  color: var(--choice-color-success);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-success);
+}
+
+.choice-roll-chip--fail,
+.choice-roll-chip--crit_fail {
+  color: var(--choice-color-danger);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-danger);
+}
+
+@keyframes choice-roll-chip-fade {
+  to {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-roll-chip {
+    animation: none;
+  }
 }
 
 .choice-option-content {

@@ -1072,7 +1072,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 54;
+export const SCHEMA_VERSION = 55;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1365,6 +1365,29 @@ export const ScopeStats = z
   .prefault({});
 export type ScopeStats = z.infer<typeof ScopeStats>;
 
+/** 骰子各结局计数。战绩独立于条目池统计，不参与建议或权重。
+ *  仅被 DiceStats 内部引用（通过 DiceStats 类型向外部暴露），无需独立导出 */
+const DiceOutcomeCounts = z
+  .object({
+    crit_success: z.number().min(0).default(0).catch(0),
+    success: z.number().min(0).default(0).catch(0),
+    fail: z.number().min(0).default(0).catch(0),
+    crit_fail: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+type DiceOutcomeCounts = z.infer<typeof DiceOutcomeCounts>;
+
+/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。 */
+export const DiceStats = z
+  .object({
+    total_rolls: z.number().min(0).default(0).catch(0),
+    by_outcome: DiceOutcomeCounts.prefault({}),
+    daily: z.record(z.string(), DiceOutcomeCounts).prefault({}),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type DiceStats = z.infer<typeof DiceStats>;
+
 export const StatsSettings = z
   .object({
     /** 全局总量（所有 scope 之和，汇总卡片用）。已废弃不再写入（record 只写 scope 级，
@@ -1380,10 +1403,23 @@ export const StatsSettings = z
     /** AI 建议分析缓存（键 = 统计维度 scopeId）：见 AiAnalysisScope 注释。
      *  只读展示数据，不参与建议引擎/阵容计划判定；清空统计时一并清除。 */
     ai_analysis: z.record(z.string(), AiAnalysisScope).prefault({}),
+    /** 骰子判定战绩（全局维度，不随 config 维度）：随 stats_enabled 采集；
+     *  不参与条目建议/权重/AI 分析；清空统计时一并清除。 */
+    dice: DiceStats.prefault({}),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白骰子战绩（纯数据构造，不依赖任何 store）。 */
+export function createEmptyDiceStats(): DiceStats {
+  return {
+    total_rolls: 0,
+    by_outcome: { crit_success: 0, success: 0, fail: 0, crit_fail: 0 },
+    daily: {},
+    updated_at: 0,
+  };
+}
 
 /** 构造一份空白统计（v51 形态）：迁移清零与「清空统计」共用同一真相源，
  *  避免两处各自构造默认对象造成形态漂移。纯数据构造，不依赖任何 store。 */
@@ -1394,9 +1430,44 @@ export function createEmptyStats(): StatsSettings {
     entries: {},
     last_hit_generation_id: null,
     ai_analysis: {},
+    dice: createEmptyDiceStats(),
     updated_at: Date.now(),
   };
 }
+
+/** 骰子判定设置（v55）：选项点击时掷 D100 判定成败，失败/大成功/大失败按模板
+ *  给发送文本带隐形演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
+ *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。enabled 默认关——
+ *  存量用户升级零行为变化；老档缺字段由 prefault({}) 补齐，无需内容迁移
+ *  （提示词文本变更单独走 v55 迁移）。 */
+export const DiceSettings = z
+  .object({
+    /** 总开关：关 = 不掷骰、不显示成功率徽标、选项行为与 v54 完全一致 */
+    enabled: z.boolean().default(false),
+    /** 大成功阈值：掷出 ≤ 本值 → 大成功（默认 5，1–99） */
+    crit_success_max: z.number().min(1).max(99).default(5).catch(5),
+    /** 大失败阈值：掷出 ≥ 本值 → 大失败（默认 95，2–100） */
+    crit_fail_min: z.number().min(2).max(100).default(95).catch(95),
+    /** send 模板为空时使用的回退文案，支持 {rate}（需求值）和 {roll}（点数）。 */
+    fail_template: z.string().default('【判定失败】'),
+    /** 大成功回退文案，同样支持占位符。 */
+    crit_success_template: z.string().default('【大成功】'),
+    /** 大失败回退文案，同样支持占位符。 */
+    crit_fail_template: z.string().default('【大失败】'),
+    /** 隐形演绎指令（默认完整文案）：实际包在 HTML 注释中随消息发送/填入，聊天界面不可见。
+     *  所有点击行为共用（send 直接发送、fill/insert/append 填入输入框可编辑），为空时回退对应短文案 */
+    fail_send_template: z.string().default(
+      '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
+    ),
+    crit_success_send_template: z.string().default(
+      '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
+    ),
+    crit_fail_send_template: z.string().default(
+      '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+    ),
+  })
+  .prefault({});
+export type DiceSettings = z.infer<typeof DiceSettings>;
 
 export const GlobalSettings = z
   .object({
@@ -1467,6 +1538,8 @@ export const GlobalSettings = z
     global_count_mode: z.string().default('4'),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
+    /** 骰子判定（v55）：AI 标注/档位兜底成功率 + D100 随机判定，失败等结局前缀标记 */
+    dice: DiceSettings.prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——

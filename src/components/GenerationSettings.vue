@@ -68,6 +68,112 @@
       </div>
     </div>
 
+    <!-- 骰子判定（v55）：成功率标注/档位兜底 + D100 随机判定。开关默认关，
+         关闭时选项行为与旧版完全一致；成功率徽标与判定 chip 均随本开关显隐 -->
+    <div class="choice-generation-section" data-tour="gen-dice">
+      <div class="choice-field">
+        <div class="choice-field-label">
+          <label>{{ t`骰子判定` }}</label>
+        </div>
+        <small class="choice-field-hint">{{
+          t`开启后点击选项时掷 D100：AI 标注成功率优先，未标注时按风险档位兜底（保守 85% / 平衡 60% / 大胆 35%）。判定结果以 HTML 注释随消息发送/填入（AI 可见、聊天界面不可见；填入时输入框可见注释，可编辑删除）；成功不加注释。润色视图与无成功率选项不参与判定`
+        }}</small>
+      </div>
+      <label class="choice-check">
+        <input v-model="gs.settings.dice.enabled" type="checkbox" :title="t`开启骰子判定`" />
+        <span class="choice-check-custom"></span>
+        <span class="choice-check-label">
+          <strong>{{ t`启用骰子判定` }}</strong>
+          <small>{{ t`开启后选项行显示成功率徽标，点击掷骰并播报结果` }}</small>
+        </span>
+      </label>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`大成功阈值` }}</span>
+          <input
+            v-model.number="gs.settings.dice.crit_success_max"
+            class="text_pole"
+            style="width: 70px"
+            type="number"
+            min="1"
+            max="99"
+            :title="t`掷出 ≤ 此值判为大成功（默认 5）`"
+          />
+        </label>
+        <label class="choice-count-item">
+          <span>{{ t`大失败阈值` }}</span>
+          <input
+            v-model.number="gs.settings.dice.crit_fail_min"
+            class="text_pole"
+            style="width: 70px"
+            type="number"
+            min="2"
+            max="100"
+            :title="t`掷出 ≥ 此值判为大失败（默认 95）`"
+          />
+        </label>
+      </div>
+      <div class="choice-dice-template-list">
+        <div class="choice-dice-template-row">
+          <strong>{{ t`失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`隐形演绎指令` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_send_template"
+              class="text_pole"
+              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+            />
+          </label>
+          <label class="choice-count-item">
+            <span>{{ t`回退文案` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_template"
+              class="text_pole"
+              :placeholder="t`演绎指令留空时使用，如：【判定失败】`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`大成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`隐形演绎指令` }}</span>
+            <input
+              v-model="gs.settings.dice.crit_success_send_template"
+              class="text_pole"
+              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+            />
+          </label>
+          <label class="choice-count-item">
+            <span>{{ t`回退文案` }}</span>
+            <input
+              v-model="gs.settings.dice.crit_success_template"
+              class="text_pole"
+              :placeholder="t`演绎指令留空时使用，如：【大成功】`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`大失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`隐形演绎指令` }}</span>
+            <input
+              v-model="gs.settings.dice.crit_fail_send_template"
+              class="text_pole"
+              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+            />
+          </label>
+          <label class="choice-count-item">
+            <span>{{ t`回退文案` }}</span>
+            <input
+              v-model="gs.settings.dice.crit_fail_template"
+              class="text_pole"
+              :placeholder="t`演绎指令留空时使用，如：【大失败】`"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+
     <div class="choice-generation-section" data-tour="gen-count">
       <div class="choice-field">
         <div class="choice-field-label">
@@ -439,4 +545,47 @@ const clampEnrichChars = () => {
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
 }
+
+/* 骰子结局模板列表：每档一行（结局名 + 隐形演绎输入 + 回退输入），
+   窄屏下输入列 flex 收窄、标签不换行，避免 380px 横向溢出 */
+.choice-dice-template-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+}
+
+.choice-dice-template-row {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-3);
+  flex-wrap: wrap;
+  padding: var(--choice-space-2);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-md);
+  background: var(--choice-bg-element);
+}
+
+.choice-dice-template-row > strong {
+  flex: 0 0 auto;
+  min-width: 56px;
+  font-size: var(--choice-text-sm);
+}
+
+.choice-dice-template-row .choice-count-item {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.choice-dice-template-row .choice-count-item span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-dice-template-row .text_pole {
+  flex: 1;
+  min-width: 120px;
+}
+
 </style>

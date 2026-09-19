@@ -464,6 +464,95 @@
       </div>
     </div>
 
+    <!-- 骰子战绩（全局维度，不随 config 切换；默认折叠） -->
+    <div id="choice-stats-anchor-dice" class="choice-stats-section" data-anchor="dice">
+      <div class="choice-stats-section-head">
+        <button class="choice-stats-section-toggle" @click="showDice = !showDice">
+          <i
+            class="fa-solid fa-chevron-right choice-stats-chevron"
+            :class="{ 'choice-stats-chevron--open': showDice }"
+          ></i>
+          <h4 class="choice-stats-section-title"><i class="fa-solid fa-dice"></i>{{ t`骰子战绩` }}</h4>
+        </button>
+        <span class="choice-stats-info" :title="diceHelp"><i class="fa-solid fa-circle-info"></i></span>
+        <div class="choice-stats-head-actions"></div>
+      </div>
+      <div v-if="showDice" class="choice-stats-section-body">
+        <p class="choice-stats-sub">
+          {{ t`共 ${diceStats.total_rolls} 次判定 · 胜率 ${diceRateText}（大成功 + 成功 ÷ 总掷数）` }}
+        </p>
+        <div v-if="diceStats.total_rolls === 0" class="choice-empty-hint">{{ t`尚未进行过骰子判定` }}</div>
+        <template v-else>
+          <div class="choice-stats-cards">
+            <div class="choice-stats-card">
+              <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
+                ><i class="fa-solid fa-dice"></i
+              ></span>
+              <div class="choice-stats-card-body">
+                <div class="choice-stats-card-label">{{ t`总掷数` }}</div>
+                <div class="choice-stats-card-value">{{ diceStats.total_rolls }}</div>
+              </div>
+            </div>
+            <div class="choice-stats-card">
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit"
+                ><i class="fa-solid fa-star"></i
+              ></span>
+              <div class="choice-stats-card-body">
+                <div class="choice-stats-card-label">{{ t`大成功` }}</div>
+                <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
+              </div>
+            </div>
+            <div class="choice-stats-card">
+              <span class="choice-stats-card-icon choice-stats-card-icon--success"
+                ><i class="fa-solid fa-check"></i
+              ></span>
+              <div class="choice-stats-card-body">
+                <div class="choice-stats-card-label">{{ t`成功` }}</div>
+                <div class="choice-stats-card-value">{{ diceStats.by_outcome.success }}</div>
+              </div>
+            </div>
+            <div class="choice-stats-card">
+              <span class="choice-stats-card-icon choice-stats-card-icon--danger"
+                ><i class="fa-solid fa-xmark"></i
+              ></span>
+              <div class="choice-stats-card-body">
+                <div class="choice-stats-card-label">{{ t`失败` }}</div>
+                <div class="choice-stats-card-value">{{ diceStats.by_outcome.fail }}</div>
+              </div>
+            </div>
+            <div class="choice-stats-card">
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit"
+                ><i class="fa-solid fa-bolt"></i
+              ></span>
+              <div class="choice-stats-card-body">
+                <div class="choice-stats-card-label">{{ t`大失败` }}</div>
+                <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>
+              </div>
+            </div>
+          </div>
+          <div class="choice-stats-sub-block">
+            <div class="choice-stats-sub-block-head">
+              <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`近 7 天判定` }}</span>
+            </div>
+            <p class="choice-stats-sub">{{ t`每日判定次数（含大成功/大失败）` }}</p>
+            <div class="choice-chart">
+              <div v-for="p in diceTrend" :key="p.key" class="choice-chart-day">
+                <div class="choice-chart-bars">
+                  <div
+                    class="choice-chart-col choice-chart-col--dice"
+                    :style="{ height: diceBarHeight(p.total) }"
+                    :title="`${p.label} ${t`判定`} ${p.total}`"
+                  ></div>
+                </div>
+                <!-- 骰子图固定 7 天，标签全显示（不复用受 trendDays 影响的 showChartLabel） -->
+                <span class="choice-chart-label">{{ p.label }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <!-- 阵容计划（半自动：默认折叠；仅具体 config 维度可写） -->
     <div v-if="canApply" id="choice-stats-anchor-roster" class="choice-stats-section" data-anchor="roster">
       <div class="choice-stats-section-head">
@@ -709,6 +798,7 @@ import {
   planRoster,
   applyRosterPlan,
   reEnableEntry,
+  diceWinRate,
   GLOBAL_SCOPE,
   NONE_SCOPE,
   suggestionKey,
@@ -736,7 +826,9 @@ import {
   SUGGEST_MIN_SAMPLES,
   GenerationSettings,
   AI_ANALYSIS_DEBOUNCE_MS,
+  createEmptyDiceStats,
   type AiAnalysisEntry,
+  type DiceStats,
   type PoolConfigEntry,
 } from '@/type/settings';
 
@@ -749,6 +841,7 @@ const sampleMin = SUGGEST_MIN_SAMPLES;
 
 // ── 折叠分区状态（组件内，不持久化：切 tab 组件卸载即重置） ──
 const showOverview = ref(true);
+const showDice = ref(false);
 const showHitRank = ref(false);
 const showRoster = ref(false);
 const showHistory = ref(false);
@@ -767,6 +860,7 @@ const leaderboardHelp = computed(() =>
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
+const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的 D100 判定结局计数与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
 const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
@@ -1032,6 +1126,33 @@ const barHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / trendMax.v
 
 /** 日期 label 稀疏规则：7 天全显示；30 天每 5 天显示一个，末尾（今天）始终显示 */
 const showChartLabel = (i: number) => trendDays.value <= 7 || i % 5 === 0 || i === trend.value.length - 1;
+
+// ── 骰子战绩（全局维度，不随 config 切换） ──
+const diceStats = computed<DiceStats>(() => stats.value.dice ?? createEmptyDiceStats());
+const diceRateText = computed(() => {
+  const r = diceWinRate(diceStats.value);
+  return r === null ? '—' : rateText(r);
+});
+/** 近 7 天每日判定次数（合并四档计数），与 stats.ts dailyKey 同格式（本地时区） */
+const diceTrend = computed(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const out: Array<{ key: string; label: string; total: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const c = diceStats.value.daily[key];
+    out.push({
+      key,
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      total: c ? c.crit_success + c.success + c.fail + c.crit_fail : 0,
+    });
+  }
+  return out;
+});
+const diceTrendMax = computed(() => Math.max(1, ...diceTrend.value.map(p => p.total)));
+const diceBarHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / diceTrendMax.value) * 100)) : 0) + '%';
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
@@ -1311,6 +1432,7 @@ const jumpTargets = computed(() => {
     { anchor: 'overview', label: t`概览` },
     { anchor: 'leaderboard', label: t`条目榜` },
   ];
+  list.push({ anchor: 'dice', label: t`骰子` });
   if (canApply.value) list.push({ anchor: 'roster', label: t`阵容` });
   if (statsEnabled.value && automationEnabled.value && historyEntries.value.length > 0) {
     list.push({ anchor: 'history', label: t`历史` });
@@ -1548,6 +1670,8 @@ const exportStats = () => {
       updated_at: stats.value.updated_at,
       // v51 按 config 维度（scopeId = config.id；无 config 会话 = '__none__'）
       entries: stats.value.entries,
+      // 骰子判定战绩（全局维度原始结构）
+      dice: stats.value.dice,
     },
     // 自动化应用历史（建议/阵容批次快照，随 apply_history 持久化）
     apply_history: gs.settings.apply_history,
@@ -1792,6 +1916,18 @@ const onClearStats = async () => {
   color: var(--choice-text-secondary);
 }
 
+/* 骰子战绩彩蛋结局（大成功/大失败）：星标/闪电用强调色强调 */
+.choice-stats-card-icon--crit {
+  background: var(--choice-color-warning-bg);
+  color: var(--choice-color-warning);
+}
+
+/* 骰子战绩失败结局（普通失败） */
+.choice-stats-card-icon--danger {
+  background: var(--choice-color-error-bg);
+  color: var(--choice-color-error);
+}
+
 .choice-stats-card-body {
   display: flex;
   flex-direction: column;
@@ -2022,6 +2158,10 @@ const onClearStats = async () => {
 
 .choice-chart-col--selected {
   background: var(--choice-color-success);
+}
+
+.choice-chart-col--dice {
+  background: var(--choice-color-info);
 }
 
 .choice-chart-label {

@@ -166,6 +166,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - 使用克制的卡片化和明确的信息层级，不做玻璃拟态或强动效。
 - **选项 HUD 化**（`ui.hud_enabled`，默认开）：选项行左缘 3px 风险档位色条（保守/平衡/大胆 →
   `--choice-risk-*` 别名，惰性引用各主题的 success/info/warning 语义色）、悬停增强（加深浮起 + 色条加宽 + 行尾箭头）、生成后逐条滑入动画（staggered 60ms/条，v-for key 含 generation id 保证切代重放；`prefers-reduced-motion` 下关闭）、同代已选打勾（✓ + 半透明虚线，组件内存态不持久化）。全部由面板根类的 `--hud` 修饰类整体门控，关闭开关即回基础卡片样式；两处 UI 的档位样式类前缀不同（`choice-option-btn--*` / `choice-float-option--*`）但语义一致。
+- **选项成功率骰子判定**（v55，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注成功率（`[标题|档位|70%]`，见 option-format 描述），未标注时按风险档位兜底（保守 85% / 平衡 60% / 大胆 35%，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≤ `crit_success_max`（默认 5）大成功 → roll ≥ `crit_fail_min`（默认 95）大失败 → roll ≤ rate 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效）。**判定影响随所有点击行为生效**：失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，模板优先 `*_send_template`、为空回退 `fail_template`/`crit_success_template`/`crit_fail_template`，回退也为空则不附加；支持 `{rate}`/`{roll}` 占位符）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带；成功无注释。成功率徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；按把握分档着色 ≥70 绿 / 40-69 蓝 / <40 橙）与行内判定 chip（成功/失败/大成功/大失败，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无成功率选项（AI 自由发挥）不掷骰。
 - `src/theme.css` 已包含颜色、间距、字号、圆角、阴影、层级和状态色 token。间距使用
   `--choice-space-1`~`--choice-space-6`，字号使用 `--choice-text-xs/sm/base/lg/xl`，新增样式不要继续散落裸值。
 - 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。不要恢复硬编码 z-index。
@@ -214,17 +215,17 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v56 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker）、`floating-state.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 54。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 55。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义、窄屏布局 composable 与 `useConfirm.ts`（确认弹窗 Promise 化封装，Statistics 清空/应用建议/应用阵容三处使用）。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
-- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`：`parseOptionType`/`parseOptionContent`/`parseOptionStyle`，后者的风险档位分级——`[标题|保守/平衡/大胆]` 竖线标注，词表外/无标注返回 null 中性显示，受控词表与 prompt core_rules 输出格式同步）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
+- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`：`parseOptionType`/`parseOptionContent`/`parseOptionStyle`/`parseOptionRate`/`resolveOptionSuccessRate`，风险档位分级与成功率标注共享同一拆分——`[标题|保守/平衡/大胆]`、`[标题|大胆|70%]` 竖线标注，任一段既非受控档位词又非数字百分比则整段回退当标题，词表外/无标注返回 null 中性显示，成功率未标注时按 `GRADE_FALLBACK_RATE` 档位兜底，受控词表与 prompt core_rules 输出格式同步）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
   提供角色卡绑定扫描（`getBoundCharacters`）与可靠持久化（`persistCharacter`，直接 POST
   `/api/characters/edit`，替代会丢扩展字段的 `saveCharacterDebounced`）。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。

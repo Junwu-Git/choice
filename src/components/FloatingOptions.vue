@@ -25,7 +25,18 @@
             @click="onSelect(option, index)"
           >
             <span class="choice-float-option-type">{{ parseOptionType(option.text) }}</span><!--
-            --><span class="choice-float-option-content">{{ parseOptionContent(option.text) }}</span>
+            --><span
+              v-if="rateOf(option) !== null"
+              class="choice-float-option-rate"
+              :class="rateClass(rateOf(option)!)"
+              >{{ rateOf(option) }}%</span
+            ><!--
+            --><span class="choice-float-option-content">{{ parseOptionContent(option.text) }}<i
+              v-if="rollOf(index)"
+              class="choice-float-roll-chip"
+              :class="`choice-float-roll-chip--${rollOf(index)}`"
+              >{{ rollLabel(rollOf(index)!) }}</i
+            ></span>
           </button>
         </template>
         <div v-else-if="isGenerating" class="choice-floating-options-empty">
@@ -108,8 +119,9 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { openSettings, closeBubbleOptions, isSettingsOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
-import { parseOptionType, parseOptionContent, parseOptionStyle } from '@/util/option-format';
+import { parseOptionType, parseOptionContent, parseOptionStyle, resolveOptionSuccessRate } from '@/util/option-format';
 import { applyOptionBehavior } from '@/util/option-action';
+import type { DiceOutcome } from '@/core/dice';
 
 // 选项 popover 宽度：320px 封顶（放得下类型标签 + 内容），窄屏让给视口
 const POPOVER_WIDTH = Math.min(320, window.innerWidth - 16);
@@ -178,8 +190,30 @@ const optionBtnStyle = (index: number): Record<string, string> => {
   return { animationDelay: `${index * 60}ms` };
 };
 
-const hasGradedOptions = computed(() => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null));
-const legendTitle = computed(() => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）`);
+// 骰子判定（v55）：成功率徽标与行内判定 chip 的总开关（独立于 HUD）。
+// 徽标显示规则 = 骰子开 + 该选项可解析出成功率（AI 标注或档位兜底）
+const diceEnabled = computed(() => gs.settings.dice.enabled);
+const rateOf = (option: ChoiceOption): number | null =>
+  diceEnabled.value ? resolveOptionSuccessRate(option.text) : null;
+// 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）蓝 / 低（<40）橙，
+// 与成功率直觉一致（risk 色条表达的是风险档位，两者语义不同不混用）
+const rateClass = (rate: number): string =>
+  rate >= 70 ? 'choice-float-option-rate--high' : rate >= 40 ? 'choice-float-option-rate--mid' : 'choice-float-option-rate--low';
+
+// 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
+// key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）
+const rollResults = ref<ReadonlyMap<string, DiceOutcome>>(new Map());
+const rollOf = (index: number): DiceOutcome | null =>
+  rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+const rollLabel = (o: DiceOutcome): string =>
+  o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
+
+const hasGradedOptions = computed(
+  () => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null),
+);
+const legendTitle = computed(() =>
+  t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
+);
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"
 watch(dimEnabled, enabled => {
@@ -237,13 +271,17 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 弹窗是纯行动选项速选菜单（无润色视图），view 恒为 'options'，明确传入计价口径；
   // poolEntryIds/generationId 取被点选项所在代，供统计整轮归因与同代去重
   // （见 option-action.ts / core/stats.ts）
-  await applyOptionBehavior(option, behavior.value, {
+  const dice = await applyOptionBehavior(option, behavior.value, {
     view: 'options',
     poolEntryIds: panelStore.currentGeneration?.poolEntryIds ?? [],
     generationId: panelStore.currentGeneration?.id,
     matchedEntryId: option.matchedEntryId,
     scopeId: panelStore.currentGeneration?.scopeId,
   });
+  // 行内判定 chip（v55 骰子结果，返回值非 null = 本次真的掷了骰）
+  if (dice) {
+    rollResults.value = new Map(rollResults.value).set(`${generationId.value}:${index}`, dice.outcome);
+  }
   // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
   markOptionSelected(index);
   panelStore.autoSetCollapsed(true);
@@ -514,6 +552,72 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   line-height: 1.4;
   font-size: var(--choice-text-sm);
   overflow-wrap: anywhere;
+}
+
+/* ===== v55 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
+/* 成功率徽标：类型徽标旁的小 pill，无边框轻量，彩色加粗文字按把握分档着色 */
+.choice-float-option-rate {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.choice-float-option-rate--high {
+  color: var(--choice-color-success);
+}
+
+.choice-float-option-rate--mid {
+  color: var(--choice-color-info);
+}
+
+.choice-float-option-rate--low {
+  color: var(--choice-color-warning);
+}
+
+/* 行内判定 chip：悬停在行尾（不占内容流），点选后淡出到半透明滞留；
+   父级 .choice-float-option 已是 absolute 定位基准 */
+.choice-float-roll-chip {
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: var(--choice-text-xs);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-sm);
+  animation: choice-float-roll-chip-fade 3s ease forwards;
+}
+
+.choice-float-roll-chip--success,
+.choice-float-roll-chip--crit_success {
+  color: var(--choice-color-success);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-success);
+}
+
+.choice-float-roll-chip--fail,
+.choice-float-roll-chip--crit_fail {
+  color: var(--choice-color-danger);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-danger);
+}
+
+@keyframes choice-float-roll-chip-fade {
+  to {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-float-roll-chip {
+    animation: none;
+  }
 }
 
 .choice-floating-options-empty {
