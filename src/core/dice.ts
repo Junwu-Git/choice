@@ -23,10 +23,14 @@ export function rollDice(
   const low = clampInt(critSuccessMax, 1, 99);
   const high = clampInt(critFailMin, 2, 100);
   const critsActive = low < high;
-  const outcome: DiceOutcome = critsActive && roll <= low ? 'crit_success'
-    : critsActive && roll >= high ? 'crit_fail'
-    : roll <= rate ? 'success'
-    : 'fail';
+  const outcome: DiceOutcome =
+    critsActive && roll <= low
+      ? 'crit_success'
+      : critsActive && roll >= high
+        ? 'crit_fail'
+        : roll <= rate
+          ? 'success'
+          : 'fail';
   return { roll, outcome };
 }
 
@@ -49,11 +53,12 @@ export function buildDiceMarker(
   fallback: DiceTemplates,
 ): string {
   if (outcome === 'success') return '';
-  const tpl = outcome === 'fail'
-    ? templates.fail || fallback.fail
-    : outcome === 'crit_success'
-      ? templates.critSuccess || fallback.critSuccess
-      : templates.critFail || fallback.critFail;
+  const tpl =
+    outcome === 'fail'
+      ? templates.fail || fallback.fail
+      : outcome === 'crit_success'
+        ? templates.critSuccess || fallback.critSuccess
+        : templates.critFail || fallback.critFail;
   if (!tpl.trim()) return '';
   const body = tpl.replace(/\{rate\}/g, String(rate)).replace(/\{roll\}/g, String(roll));
   return `<!--${body}-->\n`;

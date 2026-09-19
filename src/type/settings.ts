@@ -1456,15 +1456,21 @@ export const DiceSettings = z
     crit_fail_template: z.string().default('【大失败】'),
     /** 隐形演绎指令（默认完整文案）：实际包在 HTML 注释中随消息发送/填入，聊天界面不可见。
      *  所有点击行为共用（send 直接发送、fill/insert/append 填入输入框可编辑），为空时回退对应短文案 */
-    fail_send_template: z.string().default(
-      '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
-    ),
-    crit_success_send_template: z.string().default(
-      '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
-    ),
-    crit_fail_send_template: z.string().default(
-      '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
-    ),
+    fail_send_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
+      ),
+    crit_success_send_template: z
+      .string()
+      .default(
+        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
+      ),
+    crit_fail_send_template: z
+      .string()
+      .default(
+        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+      ),
   })
   .prefault({});
 export type DiceSettings = z.infer<typeof DiceSettings>;

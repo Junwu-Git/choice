@@ -587,5 +587,4 @@ const clampEnrichChars = () => {
   flex: 1;
   min-width: 120px;
 }
-
 </style>

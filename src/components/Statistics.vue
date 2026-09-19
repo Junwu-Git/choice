@@ -494,9 +494,7 @@
               </div>
             </div>
             <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit"
-                ><i class="fa-solid fa-star"></i
-              ></span>
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit"><i class="fa-solid fa-star"></i></span>
               <div class="choice-stats-card-body">
                 <div class="choice-stats-card-label">{{ t`大成功` }}</div>
                 <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
@@ -521,9 +519,7 @@
               </div>
             </div>
             <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit"
-                ><i class="fa-solid fa-bolt"></i
-              ></span>
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit"><i class="fa-solid fa-bolt"></i></span>
               <div class="choice-stats-card-body">
                 <div class="choice-stats-card-label">{{ t`大失败` }}</div>
                 <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>

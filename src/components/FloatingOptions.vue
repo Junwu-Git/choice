@@ -25,18 +25,18 @@
             @click="onSelect(option, index)"
           >
             <span class="choice-float-option-type">{{ parseOptionType(option.text) }}</span><!--
-            --><span
-              v-if="rateOf(option) !== null"
-              class="choice-float-option-rate"
-              :class="rateClass(rateOf(option)!)"
+            --><span v-if="rateOf(option) !== null" class="choice-float-option-rate" :class="rateClass(rateOf(option)!)"
               >{{ rateOf(option) }}%</span
             ><!--
-            --><span class="choice-float-option-content">{{ parseOptionContent(option.text) }}<i
-              v-if="rollOf(index)"
-              class="choice-float-roll-chip"
-              :class="`choice-float-roll-chip--${rollOf(index)}`"
-              >{{ rollLabel(rollOf(index)!) }}</i
-            ></span>
+            --><span class="choice-float-option-content"
+              >{{ parseOptionContent(option.text)
+              }}<i
+                v-if="rollOf(index)"
+                class="choice-float-roll-chip"
+                :class="`choice-float-roll-chip--${rollOf(index)}`"
+                >{{ rollLabel(rollOf(index)!) }}</i
+              ></span
+            >
           </button>
         </template>
         <div v-else-if="isGenerating" class="choice-floating-options-empty">
@@ -198,21 +198,22 @@ const rateOf = (option: ChoiceOption): number | null =>
 // 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）蓝 / 低（<40）橙，
 // 与成功率直觉一致（risk 色条表达的是风险档位，两者语义不同不混用）
 const rateClass = (rate: number): string =>
-  rate >= 70 ? 'choice-float-option-rate--high' : rate >= 40 ? 'choice-float-option-rate--mid' : 'choice-float-option-rate--low';
+  rate >= 70
+    ? 'choice-float-option-rate--high'
+    : rate >= 40
+      ? 'choice-float-option-rate--mid'
+      : 'choice-float-option-rate--low';
 
 // 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）
 const rollResults = ref<ReadonlyMap<string, DiceOutcome>>(new Map());
-const rollOf = (index: number): DiceOutcome | null =>
-  rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+const rollOf = (index: number): DiceOutcome | null => rollResults.value.get(`${generationId.value}:${index}`) ?? null;
 const rollLabel = (o: DiceOutcome): string =>
   o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
 
-const hasGradedOptions = computed(
-  () => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null),
-);
-const legendTitle = computed(() =>
-  t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
+const hasGradedOptions = computed(() => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null));
+const legendTitle = computed(
+  () => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
 );
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"

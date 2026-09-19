@@ -166,12 +166,12 @@
             :class="rateClass(rateOf(option)!)"
             >{{ rateOf(option) }}%</span
           ><span class="choice-option-divider"></span>
-          <span class="choice-option-content">{{ parseOptionContent(option.text) }}<i
-            v-if="rollOf(index)"
-            class="choice-roll-chip"
-            :class="`choice-roll-chip--${rollOf(index)}`"
-            >{{ rollLabel(rollOf(index)!) }}</i
-          ></span>
+          <span class="choice-option-content"
+            >{{ parseOptionContent(option.text)
+            }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)}`">{{
+              rollLabel(rollOf(index)!)
+            }}</i></span
+          >
         </button>
         <div v-if="!compact && activeView === 'options' && underflow" class="choice-panel-hint">
           {{ t`本轮选项少于设定数量` }}
@@ -299,8 +299,7 @@ const rateClass = (rate: number): string =>
 // 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代/翻页自然失效（同 selectedKeys 机制）
 const rollResults = ref<ReadonlyMap<string, DiceOutcome>>(new Map());
-const rollOf = (index: number): DiceOutcome | null =>
-  rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+const rollOf = (index: number): DiceOutcome | null => rollResults.value.get(`${generationId.value}:${index}`) ?? null;
 const rollLabel = (o: DiceOutcome): string =>
   o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
 
@@ -311,8 +310,8 @@ const hasGradedOptions = computed(
     hudEnabled.value &&
     visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
 );
-const legendTitle = computed(() =>
-  t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
+const legendTitle = computed(
+  () => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
 );
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
