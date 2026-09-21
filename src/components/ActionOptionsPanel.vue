@@ -340,7 +340,9 @@ const adjustFontOptions = [
   { value: 'large' as const, label: t`大`, tip: t`选项面板内大号文字，阅读更舒适` },
 ];
 const isAdjustFontActive = (v: (typeof adjustFontOptions)[number]['value']) =>
-  v === 'auto' ? gs.settings.ui.option_font_size_auto : !gs.settings.ui.option_font_size_auto && gs.settings.ui.option_font_size === v;
+  v === 'auto'
+    ? gs.settings.ui.option_font_size_auto
+    : !gs.settings.ui.option_font_size_auto && gs.settings.ui.option_font_size === v;
 const applyAdjustFont = (v: (typeof adjustFontOptions)[number]['value']) => {
   if (v === 'auto') {
     gs.settings.ui.option_font_size_auto = true;
@@ -367,7 +369,8 @@ const optionFontScale = computed(() => {
 // 面板 body 是否渲染（原内联条件提取为 computed，供 body 渲染判断）
 const bodyShown = computed(
   () =>
-    (props.compact || !collapsed.value) && (visibleOptions.value.length > 0 || !(isGenerating.value || enrichLoading.value)),
+    (props.compact || !collapsed.value) &&
+    (visibleOptions.value.length > 0 || !(isGenerating.value || enrichLoading.value)),
 );
 
 // 面板栏高样式：分态——调整态用固定 height（内容不足时下方露留白、随拖动实时变化，

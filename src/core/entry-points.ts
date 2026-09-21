@@ -31,11 +31,7 @@ function writeEnabled(key: EntryKey, on: boolean, ui: UiShape): void {
 /** 当前开启的入口数（悬浮球/魔棒/聊天面板） */
 export function ensureEntryPoint(): number {
   const ui = useGlobalSettingsStore().settings.ui as UiShape;
-  return (
-    (readEnabled('floating', ui) ? 1 : 0) +
-    (readEnabled('wand', ui) ? 1 : 0) +
-    (readEnabled('chat', ui) ? 1 : 0)
-  );
+  return (readEnabled('floating', ui) ? 1 : 0) + (readEnabled('wand', ui) ? 1 : 0) + (readEnabled('chat', ui) ? 1 : 0);
 }
 
 /**
@@ -57,7 +53,9 @@ export function setEntryVisible(key: EntryKey, on: boolean): boolean {
     key === 'floating' ? ['wand', 'chat'] : key === 'wand' ? ['floating', 'chat'] : ['floating', 'wand'];
   const anotherOn = otherKeys.some(k => readEnabled(k, ui));
   if (!anotherOn) {
-    toastr.warning(t`至少需要保留一个入口：${ENTRY_KEY_LABEL[key]} 是最后一个（${ENTRY_KEY_LABEL[otherKeys[0]]} / ${ENTRY_KEY_LABEL[otherKeys[1]]} 均已关闭）`);
+    toastr.warning(
+      t`至少需要保留一个入口：${ENTRY_KEY_LABEL[key]} 是最后一个（${ENTRY_KEY_LABEL[otherKeys[0]]} / ${ENTRY_KEY_LABEL[otherKeys[1]]} 均已关闭）`,
+    );
     return false;
   }
   writeEnabled(key, false, ui);
