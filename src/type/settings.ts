@@ -1246,6 +1246,45 @@ const UISettings = z
      * 关闭时标注存在也按中性显示。老存档缺字段由 default(true) 补齐，无需 bump schema_version
      */
     hud_enabled: z.boolean().default(true),
+    /**
+     * 悬浮球选项弹窗锁（与聊天面板锁 panel_lock 解耦，off/open 二态）：
+     * off = 点选项后弹窗收起、外部点击/Esc 可关闭；open = 弹窗常开，点选项/外部点击/Esc 均不收起。
+     * 聊天面板的 panel_lock 管面板展开/收起自动化，互不影响。
+     * 老存档缺字段由 default('off') 补齐，无需 bump schema_version
+     */
+    floating_options_lock: z.enum(['off', 'open']).default('off'),
+    /**
+     * 聊天面板「点击聊天正文收起」：false = 关闭（现状）；true = 展开的面板在用户点击
+     * 面板外普通聊天正文/空白处时收起。仅收起、不反向弹开；链接/按钮/输入框/工具栏等
+     * 交互元素不触发（.mes 本体不排除——手机端整屏文字也可收起）。
+     * 老存档缺字段由 default(false) 补齐，无需 bump schema_version
+     */
+    panel_collapse_on_outside_click: z.boolean().default(false),
+    /**
+     * 悬浮球样式：ring = 现状环形（桌面 60 / 手机 48）；compact = 紧凑小点（桌面 48 / 手机 40），
+     * 削弱内环装饰、呼吸更静，手机端更不遮挡。直径计算见 floating-state 的 bubbleSizeFor。
+     * 老存档缺字段由 default('ring') 补齐，无需 bump schema_version
+     */
+    bubble_style: z.enum(['ring', 'compact']).default('ring'),
+    /**
+     * 选项面板正文字号档（独立于全局 font_size/--choice-font-scale）：
+     * 仅作用聊天面板内 .choice-option-btn/.choice-option-content 的缩放，
+     * 悬浮 popover 与设置面板不受影响。option_font_size_auto=true 时忽略本字段
+     * （跟随全局档，scale=1）。老存档缺字段由 default('medium') 补齐
+     */
+    option_font_size: z.enum(['small', 'medium', 'large']).default('medium'),
+    /**
+     * 选项面板字号是否跟随全局字号档：true 时 option_font_size 不生效（面板 scale=1，
+     * 由 --choice-font-scale 全局缩放统一接管）；false = 面板独立档生效。
+     * 语义同 font_size_auto。老存档缺字段由 default(true) 补齐
+     */
+    option_font_size_auto: z.boolean().default(true),
+    /**
+     * 选项面板展开高度（px）：>0 = 面板 body max-height 用该值（拖动条回写）；
+     * 0 = 自动（沿用 45dvh / docked 40dvh 上限）。不与字号档联动。
+     * 老存档缺字段由 default(0) 补齐，无需 bump schema_version
+     */
+    option_panel_height: z.number().min(0).max(1000).default(0).catch(0),
   })
   .prefault({});
 type UISettings = z.infer<typeof UISettings>;

@@ -814,6 +814,15 @@
   overflow-wrap: anywhere;
 }
 
+/* 选项面板独立字号档（ui.option_font_size，ActionOptionsPanel 设 --choice-option-font-scale）：
+   只作用聊天面板（.choice-panel 非 --compact），悬浮 popover 固定小字不参与；
+   在全局 --choice-text-*（已含 --choice-font-scale）之上再乘面板档，独立于全局字号设置 */
+.choice-panel:not(.choice-panel--compact) .choice-option-btn,
+.choice-panel:not(.choice-panel--compact) .choice-option-content,
+.choice-panel:not(.choice-panel--compact) .choice-option-type {
+  font-size: calc(var(--choice-text-sm) * var(--choice-option-font-scale, 1));
+}
+
 /* ===== 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
 /* 成功率徽标：类型徽标旁的小 pill，彩色加粗文字按把握分档着色；
    分档色用 --choice-rate-*（中档 = 主色靛青），与档位色条（--choice-risk-*）刻意不同源，

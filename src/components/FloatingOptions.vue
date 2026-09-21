@@ -78,7 +78,8 @@
         >
           <i :class="isGenerating ? 'fa-solid fa-stop' : 'fa-solid fa-wand-magic-sparkles'"></i>
         </button>
-        <!-- 锁：与全局 panel_lock 同源（off/open 二态），激活高亮；锁定时点选项弹窗不收起 -->
+        <!-- 锁：弹窗独立锁 floating_options_lock（off/open 二态），与聊天面板 panel_lock 解耦，
+             激活高亮；锁定时点选项弹窗不收起 -->
         <button
           class="choice-tool-btn"
           :class="{ 'choice-tool-btn--active': locked }"
@@ -158,7 +159,9 @@ const currentIndex = computed(() => panelStore.currentIndex);
 const generations = computed(() => panelStore.generations);
 
 const isGenerating = computed(() => generatorState.loading);
-const locked = computed(() => gs.settings.ui.panel_lock !== 'off');
+// 弹窗锁独立于聊天面板锁（floating_options_lock off/open 二态）：面板的 panel_lock
+// 管「展开/收起自动化」，弹窗没有折叠概念、只问「点选项后收不收起」，两者不共享状态
+const locked = computed(() => gs.settings.ui.floating_options_lock !== 'off');
 const dimEnabled = computed(() => gs.settings.ui.floating_dim_enabled);
 
 // 选项 HUD 化总开关（与主面板同源）：关闭时分级色条/悬停增强/滑入动画/已选打勾停用
@@ -227,9 +230,9 @@ const apiReady = computed(() => !!resolveCustomApi(gs.settings.active_api_id, gs
 const behavior = computed(() => gs.settings.behavior);
 
 const onToggleLock = () => {
-  // 弹窗没有「折叠」概念：锁只在 off/open 间切换（open=锁定常开=点选项不收起），
-  // 与主面板共用 panel_lock 字段，两处激活态与语义实时同步
-  gs.settings.ui.panel_lock = locked.value ? 'off' : 'open';
+  // 弹窗没有「折叠」概念：锁只在 off/open 间切换（open=锁定常开=点选项不收起）。
+  // 与聊天面板锁解耦，写独立字段 floating_options_lock，两处互不同步
+  gs.settings.ui.floating_options_lock = locked.value ? 'off' : 'open';
 };
 
 const onToggle = async () => {

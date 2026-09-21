@@ -33,7 +33,7 @@ import {
   bubbleY,
   bubbleSize,
 } from '@/core/floating-state';
-import { useGlobalSettingsStore } from '@/store/global-settings';
+import { setEntryVisible } from '@/core/entry-points';
 
 const MENU_WIDTH = 140;
 
@@ -65,8 +65,11 @@ const onOpenSettings = () => {
 };
 
 const onHideBubble = () => {
-  const gs = useGlobalSettingsStore();
-  gs.settings.ui.floating_enabled = false;
+  // 入口保底：悬浮球是最后一个开着入口时拒绝隐藏（toastr 提示在 setEntryVisible 内），
+  // 菜单保持打开让用户理解原因；成功隐藏才收起菜单
+  if (!setEntryVisible('floating', false)) {
+    return;
+  }
   isBubbleContextMenuOpen.value = false;
 };
 

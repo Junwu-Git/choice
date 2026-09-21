@@ -9,6 +9,7 @@
       'choice-panel--docked': isDocked && !compact,
       'choice-panel--hud': hudEnabled,
     }"
+    :style="[panelAdjustStyle, { '--choice-option-font-scale': optionFontScale }]"
   >
     <div class="choice-panel-header" @click="panelStore.setCollapsed(!collapsed)">
       <span class="choice-panel-title" :class="{ 'choice-title--toggleable': hasEnrichHistory }" @click="onTitleClick">
@@ -22,7 +23,7 @@
       <div class="choice-panel-tools" @click.stop>
         <!-- 润色视图：取消（loading）按钮 -->
         <button
-          v-if="activeView === 'enrich' && enrichLoading"
+          v-if="!adjusting && activeView === 'enrich' && enrichLoading"
           class="choice-tool-btn choice-tool-btn--main"
           :title="t`取消润色`"
           @click="onCancelEnrich"
@@ -31,7 +32,7 @@
         </button>
         <!-- 润色视图：生成润色按钮 -->
         <button
-          v-if="activeView === 'enrich' && !enrichLoading"
+          v-if="!adjusting && activeView === 'enrich' && !enrichLoading"
           class="choice-tool-btn choice-tool-btn--main"
           :title="t`生成润色`"
           @click="onTriggerEnrich"
@@ -40,7 +41,7 @@
         </button>
         <!-- 选项视图：生成按钮（图标态，折叠/展开靠点标题栏） -->
         <button
-          v-if="activeView === 'options'"
+          v-if="!adjusting && activeView === 'options'"
           class="choice-tool-btn choice-tool-btn--main"
           :title="isGenerating ? t`取消生成` : t`生成选项`"
           @click="onToggle"
@@ -50,6 +51,7 @@
         <!-- 面板状态锁：锁定后自动化（生成后展开/点选项收起/发消息收起）全部跳过，
              面板常开/常关；手动切换仍有效且锁定跟随新状态。持久化于 ui.panel_lock -->
         <button
+          v-if="!adjusting"
           class="choice-tool-btn"
           :class="{ 'choice-tool-btn--active': locked }"
           :title="locked ? t`解锁面板状态` : t`锁定面板状态（不再自动展开/收起）`"
@@ -59,13 +61,24 @@
         </button>
         <!-- 主题循环切换：每点一次切到 THEME_OPTIONS 中的下一个主题（末尾回绕）。
              全局生效并持久化（gs.settings.ui.theme_mode），tooltip 明示下一站避免盲切 -->
-        <button class="choice-tool-btn" :title="cycleTitle" @click="onCycleTheme">
+        <button v-if="!adjusting" class="choice-tool-btn" :title="cycleTitle" @click="onCycleTheme">
           <i class="fa-solid fa-palette"></i>
+        </button>
+        <!-- 调整模式：进入后面板显示字号档与高度拖动区（选项禁用，避免调整时误点）。
+             放在设置入口左侧：生成/锁定/主题等高频操作仍按原顺序靠左，调整不抢位 -->
+        <button
+          v-if="!compact"
+          class="choice-tool-btn choice-tool-btn--adjust"
+          :class="{ 'choice-tool-btn--active': adjusting }"
+          :title="adjusting ? t`完成调整` : t`调整面板大小与字号`"
+          @click="onToggleAdjust"
+        >
+          <i class="fa-solid fa-sliders"></i>
         </button>
         <!-- 设置入口：恒在工具区最右（与生成/锁定/主题并列），点开插件设置面板。
              与悬浮球/魔棒菜单共用 openSettings 同一开关；tools 容器已 @click.stop，
              不会误触标题栏折叠 -->
-        <button class="choice-tool-btn" :title="t`打开设置`" @click="onOpenSettings">
+        <button v-if="!adjusting" class="choice-tool-btn" :title="t`打开设置`" @click="onOpenSettings">
           <i class="fa-solid fa-gear"></i>
         </button>
       </div>
@@ -74,15 +87,38 @@
       <div v-if="isGenerating || enrichLoading" class="choice-panel-progress"></div>
     </div>
 
+    <!-- 调整态工具条：进入调整模式后显示在标题栏下方（内容上边界），承载高度拖动 + 面板字号档。
+         选项在调整态已禁用点击，半透明/覆盖到选项上方也不影响操作；不随 body 滚动 -->
+    <div v-if="adjusting && !compact" class="choice-panel-adjust-bar">
+      <div
+        class="choice-panel-adjust-grip"
+        :title="t`向上拖面板往上变高，向下拖变矮（底部固定）`"
+        @pointerdown.stop.prevent="onResizeStart"
+      >
+        <i class="fa-solid fa-arrows-up-down"></i>
+        <span class="choice-panel-adjust-hint">{{ t`面板高度` }}：{{ heightHint }}</span>
+      </div>
+      <div class="choice-panel-adjust-font choice-seg">
+        <button
+          v-for="opt in adjustFontOptions"
+          :key="opt.value"
+          class="choice-seg-btn"
+          :class="{ active: isAdjustFontActive(opt.value) }"
+          :title="opt.tip"
+          @click="applyAdjustFont(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
+    </div>
+
     <!-- 生成/润色进行中且无旧结果时 body 整体不渲染（面板收缩为一条标题栏，动效在上面跑）；
          有旧结果时保持展开，旧选项在等待期间不闪烁 -->
-    <div
-      v-if="(compact || !collapsed) && (visibleOptions.length > 0 || !(isGenerating || enrichLoading))"
-      class="choice-panel-body"
-    >
+    <div v-if="bodyShown" ref="bodyEl" class="choice-panel-body" :style="bodyHeightStyle">
       <template v-if="visibleOptions.length > 0">
-        <!-- 行为栏：统一走 global.css 的 .choice-seg 分段控件语言（发送/覆盖/尾附/插入） -->
-        <div v-if="!compact" class="choice-seg">
+        <!-- 行为栏：统一走 global.css 的 .choice-seg 分段控件语言（发送/覆盖/尾附/插入）。
+             调整态隐藏（调整态只留字号+拖动，避免误触发行为） -->
+        <div v-if="!compact && !adjusting" class="choice-seg">
           <button
             class="choice-seg-btn"
             :class="{ active: behavior === 'send' }"
@@ -158,6 +194,7 @@
           class="choice-option-btn"
           :class="optionBtnClass(option, index)"
           :style="optionBtnStyle(index)"
+          :disabled="adjusting"
           @click="onSelect(option, index)"
         >
           <span class="choice-option-type">{{ parseOptionType(option.text) }}</span><!--
@@ -226,6 +263,7 @@ const props = defineProps<{ compact?: boolean }>();
 const emit = defineEmits<{ select: [] }>();
 
 const panelEl = ref<HTMLElement | null>(null);
+const bodyEl = ref<HTMLElement | null>(null);
 // 窄容器（手机聊天区 <420px）时收紧排版并限高滚动。与 compact prop 是两套机制：
 // compact 是悬浮预览的极简形态（连头部管理件都省掉），dense 只压密度不减功能
 const { isCompact: isDense } = useCompactLayout(panelEl);
@@ -247,6 +285,101 @@ const {
 const isGenerating = computed(() => generatorState.loading);
 
 const gs = useGlobalSettingsStore();
+
+// ── 调整模式（组件内存态，不持久化）─────────────────────────────────────────────
+// 标题栏「调整」按钮进入：选项与行为栏禁用、仅显示字号档与高度拖动条，退出即恢复。
+// 正常态面板保持干净布局，不显示任何调整控件
+const adjusting = ref(false);
+// 调整态面板改绝对定位、底部锚定（往上长）：面板增高时顶部向上抬升、底部与下方
+// 输入框都不动，拖动把手随光标走。进入时记录父容器并让它保留面板原高——面板脱离
+// 文档流后，下面内容不会因增高而跳动。退出时全部还原
+let adjustHost: HTMLElement | null = null;
+let adjustPanelHeight = 0;
+const releaseAdjustAnchor = () => {
+  if (adjustHost) {
+    adjustHost.style.position = '';
+    adjustHost.style.height = '';
+    adjustHost.style.overflow = '';
+    adjustHost = null;
+  }
+  adjustPanelHeight = 0;
+};
+const onToggleAdjust = async () => {
+  if (!adjusting.value) {
+    // 进入调整态：先展开面板，等渲染完成后用面板当前高度/位置作为底部锚定基准
+    panelStore.setCollapsed(false);
+    await nextTick();
+    const host = panelEl.value?.parentElement;
+    if (host && panelEl.value) {
+      adjustHost = host;
+      adjustPanelHeight = panelEl.value.getBoundingClientRect().height;
+      host.style.position = 'relative';
+      host.style.height = `${adjustPanelHeight}px`;
+      host.style.overflow = 'visible';
+    }
+  } else {
+    releaseAdjustAnchor();
+    // 退出调整：选项列表滚回顶部，并让面板（选项所在）滚回可视区——调整期间面板
+    // 处于底部锚定/增高，聊天滚动位置已漂走，需跳到选项所在处而非停留原地
+    bodyEl.value?.scrollTo({ top: 0 });
+    nextTick(() => panelEl.value?.scrollIntoView({ block: 'nearest' }));
+  }
+  adjusting.value = !adjusting.value;
+};
+// 调整态面板定位：绝对定位、底部锚定在父容器底、宽度铺满；body 高度增高时面板
+// 整体变高、顶部越过父容器上界向上抬升（往上长），把手随光标
+const panelAdjustStyle = computed(() => {
+  if (!adjusting.value) return {};
+  return { position: 'absolute', bottom: '0', left: '0', right: '0' } as const;
+});
+
+const adjustFontOptions = [
+  { value: 'auto' as const, label: t`自动`, tip: t`跟随全局字体档（不额外缩放）` },
+  { value: 'small' as const, label: t`小`, tip: t`选项面板内小号文字，手机端更紧凑` },
+  { value: 'medium' as const, label: t`中`, tip: t`选项面板内默认文字大小` },
+  { value: 'large' as const, label: t`大`, tip: t`选项面板内大号文字，阅读更舒适` },
+];
+const isAdjustFontActive = (v: (typeof adjustFontOptions)[number]['value']) =>
+  v === 'auto' ? gs.settings.ui.option_font_size_auto : !gs.settings.ui.option_font_size_auto && gs.settings.ui.option_font_size === v;
+const applyAdjustFont = (v: (typeof adjustFontOptions)[number]['value']) => {
+  if (v === 'auto') {
+    gs.settings.ui.option_font_size_auto = true;
+    return;
+  }
+  gs.settings.ui.option_font_size = v;
+  gs.settings.ui.option_font_size_auto = false;
+};
+// 当前面板高度提示：0 = 自动（45/40dvh 上限），>0 = 已固化的 px
+const heightHint = computed(() => {
+  const h = gs.settings.ui.option_panel_height;
+  return h > 0 ? `${h}px` : t`自动`;
+});
+
+// ── 选项面板正文独立字号档（ui.option_font_size / option_font_size_auto）─────────
+// 只在全局 --choice-text-* 之上再乘一个面板档位（global.css 对 .choice-option-* 生效），
+// 不与全局 font_size 联动；自动档 = 不额外缩放（跟随全局结果）
+const OPTION_FONT_SCALE: Record<'small' | 'medium' | 'large', number> = { small: 0.85, medium: 1, large: 1.2 };
+const optionFontScale = computed(() => {
+  const ui = gs.settings.ui;
+  return ui.option_font_size_auto ? 1 : OPTION_FONT_SCALE[ui.option_font_size];
+});
+
+// 面板 body 是否渲染（原内联条件提取为 computed，供 body 渲染判断）
+const bodyShown = computed(
+  () =>
+    (props.compact || !collapsed.value) && (visibleOptions.value.length > 0 || !(isGenerating.value || enrichLoading.value)),
+);
+
+// 面板栏高样式：分态——调整态用固定 height（内容不足时下方露留白、随拖动实时变化，
+// 让设定高度可感知）；正常态用 max-height 收紧（选项少只撑到内容高度，不露空白）。
+// h<=0 = 自动（沿用 45/40dvh 上限），返回空对象走 CSS 规则。
+// 调整态必须显式 maxHeight:'none'：body 的 CSS 恒带 max-height:45/40dvh，inline height
+// 会被其钳制到 ~400px，400px 以上拖动 store 上涨但视图不动（不跟手/区间无增长）
+const bodyHeightStyle = computed(() => {
+  const h = gs.settings.ui.option_panel_height;
+  if (h <= 0) return {};
+  return adjusting.value ? { height: `${h}px`, maxHeight: 'none' } : { maxHeight: `${h}px` };
+});
 
 // 选项 HUD 化总开关（外观页「聊天界面」分区）：关闭时分级色条/悬停增强/滑入动画/已选
 // 打勾整体停用，选项回到基础卡片样式。AI 输出侧档位标注仍可存在，关闭时按中性显示
@@ -374,6 +507,129 @@ watch(collapsed, v => {
     }),
   );
 });
+
+// ── 点击聊天正文收起（ui.panel_collapse_on_outside_click，默认关）───────────────
+// 只把「展开的面板」在用户点击聊天区内普通正文/空白时收起（不反向弹开，降低误触）。
+// 触发范围收窄到 #chat 内：手机端整屏都是聊天文字，**不排除 .mes 本体**——点气泡
+// 正文/空白即可收起；同时**不误伤其他插件的浮动面板**（其 DOM 通常挂 body/顶层容器、
+// 不在 #chat 内，一律不收起、也不吞其首击）。
+// 仅排除 #chat 内的交互/复制目标（链接、按钮、图片、输入区、工具栏等），点它们不触发。
+// compact（悬浮预览）不参与。
+// 收起由 pointerdown 触发，同一手势随后的 click 会命中「面板收起后露出的下层元素」，
+// 必须吃掉该次 click（capture + once + 超时兜底），避免塌陷穿透点中下面的消息/按钮。
+// 因折叠分支只对 #chat 内目标可到达，被吞的 click 只可能是聊天正文/被塌陷盖住的
+// 聊天内容，属合理防穿透；外来悬浮窗点击永不进入本分支，首击不被吞。
+const OUTSIDE_EXCLUDE_SELECTOR = [
+  '#send_form',
+  '#send_textarea',
+  '#choice_enrich_btn',
+  '.choice-floating-bubble',
+  '.choice-floating-options',
+  '.choice-floating-context',
+  '.choice-floating-overlay',
+  'input',
+  'textarea',
+  'select',
+  'button',
+  'a',
+  'label',
+  'img',
+  'video',
+  'audio',
+  'pre',
+  'code',
+  '[role="button"]',
+  '[contenteditable="true"]',
+  '.menu_button',
+  '.interactable',
+  '.mes_edit',
+  '.mes_action',
+  '.mes_buttons',
+  '.mes_img',
+].join(',');
+let outsideClickClickCleanup: (() => void) | null = null;
+
+const onDocumentPointerDown = (e: PointerEvent) => {
+  if (props.compact) return;
+  const target = e.target as HTMLElement | null;
+  if (!target) return;
+  const inPanel = (panelEl.value?.contains(target) ?? false) as boolean;
+  // 调整态：点击面板外任意处 = 完成调整（退出调整模式），与「点击聊天正文收起」开关
+  // 无关；面板内点击（选项已禁用）保持调整中。拖动把手在 grip 上有 pointerdown.stop，
+  // 不冒泡到此，正在拖高度时不会误退
+  if (adjusting.value) {
+    if (!inPanel) {
+      void onToggleAdjust();
+    }
+    return;
+  }
+  if (!gs.settings.ui.panel_collapse_on_outside_click) return;
+  if (!visible.value || collapsed.value) return;
+  if (inPanel) return;
+  // 只对聊天区（#chat）内的目标生效：点其他插件浮动面板（DOM 多在 #chat 外）一律
+  // 不收起、不吞其 click，避免误伤；.mes 在 #chat 内，点正文/空白仍可收起
+  const chatEl = document.getElementById('chat');
+  if (!chatEl || !chatEl.contains(target)) return;
+  if (target.closest(OUTSIDE_EXCLUDE_SELECTOR)) return;
+  // 手动收起路径：锁定态也生效并回写 panel_lock（同点标题栏折叠箭头的语义）
+  panelStore.setCollapsed(true);
+  // 吃同手势的 click：capture 阶段拦截，once 自移除 + 超时兜底（无 click 的 pointercancel）
+  const clickHandler = (ce: MouseEvent) => {
+    outsideClickClickCleanup?.();
+    ce.stopPropagation();
+    ce.preventDefault();
+  };
+  outsideClickClickCleanup = () => {
+    document.removeEventListener('click', clickHandler, true);
+    outsideClickClickCleanup = null;
+  };
+  document.addEventListener('click', clickHandler, { capture: true, once: true });
+  setTimeout(() => outsideClickClickCleanup?.(), 500);
+};
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+  outsideClickClickCleanup?.();
+  resizeCleanup?.();
+  releaseAdjustAnchor();
+});
+
+// ── 面板栏高拖动（ui.option_panel_height，0 = 自动 vh 上限）──────────────────────
+// pointerdown 记起点与起点高度，window 级 move/up 拖动；live 写入 store（深度 watch
+// 统一落盘）。起点高度：已固化则用固化值，否则用 body 当前实际高（拖一次即固化）。
+// 方向（配合调整态的底部锚定）：把手在面板顶部、面板底部固定——向上拖（dy 为负）
+// 增高、顶部上抬（往上长）；向下拖（dy 为正）变矮。公式用减号，把手随光标走
+const RESIZE_MIN_H = 120;
+let resizeStartY = 0;
+let resizeStartH = 0;
+let resizeCleanup: (() => void) | null = null;
+
+const onResizeStart = (e: PointerEvent) => {
+  if (props.compact) return;
+  resizeStartY = e.clientY;
+  const stored = gs.settings.ui.option_panel_height;
+  resizeStartH = stored > 0 ? stored : (bodyEl.value?.getBoundingClientRect().height ?? 300);
+  const onMove = (ev: PointerEvent) => {
+    // 上限与 schema 的 .max(1000) 对齐：超出会在下次加载 zod fail 被 .catch(0) 重置
+    const maxAllowed = Math.min(1000, window.innerHeight * 0.9);
+    const next = Math.min(maxAllowed, Math.max(RESIZE_MIN_H, resizeStartH - (ev.clientY - resizeStartY)));
+    gs.settings.ui.option_panel_height = Math.round(next);
+  };
+  const onUp = () => {
+    resizeCleanup?.();
+  };
+  resizeCleanup = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    resizeCleanup = null;
+  };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+};
 
 const visible = computed(() => {
   // 聊天界面选项面板开关：关闭时整组隐藏（popover 等入口不受影响）。放在最前，
@@ -626,6 +882,60 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   /* 细滚动条 + 主题色，避免默认粗滚动条挤占选项宽度 */
   scrollbar-width: thin;
   scrollbar-color: var(--choice-border-strong) transparent;
+}
+
+/* ===== 调整态工具条（标题栏下方，进入调整模式后显示）=====
+   半透明背景覆盖在选项之上也无妨（选项已禁用）；拖动区做足触摸高度，
+   手机用户不用摸到列表底部。字号档走 .choice-seg 原子，与全局语言一致 */
+.choice-panel-adjust-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--choice-space-2);
+  padding: 4px var(--choice-space-3);
+  border-bottom: 1px solid var(--choice-border);
+  background: var(--choice-bg-element);
+}
+
+.choice-panel-adjust-grip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  min-height: 40px;
+  cursor: ns-resize;
+  touch-action: none;
+  color: var(--choice-text-secondary);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.choice-panel-adjust-grip:hover {
+  color: var(--choice-primary);
+}
+
+.choice-panel-adjust-hint {
+  font-size: var(--choice-text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.choice-panel-adjust-font {
+  flex-shrink: 0;
+}
+
+.choice-panel-adjust-font .choice-seg-btn {
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+/* 调整态：选项禁用态视觉（disabled 按钮无默认 pointer-events 屏蔽，需显式降透明显弱） */
+.choice-option-btn:disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* 生成/润色进行中：光带贴标题栏下边缘跑动（bottom:-1px 盖住 1px 底边框线）。

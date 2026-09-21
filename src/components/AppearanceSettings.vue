@@ -6,7 +6,7 @@
       <h4 class="choice-section-title">{{ t`悬浮窗` }}</h4>
       <div class="choice-behavior-grid">
         <label class="choice-toggle">
-          <input v-model="ui.floating_enabled" type="checkbox" />
+          <input :checked="ui.floating_enabled" type="checkbox" @change="onEntryToggle('floating', $event)" />
           <span class="choice-toggle-custom"></span>
           <span class="choice-toggle-label">
             <strong>{{ t`悬浮窗` }}</strong>
@@ -36,6 +36,28 @@
           {{ t`单击出设置` }}
         </button>
       </div>
+      <!-- 悬浮球样式：ring=现状环形；compact=紧凑小点（手机端更小、更不遮挡）。
+           直径随样式联动（floating-state.bubbleSizeFor 单一来源） -->
+      <div class="choice-seg choice-position-switch">
+        <button
+          class="choice-seg-btn"
+          :class="{ active: ui.bubble_style === 'ring' }"
+          :title="t`当前样式：环形（桌面 60 / 手机 48 px）`"
+          @click="ui.bubble_style = 'ring'"
+        >
+          <i class="fa-solid fa-circle"></i>
+          {{ t`环形` }}
+        </button>
+        <button
+          class="choice-seg-btn"
+          :class="{ active: ui.bubble_style === 'compact' }"
+          :title="t`紧凑小点（桌面 48 / 手机 40 px），削弱内环装饰，手机上更不遮挡`"
+          @click="ui.bubble_style = 'compact'"
+        >
+          <i class="fa-solid fa-circle-dot"></i>
+          {{ t`紧凑` }}
+        </button>
+      </div>
     </div>
 
     <!-- 聊天界面分区：聊天内选项面板 + 停靠位置 + 魔棒入口 -->
@@ -43,7 +65,7 @@
       <h4 class="choice-section-title">{{ t`聊天界面` }}</h4>
       <div class="choice-behavior-grid">
         <label class="choice-toggle">
-          <input v-model="ui.chat_panel_enabled" type="checkbox" />
+          <input :checked="ui.chat_panel_enabled" type="checkbox" @change="onEntryToggle('chat', $event)" />
           <span class="choice-toggle-custom"></span>
           <span class="choice-toggle-label">
             <strong>{{ t`选项面板` }}</strong>
@@ -51,7 +73,15 @@
           </span>
         </label>
         <label class="choice-toggle">
-          <input v-model="ui.wand_menu_enabled" type="checkbox" />
+          <input v-model="ui.panel_collapse_on_outside_click" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`点击聊天正文收起` }}</strong>
+            <small>{{ t`展开的面板在点击聊天正文/空白处时收起（点链接/按钮/输入框不触发）` }}</small>
+          </span>
+        </label>
+        <label class="choice-toggle">
+          <input :checked="ui.wand_menu_enabled" type="checkbox" @change="onEntryToggle('wand', $event)" />
           <span class="choice-toggle-custom"></span>
           <span class="choice-toggle-label">
             <strong>{{ t`魔棒菜单入口` }}</strong>
@@ -195,9 +225,16 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { THEME_OPTIONS } from '@/core/theme-presets';
+import { setEntryVisible, type EntryKey } from '@/core/entry-points';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);
+
+// 入口开关：v-model 直绑会绕过「至少保留一个入口」保底（可全关后插件无从找回），
+// 改走 setEntryVisible 护栏——关掉最后一个时被拒绝并 toastr 提示
+const onEntryToggle = (key: EntryKey, e: Event) => {
+  setEntryVisible(key, (e.target as HTMLInputElement).checked);
+};
 
 // 预设主题按钮数据源：与面板循环按钮共用注册表，按 kind 过滤——
 // 不能用 swatch 是否为空判断（语义过载），mode 档按钮由上方四个固定按钮承担
