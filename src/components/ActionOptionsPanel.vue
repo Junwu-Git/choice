@@ -304,6 +304,19 @@ const releaseAdjustAnchor = () => {
   }
   adjustPanelHeight = 0;
 };
+// 面板的最近可滚动祖先（聊天模式 = #chat，停靠模式通常无 → 兜底整页）：
+// 退出调整时用它补偿滚动，把面板顶回原视口位置，避免 scrollIntoView 过度滚动跳顶
+function findScrollableAncestor(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const style = getComputedStyle(node);
+    if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return document.scrollingElement as HTMLElement | null;
+}
 const onToggleAdjust = async () => {
   if (!adjusting.value) {
     // 进入调整态：先展开面板，等渲染完成后用面板当前高度/位置作为底部锚定基准
@@ -318,11 +331,21 @@ const onToggleAdjust = async () => {
       host.style.overflow = 'visible';
     }
   } else {
+    // 退出调整：记录当前（底部锚定态）面板顶部在视口中的位置，释放回文档流后
+    // 补偿滚动让面板顶回到同一屏幕位置——既不会留在调整时漂移的滚动处，也不会像
+    // scrollIntoView('nearest') 那样整块对齐到视口边、过度滚动跳到聊天顶部
+    const beforeTop = panelEl.value?.getBoundingClientRect().top ?? 0;
     releaseAdjustAnchor();
-    // 退出调整：选项列表滚回顶部，并让面板（选项所在）滚回可视区——调整期间面板
-    // 处于底部锚定/增高，聊天滚动位置已漂走，需跳到选项所在处而非停留原地
+    // 选项列表滚回顶部，避免换锚定后停留在底部看不到首条选项
     bodyEl.value?.scrollTo({ top: 0 });
-    nextTick(() => panelEl.value?.scrollIntoView({ block: 'nearest' }));
+    nextTick(() => {
+      const panel = panelEl.value;
+      if (!panel) return;
+      const scroller = findScrollableAncestor(panel);
+      if (scroller) {
+        scroller.scrollTop += panel.getBoundingClientRect().top - beforeTop;
+      }
+    });
   }
   adjusting.value = !adjusting.value;
 };
