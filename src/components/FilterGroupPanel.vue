@@ -8,8 +8,7 @@
         v-else
         ref="renameInput"
         v-model="renameText"
-        class="text_pole"
-        style="width: 100px; font-size: var(--choice-text-xs); flex-shrink: 0"
+        class="choice-input choice-filter-rename-input"
         @keydown.enter="finishRename"
         @keydown.escape="cancelRename"
         @click.stop
@@ -111,8 +110,7 @@
                标签提取快速区，两种语义不混排——混淆入口比混淆实现更让人困惑 -->
           <select
             :value="entry.inline_rule!.type"
-            class="text_pole"
-            style="width: 90px; flex-shrink: 0"
+            class="choice-select choice-filter-type-select"
             :disabled="dimmed && locked"
             @change="changeRuleType(entry, ($event.target as HTMLSelectElement).value)"
           >
@@ -122,16 +120,14 @@
           <template v-if="entry.inline_rule!.type === 'tag'">
             <input
               v-model="entry.inline_rule!.start"
-              class="text_pole"
+              class="choice-input choice-filter-field"
               :placeholder="t`标签头`"
-              style="flex: 1; min-width: 0"
               :disabled="dimmed && locked"
             />
             <input
               v-model="entry.inline_rule!.end"
-              class="text_pole"
+              class="choice-input choice-filter-field"
               :placeholder="t`标签尾`"
-              style="flex: 1; min-width: 0"
               :disabled="dimmed && locked"
             />
           </template>
@@ -141,9 +137,8 @@
           <input
             v-else-if="entry.inline_rule!.type === 'regex'"
             v-model="entry.inline_rule!.pattern"
-            class="text_pole"
+            class="choice-input choice-filter-field"
             :placeholder="t`正则表达式`"
-            style="flex: 1; min-width: 0"
             :disabled="dimmed && locked"
           />
           <button class="choice-icon-btn choice-delete-btn" :disabled="dimmed && locked" @click="removeEntry(idx)">
@@ -379,8 +374,22 @@ onUnmounted(() => {
   margin: calc(-1 * var(--choice-space-1));
 }
 
-.choice-filter-row input {
-  font-size: var(--choice-text-sm);
+/* 规则行输入框宽度约束（取代内联 style）：底色/边框/聚焦态由 global.css 的
+   .choice-input/.choice-select 原子提供 */
+.choice-filter-rename-input {
+  width: 100px;
+  font-size: var(--choice-text-xs);
+  flex-shrink: 0;
+}
+
+.choice-filter-type-select {
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.choice-filter-field {
+  flex: 1;
+  min-width: 0;
 }
 
 .choice-filter-binding {
@@ -427,6 +436,6 @@ onUnmounted(() => {
 }
 
 .choice-lock-btn {
-  color: var(--choice-color-warning, #d4a017);
+  color: var(--choice-color-warning);
 }
 </style>

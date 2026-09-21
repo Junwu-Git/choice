@@ -36,7 +36,7 @@
             <button class="choice-wi-enable-btn" @click.stop="removeGlobalExcl(name)">{{ t`移除` }}</button>
           </div>
         </div>
-        <input v-model="globalExclSearch" class="text_pole choice-wi-search" :placeholder="t`搜索世界书名`" />
+        <input v-model="globalExclSearch" class="choice-input choice-wi-search" :placeholder="t`搜索世界书名`" />
         <div class="choice-wi-list choice-wi-available">
           <div v-if="availableGlobalExclBooks.length === 0" class="choice-empty-hint">
             {{ t`无可添加的世界书` }}
@@ -391,10 +391,10 @@ onUnmounted(() => {
 
 .choice-wi-section-title {
   font-size: var(--choice-text-sm);
-  font-weight: bold;
-  color: var(--choice-text-muted);
-  margin-top: 4px;
-  padding-bottom: 2px;
+  font-weight: 600;
+  color: var(--choice-text-secondary);
+  margin-top: var(--choice-space-1);
+  padding-bottom: var(--choice-space-1);
   border-bottom: 1px solid var(--choice-border);
 }
 
@@ -469,28 +469,50 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* 来源徽章：彩色文字 + 浅底（对齐 .choice-inline-cat-badge 语义色语言），
+   不再用白字硬编码底色——白字在浅底上不可读，且硬编码色不随主题切换 */
 .choice-wi-badge {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  color: var(--choice-text-on-primary);
+  border: 1px solid transparent;
   flex-shrink: 0;
 }
 
 .badge-global {
+  color: var(--choice-color-info);
   background: var(--choice-color-info-bg);
+  border-color: var(--choice-color-info-bg);
 }
+
 .badge-character {
+  color: var(--choice-color-warning);
   background: var(--choice-color-warning-bg);
+  border-color: var(--choice-color-warning-bg);
 }
+
 .badge-chat {
-  background: #5c6bc0;
+  color: var(--choice-primary);
+  background: var(--choice-primary-light);
+  border-color: var(--choice-primary-light);
 }
+
 .badge-shujuku {
-  background: #7e57c2;
+  color: var(--choice-color-success);
+  background: var(--choice-color-success-bg);
+  border-color: var(--choice-color-success-bg);
 }
-.badge-plugin {
-  background: #4a8a6a;
+
+.badge-custom {
+  color: var(--choice-color-warning);
+  background: var(--choice-color-warning-bg);
+  border-color: var(--choice-color-warning-bg);
+}
+
+.badge-global-excl {
+  color: var(--choice-text-on-primary);
+  background: var(--choice-color-error);
+  border-color: var(--choice-color-error);
 }
 
 .choice-wi-entries {
@@ -550,8 +572,8 @@ onUnmounted(() => {
     color var(--choice-transition);
 }
 .choice-wi-enable-btn:hover {
-  background: rgba(76, 175, 80, 0.2);
-  border-color: rgba(76, 175, 80, 0.5);
+  background: var(--choice-color-success-bg);
+  border-color: var(--choice-color-success);
   color: var(--choice-color-success);
 }
 
@@ -590,18 +612,13 @@ onUnmounted(() => {
 
 .choice-wi-row.excluded-global {
   opacity: 0.6;
-  background: rgba(255, 100, 100, 0.08);
-  border-color: rgba(255, 100, 100, 0.3);
+  background: var(--choice-color-error-bg);
+  border-color: var(--choice-color-error);
 }
 
 .choice-wi-search {
+  /* 仅覆盖宽度：底色/边框/聚焦态由 global.css 的 .choice-input 提供 */
   width: 100%;
-  padding: var(--choice-space-1) var(--choice-space-2);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
-  color: var(--choice-text-secondary);
-  font-size: var(--choice-text-sm);
 }
 
 .choice-wi-available {
@@ -661,16 +678,7 @@ onUnmounted(() => {
   color: var(--choice-text);
 }
 
-.badge-custom {
-  background: var(--choice-color-warning-bg);
-}
-
 .choice-wi-entry input[type='checkbox']:disabled {
   cursor: not-allowed;
-}
-
-.badge-global-excl {
-  background: rgba(255, 100, 100, 0.5);
-  color: var(--choice-text-on-primary);
 }
 </style>

@@ -55,7 +55,7 @@
       <div class="choice-extract-quick-row">
         <input
           v-model="extractInput"
-          class="text_pole choice-extract-input"
+          class="choice-input choice-extract-input"
           :placeholder="t`只填标签名，如：正文`"
           @keydown.enter="addExtract"
         />
@@ -529,21 +529,27 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
 }
 
+/* 状态栏窄屏换行：徽章 flex-shrink:0 + 4 枚横排在窄面板必溢出，允许折行兜底 */
+.choice-config-status {
+  flex-wrap: wrap;
+}
+
 .choice-filter-group-list {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
 }
 
-/* 标签提取快速区：视觉上比三个分区更轻（虚线边框卡片），传达"这是更简单的另一条路" */
+/* 标签提取快速区：中性虚线卡片，传达"这是更简单的另一条路"——
+   不用主色浅底（primary-light 会抢三个正则区的视觉焦点，新手辅助不该盖过主入口） */
 .choice-extract-quick {
-  border: 1px dashed var(--choice-border-active);
+  border: 1px dashed var(--choice-border-strong);
   border-radius: var(--choice-radius-sm);
   padding: var(--choice-space-2) var(--choice-space-3);
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
-  background: var(--choice-primary-light);
+  background: var(--choice-bg-card);
 }
 
 .choice-extract-quick-head {
@@ -601,7 +607,7 @@ onUnmounted(() => {
 }
 
 .choice-extract-preview-tag {
-  font-family: monospace;
+  font-family: var(--choice-font-mono);
   color: var(--choice-primary-hover, var(--choice-primary));
   background: var(--choice-bg-element);
   border-radius: var(--choice-radius-sm);
@@ -611,7 +617,6 @@ onUnmounted(() => {
 .choice-extract-input {
   flex: 1;
   min-width: 0;
-  font-size: var(--choice-text-sm);
 }
 
 .choice-extract-chips {
@@ -632,7 +637,7 @@ onUnmounted(() => {
 }
 
 .choice-extract-chip-tag {
-  font-family: monospace;
+  font-family: var(--choice-font-mono);
 }
 
 .choice-extract-chip i {

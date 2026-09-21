@@ -23,7 +23,7 @@
         <!-- 润色视图：取消（loading）按钮 -->
         <button
           v-if="activeView === 'enrich' && enrichLoading"
-          class="choice-panel-btn choice-panel-main"
+          class="choice-tool-btn choice-tool-btn--main"
           :title="t`取消润色`"
           @click="onCancelEnrich"
         >
@@ -32,7 +32,7 @@
         <!-- 润色视图：生成润色按钮 -->
         <button
           v-if="activeView === 'enrich' && !enrichLoading"
-          class="choice-panel-btn choice-panel-main"
+          class="choice-tool-btn choice-tool-btn--main"
           :title="t`生成润色`"
           @click="onTriggerEnrich"
         >
@@ -41,7 +41,7 @@
         <!-- 选项视图：生成按钮（图标态，折叠/展开靠点标题栏） -->
         <button
           v-if="activeView === 'options'"
-          class="choice-panel-btn choice-panel-main"
+          class="choice-tool-btn choice-tool-btn--main"
           :title="isGenerating ? t`取消生成` : t`生成选项`"
           @click="onToggle"
         >
@@ -50,8 +50,8 @@
         <!-- 面板状态锁：锁定后自动化（生成后展开/点选项收起/发消息收起）全部跳过，
              面板常开/常关；手动切换仍有效且锁定跟随新状态。持久化于 ui.panel_lock -->
         <button
-          class="choice-panel-btn choice-panel-lock"
-          :class="{ active: locked }"
+          class="choice-tool-btn"
+          :class="{ 'choice-tool-btn--active': locked }"
           :title="locked ? t`解锁面板状态` : t`锁定面板状态（不再自动展开/收起）`"
           @click="onToggleLock"
         >
@@ -59,13 +59,13 @@
         </button>
         <!-- 主题循环切换：每点一次切到 THEME_OPTIONS 中的下一个主题（末尾回绕）。
              全局生效并持久化（gs.settings.ui.theme_mode），tooltip 明示下一站避免盲切 -->
-        <button class="choice-panel-btn choice-theme-cycle" :title="cycleTitle" @click="onCycleTheme">
+        <button class="choice-tool-btn" :title="cycleTitle" @click="onCycleTheme">
           <i class="fa-solid fa-palette"></i>
         </button>
         <!-- 设置入口：恒在工具区最右（与生成/锁定/主题并列），点开插件设置面板。
              与悬浮球/魔棒菜单共用 openSettings 同一开关；tools 容器已 @click.stop，
              不会误触标题栏折叠 -->
-        <button class="choice-panel-btn choice-panel-settings" :title="t`打开设置`" @click="onOpenSettings">
+        <button class="choice-tool-btn" :title="t`打开设置`" @click="onOpenSettings">
           <i class="fa-solid fa-gear"></i>
         </button>
       </div>
@@ -81,9 +81,10 @@
       class="choice-panel-body"
     >
       <template v-if="visibleOptions.length > 0">
-        <div v-if="!compact" class="choice-behavior-bar">
+        <!-- 行为栏：统一走 global.css 的 .choice-seg 分段控件语言（发送/覆盖/尾附/插入） -->
+        <div v-if="!compact" class="choice-seg">
           <button
-            class="choice-behavior-btn"
+            class="choice-seg-btn"
             :class="{ active: behavior === 'send' }"
             :title="t`点击选项后发送消息`"
             @click="behavior = 'send'"
@@ -91,7 +92,7 @@
             {{ t`发送` }}
           </button>
           <button
-            class="choice-behavior-btn"
+            class="choice-seg-btn"
             :class="{ active: behavior === 'fill' }"
             :title="t`点击选项后填入输入框`"
             @click="behavior = 'fill'"
@@ -99,7 +100,7 @@
             {{ t`覆盖` }}
           </button>
           <button
-            class="choice-behavior-btn"
+            class="choice-seg-btn"
             :class="{ active: behavior === 'append' }"
             :title="t`点击选项后追加到输入框末尾`"
             @click="behavior = 'append'"
@@ -107,7 +108,7 @@
             {{ t`尾附` }}
           </button>
           <button
-            class="choice-behavior-btn"
+            class="choice-seg-btn"
             :class="{ active: behavior === 'insert' }"
             :title="t`点击选项后插入到输入框光标处`"
             @click="behavior = 'insert'"
@@ -118,12 +119,12 @@
                enrich 视图无独立分页行——行为栏在两视图共用，按视图切换右侧分页组，
                头部两视图统一只剩 [生成][锁][调色板] -->
           <span v-if="activeView === 'options' && generations.length > 1" class="choice-bar-pager">
-            <button class="choice-panel-btn" :disabled="currentIndex <= 0" title="上一组" @click="onPrev">
+            <button class="choice-tool-btn" :disabled="currentIndex <= 0" title="上一组" @click="onPrev">
               <i class="fa-solid fa-chevron-left"></i>
             </button>
             <span class="choice-panel-pager">{{ currentIndex + 1 }}/{{ generations.length }}</span>
             <button
-              class="choice-panel-btn"
+              class="choice-tool-btn"
               :disabled="currentIndex >= generations.length - 1"
               title="下一组"
               @click="onNext"
@@ -132,12 +133,12 @@
             </button>
           </span>
           <span v-else-if="activeView === 'enrich' && enrichGenerations.length > 1" class="choice-bar-pager">
-            <button class="choice-panel-btn" :disabled="enrichCurrentIndex <= 0" title="上一组" @click="onEnrichPrev">
+            <button class="choice-tool-btn" :disabled="enrichCurrentIndex <= 0" title="上一组" @click="onEnrichPrev">
               <i class="fa-solid fa-chevron-left"></i>
             </button>
             <span class="choice-panel-pager">{{ enrichCurrentIndex + 1 }}/{{ enrichGenerations.length }}</span>
             <button
-              class="choice-panel-btn"
+              class="choice-tool-btn"
               :disabled="enrichCurrentIndex >= enrichGenerations.length - 1"
               title="下一组"
               @click="onEnrichNext"
@@ -147,7 +148,7 @@
           </span>
           <!-- 风险档位图例：HUD 开启且当前代存在带档位标注的选项时显示。
                原生 title tooltip（触屏长按可见），不占用常驻布局 -->
-          <span v-if="hasGradedOptions" class="choice-bar-legend" :title="legendTitle">
+          <span v-if="hasGradedOptions" class="choice-icon-hint" :title="legendTitle">
             <i class="fa-solid fa-circle-info"></i>
           </span>
         </div>
@@ -165,7 +166,7 @@
             class="choice-option-rate"
             :class="rateClass(rateOf(option)!)"
             >{{ rateOf(option) }}%</span
-          ><span class="choice-option-divider"></span>
+          >
           <span class="choice-option-content"
             >{{ parseOptionContent(option.text)
             }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)}`">{{
@@ -580,52 +581,6 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   gap: var(--choice-space-1);
 }
 
-/* 极简工具按钮：无边框透明底 + muted 图标，hover 才显底色（对齐 feat 分支
-   UserStatusBar 的 choice-status-btn 语言）。头部里按钮密度高，带边框会与
-   小字号标题失衡，视觉噪音也大——按钮身份靠 hover 反馈而非常驻描边 */
-.choice-panel-btn {
-  background: transparent;
-  color: var(--choice-text-muted);
-  border: none;
-  border-radius: var(--choice-radius-sm);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  font-size: var(--choice-text-sm);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--choice-space-1);
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-}
-
-.choice-panel-btn:hover:not(:disabled) {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text);
-}
-
-.choice-panel-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-/* 状态锁激活高亮：主色文字即可（无边框可描，底色 hover 才出现）——
-   锁是"状态开关"而非"主操作"，视觉重量应低于生成按钮 */
-.choice-panel-lock.active {
-  color: var(--choice-primary);
-}
-
-/* 主操作（生成/取消/生成润色）：无边框语言下用主色图标区分主操作身份，
-   不再加底色——实色块与四周透明小图标并列过重，正是本次改版要去掉的东西 */
-.choice-panel-main {
-  color: var(--choice-primary);
-}
-
-.choice-panel-main:hover:not(:disabled) {
-  color: var(--choice-primary-hover);
-}
-
 .choice-panel-pager {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
@@ -720,44 +675,8 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   padding-top: 2px;
 }
 
-.choice-behavior-bar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--choice-bg-element);
-  border-radius: var(--choice-radius-full);
-  padding: 2px 3px;
-}
-
-.choice-behavior-btn {
-  background: transparent;
-  color: var(--choice-text-muted);
-  border: none;
-  border-radius: var(--choice-radius-full);
-  /* 字号不得大于面板标题（text-sm），现取 text-xs；水平间距收紧到 6px——
-     此前 12px/侧导致四个词间隔过远，行为栏被撑宽 */
-  padding: 2px 6px;
-  font-size: var(--choice-text-xs);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition),
-    box-shadow var(--choice-transition);
-}
-
-.choice-behavior-btn:hover {
-  color: var(--choice-text-secondary);
-}
-
-.choice-behavior-btn.active {
-  background: var(--choice-primary);
-  color: var(--choice-text-on-primary);
-  box-shadow: inset 0 1px 0 var(--choice-frost-line);
-}
-
 /* 行为栏右端分页器：margin-left:auto 顶到最右，箭头按钮收窄并降到栏内字号，
-   与行为词同密度 */
+   与行为词同密度（行为按钮本体走 global.css 的 .choice-seg/.choice-seg-btn 原子） */
 .choice-bar-pager {
   margin-left: auto;
   display: inline-flex;
@@ -765,7 +684,7 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   gap: 2px;
 }
 
-.choice-bar-pager .choice-panel-btn {
+.choice-bar-pager .choice-tool-btn {
   padding: 2px var(--choice-space-1);
   font-size: var(--choice-text-xs);
 }
@@ -774,270 +693,11 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   margin: 0;
 }
 
-.choice-option-btn {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  text-align: left;
-  background: var(--choice-bg-card);
-  color: var(--choice-text);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  box-shadow: inset 0 1px 0 var(--choice-frost-line);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  font-size: var(--choice-text-sm);
-  cursor: pointer;
-  line-height: 1.4;
-  /* 列向 flex item 的 min-width:auto 会拿内容 min-content 当下限——长无空格 token
-     （英文串/URL）会把按钮撑出容器宽，body 的 overflow-x:auto 顺势冒横向滚动条 */
-  min-width: 0;
-  /* HUD 分级色条（::before 左缘）与悬停箭头（::after）的定位基准 */
-  position: relative;
-  transition:
-    transform var(--choice-transition),
-    border-color var(--choice-transition),
-    box-shadow var(--choice-transition);
-}
-
-/* 左缘分级色条：透明占位（width 过渡不跳变），--hud 门控下按档位上色 */
-.choice-option-btn::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: var(--choice-radius-sm) 0 0 var(--choice-radius-sm);
-  background: transparent;
-  transition:
-    background var(--choice-transition),
-    width var(--choice-transition);
-}
-
-/* 悬停箭头：绝对定位在行尾，hover 才浮现（不占布局，opacity 过渡无位移跳变） */
-.choice-option-btn::after {
-  content: '›';
-  position: absolute;
-  right: var(--choice-space-2);
-  top: 50%;
-  transform: translateY(-50%) translateX(4px);
-  font-weight: 700;
-  color: var(--choice-primary);
-  opacity: 0;
-  transition:
-    opacity var(--choice-transition),
-    transform var(--choice-transition);
-}
-
-.choice-option-btn:hover {
-  border-color: var(--choice-border-active);
-  transform: translateY(-1px);
-  box-shadow: var(--choice-shadow-md);
-}
-
-.choice-option-btn:active {
-  transform: scale(0.985);
-}
-
-/* ===== 选项 HUD 化（ui.hud_enabled，--hud 类整体门控）=====
-   关闭开关 = 不加 --hud 类，以下全部规则不生效，回到基础卡片样式。档位样式类
-   只在 parseOptionStyle 命中受控词表时由 optionBtnClass 加，中性选项无类 */
-.choice-panel--hud .choice-option-btn {
-  /* 逐条滑入：v-for key 含 generation id，切代/翻页重建元素时重放一次；
-     animation-delay 由 optionBtnStyle 逐条 60ms 错开 */
-  animation: choice-option-enter 220ms ease-out both;
-}
-
-@keyframes choice-option-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.choice-panel--hud .choice-option-btn--conservative::before {
-  background: var(--choice-risk-conservative);
-}
-
-.choice-panel--hud .choice-option-btn--balanced::before {
-  background: var(--choice-risk-balanced);
-}
-
-.choice-panel--hud .choice-option-btn--bold::before {
-  background: var(--choice-risk-bold);
-}
-
-/* 悬停增强：加深浮起 + 色条加宽 + 行尾浮现箭头 */
-.choice-panel--hud .choice-option-btn:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    var(--choice-shadow-md),
-    inset 0 1px 0 var(--choice-frost-line);
-}
-
-.choice-panel--hud .choice-option-btn:hover::before {
-  width: 5px;
-}
-
-.choice-panel--hud .choice-option-btn:hover::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
-}
-
-/* 已选打勾：同代内点过的选项降透明度 + 虚线描边 + 类型前 ✓。
-   再次点击仍可正常触发行为，仅视觉标记 */
-.choice-panel--hud .choice-option-btn--selected {
-  opacity: 0.55;
-  border-style: dashed;
-}
-
-.choice-panel--hud .choice-option-btn--selected .choice-option-type::before {
-  content: '✓';
-  margin-right: 3px;
-  color: var(--choice-color-success);
-  font-weight: 700;
-}
-
-/* 风险档位图例（行为栏右端，分页器之后）：muted 图标 + hover 主色，
-   与行为栏内小按钮同密度 */
-.choice-bar-legend {
-  margin-left: 2px;
-  padding: 2px var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  cursor: help;
-}
-
-.choice-bar-legend:hover {
-  color: var(--choice-primary);
-}
-
-/* 动画尊重系统减弱动态偏好：关闭逐条滑入，其余 HUD 样式保留 */
-@media (prefers-reduced-motion: reduce) {
-  .choice-panel--hud .choice-option-btn {
-    animation: none;
-  }
-}
-
-.choice-option-type {
-  width: calc(72px * var(--choice-font-scale));
-  flex-shrink: 0;
-  font-weight: 700;
-  font-size: calc(14px * var(--choice-font-scale));
-  color: var(--choice-primary);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
-}
-
-.choice-option-divider {
-  width: 1px;
-  align-self: stretch;
-  border-left: 1px dashed var(--choice-border-strong);
-  flex-shrink: 0;
-  margin-right: var(--choice-space-2);
-}
-
-/* ===== v55 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
-/* 成功率徽标：类型徽标与分隔线之间，flex 不换行，彩色加粗文字按把握分档着色 */
-.choice-option-rate {
-  flex-shrink: 0;
-  margin-left: var(--choice-space-1);
-  margin-right: var(--choice-space-1);
-  font-size: calc(12px * var(--choice-font-scale));
-  font-weight: 700;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.choice-option-rate--high {
-  color: var(--choice-color-success);
-}
-
-.choice-option-rate--mid {
-  color: var(--choice-color-info);
-}
-
-.choice-option-rate--low {
-  color: var(--choice-color-warning);
-}
-
-/* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留；
-   父级 .choice-option-btn 已是 absolute 定位基准 */
-.choice-roll-chip {
-  position: absolute;
-  right: var(--choice-space-2);
-  top: 50%;
-  transform: translateY(-50%);
-  font-style: normal;
-  font-size: var(--choice-text-xs);
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: var(--choice-radius-sm);
-  animation: choice-roll-chip-fade 3s ease forwards;
-}
-
-.choice-roll-chip--success,
-.choice-roll-chip--crit_success {
-  color: var(--choice-color-success);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-color-success);
-}
-
-.choice-roll-chip--fail,
-.choice-roll-chip--crit_fail {
-  color: var(--choice-color-danger);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-color-danger);
-}
-
-@keyframes choice-roll-chip-fade {
-  to {
-    opacity: 0.5;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .choice-roll-chip {
-    animation: none;
-  }
-}
-
-.choice-option-content {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.4;
-  font-size: var(--choice-text-sm);
-  /* anywhere（而非 break-word）：词内可断且参与 min-content 计算，flex 链条上
-     每一级真正收窄——长英文 token/URL 在窄面板（停靠限高、手机 dense）里折行
-     显示，而不是把按钮撑出横向滚动条 */
-  overflow-wrap: anywhere;
-}
-
-/* 触屏触控目标：分页/生成/收起与行为切换是面板最高频点击点，窄高度按钮在手机上极难点中。
-   pointer:coarse 只命中触屏主指针，桌面不受影响 */
-@media (pointer: coarse) {
-  .choice-panel-btn {
-    min-height: var(--choice-tap-min);
-    padding: var(--choice-space-2) var(--choice-space-3);
-  }
-
-  .choice-behavior-btn {
-    min-height: var(--choice-tap-min);
-  }
-}
-
 /* ===== 窄容器密度模式（useCompactLayout，<420px）=====
    只压密度不减功能：手机聊天区里 4 条选项 × 每条 2-4 行 + 头部 + 行为栏，展开常占半屏。
-   基础层已下沉到原 dense 档的排版密度（字号/padding/类型列 72px），dense 只再收
-   类型列宽度与行高；触控按钮保住 40px 最小可点高度（上一段规则），密度让给内容区
-   而不是可点性。限高滚动只在此模式生效——桌面无高度压力，不引入嵌套滚动 */
+   类型徽标已随选项行统一为自适应 inline（见 global.css），dense 只收行高；
+   触控按钮保住 32px 最小可点高度（上一段规则），密度让给内容区而不是可点性。
+   限高滚动只在此模式生效——桌面无高度压力，不引入嵌套滚动 */
 .choice-panel--dense .choice-panel-header {
   padding: var(--choice-space-1) var(--choice-space-2);
 }
@@ -1052,10 +712,6 @@ const onSelect = async (option: ChoiceOption, index: number) => {
 
 .choice-panel--dense .choice-option-btn {
   line-height: 1.3;
-}
-
-.choice-panel--dense .choice-option-type {
-  width: calc(64px * var(--choice-font-scale));
 }
 
 .choice-panel--dense .choice-option-content {
@@ -1077,13 +733,13 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   white-space: nowrap;
 }
 
-.choice-panel--dense .choice-panel-btn {
+.choice-panel--dense .choice-tool-btn {
   min-height: 32px;
 }
 
 /* 行为栏：触屏 coarse 下按钮 40px 高 + 容器 padding 使整条约 48px，小屏上与选项争高度；
    dense 下按钮 30px 把整条压矮（基础 padding 已收紧，dense 不再重复覆盖间距） */
-.choice-panel--dense .choice-behavior-btn {
+.choice-panel--dense .choice-seg-btn {
   min-height: 30px;
 }
 

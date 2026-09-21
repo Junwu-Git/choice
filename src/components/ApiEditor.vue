@@ -7,7 +7,7 @@
           <input
             v-model.number="globalStore.settings.retry_count"
             type="number"
-            class="text_pole"
+            class="choice-input"
             min="0"
             max="10"
             placeholder="0"
@@ -18,14 +18,14 @@
           <input
             v-model.number="globalStore.settings.retry_interval"
             type="number"
-            class="text_pole"
+            class="choice-input"
             min="0"
             max="60"
             placeholder="1"
           />
         </label>
       </div>
-      <span class="choice-retry-hint">{{
+      <span class="choice-field-hint">{{
         t`重试次数 0 = 不重试；网络错误或 5xx 时自动重试，两次重试之间按"重试间隔"等待（0 = 立即重试）`
       }}</span>
     </div>
@@ -35,7 +35,7 @@
         <input v-model="globalStore.settings.api_tool_choice_none" type="checkbox" />
         {{ t`请求附带 tool_choice:none` }}
       </label>
-      <span class="choice-retry-hint">{{
+      <span class="choice-field-hint">{{
         t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
       }}</span>
     </div>
@@ -45,7 +45,7 @@
         <span>{{ t`生成 API` }}</span>
         <select
           :value="selectedApiId"
-          class="text_pole"
+          class="choice-select"
           @change="selectApi(($event.target as HTMLSelectElement).value)"
         >
           <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
@@ -70,18 +70,18 @@
     <div class="choice-api-form" data-tour="api-form">
       <div class="choice-api-form-body">
         <div class="choice-api-name-row">
-          <input v-model="draftForm.name" class="text_pole" :placeholder="t`配置名称`" />
+          <input v-model="draftForm.name" class="choice-input" :placeholder="t`配置名称`" />
         </div>
         <div class="choice-api-url-row" data-tour="api-url">
-          <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
+          <input v-model="draftForm.apiurl" class="choice-input" :placeholder="t`API 地址`" />
         </div>
         <div class="choice-api-key-row">
-          <input v-model="draftForm.key" class="text_pole" type="password" :placeholder="t`API 密钥`" />
+          <input v-model="draftForm.key" class="choice-input" type="password" :placeholder="t`API 密钥`" />
         </div>
         <div class="choice-model-row">
           <input
             v-model="draftForm.model"
-            class="text_pole"
+            class="choice-input"
             :placeholder="t`模型名称`"
             @focus="modelDropdownOpen = true"
             @blur="onModelBlur"
@@ -114,15 +114,22 @@
         <div class="choice-api-row">
           <label class="choice-field">
             <span>{{ t`温度` }}</span>
-            <input v-model.number="draftForm.temperature" type="number" class="text_pole" min="0" max="2" step="0.1" />
+            <input
+              v-model.number="draftForm.temperature"
+              type="number"
+              class="choice-input"
+              min="0"
+              max="2"
+              step="0.1"
+            />
           </label>
           <label class="choice-field">
             <span>{{ t`最大 Token` }}</span>
-            <input v-model.number="draftForm.max_tokens" type="number" class="text_pole" min="1" />
+            <input v-model.number="draftForm.max_tokens" type="number" class="choice-input" min="1" />
           </label>
           <label class="choice-field">
             <span>{{ t`超时(秒)` }}</span>
-            <input v-model.number="draftForm.timeout" type="number" class="text_pole" min="0" placeholder="0" />
+            <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
           </label>
         </div>
         <div class="choice-api-bottom-row">
@@ -134,7 +141,7 @@
           </div>
           <input
             v-model="draftForm.exclude_params"
-            class="text_pole"
+            class="choice-input"
             :placeholder="t`排除参数`"
             style="flex: 1; min-width: 0"
           />
@@ -318,19 +325,6 @@ const reset = () => {
   min-width: 0;
 }
 
-.choice-retry-hint {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-}
-
-.choice-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-secondary);
-}
-
 .choice-api-form {
   display: flex;
   flex-direction: column;
@@ -351,17 +345,11 @@ const reset = () => {
   display: flex;
 }
 
-.choice-api-name-row .text_pole {
+.choice-api-name-row .choice-input,
+.choice-api-key-row .choice-input,
+.choice-model-row .choice-input {
+  /* 占满行宽：底色/边框/聚焦态由 global.css 的 .choice-input 提供 */
   flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-api-name-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-api-url-row {
@@ -372,56 +360,10 @@ const reset = () => {
   display: flex;
 }
 
-.choice-api-key-row .text_pole {
-  flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-api-key-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-icon-btn {
-  background: transparent;
-  color: var(--choice-color-error);
-  border: none;
-  cursor: pointer;
-  font-size: var(--choice-text-sm);
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--choice-radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--choice-transition);
-}
-
-.choice-icon-btn:hover {
-  background: var(--choice-bg-hover);
-}
-
 .choice-model-row {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-}
-
-.choice-model-row .text_pole {
-  flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-model-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-fetch-btn {

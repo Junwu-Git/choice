@@ -127,7 +127,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `applyRosterPlan(scopeId, plan)` 写 config 层，同样入 `apply_history`
   持久撤销槽（与建议应用各占一槽、逐槽撤销、跨 config 互不串扰）。target 非法（<1/NaN）或条目库为空 →
   noop 空计划。统计页
-  `Statistics.vue`（基础 tab，位于过滤之后，简化模式也显示）提供：维度切换（全局 / 未绑定档 / 各 config 下拉，默认当前生效维度；无 config 时引导创建 default
+  `Statistics.vue`（统计页，单子区，简化模式也显示；位于内容/生成页之后）提供：维度切换（全局 / 未绑定档 / 各 config 下拉，默认当前生效维度；无 config 时引导创建 default
   config——自动引用 master_pool 全量后即可应用建议）、**布局为单页分区 + 可折叠面板，不做二级 tab**：顶部「统计与自动化」控制簇集中统计/自动化/AI 归因/AI 建议理由四开关与运行状态读数；其下**粘性子头**（`position: sticky`，钉在设置面板 `.choice-floating-body` 可视区顶部）含维度切换 + 快捷跳转 pills（`jumpTargets`/`jumpTo`，按当前可见分区动态列出，`scroll-margin-top` 抵消粘性头高度）；**概览**为可折叠分区（默认展开）合并 6 张汇总卡片 + 样本量分布诊断 + 趋势柱状图三块；条目榜升为主体紧随概览；命中榜 / 阵容计划 / 应用历史 / 管理为可折叠分区（组件内 ref 状态，默认折叠，切 tab 卸载即重置、不持久化）；条目榜分组**默认全部折叠**（无「有数据自动展开」），展开后组内容限高（360px）内部滚动（`overscroll-behavior: contain`），组头含「N 条建议」徽标（`groupSuggestCount`
   复用
   `suggestionOf`，仅可应用维度显示）；行建议可应用需条目被当前 config 引用（`EntryRankRow.referenced`）——留在 master_pool 但已不被引用的条目只显示洞察、不进入「应用全部」或行内对勾（写入目标不存在，避免批量应用计数虚高）；各区块大段说明收进区块标题旁 info 图标（原生
@@ -165,7 +165,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - 移动端优先：新组件先在约 380px 容器宽度验证，再扩展到桌面宽度。
 - 使用克制的卡片化和明确的信息层级，不做玻璃拟态或强动效。
 - **选项 HUD 化**（`ui.hud_enabled`，默认开）：选项行左缘 3px 风险档位色条（保守/平衡/大胆 →
-  `--choice-risk-*` 别名，惰性引用各主题的 success/info/warning 语义色）、悬停增强（加深浮起 + 色条加宽 + 行尾箭头）、生成后逐条滑入动画（staggered 60ms/条，v-for key 含 generation id 保证切代重放；`prefers-reduced-motion` 下关闭）、同代已选打勾（✓ + 半透明虚线，组件内存态不持久化）。全部由面板根类的 `--hud` 修饰类整体门控，关闭开关即回基础卡片样式；两处 UI 的档位样式类前缀不同（`choice-option-btn--*` / `choice-float-option--*`）但语义一致。
+  `--choice-risk-*` 惰性引用各主题块的 success/info/warning 语义色（保守=成功、平衡=info、大胆=警告；暗色下 info=主色蓝，平衡档位即主色蓝）、`--choice-rate-*` 高/低档复用成功/警告、中档取主色（暗色下与平衡档位同为 info 主色蓝））、悬停增强（加深浮起 + 色条加宽 + 行尾箭头）、生成后逐条滑入动画（staggered 60ms/条，v-for key 含 generation id 保证切代重放；`prefers-reduced-motion` 下关闭）、同代已选打勾（✓ + 半透明虚线，组件内存态不持久化）。选项行本体（`.choice-option-btn`、`.choice-option-type`、`.choice-option-rate`、`.choice-roll-chip`、风险色条、悬停箭头、选中态）已统一为 global.css 单一来源，主面板（`choice-panel--hud` 容器）与悬浮球弹窗（`choice-floating-options--hud` 容器，类名现已统一为 `choice-option-btn--*` 前缀）共用同一套规则，两处不再各自维护。
 - **选项成功率骰子判定**（v55，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注成功率（`[标题|档位|70%]`，见 option-format 描述），未标注时按风险档位兜底（保守 85% / 平衡 60% / 大胆 35%，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≤ `crit_success_max`（默认 5）大成功 → roll ≥ `crit_fail_min`（默认 95）大失败 → roll ≤ rate 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效）。**判定影响随所有点击行为生效**：失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，模板优先 `*_send_template`、为空回退 `fail_template`/`crit_success_template`/`crit_fail_template`，回退也为空则不附加；支持 `{rate}`/`{roll}` 占位符）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带；成功无注释。成功率徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；按把握分档着色 ≥70 绿 / 40-69 蓝 / <40 橙）与行内判定 chip（成功/失败/大成功/大失败，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无成功率选项（AI 自由发挥）不掷骰。
 - `src/theme.css` 已包含颜色、间距、字号、圆角、阴影、层级和状态色 token。间距使用
   `--choice-space-1`~`--choice-space-6`，字号使用 `--choice-text-xs/sm/base/lg/xl`，新增样式不要继续散落裸值。
@@ -174,10 +174,18 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 ### Shared 组件现状与待办
 
 `src/components/shared/` 已有
-`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ImportSourceDialog.vue`、`tab-definitions.ts`、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
+`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ChoiceDisclosure.vue`（折叠区容器：标题行 + chevron + 右侧常显 `extra` 插槽 + 内容 slot；状态组件内 `ref` 不持久化、切子区卸载即重置；`inheritAttrs:false` + `$attrs` 落容器供 `data-tour` 锚点透传；生成页 4 处披露器在用）、`ImportSourceDialog.vue`、`tab-definitions.ts`（两级导航定义：`PageId` 一级页 × `TabId` 子区）、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
 `useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；不要用 CSS `@container`
 替代，因为部分移动 WebView 可能静默忽略该规则。（`ChoiceSection.vue`/`ChoiceCard.vue`/`ChoiceField.vue`
 三个曾作为设计系统预备的零引用组件已于死代码清理中删除，git 历史可回溯。）
+
+**共享样式原子收在 `src/global.css`**（非 scoped，全局生效）：`.choice-check`（内联小复选框）、
+`.choice-toggle`/`-custom`/`-label`（卡片式开关行，标题+描述+自定义复选框；原 Appearance/Generation 各
+scoped 一份逐字重复，已收归此处）、`.choice-config-*`、`.choice-btn-sm`、`.choice-icon-btn`、
+`.choice-section`/`-title`、`.choice-empty`（空状态邀请）等。新增设置页分区/开关/空状态优先复用这些原子，
+不要在组件 scoped 里重抄；只有「≥2 处逐字相同」的块才提取，独有样式保留 scoped。
+空态采用范围：条目池页（空池/无配置）与统计页条目榜/命中榜已用 `.choice-empty` 图标空态，其余页保持
+`.choice-empty-hint` 纯文本提示。
 
 目前只有 `ChoiceDialog` 在提示词导入等少数位置使用，其余设计系统组件仍是预备态，不能在文档中当作已经完成全量迁移。其余弹窗仍可能保留独立 overlay/header/footer 样式；迁移时要逐个验证遮罩关闭、Escape 关闭、动画和窄屏布局，不要一次性假设全部组件已经统一。
 
@@ -211,6 +219,22 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
   注入「行动选项」入口，点击打开设置面板。`ui.wand_menu_enabled`（AppearanceSettings「聊天界面」分区开关，默认
   `true`，schema `src/type/settings.ts`）控制该入口显隐，通过全局设置 `$subscribe`
   即时同步；该开关只影响魔棒入口，不联动 `floating_enabled`、不影响选项面板/悬浮窗。
+- **设置面板导航为两级结构**（`FloatingSettings.vue` + `shared/tab-definitions.ts`）：
+  一级 4 个胶囊页（内容/生成/统计/系统）+ 页内二级子 tab 条（分段控件）。
+  子区 id 沿用旧 `TabId`（pool/generation/prompt/api/worldinfo/filter/stats/appearance/debug），
+  引导 `PAGE_HINTS`、信号 `requestedTab`/`onboardingPendingTab`、`OnboardingStep.tab`
+  全部以子区 id 为键（未变）。某页可见子区≤1（stats 恒 1；简化模式下 content/system 各剩 1）时
+  子 tab 条自动隐藏、直接展示该编辑器。🎓（章节菜单）/❓（当前子区指引）按钮在**题首**
+  （不在导航条内），❓ 键取 `PAGE_HINTS[activeSubArea]`。信号 `requestedTab`/`onboardingPendingTab`
+  经 `goToSubArea(id)` 同步 page+subArea 两级。**简化模式语义**：`advanced_features_enabled=false`
+  从「隐藏整 tab」改为「隐藏高级子区」（content 隐 prompt/worldinfo/filter、system 隐 debug），
+  开关仍在 appearance 子区（基础层始终可达）；守卫 watch 在 activeSubArea 落入隐藏子区时弹回当前页首个基础子区。
+  窗口模型仍为自由拖拽/可缩放浮窗（未改）。**UI 去杂乱第一期（骨架）**已落地：导航重组 + 原子整合。
+  **第二期（开关折叠 + 措辞 + 空状态）**已落地：生成页「骰子判定/候选冗余/防重复/人称视角」四段收进
+  `ChoiceDisclosure` 折叠披露器（骰子总开关与防重复启用开关常显在标题行右侧 `extra` slot；折叠状态组件内
+  ref 不持久化、默认收起；`data-tour="gen-dice"` 经 `$attrs` 留在容器锚点）；`PAGE_HINTS`/引导文案「tab
+  栏/设置页」过时措辞已改为「题首/子区」；条目池页与统计页条目榜/命中榜空态升级为 `.choice-empty` 图标空态。
+  `data-tour` 锚点重指无需再做（一期已核实全部 target 指向编辑器内部锚点、无指向 tab-strip）。
 
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
@@ -221,7 +245,7 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
   `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 55。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
-  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置 tab：`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
+  `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置编辑器（作为二级子区挂在 4 个一级页下：内容=条目池/提示词/世界书/过滤、生成=生成/API、统计=统计、系统=外观/调试）`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义、窄屏布局 composable 与 `useConfirm.ts`（确认弹窗 Promise 化封装，Statistics 清空/应用建议/应用阵容三处使用）。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
@@ -232,13 +256,13 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 
 ## 新手引导架构
 
-- 内容单一来源是 `src/core/guide-content.ts`：`GUIDE_CHAPTERS`（7 章）+ `PAGE_HINTS`（9 个 tab）+
+- 内容单一来源是 `src/core/guide-content.ts`：`GUIDE_CHAPTERS`（7 章）+ `PAGE_HINTS`（9 个子区，键=子区 id 未变）+
   `DIALOG_HINTS`（3 个弹窗）。组件中不要另写平行的引导文案。
 - `quick-start` 是唯一默认路径（配置 API → 生成），另有条目池、生成、提示词、世界书、过滤、外观 6 个进阶章。章内使用
   `onboardingStepIndex`，当前章由 computed 解析。
 - `onboarding.ts`
   负责自动打开、欢迎卡、API 配置召回、章节菜单、待处理 tab/弹窗动作等状态。自动生成路径遇 API 未配置时只提示并跳过，不抢焦点弹窗。
-- 设置面板 tab 栏的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`；页内指引必须结构化渲染。唯一受控的
+- 设置面板**题首**的 🎓 打开章节菜单，❓ 显示结构化 `PAGE_HINTS`（键取当前子区 `activeSubArea`）；页内指引必须结构化渲染。唯一受控的
   `v-html` 例外是 `OnboardingWizard` 的步骤富文本（`GUIDE_CHAPTERS[].html`）：内容 100% 来自
   `guide-content.ts` 编译期静态脚本，无用户输入/无插值/无运行时拼接，组件内该处带显式 lint 豁免注释；
   不要把用户可控数据传进 `step.html`，新增引导文案优先走结构化字段。

@@ -1,7 +1,7 @@
 <template>
   <div class="choice-debug-settings">
     <div class="choice-debug-section">
-      <h4>{{ t`版本信息` }}</h4>
+      <h4 class="choice-section-title">{{ t`版本信息` }}</h4>
       <p>Schema: {{ globalStore.settings.schema_version }}</p>
       <p>Prompt Schema: {{ globalStore.settings.prompt_rules.schema_version }}</p>
       <p>{{ t`模块数` }}: {{ globalStore.settings.prompt_rules.modules.length }}</p>
@@ -10,7 +10,7 @@
       <p>{{ t`API 数` }}: {{ globalStore.settings.apis.length }}</p>
     </div>
     <div class="choice-debug-section">
-      <h4>{{ t`上次生成的消息` }}</h4>
+      <h4 class="choice-section-title">{{ t`上次生成的消息` }}</h4>
       <div v-if="!lastBuildMessages" class="choice-empty-hint">{{ t`尚未生成过` }}</div>
       <div v-else class="choice-debug-messages">
         <div v-for="(m, i) in lastBuildMessages" :key="i" class="choice-debug-msg">
@@ -20,7 +20,7 @@
       </div>
     </div>
     <div class="choice-debug-section">
-      <h4>{{ t`上次去重报告` }}</h4>
+      <h4 class="choice-section-title">{{ t`上次去重报告` }}</h4>
       <div v-if="!lastDedupReport || !lastDedupReport.details.length" class="choice-empty-hint">
         {{ t`去重未触发（未启用或无重复）` }}
       </div>
@@ -59,7 +59,7 @@
       </div>
     </div>
     <div class="choice-debug-section">
-      <h4>{{ t`占位符速查` }}</h4>
+      <h4 class="choice-section-title">{{ t`占位符速查` }}</h4>
       <p class="choice-debug-hint">
         {{ t`模块内容里可写的变量，生成时自动替换成实际值（供复制到提示词模块中使用）` }}
       </p>
@@ -71,7 +71,7 @@
       </div>
     </div>
     <div class="choice-debug-section">
-      <h4>{{ t`危险操作` }}</h4>
+      <h4 class="choice-section-title">{{ t`危险操作` }}</h4>
       <button class="menu_button" :title="t`删除所有设置并恢复为插件出厂默认值`" @click="factoryReset">
         <i class="fa-solid fa-rotate-left"></i>
         {{ t`恢复出厂设置` }}
@@ -133,9 +133,7 @@ function truncate(s: string, n = 120): string {
 }
 
 .choice-debug-section h4 {
-  margin: 0 0 var(--choice-space-1);
-  font-size: var(--choice-text-base);
-  color: var(--choice-text);
+  margin: 0;
 }
 
 .choice-debug-section p {
@@ -156,7 +154,7 @@ function truncate(s: string, n = 120): string {
   display: flex;
   gap: var(--choice-space-2);
   font-size: var(--choice-text-xs);
-  line-height: 1.4;
+  line-height: var(--choice-line-height);
 }
 
 .choice-debug-role {
@@ -197,13 +195,13 @@ function truncate(s: string, n = 120): string {
   align-items: baseline;
   gap: var(--choice-space-2);
   font-size: var(--choice-text-xs);
-  line-height: 1.4;
+  line-height: var(--choice-line-height);
 }
 
 .choice-debug-ph-syntax {
   flex-shrink: 0;
   min-width: 150px;
-  font-family: monospace;
+  font-family: var(--choice-font-mono);
   color: var(--choice-color-info);
   word-break: break-all;
 }

@@ -13,29 +13,28 @@
       @pointerleave="onPointerLeave"
     >
       <!-- 选项列表：无标题栏的紧凑排版，每行「类型标签 + 内容」。
-           生成中且无旧结果时显示加载占位，有旧结果则保留旧选项不闪烁（同主面板约定） -->
+           生成中且无旧结果时显示加载占位，有旧结果则保留旧选项不闪烁（同主面板约定）。
+           选项行本体（类型/成功率/判定 chip/档位色条）全部走 global.css 的
+           .choice-option-btn 共享语言，与主面板同源 -->
       <div class="choice-floating-options-body">
         <template v-if="options.length > 0">
           <button
             v-for="(option, index) in options"
             :key="`${generationId}:${index}`"
-            class="choice-float-option"
+            class="choice-option-btn"
             :class="optionBtnClass(option, index)"
             :style="optionBtnStyle(index)"
             @click="onSelect(option, index)"
           >
-            <span class="choice-float-option-type">{{ parseOptionType(option.text) }}</span><!--
-            --><span v-if="rateOf(option) !== null" class="choice-float-option-rate" :class="rateClass(rateOf(option)!)"
+            <span class="choice-option-type">{{ parseOptionType(option.text) }}</span><!--
+            --><span v-if="rateOf(option) !== null" class="choice-option-rate" :class="rateClass(rateOf(option)!)"
               >{{ rateOf(option) }}%</span
             ><!--
-            --><span class="choice-float-option-content"
+            --><span class="choice-option-content"
               >{{ parseOptionContent(option.text)
-              }}<i
-                v-if="rollOf(index)"
-                class="choice-float-roll-chip"
-                :class="`choice-float-roll-chip--${rollOf(index)}`"
-                >{{ rollLabel(rollOf(index)!) }}</i
-              ></span
+              }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)}`">{{
+                rollLabel(rollOf(index)!)
+              }}</i></span
             >
           </button>
         </template>
@@ -52,15 +51,16 @@
         </div>
       </div>
 
-      <!-- 底部工具条：左端分页（仅多组结果时显示），右端锁/生成/设置 -->
+      <!-- 底部工具条：左端分页（仅多组结果时显示），右端锁/生成/设置；
+           按钮用 global.css 的 .choice-tool-btn 原子，与主面板头部工具区同语言 -->
       <div class="choice-floating-options-bar">
         <span v-if="generations.length > 1" class="choice-float-pager">
-          <button class="choice-float-bar-btn" :disabled="currentIndex <= 0" :title="t`上一组`" @click="onPrev">
+          <button class="choice-tool-btn" :disabled="currentIndex <= 0" :title="t`上一组`" @click="onPrev">
             <i class="fa-solid fa-chevron-left"></i>
           </button>
           <span class="choice-float-pager-text">{{ currentIndex + 1 }}/{{ generations.length }}</span>
           <button
-            class="choice-float-bar-btn"
+            class="choice-tool-btn"
             :disabled="currentIndex >= generations.length - 1"
             :title="t`下一组`"
             @click="onNext"
@@ -72,7 +72,7 @@
         <!-- 生成/取消：主操作按钮放在锁的左侧，与聊天界面（ActionOptionsPanel）工具区
              生成→锁→设置的顺序保持一致 -->
         <button
-          class="choice-float-bar-btn choice-float-bar-btn--main"
+          class="choice-tool-btn choice-tool-btn--main"
           :title="isGenerating ? t`取消生成` : t`生成选项`"
           @click="onToggle"
         >
@@ -80,8 +80,8 @@
         </button>
         <!-- 锁：与全局 panel_lock 同源（off/open 二态），激活高亮；锁定时点选项弹窗不收起 -->
         <button
-          class="choice-float-bar-btn"
-          :class="{ 'choice-float-bar-btn--active': locked }"
+          class="choice-tool-btn"
+          :class="{ 'choice-tool-btn--active': locked }"
           :title="locked ? t`解锁弹窗（点选项后收起）` : t`锁定弹窗（点选项后不收起）`"
           @click="onToggleLock"
         >
@@ -91,18 +91,18 @@
              时才生效）。开启时激活高亮，关闭则锁定态移出不淡化 -->
         <button
           v-if="locked && hoverable.matches"
-          class="choice-float-bar-btn"
-          :class="{ 'choice-float-bar-btn--active': dimEnabled }"
+          class="choice-tool-btn"
+          :class="{ 'choice-tool-btn--active': dimEnabled }"
           :title="dimEnabled ? t`淡化已开启：锁定态移出选项栏变半透明` : t`淡化已关闭：锁定态移出不淡化`"
           @click="onToggleDim"
         >
           <i class="fa-solid fa-circle-half-stroke"></i>
         </button>
         <!-- 风险档位图例：HUD 开启且当前代存在带档位标注的选项时显示，紧贴设置按钮左侧 -->
-        <span v-if="hasGradedOptions" class="choice-float-bar-legend" :title="legendTitle">
+        <span v-if="hasGradedOptions" class="choice-icon-hint" :title="legendTitle">
           <i class="fa-solid fa-circle-info"></i>
         </span>
-        <button class="choice-float-bar-btn" :title="t`打开设置`" @click="openSettings">
+        <button class="choice-tool-btn" :title="t`打开设置`" @click="openSettings">
           <i class="fa-solid fa-gear"></i>
         </button>
       </div>
@@ -178,10 +178,10 @@ const optionBtnClass = (option: ChoiceOption, index: number) => {
   if (!hudEnabled.value) return {};
   const grade = parseOptionStyle(option.text);
   return {
-    'choice-float-option--conservative': grade === 'conservative',
-    'choice-float-option--balanced': grade === 'balanced',
-    'choice-float-option--bold': grade === 'bold',
-    'choice-float-option--selected': selectedKeys.value.has(`${generationId.value}:${index}`),
+    'choice-option-btn--conservative': grade === 'conservative',
+    'choice-option-btn--balanced': grade === 'balanced',
+    'choice-option-btn--bold': grade === 'bold',
+    'choice-option-btn--selected': selectedKeys.value.has(`${generationId.value}:${index}`),
   };
 };
 
@@ -195,14 +195,10 @@ const optionBtnStyle = (index: number): Record<string, string> => {
 const diceEnabled = computed(() => gs.settings.dice.enabled);
 const rateOf = (option: ChoiceOption): number | null =>
   diceEnabled.value ? resolveOptionSuccessRate(option.text) : null;
-// 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）蓝 / 低（<40）橙，
-// 与成功率直觉一致（risk 色条表达的是风险档位，两者语义不同不混用）
+// 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）青 / 低（<40）橙；
+// 分档色走 --choice-rate-*（中档 = 主色），与 risk 档位色条语义区分（同主面板）
 const rateClass = (rate: number): string =>
-  rate >= 70
-    ? 'choice-float-option-rate--high'
-    : rate >= 40
-      ? 'choice-float-option-rate--mid'
-      : 'choice-float-option-rate--low';
+  rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
 // 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）
@@ -391,236 +387,6 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   padding: var(--choice-space-2);
 }
 
-/* 选项行：整行可点，type 徽标与内容处于同一文本流（非 flex 两列）——
-   type 不再单独占左侧列宽，随文字自适应并紧贴内容，长内容可断行 */
-.choice-float-option {
-  display: block;
-  text-align: left;
-  background: var(--choice-bg-card);
-  color: var(--choice-text);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  box-shadow: inset 0 1px 0 var(--choice-frost-line);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  font-size: var(--choice-text-sm);
-  cursor: pointer;
-  line-height: 1.4;
-  min-width: 0;
-  /* HUD 分级色条（::before 左缘）与悬停箭头（::after）的定位基准 */
-  position: relative;
-  transition:
-    transform var(--choice-transition),
-    border-color var(--choice-transition),
-    box-shadow var(--choice-transition);
-}
-
-/* 左缘分级色条：透明占位（width 过渡不跳变），--hud 门控下按档位上色（同主面板约定） */
-.choice-float-option::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: var(--choice-radius-sm) 0 0 var(--choice-radius-sm);
-  background: transparent;
-  transition:
-    background var(--choice-transition),
-    width var(--choice-transition);
-}
-
-/* 悬停箭头：绝对定位在行尾，hover 才浮现（不占布局） */
-.choice-float-option::after {
-  content: '›';
-  position: absolute;
-  right: var(--choice-space-2);
-  top: 50%;
-  transform: translateY(-50%) translateX(4px);
-  font-weight: 700;
-  color: var(--choice-primary);
-  opacity: 0;
-  transition:
-    opacity var(--choice-transition),
-    transform var(--choice-transition);
-}
-
-.choice-float-option:hover {
-  border-color: var(--choice-border-active);
-  transform: translateY(-1px);
-  box-shadow: var(--choice-shadow-md);
-}
-
-.choice-float-option:active {
-  transform: scale(0.985);
-}
-
-/* ===== 选项 HUD 化（ui.hud_enabled，--hud 类整体门控，同主面板约定）===== */
-.choice-floating-options--hud .choice-float-option {
-  animation: choice-option-enter 220ms ease-out both;
-}
-
-@keyframes choice-option-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.choice-floating-options--hud .choice-float-option--conservative::before {
-  background: var(--choice-risk-conservative);
-}
-
-.choice-floating-options--hud .choice-float-option--balanced::before {
-  background: var(--choice-risk-balanced);
-}
-
-.choice-floating-options--hud .choice-float-option--bold::before {
-  background: var(--choice-risk-bold);
-}
-
-.choice-floating-options--hud .choice-float-option:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    var(--choice-shadow-md),
-    inset 0 1px 0 var(--choice-frost-line);
-}
-
-.choice-floating-options--hud .choice-float-option:hover::before {
-  width: 5px;
-}
-
-.choice-floating-options--hud .choice-float-option:hover::after {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
-}
-
-/* 已选打勾：同代内点过的选项降透明度 + 虚线描边 + 类型徽标前 ✓ */
-.choice-floating-options--hud .choice-float-option--selected {
-  opacity: 0.55;
-  border-style: dashed;
-}
-
-.choice-floating-options--hud .choice-float-option--selected .choice-float-option-type::before {
-  content: '✓';
-  margin-right: 3px;
-  color: var(--choice-color-success);
-  font-weight: 700;
-}
-
-/* 风险档位图例（底部工具条，设置按钮左侧）：muted 图标 + hover 主色 */
-.choice-float-bar-legend {
-  padding: var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  cursor: help;
-}
-
-.choice-float-bar-legend:hover {
-  color: var(--choice-primary);
-}
-
-/* 动画尊重系统减弱动态偏好：关闭逐条滑入，其余 HUD 样式保留 */
-@media (prefers-reduced-motion: reduce) {
-  .choice-floating-options--hud .choice-float-option {
-    animation: none;
-  }
-}
-
-/* 类型徽标：行内块（inline-flex）紧贴内容，宽度随文字自适应，不占独立列——
-   类型完整显示不截断（长就长）；字号与内容同号（text-sm），仅靠字重+色相区分；
-   行高与内容统一（1.4）保证同行中对中不偏下 */
-.choice-float-option-type {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  margin-right: var(--choice-space-2);
-  font-weight: 700;
-  font-size: var(--choice-text-sm);
-  line-height: 1.4;
-  color: var(--choice-text-muted);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  padding: 1px 6px;
-  white-space: nowrap;
-}
-
-.choice-float-option-content {
-  line-height: 1.4;
-  font-size: var(--choice-text-sm);
-  overflow-wrap: anywhere;
-}
-
-/* ===== v55 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
-/* 成功率徽标：类型徽标旁的小 pill，无边框轻量，彩色加粗文字按把握分档着色 */
-.choice-float-option-rate {
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  margin-right: var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  font-weight: 700;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.choice-float-option-rate--high {
-  color: var(--choice-color-success);
-}
-
-.choice-float-option-rate--mid {
-  color: var(--choice-color-info);
-}
-
-.choice-float-option-rate--low {
-  color: var(--choice-color-warning);
-}
-
-/* 行内判定 chip：悬停在行尾（不占内容流），点选后淡出到半透明滞留；
-   父级 .choice-float-option 已是 absolute 定位基准 */
-.choice-float-roll-chip {
-  position: absolute;
-  right: var(--choice-space-2);
-  top: 50%;
-  transform: translateY(-50%);
-  font-style: normal;
-  font-size: var(--choice-text-xs);
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: var(--choice-radius-sm);
-  animation: choice-float-roll-chip-fade 3s ease forwards;
-}
-
-.choice-float-roll-chip--success,
-.choice-float-roll-chip--crit_success {
-  color: var(--choice-color-success);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-color-success);
-}
-
-.choice-float-roll-chip--fail,
-.choice-float-roll-chip--crit_fail {
-  color: var(--choice-color-danger);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-color-danger);
-}
-
-@keyframes choice-float-roll-chip-fade {
-  to {
-    opacity: 0.5;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .choice-float-roll-chip {
-    animation: none;
-  }
-}
-
 .choice-floating-options-empty {
   color: var(--choice-text-muted);
   font-size: var(--choice-text-sm);
@@ -662,50 +428,6 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   margin: 0 2px;
 }
 
-.choice-float-bar-btn {
-  background: transparent;
-  color: var(--choice-text-muted);
-  border: none;
-  border-radius: var(--choice-radius-sm);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  font-size: var(--choice-text-sm);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-}
-
-.choice-float-bar-btn:hover:not(:disabled) {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text);
-}
-
-.choice-float-bar-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.choice-float-bar-btn--active {
-  color: var(--choice-primary);
-}
-
-/* 生成按钮是工具条主操作：主色图标区分，不加底色（同主面板 header 语言） */
-.choice-float-bar-btn--main {
-  color: var(--choice-primary);
-}
-
-.choice-float-bar-btn--main:hover:not(:disabled) {
-  color: var(--choice-primary-hover);
-}
-
-/* 触屏触控目标：锁/生成/设置与分页是高频点击点，抬到可点高度 */
-@media (pointer: coarse) {
-  .choice-float-bar-btn {
-    min-height: var(--choice-tap-min);
-    padding: var(--choice-space-2);
-  }
-}
+/* 工具条按钮本体（透明底/muted 图标/hover 底色/主色 main 变体/触屏抬升）
+   全部走 global.css 的 .choice-tool-btn 原子，与主面板头部工具区同语言 */
 </style>

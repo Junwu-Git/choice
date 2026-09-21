@@ -7,17 +7,16 @@
           t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`
         "
       >
-        <select v-model="rules.context_mode" class="text_pole" style="width: auto">
+        <select v-model="rules.context_mode" class="choice-select">
           <option value="rounds">{{ t`轮数模式` }}</option>
           <option value="visible_only">{{ t`仅可见消息` }}</option>
         </select>
         <input
           v-if="rules.context_mode === 'rounds'"
           v-model.number="rules.context_rounds"
-          class="text_pole"
+          class="choice-input choice-input-w-sm"
           type="number"
           min="0"
-          style="width: 60px"
         />
       </label>
       <label
@@ -45,7 +44,7 @@
     <div class="choice-config-bar">
       <div class="choice-config-row">
         <label class="choice-config-label">{{ t`提示词配置` }}</label>
-        <select v-model="selectedPromptConfigId" class="text_pole choice-config-select">
+        <select v-model="selectedPromptConfigId" class="choice-config-select">
           <option v-for="cfg in promptConfigs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
         </select>
         <button
@@ -271,7 +270,7 @@
               <input
                 v-else
                 v-model="renameText"
-                class="text_pole choice-rename-input"
+                class="choice-input choice-rename-input"
                 @blur="finishRename(mod)"
                 @keydown.enter="finishRename(mod)"
                 @keydown.escape="cancelRename"
@@ -287,7 +286,7 @@
           </div>
 
           <div class="choice-module-actions">
-            <label class="choice-module-toggle" :title="mod.enabled ? t`启用` : t`禁用`">
+            <label class="choice-check" :title="mod.enabled ? t`启用` : t`禁用`">
               <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
             </label>
             <button
@@ -316,11 +315,11 @@
             </button>
             <button
               v-if="!mod.system"
-              class="menu_button choice-module-btn"
+              class="menu_button choice-module-btn choice-delete-btn"
               :title="t`删除`"
               @click="deleteTarget = mod.id"
             >
-              <i class="fa-solid fa-trash" style="color: var(--choice-color-error)"></i>
+              <i class="fa-solid fa-trash"></i>
             </button>
           </div>
         </div>
@@ -328,13 +327,13 @@
         <div v-if="editingId === mod.id" class="choice-module-edit">
           <div class="choice-module-edit-head">
             <span>{{ t`编辑模块` }}: {{ editingModule?.name }}</span>
-            <select v-if="editingModule" v-model="editingModule.role" class="text_pole" style="width: auto">
+            <select v-if="editingModule" v-model="editingModule.role" class="choice-select">
               <option value="system">system</option>
               <option value="user">user</option>
               <option value="assistant">assistant</option>
             </select>
           </div>
-          <textarea v-if="editingModule" v-model="editingModule.content" class="text_pole" rows="8"></textarea>
+          <textarea v-if="editingModule" v-model="editingModule.content" class="choice-textarea" rows="8"></textarea>
         </div>
       </template>
     </div>
@@ -1034,25 +1033,9 @@ onUnmounted(() => {
   font-size: var(--choice-text-sm);
 }
 
-.choice-module-toggle {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
+/* 小号重命名输入框：仅覆盖宽度，底色/边框/聚焦态由 global.css 的 .choice-input 提供 */
 .choice-rename-input {
-  font-size: var(--choice-text-sm);
   width: 120px;
-  padding: 2px var(--choice-space-1);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-rename-input:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-module-edit {
@@ -1088,36 +1071,12 @@ onUnmounted(() => {
   border-top: 1px solid var(--choice-border);
 }
 
-.choice-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-secondary);
-}
-
-.choice-field-label {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-}
-
-.choice-field-label label {
-  font-weight: 600;
-}
-
 .choice-field-module {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   background: var(--choice-bg-card);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-}
-
-.choice-field-hint {
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  line-height: 1.4;
 }
 
 .choice-restore-btn {
@@ -1130,8 +1089,8 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  background: rgba(var(--choice-primary-rgb), 0.18);
-  color: var(--choice-color-info);
+  background: var(--choice-primary-light);
+  color: var(--choice-primary);
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -1140,8 +1099,8 @@ onUnmounted(() => {
   font-size: var(--choice-text-xs);
   padding: 1px var(--choice-space-2);
   border-radius: var(--choice-radius-full);
-  background: rgba(217, 144, 74, 0.18);
-  color: #e0a06a;
+  background: var(--choice-color-warning-bg);
+  color: var(--choice-color-warning);
   font-weight: 500;
   flex-shrink: 0;
 }

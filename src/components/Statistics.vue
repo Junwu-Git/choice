@@ -250,12 +250,12 @@
         <div class="choice-stats-sub-block">
           <div class="choice-stats-sub-block-head">
             <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`趋势` }}</span>
-            <div class="choice-stats-seg">
+            <div class="choice-seg">
               <button
                 v-for="d in trendRangeOptions"
                 :key="d"
-                class="choice-stats-seg-btn"
-                :class="{ 'choice-stats-seg-btn--active': trendDays === d }"
+                class="choice-seg-btn"
+                :class="{ active: trendDays === d }"
                 @click="trendDays = d"
               >
                 {{ d }} {{ t`天` }}
@@ -341,12 +341,12 @@
           type="search"
           :placeholder="t`搜索内容 / 类型 / 分类`"
         />
-        <div class="choice-stats-seg">
+        <div class="choice-seg">
           <button
             v-for="o in sortOptions"
             :key="o.key"
-            class="choice-stats-seg-btn"
-            :class="{ 'choice-stats-seg-btn--active': sortBy === o.key }"
+            class="choice-seg-btn"
+            :class="{ active: sortBy === o.key }"
             @click="sortBy = o.key"
           >
             {{ o.label }}
@@ -357,11 +357,13 @@
           <span>{{ t`只看有数据` }}</span>
         </label>
       </div>
-      <div v-if="groups.length === 0" class="choice-empty-hint">
-        {{ t`条目库为空——先在条目池页添加条目并生成一组选项` }}
+      <div v-if="groups.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-ranking-star"></i></div>
+        <p>{{ t`条目库为空——先在条目池页添加条目并生成一组选项` }}</p>
       </div>
-      <div v-else-if="filteredGroups.length === 0" class="choice-empty-hint">
-        {{ t`没有匹配的条目，试试调整搜索或筛选条件` }}
+      <div v-else-if="filteredGroups.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-ranking-star"></i></div>
+        <p>{{ t`没有匹配的条目，试试调整搜索或筛选条件` }}</p>
       </div>
       <div v-else class="choice-stats-groups">
         <div v-for="g in filteredGroups" :key="g.key" class="choice-stats-group">
@@ -494,7 +496,9 @@
               </div>
             </div>
             <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit"><i class="fa-solid fa-star"></i></span>
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit-success"
+                ><i class="fa-solid fa-star"></i
+              ></span>
               <div class="choice-stats-card-body">
                 <div class="choice-stats-card-label">{{ t`大成功` }}</div>
                 <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
@@ -519,7 +523,9 @@
               </div>
             </div>
             <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit"><i class="fa-solid fa-bolt"></i></span>
+              <span class="choice-stats-card-icon choice-stats-card-icon--crit-fail"
+                ><i class="fa-solid fa-bolt"></i
+              ></span>
               <div class="choice-stats-card-body">
                 <div class="choice-stats-card-label">{{ t`大失败` }}</div>
                 <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>
@@ -697,7 +703,10 @@
       </div>
       <div v-if="showHitRank" class="choice-stats-section-body">
         <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
-        <div v-if="hitRank.length === 0" class="choice-empty-hint">{{ t`尚未选择过任何条目` }}</div>
+        <div v-if="hitRank.length === 0" class="choice-empty">
+          <div class="choice-empty-icon"><i class="fa-solid fa-crown"></i></div>
+          <p>{{ t`尚未选择过任何条目` }}</p>
+        </div>
         <div v-else class="choice-stats-rank">
           <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
             <div class="choice-stats-rank-main">
@@ -1763,9 +1772,13 @@ const onClearStats = async () => {
   flex-direction: column;
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) 0;
-  /* 不透明背景：暗/亮主题下均不透出下方滚动内容 */
+  /* 不透明背景：暗/亮主题下均不透出下方滚动内容；细阴影与 content 分层，
+     现代面板感（传统做法只有一条 hard border）。blur 为渐进增强，老 WebView
+     忽略 backdrop-filter 时回落纯色 + 阴影，仍可读 */
   background: var(--choice-bg);
   border-bottom: 1px solid var(--choice-border);
+  box-shadow: 0 var(--choice-space-1) var(--choice-space-4) rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(6px);
 }
 
 /* 跳转 pills 行：横向排列、窄屏换行 */
@@ -1912,10 +1925,16 @@ const onClearStats = async () => {
   color: var(--choice-text-secondary);
 }
 
-/* 骰子战绩彩蛋结局（大成功/大失败）：星标/闪电用强调色强调 */
-.choice-stats-card-icon--crit {
-  background: var(--choice-color-warning-bg);
-  color: var(--choice-color-warning);
+/* 骰子战绩彩蛋结局：大成功（星标）与 大失败（闪电）语义对立——
+   大成功用成功绿、大失败用失败红，不再同色难辨 */
+.choice-stats-card-icon--crit-success {
+  background: var(--choice-color-success-bg);
+  color: var(--choice-color-success);
+}
+
+.choice-stats-card-icon--crit-fail {
+  background: var(--choice-color-error-bg);
+  color: var(--choice-color-error);
 }
 
 /* 骰子战绩失败结局（普通失败） */
@@ -1960,6 +1979,8 @@ const onClearStats = async () => {
 .choice-stats-section-title {
   margin: 0;
   font-size: var(--choice-text-sm);
+  /* 字重统一 600（与全局 .choice-section-title 及面板标题一致，收敛 bold/600 混用） */
+  font-weight: 600;
   color: var(--choice-text);
   display: inline-flex;
   align-items: center;
@@ -2063,46 +2084,11 @@ const onClearStats = async () => {
   margin-bottom: 0;
 }
 
-/* ── 分段按钮组（趋势天数 / 排序维度共用） ── */
-.choice-stats-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  flex-wrap: wrap;
-}
+/* 分段按钮组（趋势天数 / 排序维度）已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子 */
 
-.choice-stats-seg-btn {
-  border: none;
-  background: none;
-  color: var(--choice-text-secondary);
-  font-size: var(--choice-text-xs);
-  padding: 2px 8px;
-  border-radius: var(--choice-radius-sm);
-  cursor: pointer;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-  white-space: nowrap;
-}
-
-.choice-stats-seg-btn:hover {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text);
-}
-
-.choice-stats-seg-btn--active {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-  font-weight: 600;
-}
-
-/* 键盘焦点可见态：分段按钮/跳转 pill/组头/撤销与图标按钮统一描边（对照 border-active），
-   鼠标操作的 hover 反馈保留原样 */
-.choice-stats-seg-btn:focus-visible,
+/* ── 键盘焦点可见态：跳转 pill/组头/撤销与图标按钮统一描边（对照 border-active），
+    分段按钮已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子，focus 由原子承担，
+    hover 反馈保留原样 */
 .choice-stats-jump-pill:focus-visible,
 .choice-stats-group-head:focus-visible,
 .choice-stats-undo:focus-visible,
@@ -2163,7 +2149,7 @@ const onClearStats = async () => {
 .choice-chart-label {
   flex-shrink: 0;
   text-align: center;
-  font-size: 9px;
+  font-size: var(--choice-text-2xs);
   line-height: 1;
   color: var(--choice-text-muted);
   padding-top: 3px;
@@ -2591,6 +2577,8 @@ const onClearStats = async () => {
   font-size: var(--choice-text-xs);
   font-weight: 700;
   color: var(--choice-text-muted);
+  /* 数字对齐：刷新/翻页时排名位宽不抖动 */
+  font-variant-numeric: tabular-nums;
 }
 
 .choice-rank-1 {
@@ -2602,8 +2590,7 @@ const onClearStats = async () => {
 }
 
 .choice-rank-3 {
-  color: var(--choice-color-warning);
-  opacity: 0.75;
+  color: var(--choice-text-muted);
 }
 
 .choice-stats-type-badge {
@@ -2796,6 +2783,8 @@ const onClearStats = async () => {
 .choice-stats-history-time {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
+  /* 数字对齐：时间戳数字位宽不抖动 */
+  font-variant-numeric: tabular-nums;
 }
 
 .choice-stats-history-count {

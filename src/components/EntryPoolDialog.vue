@@ -1263,15 +1263,6 @@ onUnmounted(() => {
   color: var(--choice-color-error);
 }
 
-.choice-confirm-btn {
-  color: var(--choice-color-error);
-  background: rgba(200, 106, 106, 0.15);
-}
-
-.choice-confirm-btn:hover {
-  background: rgba(200, 106, 106, 0.3);
-}
-
 .choice-check {
   display: inline-flex;
   align-items: center;
@@ -1293,41 +1284,5 @@ onUnmounted(() => {
 
 .choice-empty-hint i {
   font-size: var(--choice-text-xl);
-}
-
-.choice-btn-sm {
-  font-size: var(--choice-text-xs);
-  padding: var(--choice-space-1) var(--choice-space-2);
-  border: 1px solid var(--choice-border-strong);
-  border-radius: var(--choice-radius-full);
-  background: var(--choice-bg-element);
-  color: var(--choice-text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--choice-space-1);
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-}
-
-.choice-btn-sm:hover:not(:disabled) {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text);
-}
-
-.choice-btn-del {
-  color: var(--choice-color-error);
-}
-
-.choice-btn-del:hover:not(:disabled) {
-  color: var(--choice-color-error);
-}
-
-.choice-confirm-btn {
-  color: var(--choice-color-error) !important;
-  background: rgba(200, 106, 106, 0.15) !important;
-  border-color: rgba(200, 106, 106, 0.3) !important;
 }
 </style>

@@ -193,13 +193,13 @@ const modeLabel = computed(() => {
 }
 
 .prompt-import-replace-label {
-  color: var(--choice-warning, #e8a838);
+  color: var(--choice-color-warning);
 }
 
 .prompt-import-warning {
   margin: 0;
   padding: 0 var(--choice-space-2);
   font-size: var(--choice-text-xs);
-  color: var(--choice-warning, #e8a838);
+  color: var(--choice-color-warning);
 }
 </style>
