@@ -52,7 +52,12 @@
             </option>
           </select>
         </label>
-        <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
+        <button
+          class="menu_button"
+          style="flex-shrink: 0; margin-top: auto"
+          :title="t`新建 API 配置`"
+          @click="createApi"
+        >
           <i class="fa-solid fa-plus"></i> {{ t`新建` }}
         </button>
         <button
@@ -66,92 +71,92 @@
         </button>
       </div>
 
-    <div class="choice-api-form" data-tour="api-form">
-      <div class="choice-api-form-body">
-        <div class="choice-api-name-row">
-          <input v-model="draftForm.name" class="choice-input" :placeholder="t`配置名称`" />
-        </div>
-        <div class="choice-api-url-row" data-tour="api-url">
-          <input v-model="draftForm.apiurl" class="choice-input" :placeholder="t`API 地址`" />
-        </div>
-        <div class="choice-api-key-row">
-          <input v-model="draftForm.key" class="choice-input" type="password" :placeholder="t`API 密钥`" />
-        </div>
-        <div class="choice-model-row">
-          <input
-            v-model="draftForm.model"
-            class="choice-input"
-            :placeholder="t`模型名称`"
-            @focus="modelDropdownOpen = true"
-            @blur="onModelBlur"
-          />
-          <button
-            class="menu_button choice-fetch-btn"
-            :disabled="fetching"
-            :title="t`从 API 拉取可用模型列表`"
-            @click="fetchModels"
-          >
-            <i v-if="fetching" class="fa-solid fa-spinner fa-spin"></i>
-            <i v-else class="fa-solid fa-cloud-arrow-down"></i>
-            {{ fetching ? '' : t`拉取` }}
-          </button>
-        </div>
-        <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
-          <div
-            v-for="model in modelList"
-            :key="model"
-            class="choice-model-item"
-            :class="{ 'choice-model-item--active': draftForm.model === model }"
-            @click="
-              draftForm.model = model;
-              modelDropdownOpen = false;
-            "
-          >
-            {{ model }}
+      <div class="choice-api-form" data-tour="api-form">
+        <div class="choice-api-form-body">
+          <div class="choice-api-name-row">
+            <input v-model="draftForm.name" class="choice-input" :placeholder="t`配置名称`" />
           </div>
-        </div>
-        <div class="choice-api-row">
-          <label class="choice-field">
-            <span>{{ t`温度` }}</span>
+          <div class="choice-api-url-row" data-tour="api-url">
+            <input v-model="draftForm.apiurl" class="choice-input" :placeholder="t`API 地址`" />
+          </div>
+          <div class="choice-api-key-row">
+            <input v-model="draftForm.key" class="choice-input" type="password" :placeholder="t`API 密钥`" />
+          </div>
+          <div class="choice-model-row">
             <input
-              v-model.number="draftForm.temperature"
-              type="number"
+              v-model="draftForm.model"
               class="choice-input"
-              min="0"
-              max="2"
-              step="0.1"
+              :placeholder="t`模型名称`"
+              @focus="modelDropdownOpen = true"
+              @blur="onModelBlur"
             />
-          </label>
-          <label class="choice-field">
-            <span>{{ t`最大 Token` }}</span>
-            <input v-model.number="draftForm.max_tokens" type="number" class="choice-input" min="1" />
-          </label>
-          <label class="choice-field">
-            <span>{{ t`超时(秒)` }}</span>
-            <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
-          </label>
-        </div>
-        <div class="choice-api-bottom-row">
-          <div class="choice-api-checks">
-            <label class="choice-check">
-              <input v-model="draftForm.stream" type="checkbox" />
-              {{ t`流式` }}
+            <button
+              class="menu_button choice-fetch-btn"
+              :disabled="fetching"
+              :title="t`从 API 拉取可用模型列表`"
+              @click="fetchModels"
+            >
+              <i v-if="fetching" class="fa-solid fa-spinner fa-spin"></i>
+              <i v-else class="fa-solid fa-cloud-arrow-down"></i>
+              {{ fetching ? '' : t`拉取` }}
+            </button>
+          </div>
+          <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
+            <div
+              v-for="model in modelList"
+              :key="model"
+              class="choice-model-item"
+              :class="{ 'choice-model-item--active': draftForm.model === model }"
+              @click="
+                draftForm.model = model;
+                modelDropdownOpen = false;
+              "
+            >
+              {{ model }}
+            </div>
+          </div>
+          <div class="choice-api-row">
+            <label class="choice-field">
+              <span>{{ t`温度` }}</span>
+              <input
+                v-model.number="draftForm.temperature"
+                type="number"
+                class="choice-input"
+                min="0"
+                max="2"
+                step="0.1"
+              />
+            </label>
+            <label class="choice-field">
+              <span>{{ t`最大 Token` }}</span>
+              <input v-model.number="draftForm.max_tokens" type="number" class="choice-input" min="1" />
+            </label>
+            <label class="choice-field">
+              <span>{{ t`超时(秒)` }}</span>
+              <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
             </label>
           </div>
-          <input
-            v-model="draftForm.exclude_params"
-            class="choice-input"
-            :placeholder="t`排除参数`"
-            style="flex: 1; min-width: 0"
-          />
+          <div class="choice-api-bottom-row">
+            <div class="choice-api-checks">
+              <label class="choice-check">
+                <input v-model="draftForm.stream" type="checkbox" />
+                {{ t`流式` }}
+              </label>
+            </div>
+            <input
+              v-model="draftForm.exclude_params"
+              class="choice-input"
+              :placeholder="t`排除参数`"
+              style="flex: 1; min-width: 0"
+            />
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="choice-api-bottom-actions">
-      <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
-      <button class="menu_button" @click="reset">{{ t`取消` }}</button>
-    </div>
+      <div class="choice-api-bottom-actions">
+        <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
+        <button class="menu_button" @click="reset">{{ t`取消` }}</button>
+      </div>
     </ChoiceSectionCard>
   </div>
 </template>

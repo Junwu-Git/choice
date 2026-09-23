@@ -1,12 +1,7 @@
 <template>
   <section class="choice-section-card" :class="[`tone-${tone}`, { 'is-open': open }]" v-bind="$attrs">
     <header class="choice-section-card-head">
-      <button
-        class="choice-section-card-toggle"
-        type="button"
-        :aria-expanded="open"
-        @click="open = !open"
-      >
+      <button class="choice-section-card-toggle" type="button" :aria-expanded="open" @click="open = !open">
         <i class="fa-solid fa-chevron-right choice-section-card-chevron"></i>
         <i v-if="icon" class="choice-section-card-icon" :class="icon"></i>
         <span class="choice-section-card-title">{{ title }}</span>

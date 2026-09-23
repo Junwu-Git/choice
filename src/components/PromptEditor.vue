@@ -3,348 +3,348 @@
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`上下文设置` }}</h4>
       <div class="choice-page-toolbar" data-tour="prompt-toolbar">
-      <label
-        class="choice-context-rounds"
-        :title="
-          t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`
-        "
-      >
-        <select v-model="rules.context_mode" class="choice-select">
-          <option value="rounds">{{ t`轮数模式` }}</option>
-          <option value="visible_only">{{ t`仅可见消息` }}</option>
-        </select>
-        <input
-          v-if="rules.context_mode === 'rounds'"
-          v-model.number="rules.context_rounds"
-          class="choice-input choice-input-w-sm"
-          type="number"
-          min="0"
-        />
-      </label>
-      <label
-        class="choice-context-rounds"
-        :title="t`关闭后仅将思维链预填和润色应答的 assistant 角色改为 system，其他模块与提示词顺序不变`"
-      >
-        <input v-model="rules.prefill_enabled" type="checkbox" />
-        {{ t`预填充` }}
-      </label>
-      <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
-        <input v-model="rules.baibai_enabled" type="checkbox" />
-        {{ t`柏宝书` }}
-      </label>
-      <label
-        class="choice-context-rounds"
-        :title="
-          t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`
-        "
-      >
-        <input v-model="rules.shujuku_enabled" type="checkbox" />
-        {{ t`数据库` }}
-      </label>
-    </div>
+        <label
+          class="choice-context-rounds"
+          :title="
+            t`轮数模式：取最后 N 轮未隐藏消息；仅可见消息：不限轮数。两种模式均排除隐藏楼层，历史内容与酒馆主生成一致——酒馆正则的提示词侧处理（按深度截断/隐藏旧楼层等）同样生效`
+          "
+        >
+          <select v-model="rules.context_mode" class="choice-select">
+            <option value="rounds">{{ t`轮数模式` }}</option>
+            <option value="visible_only">{{ t`仅可见消息` }}</option>
+          </select>
+          <input
+            v-if="rules.context_mode === 'rounds'"
+            v-model.number="rules.context_rounds"
+            class="choice-input choice-input-w-sm"
+            type="number"
+            min="0"
+          />
+        </label>
+        <label
+          class="choice-context-rounds"
+          :title="t`关闭后仅将思维链预填和润色应答的 assistant 角色改为 system，其他模块与提示词顺序不变`"
+        >
+          <input v-model="rules.prefill_enabled" type="checkbox" />
+          {{ t`预填充` }}
+        </label>
+        <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
+          <input v-model="rules.baibai_enabled" type="checkbox" />
+          {{ t`柏宝书` }}
+        </label>
+        <label
+          class="choice-context-rounds"
+          :title="
+            t`开启后 SP·数据库 的注入目标世界书参与选项/润色生成；关闭则该书不参与。目标为角色卡主世界书时关闭不生效，请用世界书页三态/排除控制`
+          "
+        >
+          <input v-model="rules.shujuku_enabled" type="checkbox" />
+          {{ t`数据库` }}
+        </label>
+      </div>
     </div>
 
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-diagram-project"></i>{{ t`提示词配置` }}</h4>
       <div class="choice-config-bar">
-      <div class="choice-config-row">
-        <label class="choice-config-label">{{ t`提示词配置` }}</label>
-        <select v-model="selectedPromptConfigId" class="choice-config-select">
-          <option v-for="cfg in promptConfigs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
-        </select>
-        <button
-          class="choice-btn-sm"
-          :disabled="!selectedPromptConfig"
-          :title="t`重命名`"
-          @click="startRenamePromptConfig"
-        >
-          <i class="fa-solid fa-pen-to-square"></i>
-        </button>
-        <div class="choice-config-actions">
+        <div class="choice-config-row">
+          <label class="choice-config-label">{{ t`提示词配置` }}</label>
+          <select v-model="selectedPromptConfigId" class="choice-config-select">
+            <option v-for="cfg in promptConfigs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
+          </select>
           <button
             class="choice-btn-sm"
-            :disabled="selectedPromptConfig?.is_default"
-            :title="t`设为默认`"
-            @click="setPromptDefault"
+            :disabled="!selectedPromptConfig"
+            :title="t`重命名`"
+            @click="startRenamePromptConfig"
           >
-            <i class="fa-solid fa-star"></i>
+            <i class="fa-solid fa-pen-to-square"></i>
           </button>
-          <button
-            class="choice-btn-sm"
-            :class="{ active: selectedPromptConfigId === chatStore.settings.prompt_config_id }"
-            :title="
-              selectedPromptConfigId === chatStore.settings.prompt_config_id
-                ? t`当前聊天已绑定（点击取消）`
-                : t`绑定到当前聊天`
-            "
-            @click="bindPromptChat"
-          >
-            <i class="fa-solid fa-comment"></i>
-          </button>
-          <button
-            class="choice-btn-sm"
-            :class="{ active: selectedPromptConfigId === characterStore.settings.prompt_config_id }"
-            :disabled="!currentCharAvailable"
-            :title="
-              !currentCharAvailable
-                ? t`请先在酒馆中选择一个角色卡`
-                : selectedPromptConfigId === characterStore.settings.prompt_config_id
-                  ? t`当前角色已绑定（点击取消）`
-                  : t`绑定到当前角色`
-            "
-            @click="bindPromptCharacter"
-          >
-            <i class="fa-solid fa-user"></i>
-          </button>
-          <button
-            class="choice-btn-sm choice-btn-del"
-            :disabled="selectedPromptConfig?.is_default"
-            :title="t`删除`"
-            @click="removePromptConfig"
-          >
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
-          <button class="choice-btn-sm choice-btn-new" :title="t`新建`" @click="showCreatePromptConfig = true">
-            <i class="fa-solid fa-plus"></i> {{ t`新建` }}
-          </button>
+          <div class="choice-config-actions">
+            <button
+              class="choice-btn-sm"
+              :disabled="selectedPromptConfig?.is_default"
+              :title="t`设为默认`"
+              @click="setPromptDefault"
+            >
+              <i class="fa-solid fa-star"></i>
+            </button>
+            <button
+              class="choice-btn-sm"
+              :class="{ active: selectedPromptConfigId === chatStore.settings.prompt_config_id }"
+              :title="
+                selectedPromptConfigId === chatStore.settings.prompt_config_id
+                  ? t`当前聊天已绑定（点击取消）`
+                  : t`绑定到当前聊天`
+              "
+              @click="bindPromptChat"
+            >
+              <i class="fa-solid fa-comment"></i>
+            </button>
+            <button
+              class="choice-btn-sm"
+              :class="{ active: selectedPromptConfigId === characterStore.settings.prompt_config_id }"
+              :disabled="!currentCharAvailable"
+              :title="
+                !currentCharAvailable
+                  ? t`请先在酒馆中选择一个角色卡`
+                  : selectedPromptConfigId === characterStore.settings.prompt_config_id
+                    ? t`当前角色已绑定（点击取消）`
+                    : t`绑定到当前角色`
+              "
+              @click="bindPromptCharacter"
+            >
+              <i class="fa-solid fa-user"></i>
+            </button>
+            <button
+              class="choice-btn-sm choice-btn-del"
+              :disabled="selectedPromptConfig?.is_default"
+              :title="t`删除`"
+              @click="removePromptConfig"
+            >
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+            <button class="choice-btn-sm choice-btn-new" :title="t`新建`" @click="showCreatePromptConfig = true">
+              <i class="fa-solid fa-plus"></i> {{ t`新建` }}
+            </button>
+          </div>
         </div>
-      </div>
-      <div class="choice-config-status">
-        <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
-        <span class="choice-config-status-name">{{ effectiveConfigName }}</span>
-        <span v-if="chatStore.settings.prompt_config_id" class="choice-bound-badge">{{ t`聊天` }}</span>
-        <span v-if="characterStore.settings.prompt_config_id" class="choice-bound-badge choice-bound-char">{{
-          t`角色`
-        }}</span>
-      </div>
+        <div class="choice-config-status">
+          <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
+          <span class="choice-config-status-name">{{ effectiveConfigName }}</span>
+          <span v-if="chatStore.settings.prompt_config_id" class="choice-bound-badge">{{ t`聊天` }}</span>
+          <span v-if="characterStore.settings.prompt_config_id" class="choice-bound-badge choice-bound-char">{{
+            t`角色`
+          }}</span>
+        </div>
 
-      <!-- 已绑定当前提示词配置的角色卡徽章（反向视角：角色卡→配置 的绑定关系列表，同过滤页角色卡区） -->
-      <ConfigBindings :config-id="selectedPromptConfigId" kind="prompt" />
-    </div>
+        <!-- 已绑定当前提示词配置的角色卡徽章（反向视角：角色卡→配置 的绑定关系列表，同过滤页角色卡区） -->
+        <ConfigBindings :config-id="selectedPromptConfigId" kind="prompt" />
+      </div>
     </div>
 
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-list-ul"></i>{{ t`模块列表` }}</h4>
       <div class="choice-module-toolbar">
-      <div class="choice-module-toolbar-left">
-        <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
-          <button
-            class="choice-mode-btn"
-            :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
-            @click="promptMode = 'all'"
-          >
-            {{ t`全部` }} ({{ totalCount }})
-          </button>
-          <button
-            class="choice-mode-btn"
-            :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
-            @click="promptMode = 'option'"
-          >
-            {{ t`选项生成` }} ({{ optionCount }})
-          </button>
-          <button
-            class="choice-mode-btn"
-            :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
-            @click="promptMode = 'enrich'"
-          >
-            {{ t`润色` }} ({{ enrichCount }})
-          </button>
-        </div>
-      </div>
-      <div class="choice-module-toolbar-right">
-        <div class="choice-export-wrap">
-          <button
-            class="menu_button choice-export-btn"
-            :title="t`添加新的提示词模块`"
-            @click.stop="showAddMenu = !showAddMenu"
-          >
-            <span>{{ t`新增模块` }}</span>
-            <i
-              class="fa-solid fa-chevron-down choice-export-caret"
-              :class="{ 'choice-export-caret--open': showAddMenu }"
-            ></i>
-          </button>
-          <div v-if="showAddMenu" class="choice-export-dropdown">
+        <div class="choice-module-toolbar-left">
+          <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
             <button
-              @click="
-                addModule(false, false);
-                showAddMenu = false;
-              "
+              class="choice-mode-btn"
+              :class="{ 'choice-mode-btn--active': promptMode === 'all' }"
+              @click="promptMode = 'all'"
             >
-              {{ t`通用模块` }}
+              {{ t`全部` }} ({{ totalCount }})
             </button>
             <button
-              @click="
-                addModule(false, true);
-                showAddMenu = false;
-              "
+              class="choice-mode-btn"
+              :class="{ 'choice-mode-btn--active': promptMode === 'option' }"
+              @click="promptMode = 'option'"
             >
-              {{ t`选项模块` }}
+              {{ t`选项生成` }} ({{ optionCount }})
             </button>
             <button
-              v-if="globalStore.settings.ui.enrich_enabled"
-              @click="
-                addModule(true, false);
-                showAddMenu = false;
-              "
+              class="choice-mode-btn"
+              :class="{ 'choice-mode-btn--active': promptMode === 'enrich' }"
+              @click="promptMode = 'enrich'"
             >
-              {{ t`润色模块` }}
+              {{ t`润色` }} ({{ enrichCount }})
             </button>
           </div>
         </div>
-        <div class="choice-export-wrap">
-          <button
-            class="menu_button choice-export-btn"
-            :title="t`选择要导出的模块范围`"
-            @click.stop="showExportMenu = !showExportMenu"
-          >
-            <span>{{ t`导出` }}</span>
-            <i
-              class="fa-solid fa-chevron-down choice-export-caret"
-              :class="{ 'choice-export-caret--open': showExportMenu }"
-            ></i>
-          </button>
-          <div v-if="showExportMenu" class="choice-export-dropdown">
+        <div class="choice-module-toolbar-right">
+          <div class="choice-export-wrap">
             <button
-              @click="
-                exportPrompts('all');
-                showExportMenu = false;
-              "
+              class="menu_button choice-export-btn"
+              :title="t`添加新的提示词模块`"
+              @click.stop="showAddMenu = !showAddMenu"
             >
-              {{ t`导出全部` }}
+              <span>{{ t`新增模块` }}</span>
+              <i
+                class="fa-solid fa-chevron-down choice-export-caret"
+                :class="{ 'choice-export-caret--open': showAddMenu }"
+              ></i>
             </button>
-            <button
-              @click="
-                exportPrompts('option');
-                showExportMenu = false;
-              "
-            >
-              {{ t`导出选项模块` }}
-            </button>
-            <button
-              v-if="globalStore.settings.ui.enrich_enabled"
-              @click="
-                exportPrompts('enrich');
-                showExportMenu = false;
-              "
-            >
-              {{ t`导出润色模块` }}
-            </button>
+            <div v-if="showAddMenu" class="choice-export-dropdown">
+              <button
+                @click="
+                  addModule(false, false);
+                  showAddMenu = false;
+                "
+              >
+                {{ t`通用模块` }}
+              </button>
+              <button
+                @click="
+                  addModule(false, true);
+                  showAddMenu = false;
+                "
+              >
+                {{ t`选项模块` }}
+              </button>
+              <button
+                v-if="globalStore.settings.ui.enrich_enabled"
+                @click="
+                  addModule(true, false);
+                  showAddMenu = false;
+                "
+              >
+                {{ t`润色模块` }}
+              </button>
+            </div>
           </div>
+          <div class="choice-export-wrap">
+            <button
+              class="menu_button choice-export-btn"
+              :title="t`选择要导出的模块范围`"
+              @click.stop="showExportMenu = !showExportMenu"
+            >
+              <span>{{ t`导出` }}</span>
+              <i
+                class="fa-solid fa-chevron-down choice-export-caret"
+                :class="{ 'choice-export-caret--open': showExportMenu }"
+              ></i>
+            </button>
+            <div v-if="showExportMenu" class="choice-export-dropdown">
+              <button
+                @click="
+                  exportPrompts('all');
+                  showExportMenu = false;
+                "
+              >
+                {{ t`导出全部` }}
+              </button>
+              <button
+                @click="
+                  exportPrompts('option');
+                  showExportMenu = false;
+                "
+              >
+                {{ t`导出选项模块` }}
+              </button>
+              <button
+                v-if="globalStore.settings.ui.enrich_enabled"
+                @click="
+                  exportPrompts('enrich');
+                  showExportMenu = false;
+                "
+              >
+                {{ t`导出润色模块` }}
+              </button>
+            </div>
+          </div>
+          <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
+            {{ t`导入` }}
+          </button>
+          <button
+            class="menu_button"
+            :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`"
+            @click="resetPromptToDefaults"
+          >
+            {{ t`恢复默认` }}
+          </button>
         </div>
-        <button class="menu_button" :title="t`从 JSON 文件导入提示词模块`" @click="importPrompts">
-          {{ t`导入` }}
-        </button>
-        <button
-          class="menu_button"
-          :title="t`将所有提示词模块完全恢复为默认值（包括顺序、启用状态、内容）`"
-          @click="resetPromptToDefaults"
-        >
-          {{ t`恢复默认` }}
-        </button>
       </div>
-    </div>
 
-    <div class="choice-module-list" @dragover.prevent="onListDragOver" @drop.prevent="onListDrop">
-      <template v-for="(mod, idx) in allModules" :key="mod.id">
-        <div
-          class="choice-module-card"
-          :class="{
-            'choice-module-card-marker': mod.marker,
-            'choice-module-card-dragging': dragIndex === idx,
-            'choice-module-card-drag-over': dragOverIndex === idx && dragIndex !== idx,
-          }"
-          @dragover.prevent="onDragOver($event, idx)"
-          @dragleave="onDragLeave(idx)"
-          @drop.prevent="onDrop(idx)"
-        >
-          <!-- draggable 只挂在 ☰ 把手上：整卡 draggable 时手机长按卡片文本会触发系统级
+      <div class="choice-module-list" @dragover.prevent="onListDragOver" @drop.prevent="onListDrop">
+        <template v-for="(mod, idx) in allModules" :key="mod.id">
+          <div
+            class="choice-module-card"
+            :class="{
+              'choice-module-card-marker': mod.marker,
+              'choice-module-card-dragging': dragIndex === idx,
+              'choice-module-card-drag-over': dragOverIndex === idx && dragIndex !== idx,
+            }"
+            @dragover.prevent="onDragOver($event, idx)"
+            @dragleave="onDragLeave(idx)"
+            @drop.prevent="onDrop(idx)"
+          >
+            <!-- draggable 只挂在 ☰ 把手上：整卡 draggable 时手机长按卡片文本会触发系统级
                文本选择/原生拖拽抢事件，桌面也容易误从正文发起拖拽。dragend 必须同挂在把手上——
                它只派发到拖拽源元素（span），挂在卡片上收不到，dragIndex 会永远清不掉 -->
-          <span
-            class="choice-module-drag"
-            :draggable="true"
-            :title="t`拖动排序`"
-            @dragstart="onDragStart($event, idx)"
-            @dragend="onDragEnd"
-            >☰</span
-          >
+            <span
+              class="choice-module-drag"
+              :draggable="true"
+              :title="t`拖动排序`"
+              @dragstart="onDragStart($event, idx)"
+              @dragend="onDragEnd"
+              >☰</span
+            >
 
-          <div class="choice-module-body">
-            <div class="choice-module-header">
-              <span v-if="renamingId !== mod.id" class="choice-module-name" @dblclick="startRename(mod)">{{
-                mod.name
-              }}</span>
-              <input
-                v-else
-                v-model="renameText"
-                class="choice-input choice-rename-input"
-                @blur="finishRename(mod)"
-                @keydown.enter="finishRename(mod)"
-                @keydown.escape="cancelRename"
-              />
-              <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
-              <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
-              <span v-if="mod.option_only" class="choice-option-badge-sm">{{ t`选项` }}</span>
-              <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
+            <div class="choice-module-body">
+              <div class="choice-module-header">
+                <span v-if="renamingId !== mod.id" class="choice-module-name" @dblclick="startRename(mod)">{{
+                  mod.name
+                }}</span>
+                <input
+                  v-else
+                  v-model="renameText"
+                  class="choice-input choice-rename-input"
+                  @blur="finishRename(mod)"
+                  @keydown.enter="finishRename(mod)"
+                  @keydown.escape="cancelRename"
+                />
+                <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
+                <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
+                <span v-if="mod.option_only" class="choice-option-badge-sm">{{ t`选项` }}</span>
+                <span v-if="mod.marker" class="choice-module-lock" :title="t`不可编辑模块`">🔒</span>
+              </div>
+              <div class="choice-module-preview">
+                {{ previewContent(mod) }}
+              </div>
             </div>
-            <div class="choice-module-preview">
-              {{ previewContent(mod) }}
+
+            <div class="choice-module-actions">
+              <label class="choice-check" :title="mod.enabled ? t`启用` : t`禁用`">
+                <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
+              </label>
+              <button
+                v-if="!mod.marker"
+                class="menu_button choice-module-btn"
+                :title="t`恢复默认`"
+                @click="restoreTarget = mod.id"
+              >
+                🔄
+              </button>
+              <button
+                v-if="!READONLY_MODULE_IDS.has(mod.id)"
+                class="menu_button choice-module-btn"
+                :title="t`复制`"
+                @click="copyModule(mod.id)"
+              >
+                📋
+              </button>
+              <button
+                v-if="!mod.marker"
+                class="menu_button choice-module-btn"
+                :title="t`编辑`"
+                @click="toggleEdit(mod.id)"
+              >
+                {{ editingId === mod.id ? '✕' : '🖉' }}
+              </button>
+              <button
+                v-if="!mod.system"
+                class="menu_button choice-module-btn choice-delete-btn"
+                :title="t`删除`"
+                @click="deleteTarget = mod.id"
+              >
+                <i class="fa-solid fa-trash"></i>
+              </button>
             </div>
           </div>
 
-          <div class="choice-module-actions">
-            <label class="choice-check" :title="mod.enabled ? t`启用` : t`禁用`">
-              <input type="checkbox" :checked="mod.enabled" @change="toggleEnabled(mod)" />
-            </label>
-            <button
-              v-if="!mod.marker"
-              class="menu_button choice-module-btn"
-              :title="t`恢复默认`"
-              @click="restoreTarget = mod.id"
-            >
-              🔄
-            </button>
-            <button
-              v-if="!READONLY_MODULE_IDS.has(mod.id)"
-              class="menu_button choice-module-btn"
-              :title="t`复制`"
-              @click="copyModule(mod.id)"
-            >
-              📋
-            </button>
-            <button
-              v-if="!mod.marker"
-              class="menu_button choice-module-btn"
-              :title="t`编辑`"
-              @click="toggleEdit(mod.id)"
-            >
-              {{ editingId === mod.id ? '✕' : '🖉' }}
-            </button>
-            <button
-              v-if="!mod.system"
-              class="menu_button choice-module-btn choice-delete-btn"
-              :title="t`删除`"
-              @click="deleteTarget = mod.id"
-            >
-              <i class="fa-solid fa-trash"></i>
-            </button>
+          <div v-if="editingId === mod.id" class="choice-module-edit">
+            <div class="choice-module-edit-head">
+              <span>{{ t`编辑模块` }}: {{ editingModule?.name }}</span>
+              <select v-if="editingModule" v-model="editingModule.role" class="choice-select">
+                <option value="system">system</option>
+                <option value="user">user</option>
+                <option value="assistant">assistant</option>
+              </select>
+            </div>
+            <textarea v-if="editingModule" v-model="editingModule.content" class="choice-textarea" rows="8"></textarea>
           </div>
-        </div>
-
-        <div v-if="editingId === mod.id" class="choice-module-edit">
-          <div class="choice-module-edit-head">
-            <span>{{ t`编辑模块` }}: {{ editingModule?.name }}</span>
-            <select v-if="editingModule" v-model="editingModule.role" class="choice-select">
-              <option value="system">system</option>
-              <option value="user">user</option>
-              <option value="assistant">assistant</option>
-            </select>
-          </div>
-          <textarea v-if="editingModule" v-model="editingModule.content" class="choice-textarea" rows="8"></textarea>
-        </div>
-      </template>
-    </div>
+        </template>
+      </div>
     </div>
 
     <ConfirmDialog

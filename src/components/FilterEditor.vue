@@ -2,90 +2,92 @@
   <div class="choice-filter-editor">
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-filter"></i>{{ t`过滤设置` }}</h4>
-    <!-- 状态栏 -->
-    <div class="choice-config-status">
-      <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
-      <span class="choice-bound-badge"> <i class="fa-solid fa-globe"></i> {{ t`全局` }} {{ globalActiveCount }} </span>
-      <span v-if="gs.currentPresetName" class="choice-bound-badge">
-        <i class="fa-solid fa-sliders"></i> {{ gs.currentPresetName }} {{ presetActiveCount }}
-      </span>
-      <span v-else class="choice-bound-badge choice-bound-fallback">
-        <i class="fa-solid fa-sliders"></i> {{ t`预设（无）` }}
-      </span>
-      <span v-if="currentCharName !== t`未选择`" class="choice-bound-badge choice-bound-char">
-        <i class="fa-solid fa-address-card"></i> {{ currentCharName }} {{ charActiveCount }}
-      </span>
-      <span v-else class="choice-bound-badge choice-bound-fallback">
-        <i class="fa-solid fa-address-card"></i> {{ t`角色卡（未选择）` }}
-      </span>
-    </div>
+      <!-- 状态栏 -->
+      <div class="choice-config-status">
+        <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
+        <span class="choice-bound-badge">
+          <i class="fa-solid fa-globe"></i> {{ t`全局` }} {{ globalActiveCount }}
+        </span>
+        <span v-if="gs.currentPresetName" class="choice-bound-badge">
+          <i class="fa-solid fa-sliders"></i> {{ gs.currentPresetName }} {{ presetActiveCount }}
+        </span>
+        <span v-else class="choice-bound-badge choice-bound-fallback">
+          <i class="fa-solid fa-sliders"></i> {{ t`预设（无）` }}
+        </span>
+        <span v-if="currentCharName !== t`未选择`" class="choice-bound-badge choice-bound-char">
+          <i class="fa-solid fa-address-card"></i> {{ currentCharName }} {{ charActiveCount }}
+        </span>
+        <span v-else class="choice-bound-badge choice-bound-fallback">
+          <i class="fa-solid fa-address-card"></i> {{ t`角色卡（未选择）` }}
+        </span>
+      </div>
 
-    <!-- 酒馆正则总开关：聊天记录是否先走酒馆原生正则（全局/预设/角色卡三区），
+      <!-- 酒馆正则总开关：聊天记录是否先走酒馆原生正则（全局/预设/角色卡三区），
          再走本页过滤规则。关 = 只用本页规则，避免预设正则清空旧层 user 输入
          导致 assistant 配对断裂、相邻合并。 -->
-    <div class="choice-stregex-head" data-tour="filter-stregex-toggle">
-      <span class="choice-inline-label"><i class="fa-solid fa-scroll"></i> {{ t`走酒馆正则` }}</span>
-      <span class="choice-stregex-desc">{{
-        t`开：聊天记录先过酒馆全局/预设/角色卡正则，再走本页规则；关：跳过酒馆正则，只用本页规则`
-      }}</span>
-      <ChoiceSwitch
-        v-model="gs.settings.filter_settings.st_regex_enabled"
-        class="choice-stregex-switch"
-        :title="gs.settings.filter_settings.st_regex_enabled ? t`酒馆正则已启用` : t`酒馆正则已关闭，仅使用本页规则`"
-      />
-    </div>
+      <div class="choice-stregex-head" data-tour="filter-stregex-toggle">
+        <span class="choice-inline-label"><i class="fa-solid fa-scroll"></i> {{ t`走酒馆正则` }}</span>
+        <span class="choice-stregex-desc">{{
+          t`开：聊天记录先过酒馆全局/预设/角色卡正则，再走本页规则；关：跳过酒馆正则，只用本页规则`
+        }}</span>
+        <ChoiceSwitch
+          v-model="gs.settings.filter_settings.st_regex_enabled"
+          class="choice-stregex-switch"
+          :title="gs.settings.filter_settings.st_regex_enabled ? t`酒馆正则已启用` : t`酒馆正则已关闭，仅使用本页规则`"
+        />
+      </div>
     </div>
 
     <div class="choice-section">
-    <!-- 标签提取快速区（新手入口）：不理解分区/分组/正则也能用，填标签名即可。
+      <!-- 标签提取快速区（新手入口）：不理解分区/分组/正则也能用，填标签名即可。
          规则存进固定 id 的专用全局分组（见 global-settings ensureExtractGroup），
          生成时恒定先于下方手动分组的 tag/regex 规则执行（先裁剪后过滤），互不干扰。
          预览行实时演示"填的名字 → 匹配的标签对"，消除"单框到底填什么"的疑惑 -->
-    <div class="choice-extract-quick" data-tour="filter-extract-quick">
-      <div class="choice-extract-quick-head">
-        <span class="choice-inline-label"><i class="fa-solid fa-bolt"></i> {{ t`标签提取` }}</span>
-        <span class="choice-extract-quick-desc">{{
-          t`新手推荐：只保留 AI 输出里指定标签对之间的内容，其余丢弃；用户输入原样保留`
-        }}</span>
-        <!-- 提取总开关：关 = 规则保留但全部停用（不受下方任何分组开关影响） -->
-        <ChoiceSwitch
-          v-model="gs.extractGroupEnabled"
-          class="choice-extract-quick-switch"
-          :title="gs.extractGroupEnabled ? t`标签提取已启用` : t`标签提取已停用（规则保留）`"
-        />
+      <div class="choice-extract-quick" data-tour="filter-extract-quick">
+        <div class="choice-extract-quick-head">
+          <span class="choice-inline-label"><i class="fa-solid fa-bolt"></i> {{ t`标签提取` }}</span>
+          <span class="choice-extract-quick-desc">{{
+            t`新手推荐：只保留 AI 输出里指定标签对之间的内容，其余丢弃；用户输入原样保留`
+          }}</span>
+          <!-- 提取总开关：关 = 规则保留但全部停用（不受下方任何分组开关影响） -->
+          <ChoiceSwitch
+            v-model="gs.extractGroupEnabled"
+            class="choice-extract-quick-switch"
+            :title="gs.extractGroupEnabled ? t`标签提取已启用` : t`标签提取已停用（规则保留）`"
+          />
+        </div>
+        <div class="choice-extract-quick-row">
+          <input
+            v-model="extractInput"
+            class="choice-input choice-extract-input"
+            :placeholder="t`只填标签名，如：正文`"
+            @keydown.enter="addExtract"
+          />
+          <button class="choice-btn-sm choice-btn-new" @click="addExtract">
+            <i class="fa-solid fa-plus"></i> {{ t`提取该标签` }}
+          </button>
+        </div>
+        <!-- 实时预览：填"正文"就展示 <正文>…</正文>，所见即所提取 -->
+        <div class="choice-extract-preview">
+          <span v-if="extractPreviewName">
+            {{ t`对 AI 输出只保留 ${extractPreviewName} 之间的内容（含标签本身），其余丢弃；用户输入原样保留：` }}
+            <code class="choice-extract-preview-tag"
+              >&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code
+            >
+          </span>
+          <span v-else>{{ t`示例：卡里的剧情若包在 &lt;正文&gt;…&lt;/正文&gt; 里，这里就填「正文」` }}</span>
+        </div>
+        <div
+          v-if="gs.extractTagNames.length > 0"
+          class="choice-extract-chips"
+          :class="{ 'choice-extract-chips--off': !gs.extractGroupEnabled }"
+        >
+          <span v-for="name in gs.extractTagNames" :key="name" class="choice-extract-chip">
+            <span class="choice-extract-chip-tag">&lt;{{ name }}&gt;</span>
+            <i class="fa-solid fa-xmark" :title="t`移除该提取标签`" @click="gs.removeExtractRule(name)"></i>
+          </span>
+        </div>
       </div>
-      <div class="choice-extract-quick-row">
-        <input
-          v-model="extractInput"
-          class="choice-input choice-extract-input"
-          :placeholder="t`只填标签名，如：正文`"
-          @keydown.enter="addExtract"
-        />
-        <button class="choice-btn-sm choice-btn-new" @click="addExtract">
-          <i class="fa-solid fa-plus"></i> {{ t`提取该标签` }}
-        </button>
-      </div>
-      <!-- 实时预览：填"正文"就展示 <正文>…</正文>，所见即所提取 -->
-      <div class="choice-extract-preview">
-        <span v-if="extractPreviewName">
-          {{ t`对 AI 输出只保留 ${extractPreviewName} 之间的内容（含标签本身），其余丢弃；用户输入原样保留：` }}
-          <code class="choice-extract-preview-tag"
-            >&lt;{{ extractPreviewName }}&gt;…&lt;/{{ extractPreviewName }}&gt;</code
-          >
-        </span>
-        <span v-else>{{ t`示例：卡里的剧情若包在 &lt;正文&gt;…&lt;/正文&gt; 里，这里就填「正文」` }}</span>
-      </div>
-      <div
-        v-if="gs.extractTagNames.length > 0"
-        class="choice-extract-chips"
-        :class="{ 'choice-extract-chips--off': !gs.extractGroupEnabled }"
-      >
-        <span v-for="name in gs.extractTagNames" :key="name" class="choice-extract-chip">
-          <span class="choice-extract-chip-tag">&lt;{{ name }}&gt;</span>
-          <i class="fa-solid fa-xmark" :title="t`移除该提取标签`" @click="gs.removeExtractRule(name)"></i>
-        </span>
-      </div>
-    </div>
     </div>
 
     <div class="choice-section" data-tour="filter-global-head">
@@ -95,25 +97,25 @@
           <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
         </button>
       </div>
-    <div ref="globalListEl" class="choice-filter-group-list" data-area="global">
-      <FilterGroupPanel
-        v-for="group in globalGroupsSorted"
-        :key="group.id"
-        :group-id="group.id"
-        :data-group-id="group.id"
-        :dimmed="false"
-        :show-bindings="false"
-        :binding-label="''"
-        :binding-icon="''"
-        :duplicate-indices="getDuplicateIndices(group.id)"
-        @add-from-library="openLibrary(group.id)"
-        @delete="onDeleteGroup(group.id)"
-        @unbind="() => {}"
-      />
-      <div v-if="globalGroups.length === 0" class="choice-empty-hint">
-        <span>{{ t`暂无全局分组，点击「新增分组」创建` }}</span>
+      <div ref="globalListEl" class="choice-filter-group-list" data-area="global">
+        <FilterGroupPanel
+          v-for="group in globalGroupsSorted"
+          :key="group.id"
+          :group-id="group.id"
+          :data-group-id="group.id"
+          :dimmed="false"
+          :show-bindings="false"
+          :binding-label="''"
+          :binding-icon="''"
+          :duplicate-indices="getDuplicateIndices(group.id)"
+          @add-from-library="openLibrary(group.id)"
+          @delete="onDeleteGroup(group.id)"
+          @unbind="() => {}"
+        />
+        <div v-if="globalGroups.length === 0" class="choice-empty-hint">
+          <span>{{ t`暂无全局分组，点击「新增分组」创建` }}</span>
+        </div>
       </div>
-    </div>
     </div>
 
     <div class="choice-section">
@@ -123,26 +125,26 @@
           <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
         </button>
       </div>
-    <div ref="presetListEl" class="choice-filter-group-list" data-area="preset">
-      <FilterGroupPanel
-        v-for="group in presetGroupsSorted"
-        :key="group.id"
-        :group-id="group.id"
-        :data-group-id="group.id"
-        :dimmed="!isPresetActive(group)"
-        :show-bindings="true"
-        :binding-label="group.preset_name ?? ''"
-        :binding-icon="'fa-solid fa-sliders'"
-        :duplicate-indices="getDuplicateIndices(group.id)"
-        @add-from-library="openLibrary(group.id)"
-        @delete="onDeleteGroup(group.id)"
-        @unbind="unbindPreset(group)"
-        @bind-to-current="bindPresetToCurrent(group)"
-      />
-      <div v-if="presetGroups.length === 0" class="choice-empty-hint">
-        <span>{{ t`暂无预设分组，点击「新增分组」创建` }}</span>
+      <div ref="presetListEl" class="choice-filter-group-list" data-area="preset">
+        <FilterGroupPanel
+          v-for="group in presetGroupsSorted"
+          :key="group.id"
+          :group-id="group.id"
+          :data-group-id="group.id"
+          :dimmed="!isPresetActive(group)"
+          :show-bindings="true"
+          :binding-label="group.preset_name ?? ''"
+          :binding-icon="'fa-solid fa-sliders'"
+          :duplicate-indices="getDuplicateIndices(group.id)"
+          @add-from-library="openLibrary(group.id)"
+          @delete="onDeleteGroup(group.id)"
+          @unbind="unbindPreset(group)"
+          @bind-to-current="bindPresetToCurrent(group)"
+        />
+        <div v-if="presetGroups.length === 0" class="choice-empty-hint">
+          <span>{{ t`暂无预设分组，点击「新增分组」创建` }}</span>
+        </div>
       </div>
-    </div>
     </div>
 
     <div class="choice-section">
@@ -152,25 +154,25 @@
           <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
         </button>
       </div>
-    <div ref="charListEl" class="choice-filter-group-list" data-area="character">
-      <FilterGroupPanel
-        v-for="group in charGroupsSorted"
-        :key="group.id"
-        :group-id="group.id"
-        :data-group-id="group.id"
-        :dimmed="!isCharActive(group)"
-        :show-bindings="true"
-        :binding-label="getCharName(group.character_id)"
-        :binding-icon="'fa-solid fa-address-card'"
-        :duplicate-indices="getDuplicateIndices(group.id)"
-        @add-from-library="openLibrary(group.id)"
-        @delete="onDeleteGroup(group.id)"
-        @unbind="unbindCharacter(group)"
-      />
-      <div v-if="charGroups.length === 0" class="choice-empty-hint">
-        <span>{{ t`暂无角色卡分组，点击「新增分组」创建` }}</span>
+      <div ref="charListEl" class="choice-filter-group-list" data-area="character">
+        <FilterGroupPanel
+          v-for="group in charGroupsSorted"
+          :key="group.id"
+          :group-id="group.id"
+          :data-group-id="group.id"
+          :dimmed="!isCharActive(group)"
+          :show-bindings="true"
+          :binding-label="getCharName(group.character_id)"
+          :binding-icon="'fa-solid fa-address-card'"
+          :duplicate-indices="getDuplicateIndices(group.id)"
+          @add-from-library="openLibrary(group.id)"
+          @delete="onDeleteGroup(group.id)"
+          @unbind="unbindCharacter(group)"
+        />
+        <div v-if="charGroups.length === 0" class="choice-empty-hint">
+          <span>{{ t`暂无角色卡分组，点击「新增分组」创建` }}</span>
+        </div>
       </div>
-    </div>
     </div>
 
     <button

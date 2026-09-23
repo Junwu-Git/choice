@@ -25,7 +25,7 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
  * 有需求值（AI 标注或档位兜底）的选项按 resolveOptionSuccessRate 判定——掷出 ≥ 需求值
  * 才算成功，点数越大越好。判定结果随所有行为生效：成功/失败/大成功/大失败都把演绎指令
  * 包在 HTML 注释中拼入应用文本（send 直接发送、fill/insert/append 填入输入框可编辑删除，
-*  AI 请求文本原样携带、聊天界面渲染不可见；v57 起成功也注入，模板支持 {margin}/{degree}，
+ *  AI 请求文本原样携带、聊天界面渲染不可见；v57 起成功也注入，模板支持 {margin}/{degree}，
  *  degree = 点数与需求差值的程度词，见 core/dice.ts marginDegree；成功模板为空则不注入）。
  *  v58：成功/失败模板按 margin 档位拆独立指令（见 core/dice.ts degreeTierFor），
  *  每档 send 为空回退该结局单条回退文案。

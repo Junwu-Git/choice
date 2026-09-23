@@ -276,7 +276,12 @@
     </div>
 
     <!-- 条目榜（主内容；分组默认折叠，展开后限高滚动，避免无限撑长页面） -->
-    <ChoiceSectionCard id="choice-stats-anchor-leaderboard" title="条目榜" icon="fa-solid fa-ranking-star" data-anchor="leaderboard">
+    <ChoiceSectionCard
+      id="choice-stats-anchor-leaderboard"
+      title="条目榜"
+      icon="fa-solid fa-ranking-star"
+      data-anchor="leaderboard"
+    >
       <template #extra>
         <span class="choice-stats-info" :title="leaderboardHelp"><i class="fa-solid fa-circle-info"></i></span>
         <div class="choice-stats-head-actions">
@@ -457,78 +462,74 @@
       <template #extra>
         <span class="choice-stats-info" :title="diceHelp"><i class="fa-solid fa-circle-info"></i></span>
       </template>
-        <p class="choice-stats-sub">
-          {{ t`共 ${diceStats.total_rolls} 次判定 · 胜率 ${diceRateText}（大成功 + 成功 ÷ 总掷数）` }}
-        </p>
-        <div v-if="diceStats.total_rolls === 0" class="choice-empty-hint">{{ t`尚未进行过骰子判定` }}</div>
-        <template v-else>
-          <div class="choice-stats-cards">
-            <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
-                ><i class="fa-solid fa-dice"></i
-              ></span>
-              <div class="choice-stats-card-body">
-                <div class="choice-stats-card-label">{{ t`总掷数` }}</div>
-                <div class="choice-stats-card-value">{{ diceStats.total_rolls }}</div>
-              </div>
-            </div>
-            <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit-success"
-                ><i class="fa-solid fa-star"></i
-              ></span>
-              <div class="choice-stats-card-body">
-                <div class="choice-stats-card-label">{{ t`大成功` }}</div>
-                <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
-              </div>
-            </div>
-            <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--success"
-                ><i class="fa-solid fa-check"></i
-              ></span>
-              <div class="choice-stats-card-body">
-                <div class="choice-stats-card-label">{{ t`成功` }}</div>
-                <div class="choice-stats-card-value">{{ diceStats.by_outcome.success }}</div>
-              </div>
-            </div>
-            <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--danger"
-                ><i class="fa-solid fa-xmark"></i
-              ></span>
-              <div class="choice-stats-card-body">
-                <div class="choice-stats-card-label">{{ t`失败` }}</div>
-                <div class="choice-stats-card-value">{{ diceStats.by_outcome.fail }}</div>
-              </div>
-            </div>
-            <div class="choice-stats-card">
-              <span class="choice-stats-card-icon choice-stats-card-icon--crit-fail"
-                ><i class="fa-solid fa-bolt"></i
-              ></span>
-              <div class="choice-stats-card-body">
-                <div class="choice-stats-card-label">{{ t`大失败` }}</div>
-                <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>
-              </div>
+      <p class="choice-stats-sub">
+        {{ t`共 ${diceStats.total_rolls} 次判定 · 胜率 ${diceRateText}（大成功 + 成功 ÷ 总掷数）` }}
+      </p>
+      <div v-if="diceStats.total_rolls === 0" class="choice-empty-hint">{{ t`尚未进行过骰子判定` }}</div>
+      <template v-else>
+        <div class="choice-stats-cards">
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"><i class="fa-solid fa-dice"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`总掷数` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.total_rolls }}</div>
             </div>
           </div>
-          <div class="choice-stats-sub-block">
-            <div class="choice-stats-sub-block-head">
-              <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`近 7 天判定` }}</span>
-            </div>
-            <p class="choice-stats-sub">{{ t`每日判定次数（含大成功/大失败）` }}</p>
-            <div class="choice-chart">
-              <div v-for="p in diceTrend" :key="p.key" class="choice-chart-day">
-                <div class="choice-chart-bars">
-                  <div
-                    class="choice-chart-col choice-chart-col--dice"
-                    :style="{ height: diceBarHeight(p.total) }"
-                    :title="`${p.label} ${t`判定`} ${p.total}`"
-                  ></div>
-                </div>
-                <!-- 骰子图固定 7 天，标签全显示（不复用受 trendDays 影响的 showChartLabel） -->
-                <span class="choice-chart-label">{{ p.label }}</span>
-              </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--crit-success"
+              ><i class="fa-solid fa-star"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`大成功` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
             </div>
           </div>
-        </template>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-check"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`成功` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.success }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-xmark"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`失败` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.fail }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--crit-fail"
+              ><i class="fa-solid fa-bolt"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`大失败` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`近 7 天判定` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`每日判定次数（含大成功/大失败）` }}</p>
+          <div class="choice-chart">
+            <div v-for="p in diceTrend" :key="p.key" class="choice-chart-day">
+              <div class="choice-chart-bars">
+                <div
+                  class="choice-chart-col choice-chart-col--dice"
+                  :style="{ height: diceBarHeight(p.total) }"
+                  :title="`${p.label} ${t`判定`} ${p.total}`"
+                ></div>
+              </div>
+              <!-- 骰子图固定 7 天，标签全显示（不复用受 trendDays 影响的 showChartLabel） -->
+              <span class="choice-chart-label">{{ p.label }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
     </ChoiceSectionCard>
 
     <!-- 阵容计划（半自动：默认折叠；仅具体 config 维度可写） -->
@@ -552,55 +553,55 @@
           <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
         </button>
       </template>
-        <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
-        <div class="choice-stats-roster-bar">
-          <label class="choice-stats-toggle">
-            <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
-            <span>{{ t`启用` }}</span>
-          </label>
-          <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
-            {{ t`目标在役条数` }}
-            <input
-              v-model="rosterSizeText"
-              class="text_pole choice-stats-roster-input"
-              type="number"
-              min="1"
-              step="1"
-              :placeholder="t`如 12`"
-              @blur="syncRosterDisplay"
-            />
-          </label>
-        </div>
-        <div v-if="rosterPlan" class="choice-stats-roster-readout">
-          {{ t`在役 ${rosterPlan.activeCount} 条` }}
-          <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
-          · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
-        </div>
-        <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
-          <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
-            <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
-              <i class="fa-solid fa-arrow-down"></i>
-              {{ t`落出 (${rosterPlan.drops.length})` }}
-            </div>
-            <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
-              <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-              <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-            </div>
+      <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
+      <div class="choice-stats-roster-bar">
+        <label class="choice-stats-toggle">
+          <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
+          <span>{{ t`启用` }}</span>
+        </label>
+        <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
+          {{ t`目标在役条数` }}
+          <input
+            v-model="rosterSizeText"
+            class="text_pole choice-stats-roster-input"
+            type="number"
+            min="1"
+            step="1"
+            :placeholder="t`如 12`"
+            @blur="syncRosterDisplay"
+          />
+        </label>
+      </div>
+      <div v-if="rosterPlan" class="choice-stats-roster-readout">
+        {{ t`在役 ${rosterPlan.activeCount} 条` }}
+        <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
+        · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
+      </div>
+      <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
+        <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
+            <i class="fa-solid fa-arrow-down"></i>
+            {{ t`落出 (${rosterPlan.drops.length})` }}
           </div>
-          <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
-            <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
-              <i class="fa-solid fa-arrow-up"></i>
-              {{ t`补入 (${rosterPlan.promotes.length})` }}
-            </div>
-            <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
-              <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-              <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-            </div>
-          </div>
-          <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
-            {{ rosterEmptyText }}
+          <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
           </div>
         </div>
+        <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
+            <i class="fa-solid fa-arrow-up"></i>
+            {{ t`补入 (${rosterPlan.promotes.length})` }}
+          </div>
+          <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
+          </div>
+        </div>
+        <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
+          {{ rosterEmptyText }}
+        </div>
+      </div>
     </ChoiceSectionCard>
 
     <!-- 应用历史：最近自动化写入批次（持久撤销槽的可视化，刷新不丢；默认折叠；统计或自动化
@@ -618,35 +619,35 @@
           t`共 ${historyEntries.length} 批，可逐条撤销`
         }}</span>
       </template>
-        <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
-        <div class="choice-stats-history">
-          <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
-            <div class="choice-stats-history-head">
-              <span
-                class="choice-stats-kind"
-                :class="h.entry.kind === 'roster' ? 'choice-stats-kind--roster' : 'choice-stats-kind--suggestions'"
-                >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
-              >
-              <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
-                h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
-              }}</span>
-              <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
-              <button
-                class="choice-icon-btn choice-stats-history-undo"
-                :title="t`撤销这一批应用`"
-                @click="undoHistoryEntry(h.entry.id)"
-              >
-                <i class="fa-solid fa-rotate-left"></i>
-              </button>
-            </div>
-            <div v-if="h.changes.length > 0" class="choice-stats-history-changes">
-              <div v-for="c in h.changes" :key="c.entryId" class="choice-stats-history-change">
-                <span class="choice-stats-type-badge">{{ c.name }}</span>
-                <span class="choice-stats-history-change-text">{{ c.change }}</span>
-              </div>
+      <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
+      <div class="choice-stats-history">
+        <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
+          <div class="choice-stats-history-head">
+            <span
+              class="choice-stats-kind"
+              :class="h.entry.kind === 'roster' ? 'choice-stats-kind--roster' : 'choice-stats-kind--suggestions'"
+              >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
+            >
+            <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
+              h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
+            }}</span>
+            <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
+            <button
+              class="choice-icon-btn choice-stats-history-undo"
+              :title="t`撤销这一批应用`"
+              @click="undoHistoryEntry(h.entry.id)"
+            >
+              <i class="fa-solid fa-rotate-left"></i>
+            </button>
+          </div>
+          <div v-if="h.changes.length > 0" class="choice-stats-history-changes">
+            <div v-for="c in h.changes" :key="c.entryId" class="choice-stats-history-change">
+              <span class="choice-stats-type-badge">{{ c.name }}</span>
+              <span class="choice-stats-history-change-text">{{ c.change }}</span>
             </div>
           </div>
         </div>
+      </div>
     </ChoiceSectionCard>
 
     <!-- 命中榜（用户选择条目的排行；默认折叠） -->
@@ -654,46 +655,46 @@
       <template #extra>
         <span class="choice-stats-info" :title="hitRankHelp"><i class="fa-solid fa-circle-info"></i></span>
       </template>
-        <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
-        <div v-if="hitRank.length === 0" class="choice-empty">
-          <div class="choice-empty-icon"><i class="fa-solid fa-crown"></i></div>
-          <p>{{ t`尚未选择过任何条目` }}</p>
-        </div>
-        <div v-else class="choice-stats-rank">
-          <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
-            <div class="choice-stats-rank-main">
-              <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
-              <span
-                class="choice-stats-type-badge"
-                :class="{
-                  'choice-stats-type-badge--none': !row.type && !row.deleted,
-                  'choice-stats-type-badge--deleted': row.deleted,
-                }"
-                >{{ typeLabel(row) }}</span
-              >
-              <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ hitText(row) }}</span>
-              <button
-                v-if="!row.deleted"
-                class="choice-icon-btn choice-stats-locate"
-                :title="t`在条目库中定位`"
-                @click="locateEntry(row.entryId)"
-              >
-                <i class="fa-solid fa-location-crosshairs"></i>
-              </button>
-            </div>
-            <div class="choice-stats-rank-meta">
-              <span
-                >{{ t`命中次数` }} <b>{{ row.count }}</b></span
-              >
-              <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
-                >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
-              >
-              <span
-                >{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span
-              >
-            </div>
+      <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
+      <div v-if="hitRank.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-crown"></i></div>
+        <p>{{ t`尚未选择过任何条目` }}</p>
+      </div>
+      <div v-else class="choice-stats-rank">
+        <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
+          <div class="choice-stats-rank-main">
+            <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
+            <span
+              class="choice-stats-type-badge"
+              :class="{
+                'choice-stats-type-badge--none': !row.type && !row.deleted,
+                'choice-stats-type-badge--deleted': row.deleted,
+              }"
+              >{{ typeLabel(row) }}</span
+            >
+            <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ hitText(row) }}</span>
+            <button
+              v-if="!row.deleted"
+              class="choice-icon-btn choice-stats-locate"
+              :title="t`在条目库中定位`"
+              @click="locateEntry(row.entryId)"
+            >
+              <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
+          </div>
+          <div class="choice-stats-rank-meta">
+            <span
+              >{{ t`命中次数` }} <b>{{ row.count }}</b></span
+            >
+            <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
+              >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
+            >
+            <span
+              >{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span
+            >
           </div>
         </div>
+      </div>
     </ChoiceSectionCard>
 
     <!-- 管理（默认折叠） -->
@@ -701,17 +702,17 @@
       <template #extra>
         <span class="choice-stats-info" :title="manageHelp"><i class="fa-solid fa-circle-info"></i></span>
       </template>
-        <p class="choice-stats-sub">{{ t`导出 JSON 备份 / 清空后重新统计` }}</p>
-        <div class="choice-stats-actions">
-          <button class="menu_button" :title="t`导出统计为 JSON`" @click="exportStats()">
-            <i class="fa-solid fa-download"></i>
-            {{ t`导出 JSON` }}
-          </button>
-          <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="onClearStats">
-            <i class="fa-solid fa-broom"></i>
-            {{ t`清空统计` }}
-          </button>
-        </div>
+      <p class="choice-stats-sub">{{ t`导出 JSON 备份 / 清空后重新统计` }}</p>
+      <div class="choice-stats-actions">
+        <button class="menu_button" :title="t`导出统计为 JSON`" @click="exportStats()">
+          <i class="fa-solid fa-download"></i>
+          {{ t`导出 JSON` }}
+        </button>
+        <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="onClearStats">
+          <i class="fa-solid fa-broom"></i>
+          {{ t`清空统计` }}
+        </button>
+      </div>
     </ChoiceSectionCard>
 
     <ConfirmDialog :open="clearOpen" @confirm="confirmClear" @cancel="cancelClear" />
