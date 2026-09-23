@@ -1,9 +1,25 @@
 <template>
   <div class="choice-appearance-editor">
+    <!-- 高级功能分区：纯 UI 分层开关，独立成区——它是「设置页显示哪些 tab」的开关，
+         不属于悬浮窗或聊天界面任一类别。appearance 是基础 tab，简化模式下它是
+         重新开启高级 tab 的唯一入口，必须任何模式下都可达 -->
+    <div class="choice-section">
+      <h4 class="choice-section-title">{{ t`高级功能` }}</h4>
+      <div class="choice-behavior-grid">
+        <label class="choice-toggle">
+          <input v-model="ui.advanced_features_enabled" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`显示进阶设置页` }}</strong>
+            <small>{{ t`提示词、世界书、过滤、调试等设置页的显隐开关` }}</small>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <!-- 悬浮窗分区：悬浮球开关 + 单击行为。data-tour 锚点挂在此区
          （引导 chapter 的 appearance-floating 步骤聚焦悬浮窗相关设置） -->
-    <div class="choice-section" data-tour="appearance-floating">
-      <h4 class="choice-section-title">{{ t`悬浮窗` }}</h4>
+    <ChoiceSectionCard title="悬浮窗" icon="fa-solid fa-circle-nodes" data-tour="appearance-floating">
       <div class="choice-behavior-grid">
         <label class="choice-toggle">
           <input :checked="ui.floating_enabled" type="checkbox" @change="onEntryToggle('floating', $event)" />
@@ -58,11 +74,10 @@
           {{ t`紧凑` }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 聊天界面分区：聊天内选项面板 + 停靠位置 + 魔棒入口 -->
-    <div class="choice-section">
-      <h4 class="choice-section-title">{{ t`聊天界面` }}</h4>
+    <ChoiceSectionCard title="聊天界面" icon="fa-solid fa-comments">
       <div class="choice-behavior-grid">
         <label class="choice-toggle">
           <input :checked="ui.chat_panel_enabled" type="checkbox" @change="onEntryToggle('chat', $event)" />
@@ -119,27 +134,9 @@
           {{ t`输入框上方` }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <!-- 高级功能分区：纯 UI 分层开关，独立成区——它是「设置页显示哪些 tab」的开关，
-         不属于悬浮窗或聊天界面任一类别。appearance 是基础 tab，简化模式下它是
-         重新开启高级 tab 的唯一入口，必须任何模式下都可达 -->
-    <div class="choice-section">
-      <h4 class="choice-section-title">{{ t`高级功能` }}</h4>
-      <div class="choice-behavior-grid">
-        <label class="choice-toggle">
-          <input v-model="ui.advanced_features_enabled" type="checkbox" />
-          <span class="choice-toggle-custom"></span>
-          <span class="choice-toggle-label">
-            <strong>{{ t`显示进阶设置页` }}</strong>
-            <small>{{ t`提示词、世界书、过滤、调试等设置页的显隐开关` }}</small>
-          </span>
-        </label>
-      </div>
-    </div>
-
-    <div class="choice-section" data-tour="appearance-theme">
-      <h4 class="choice-section-title">{{ t`主题` }}</h4>
+    <ChoiceSectionCard title="主题" icon="fa-solid fa-palette" data-tour="appearance-theme">
       <div class="choice-seg">
         <button
           class="choice-seg-btn"
@@ -191,10 +188,9 @@
           {{ preset.label }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <div class="choice-section">
-      <h4 class="choice-section-title">{{ t`字体大小` }}</h4>
+    <ChoiceSectionCard title="字体大小" icon="fa-solid fa-text-height">
       <div class="choice-seg">
         <!-- 跟随设备：有效档在 global-settings 计算（触屏 small / 桌面 medium）。
              点具体档位即退出跟随并固定，此按钮用于回到自动——不加它，手机用户
@@ -218,11 +214,12 @@
           {{ size.label }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { THEME_OPTIONS } from '@/core/theme-presets';
 import { setEntryVisible, type EntryKey } from '@/core/entry-points';

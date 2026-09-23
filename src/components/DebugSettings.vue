@@ -1,7 +1,7 @@
 <template>
   <div class="choice-debug-settings">
-    <div class="choice-debug-section">
-      <h4 class="choice-section-title">{{ t`版本信息` }}</h4>
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-code"></i>{{ t`版本信息` }}</h4>
       <p>Schema: {{ globalStore.settings.schema_version }}</p>
       <p>Prompt Schema: {{ globalStore.settings.prompt_rules.schema_version }}</p>
       <p>{{ t`模块数` }}: {{ globalStore.settings.prompt_rules.modules.length }}</p>
@@ -9,8 +9,8 @@
       <p>{{ t`配置数` }}: {{ globalStore.settings.configs.length }}</p>
       <p>{{ t`API 数` }}: {{ globalStore.settings.apis.length }}</p>
     </div>
-    <div class="choice-debug-section">
-      <h4 class="choice-section-title">{{ t`上次生成的消息` }}</h4>
+
+    <ChoiceSectionCard title="上次生成的消息" icon="fa-solid fa-terminal">
       <div v-if="!lastBuildMessages" class="choice-empty-hint">{{ t`尚未生成过` }}</div>
       <div v-else class="choice-debug-messages">
         <div v-for="(m, i) in lastBuildMessages" :key="i" class="choice-debug-msg">
@@ -18,9 +18,9 @@
           <span class="choice-debug-content">{{ truncate(m.content) }}</span>
         </div>
       </div>
-    </div>
-    <div class="choice-debug-section">
-      <h4 class="choice-section-title">{{ t`上次去重报告` }}</h4>
+    </ChoiceSectionCard>
+
+    <ChoiceSectionCard title="上次去重报告" icon="fa-solid fa-clone">
       <div v-if="!lastDedupReport || !lastDedupReport.details.length" class="choice-empty-hint">
         {{ t`去重未触发（未启用或无重复）` }}
       </div>
@@ -57,9 +57,9 @@
           </div>
         </div>
       </div>
-    </div>
-    <div class="choice-debug-section">
-      <h4 class="choice-section-title">{{ t`占位符速查` }}</h4>
+    </ChoiceSectionCard>
+
+    <ChoiceSectionCard title="占位符速查" icon="fa-solid fa-dollar-sign">
       <p class="choice-debug-hint">
         {{ t`模块内容里可写的变量，生成时自动替换成实际值（供复制到提示词模块中使用）` }}
       </p>
@@ -69,18 +69,19 @@
           <span class="choice-debug-ph-desc">{{ ph.desc }}</span>
         </div>
       </div>
-    </div>
-    <div class="choice-debug-section">
-      <h4 class="choice-section-title">{{ t`危险操作` }}</h4>
+    </ChoiceSectionCard>
+
+    <ChoiceSectionCard title="危险操作" icon="fa-solid fa-triangle-exclamation" tone="danger" default-open>
       <button class="menu_button" :title="t`删除所有设置并恢复为插件出厂默认值`" @click="factoryReset">
         <i class="fa-solid fa-rotate-left"></i>
         {{ t`恢复出厂设置` }}
       </button>
-    </div>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { lastBuildMessages, lastDedupReport } from '@/core/generator';
@@ -132,11 +133,7 @@ function truncate(s: string, n = 120): string {
   gap: var(--choice-space-4);
 }
 
-.choice-debug-section h4 {
-  margin: 0;
-}
-
-.choice-debug-section p {
+.choice-debug-settings p {
   margin: 2px 0;
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);

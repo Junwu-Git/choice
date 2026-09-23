@@ -96,6 +96,11 @@ export const PoolConfig = z
     name: z.string(),
     entries: z.array(PoolConfigEntry),
     is_default: z.boolean().default(false),
+    /** 该配置的「全局规则」（可空）：系统专属选项的语体/奖励机制/格式要求等，随生成自动注入。
+     *  仅按需配置：空串 = 不注入，现有通用行为零变化。老存档由 default('') 补齐，无需 bump */
+    rules: z.string().default(''),
+    /** 该配置的「全局示例」（可空）：整套样例输出，与 rules 一同自动注入。规则见 rules 注释 */
+    examples: z.string().default(''),
     /** @deprecated v35 起抽取参数（分组抽取/打乱/固定溢出/冗余比例）收归全局
      *  GlobalSettings.generation——条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动
      *  任何生成参数（历史上生成设置页冗余比例读生效池配置，切池配置即跳变）。本字段仅为
@@ -1072,7 +1077,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 55;
+export const SCHEMA_VERSION = 57;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1474,31 +1479,67 @@ export function createEmptyStats(): StatsSettings {
   };
 }
 
-/** 骰子判定设置（v55）：选项点击时掷 D100 判定成败，失败/大成功/大失败按模板
- *  给发送文本带隐形演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
- *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。enabled 默认关——
- *  存量用户升级零行为变化；老档缺字段由 prefault({}) 补齐，无需内容迁移
- *  （提示词文本变更单独走 v55 迁移）。 */
+/** 骰子判定设置（v57，难度制）：选项点击时掷 D100 判定成败——AI 标注/档位兜底的数字是
+ *  「需求值」，掷出 ≥ 需求才算成功（点数越大越好，与正文 AI 直觉一致；v55 的
+ *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给发送文本带隐形
+ *  演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
+ *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。模板占位符
+ *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
+ *  成功侧勉强得手/顺利达成/漂亮完胜、失败侧差点成功/事与愿违/彻底落败、彩蛋固定
+ *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
+ *  send 模板（success_/fail_send_{low,mid,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
+ *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。 */
 export const DiceSettings = z
   .object({
-    /** 总开关：关 = 不掷骰、不显示成功率徽标、选项行为与 v54 完全一致 */
+    /** 总开关：关 = 不掷骰、不显示需求值徽标、选项行为与 v54 完全一致 */
     enabled: z.boolean().default(false),
-    /** 大成功阈值：掷出 ≤ 本值 → 大成功（默认 5，1–99） */
-    crit_success_max: z.number().min(1).max(99).default(5).catch(5),
-    /** 大失败阈值：掷出 ≥ 本值 → 大失败（默认 95，2–100） */
-    crit_fail_min: z.number().min(2).max(100).default(95).catch(95),
+    /** 大成功阈值（下限）：掷出 ≥ 本值 → 大成功（默认 96，即顶部 5%，2–100） */
+    crit_success_min: z.number().min(2).max(100).default(96).catch(96),
+    /** 大失败阈值（上限）：掷出 ≤ 本值 → 大失败（默认 5，即底部 5%，1–99） */
+    crit_fail_max: z.number().min(1).max(99).default(5).catch(5),
     /** send 模板为空时使用的回退文案，支持 {rate}（需求值）和 {roll}（点数）。 */
     fail_template: z.string().default('【判定失败】'),
     /** 大成功回退文案，同样支持占位符。 */
     crit_success_template: z.string().default('【大成功】'),
     /** 大失败回退文案，同样支持占位符。 */
     crit_fail_template: z.string().default('【大失败】'),
-    /** 隐形演绎指令（默认完整文案）：实际包在 HTML 注释中随消息发送/填入，聊天界面不可见。
-     *  所有点击行为共用（send 直接发送、fill/insert/append 填入输入框可编辑），为空时回退对应短文案 */
-    fail_send_template: z
+    /** 成功后回退文案（v57：成功也注入演绎指令），同样支持占位符。 */
+    success_template: z.string().default('【判定成功】'),
+    /** 隐形演绎指令（按程度档位拆分，v58）：实际包在 HTML 注释中随消息发送/填入，
+     *  聊天界面不可见；所有点击行为共用（send 直接发送、fill/insert/append 填入输入框
+     *  可编辑）。成功侧三档 = 勉强得手（low）/顺利达成（mid）/漂亮完胜（high），
+     *  失败侧三档 = 差点成功（low）/事与愿违（mid）/彻底落败（high），按 margin
+     *  命中档位取对应模板。某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
+     *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
+    success_send_low_template: z
       .string()
       .default(
-        '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
+        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+      ),
+    success_send_mid_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+      ),
+    success_send_high_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+      ),
+    fail_send_low_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
+      ),
+    fail_send_mid_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+      ),
+    fail_send_high_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
       ),
     crit_success_send_template: z
       .string()
@@ -1583,7 +1624,7 @@ export const GlobalSettings = z
     global_count_mode: z.string().default('4'),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
-    /** 骰子判定（v55）：AI 标注/档位兜底成功率 + D100 随机判定，失败等结局前缀标记 */
+    /** 骰子判定（v56 难度制）：AI 标注/档位兜底需求值 + D100 随机判定（掷 ≥ 需求值=成功），失败等结局前缀标记 */
     dice: DiceSettings.prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation

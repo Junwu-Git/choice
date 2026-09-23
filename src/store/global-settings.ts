@@ -822,6 +822,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '全局默认',
         entries: makeEntries(oldGlobalPool),
         is_default: true,
+        rules: '',
+        examples: '',
         // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）
         generation: (oldGlobalGen as any) ?? GenerationSettings.parse({}),
       });
@@ -834,6 +836,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: charName ? `角色 ${charName}` : '角色默认',
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
+        rules: '',
+        examples: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -856,6 +860,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '聊天默认',
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
+        rules: '',
+        examples: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -887,6 +893,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           enabled: true,
         })),
         is_default: true,
+        rules: '',
+        examples: '',
         generation: GenerationSettings.parse({}),
       });
     }
@@ -951,6 +959,8 @@ const applyDefaults = (validated: GlobalSettingsType) => {
             enabled: true,
           })),
           is_default: true,
+          rules: '',
+          examples: '',
           generation: GenerationSettings.parse({}),
         },
       ];
@@ -1956,6 +1966,67 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const cfg of validated.prompt_configs) migrateV54ModuleContent(cfg.modules);
   }
 
+  // v56：骰子判定改难度制——「成功率」标注语义反转并更名「需求值」（掷出 ≥ 需求
+  // 才算成功，行动越难标得越高），core_rules 输出格式示例去 %、thinking_prompt
+  // 自检句的档位趋同方向反转。exact-match（内容 === v55 默认才换，同 v53-v55
+  // 模式）保证用户自定义过的模块不动；from 字面量冻结 JSON 改动前的默认原文，
+  // to 取自 DEFAULT_MODULES（改动后即新默认），迁移终态与 JSON 单一事实源零漂移；
+  // 覆盖工作副本 + 所有配置快照。旧 v54 档在上一块（<55）已被收敛为 v55 默认，
+  // 正好是 v56 的 from，链式收敛到新默认。骰子设置字段更名（crit_success_max →
+  // crit_success_min 等）由 zod 解析 strip 旧键 + 新默认补齐，无需内容迁移。
+  if ((validated.schema_version ?? 0) < 56) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V55_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与成功率（见输出格式），档位整批尽量错开、成功率随难度区分。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题|档位|成功率]内容"（如 "[顺势而为|大胆|70%]内容"：标题用[]包裹，[]内竖线前是简洁行动标题、第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；成功率为 0-100 的整数百分比，按该选项在当前场景里的难度与成功把握估计——把握越低标得越低；拿不准档位或成功率就省略对应竖线段，不许乱标）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？成功率（0-100 的整数百分比）是否按难度给出、与档位风险趋同（越难越低）？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV55ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V55_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV55ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV55ModuleContent(cfg.modules);
+  }
+
+  // v57：骰子成功/失败模板按程度档位拆分。旧单条 success_send_template / fail_send_template
+  // 语义最接近 mid 档（「顺利达成」/「事与愿违」），迁到 *_send_mid_template；
+  // low/high 档为空（回退该结局短文案）。dice 对象 prefault({}) 已在 zod 补齐为新默认，
+  // 但旧键被 strip 前仍在 extension_settings 里——此处显式读取并回写 mid，
+  // 避免用户自定义过的旧模板在拆档后丢失（zod default 只补缺失、不覆盖已存值）。
+  // v56 及以前无 low/mid/high 拆分字段，用户不可能在本版本改过 mid，直接覆盖即可。
+  if ((validated.schema_version ?? 0) < 57) {
+    const dice = validated.dice as any;
+    const oldSuccess = _.get(extension_settings, [setting_field, 'dice', 'success_send_template']);
+    if (typeof oldSuccess === 'string' && oldSuccess.trim()) {
+      dice.success_send_mid_template = oldSuccess;
+    }
+    const oldFail = _.get(extension_settings, [setting_field, 'dice', 'fail_send_template']);
+    if (typeof oldFail === 'string' && oldFail.trim()) {
+      dice.fail_send_mid_template = oldFail;
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2692,6 +2763,8 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
           enabled: true,
         })),
         is_default: true,
+        rules: '',
+        examples: '',
         generation: GenerationSettings.parse({}),
       },
     ];

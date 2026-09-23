@@ -1,6 +1,8 @@
 <template>
   <div class="choice-generation-editor">
+    <!-- 基础行为：自动生成 + 输入润色。恒定展开的固定分组卡片 -->
     <div class="choice-section">
+      <h4 class="choice-section-title">{{ t`基础行为` }}</h4>
       <label class="choice-toggle" data-tour="gen-auto">
         <input v-model="gs.settings.auto_generate" type="checkbox" :title="t`开启后 AI 回复完自动生成选项`" />
         <span class="choice-toggle-custom"></span>
@@ -21,13 +23,9 @@
       </label>
     </div>
 
-    <div class="choice-section" data-tour="gen-behavior">
-      <div class="choice-field">
-        <div class="choice-field-label">
-          <label>{{ t`点击行为` }}</label>
-        </div>
-        <small class="choice-field-hint">{{ t`点击选项按钮后的动作，与选项面板头部同步` }}</small>
-      </div>
+    <!-- 点击行为 -->
+    <ChoiceSectionCard title="点击行为" icon="fa-solid fa-mouse-pointer" data-tour="gen-behavior">
+      <small class="choice-field-hint">{{ t`点击选项按钮后的动作，与选项面板头部同步` }}</small>
       <div class="choice-seg">
         <button
           class="choice-seg-btn"
@@ -66,14 +64,33 @@
           {{ t`插入` }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <!-- 骰子判定（v55）：成功率标注/档位兜底 + D100 随机判定。开关默认关，
-         关闭时选项行为与旧版完全一致；成功率徽标与判定 chip 均随本开关显隐。
-         披露器收纳：总开关常显在标题行右侧（extra slot），阈值/模板/长说明收起为展开区 -->
-    <ChoiceDisclosure title="骰子判定" data-tour="gen-dice" icon="fa-solid fa-dice">
+    <!-- 生成数量 -->
+    <ChoiceSectionCard title="生成数量" icon="fa-solid fa-hashtag" data-tour="gen-count">
+      <small class="choice-field-hint">{{ t`数字=固定数量，区间=每次随机（如 3-6）` }}</small>
+      <div class="choice-count-row">
+        <label class="choice-count-item">
+          <span>{{ t`选项数量` }}</span>
+          <input
+            v-model="gs.settings.global_count_mode"
+            class="choice-input choice-input-w-md"
+            :placeholder="t`如 4 或 3-6`"
+          />
+        </label>
+        <label class="choice-count-item">
+          <span>{{ t`润色版本数` }}</span>
+          <input v-model="ui.enrich_count" class="choice-input choice-input-w-md" :placeholder="t`如 4 或 3-6`" />
+        </label>
+      </div>
+    </ChoiceSectionCard>
+
+    <!-- 骰子判定（v56 难度制）：需求值标注/档位兜底 + D100 随机判定。开关默认关，
+         关闭时选项行为与旧版完全一致；需求值徽标与判定 chip 均随本开关显隐。
+         分组收纳：总开关常显在标题行右侧（extra slot），阈值/模板/长说明收起为展开区 -->
+    <ChoiceSectionCard title="骰子判定" data-tour="gen-dice" icon="fa-solid fa-dice">
       <template #extra>
-        <label class="choice-check" :title="t`开启后选项行显示成功率徽标，点击掷骰并播报结果`">
+        <label class="choice-check" :title="t`开启后选项行显示需求值徽标，点击掷骰并在行内显示判定结果`">
           <input v-model="gs.settings.dice.enabled" type="checkbox" />
           <span>{{ t`启用骰子判定` }}</span>
         </label>
@@ -82,35 +99,104 @@
         <label class="choice-count-item">
           <span>{{ t`大成功阈值` }}</span>
           <input
-            v-model.number="gs.settings.dice.crit_success_max"
+            v-model.number="gs.settings.dice.crit_success_min"
             class="choice-input choice-input-w-md"
             type="number"
-            min="1"
-            max="99"
-            :title="t`掷出 ≤ 此值判为大成功（默认 5）`"
+            min="2"
+            max="100"
+            :title="t`掷出 ≥ 此值判为大成功（默认 96）`"
           />
         </label>
         <label class="choice-count-item">
           <span>{{ t`大失败阈值` }}</span>
           <input
-            v-model.number="gs.settings.dice.crit_fail_min"
+            v-model.number="gs.settings.dice.crit_fail_max"
             class="choice-input choice-input-w-md"
             type="number"
-            min="2"
-            max="100"
-            :title="t`掷出 ≥ 此值判为大失败（默认 95）`"
+            min="1"
+            max="99"
+            :title="t`掷出 ≤ 此值判为大失败（默认 5）`"
           />
         </label>
       </div>
       <div class="choice-dice-template-list">
         <div class="choice-dice-template-row">
+          <strong>{{ t`成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`勉强得手` }}</span>
+            <input
+              v-model="gs.settings.dice.success_send_low_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin 0–32，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`顺利达成` }}</span>
+            <input
+              v-model="gs.settings.dice.success_send_mid_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin 33–65，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`漂亮完胜` }}</span>
+            <input
+              v-model="gs.settings.dice.success_send_high_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin ≥66，给 AI 的演绎指令`"
+            />
+          </label>
+          <label class="choice-count-item">
+            <span>{{ t`回退文案` }}</span>
+            <input
+              v-model="gs.settings.dice.success_template"
+              class="choice-input"
+              :placeholder="t`演绎指令留空时使用，如：【判定成功】`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
           <strong>{{ t`失败` }}</strong>
           <label class="choice-count-item">
-            <span>{{ t`隐形演绎指令` }}</span>
+            <span>{{ t`差点成功` }}</span>
             <input
-              v-model="gs.settings.dice.fail_send_template"
+              v-model="gs.settings.dice.fail_send_low_template"
               class="choice-input"
-              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin −1–−32，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`事与愿违` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_send_mid_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin −33–−65，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`彻底落败` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_send_high_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin ≤−66，给 AI 的演绎指令`"
             />
           </label>
           <label class="choice-count-item">
@@ -129,7 +215,8 @@
             <input
               v-model="gs.settings.dice.crit_success_send_template"
               class="choice-input"
-              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
             />
           </label>
           <label class="choice-count-item">
@@ -148,7 +235,8 @@
             <input
               v-model="gs.settings.dice.crit_fail_send_template"
               class="choice-input"
-              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll}`"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
             />
           </label>
           <label class="choice-count-item">
@@ -162,34 +250,12 @@
         </div>
       </div>
       <small class="choice-field-hint">{{
-        t`开启后点击选项时掷 D100：AI 标注成功率优先，未标注时按风险档位兜底（保守 85% / 平衡 60% / 大胆 35%）。判定结果以 HTML 注释随消息发送/填入（AI 可见、聊天界面不可见；填入时输入框可见注释，可编辑删除）；成功不加注释。润色视图与无成功率选项不参与判定`
+        t`开启后点击选项时掷 D100：AI 标注需求值优先，未标注时按风险档位兜底（保守 35 / 平衡 60 / 大胆 85）。判定为掷出 ≥ 需求值才算成功、点数越大越好。成功/失败会按点数与需求值的差距（margin）分三档，每档有独立的演绎指令——成功：勉强得手 / 顺利达成 / 漂亮完胜，失败：差点成功 / 事与愿违 / 彻底落败；大成功/大失败为固定单条。指令以 HTML 注释注入（AI 可见、聊天界面不可见；填入时输入框可见注释，可编辑删除），模板支持 {rate} {roll} {margin} {degree}；某档 send 留空回退该结局的回退文案、两者皆空则不注入。润色视图与无需求值选项不参与判定`
       }}</small>
-    </ChoiceDisclosure>
+    </ChoiceSectionCard>
 
-    <div class="choice-section" data-tour="gen-count">
-      <div class="choice-field">
-        <div class="choice-field-label">
-          <label>{{ t`生成数量` }}</label>
-        </div>
-        <small class="choice-field-hint">{{ t`数字=固定数量，区间=每次随机（如 3-6）` }}</small>
-      </div>
-      <div class="choice-count-row">
-        <label class="choice-count-item">
-          <span>{{ t`选项数量` }}</span>
-          <input
-            v-model="gs.settings.global_count_mode"
-            class="choice-input choice-input-w-md"
-            :placeholder="t`如 4 或 3-6`"
-          />
-        </label>
-        <label class="choice-count-item">
-          <span>{{ t`润色版本数` }}</span>
-          <input v-model="ui.enrich_count" class="choice-input choice-input-w-md" :placeholder="t`如 4 或 3-6`" />
-        </label>
-      </div>
-    </div>
-
-    <ChoiceDisclosure title="候选冗余">
+    <!-- 候选冗余 -->
+    <ChoiceSectionCard title="候选冗余" icon="fa-solid fa-layer-group">
       <small class="choice-field-hint">{{
         t`发送给 AI 的候选条目比选项数多出的比例，AI 从中挑选贴合当前场景的方向生成选项；0 表示候选数与选项数一致`
       }}</small>
@@ -207,9 +273,10 @@
           <span>%</span>
         </label>
       </div>
-    </ChoiceDisclosure>
+    </ChoiceSectionCard>
 
-    <ChoiceDisclosure title="防重复">
+    <!-- 防重复 -->
+    <ChoiceSectionCard title="防重复" icon="fa-solid fa-clone">
       <template #extra>
         <label class="choice-check" :title="t`生成后自动去重，不足时自动补齐`">
           <input v-model="gs.settings.generation.dedup_enabled" type="checkbox" />
@@ -231,15 +298,11 @@
           />
         </label>
       </div>
-    </ChoiceDisclosure>
+    </ChoiceSectionCard>
 
-    <div class="choice-section">
-      <div class="choice-field">
-        <div class="choice-field-label">
-          <label>{{ t`每条字数` }}</label>
-        </div>
-        <small class="choice-field-hint">{{ t`控制每条选项/润色版本的字数区间（中文字符）` }}</small>
-      </div>
+    <!-- 每条字数 -->
+    <ChoiceSectionCard title="每条字数" icon="fa-solid fa-text-width">
+      <small class="choice-field-hint">{{ t`控制每条选项/润色版本的字数区间（中文字符）` }}</small>
       <div class="choice-count-row">
         <label class="choice-count-item">
           <span>{{ t`选项` }}</span>
@@ -282,9 +345,10 @@
           />
         </label>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <ChoiceDisclosure title="人称视角">
+    <!-- 人称视角 -->
+    <ChoiceSectionCard title="人称视角" icon="fa-solid fa-user">
       <small class="choice-field-hint">{{ t`选项和润色输出的人称，如"第三人称"或"第一人称"` }}</small>
       <div class="choice-count-row">
         <label class="choice-count-item">
@@ -296,12 +360,12 @@
           <input v-model="rules.enrich_person" class="choice-input choice-input-w-lg" :placeholder="t`如：第三人称`" />
         </label>
       </div>
-    </ChoiceDisclosure>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
-import ChoiceDisclosure from '@/components/shared/ChoiceDisclosure.vue';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import {
   clampCharsValue,

@@ -11,6 +11,10 @@
  * parseOptionRate/parseOptionStyle/parseOptionType 共享同一拆分口径。兼容规则：
  * 任一段既不是受控档位词、也不是成功率数字时整段回退当标题（宁可不拆不错拆，
  * 防自定义 type 含竖线被误拆——与 v54 词表外防御同一哲学）。
+ *
+ * v56 起数字语义为「需求值」（难度制）：掷出 ≥ 需求值才算成功，点数越大越好、
+ * 行动越难标得越高。解析口径不变（仍容忍 0-100 整数、可带可不带 %），
+ * 仅含义从「成功概率」改为「达成所需的骰子点数下限」。
  */
 
 // 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
@@ -19,9 +23,9 @@ const OPTION_SEP_RE = /[:：]\s/;
 // 匹配开头的 [标题] 或 【标题】 模式，标题为括号内文字，括号后紧跟内容
 const OPTION_TYPE_BRACKET_RE = /^[[【]([^\]】]+)[\]】]\s*/;
 
-// 成功率段受控形态：可选「成功率」前缀 + 1-3 位整数 + 可选 %（容忍 AI 输出
-// 「成功率 70%」「70」等变体）。取数值后 clamp [0,100]——AI 输出 150% 视为 100。
-// 不接受小数/区间/自由文本（解析失败按无标注回退，宁缺勿错）
+// 需求值段受控形态：可选「成功率」前缀 + 1-3 位整数 + 可选 %（容忍 AI 沿旧习惯输出
+// 「成功率 70%」「70」等变体，v56 起含义为需求值）。取数值后 clamp [0,100]——AI 输出
+// 150% 视为 100。
 const RATE_SEGMENT_RE = /^(?:成功率)?\s*(\d{1,3})\s*%?$/i;
 
 const findOptionSep = (text: string): { idx: number; len: number } | null => {
@@ -95,12 +99,14 @@ const splitBracketParts = (
   return { title: head, style, rate };
 };
 
-/** 档位 → 兜底成功率（AI 未标注时按风险档位推导，供骰子判定）。兜底值本期固定，
- *  仅供 resolveOptionSuccessRate 消费；如需可配置再上移 schema（勿在两处各写一份） */
+/** 档位 → 兜底需求值（AI 未标注时按风险档位推导，供骰子判定。难度制：数字 = 达成
+ *  所需的骰子点数下限——保守=低需求易成、大胆=高需求难成，与 v55 的「成功率」含义
+ *  相反）。兜底值本期固定，仅供 resolveOptionSuccessRate 消费；如需可配置再上移
+ *  schema（勿在两处各写一份） */
 export const GRADE_FALLBACK_RATE: Readonly<Record<OptionStyleGrade, number>> = {
-  conservative: 85,
+  conservative: 35,
   balanced: 60,
-  bold: 35,
+  bold: 85,
 };
 
 export const parseOptionType = (text: string): string => {
@@ -118,7 +124,7 @@ export const parseOptionStyle = (text: string): OptionStyleGrade | null => {
   return splitBracketParts(m[1].replace(/"/g, '')).style;
 };
 
-/** 成功率解析：只处理 [标题] 括号形态。AI 标注段 → [0,100] 整数；
+/** 需求值解析：只处理 [标题] 括号形态。AI 标注段 → [0,100] 整数；
  *  无标注 / 格式不合法 → null（不做档位兜底，兜底见 resolveOptionSuccessRate）。 */
 export const parseOptionRate = (text: string): number | null => {
   const m = text.match(OPTION_TYPE_BRACKET_RE);
@@ -126,8 +132,9 @@ export const parseOptionRate = (text: string): number | null => {
   return splitBracketParts(m[1].replace(/"/g, '')).rate;
 };
 
-/** 选项最终成功率（UI 徽标与骰子判定的唯一解析点，两处禁止各写一套）：
- *  AI 标注优先，无标注时按风险档位兜底，无档位无标注 → null（不掷骰）。 */
+/** 选项最终需求值（UI 徽标与骰子判定的唯一解析点，两处禁止各写一套）：
+ *  AI 标注优先，无标注时按风险档位兜底，无档位无标注 → null（不掷骰）。
+ *  难度制语义：数值 = 掷出 ≥ 该值才算成功的需求下限，越大越难。 */
 export const resolveOptionSuccessRate = (text: string): number | null => {
   const rate = parseOptionRate(text);
   if (rate !== null) return rate;

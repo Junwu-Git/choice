@@ -7,8 +7,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 
 ## 与我协作时的约定
 
+- **内容性质与优先级**：本文档内容分两类——**约束/不变量**（功能正确性，不得违反）与**现状快照**（当前实现/风格的描述，信息性、可推翻）。**用户当前给出的 UI 示例、设计方向或口头指示优先级最高，高于本文档任何「现状」描述**。重建/改版 UI 时以用户给的示例为准，允许整体替换现有主题色、布局、组件与视觉语言，不必延续文档记载的既有风格；只要不破坏「约束/不变量」里的功能语义（如持久化、状态机行为），外观怎么改都行。
 - 回复用中文。
-- **每次改动都要检查本文件（AGENTS.md）并在改动完成时同步更新**：任何会影响架构、目录结构、导出面、持久化格式、UI 状态机或验证/环境约定的改动，落实后要顺手把对应条目从“待办/规划”改成“现状”（或反之），防止文档随项目漂移——本文档先前就曾因为未同步积累了大量事实性错误。改动收尾前自查一遍：新引入的模块/字段/命令是否已写进目录或约束小节；已删除的功能是否仍被当“现状”描述。不要把等待实现的设计目标误写成已实现。
+- **每次改动都要检查本文件（AGENTS.md）并在改动完成时同步更新**：任何会影响架构、目录结构、导出面、持久化格式、UI 状态机或验证/环境约定的改动，落实后要顺手把对应条目从“待办/规划”改成“现状”（或反之），防止文档随项目漂移——本文档先前就曾因为未同步积累了大量事实性错误。改动收尾前自查一遍：新引入的模块/字段/命令是否已写进目录或约束小节；已删除的功能是否仍被当“现状”描述。不要把等待实现的设计目标误写成已实现。更新时保持「约束/不变量」与「现状快照」两种措辞区分：现状用陈述句写「当前是…」，**不要写成「不要/必须/严禁」的命令式**；纯风格断言一律标注为现状、可改。用户示例高于文档描述。
 - 代码注释使用简体中文、简洁，解释“为什么”而不是“做什么”；覆盖规则、抽取算法、UI 状态机等容易被简化写错的地方，注释必须说明不能直接简化的原因。
 - 任何来自 `@sillytavern/...` 的导入，函数签名和导出名都不允许凭记忆假设。实现前必须去当前 clone 的真实酒馆源码或
   `TavernHelper` 类型定义核实，并把核实结论写进必要的代码注释，方便酒馆升级后复查。
@@ -159,31 +160,31 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 
 ## UI 设计系统与约定
 
-### 已落地的设计原则
+### 当前视觉风格（现状快照，非约束）
 
-- 不更换主色调；`--choice-primary` 蓝色系和 `ActionOptionsPanel.vue` 的整体视觉作为基准，只做细节打磨。
+以下仅记录当前实现的样子，供改版参考，**不是硬性设计规范**。重建/改版 UI 时以用户给出的示例为准，可直接推翻。
+
+- 当前主视觉：`--choice-primary` 蓝色系 + `ActionOptionsPanel.vue` 版式（仅现状；可整体替换主色与版式）。
 - 移动端优先：新组件先在约 380px 容器宽度验证，再扩展到桌面宽度。
-- 使用克制的卡片化和明确的信息层级，不做玻璃拟态或强动效。
-- **选项 HUD 化**（`ui.hud_enabled`，默认开）：选项行左缘 3px 风险档位色条（保守/平衡/大胆 →
-  `--choice-risk-*` 惰性引用各主题块的 success/info/warning 语义色（保守=成功、平衡=info、大胆=警告；暗色下 info=主色蓝，平衡档位即主色蓝）、`--choice-rate-*` 高/低档复用成功/警告、中档取主色（暗色下与平衡档位同为 info 主色蓝））、悬停增强（加深浮起 + 色条加宽 + 行尾箭头）、生成后逐条滑入动画（staggered 60ms/条，v-for key 含 generation id 保证切代重放；`prefers-reduced-motion` 下关闭）、同代已选打勾（✓ + 半透明虚线，组件内存态不持久化）。选项行本体（`.choice-option-btn`、`.choice-option-type`、`.choice-option-rate`、`.choice-roll-chip`、风险色条、悬停箭头、选中态）已统一为 global.css 单一来源，主面板（`choice-panel--hud` 容器）与悬浮球弹窗（`choice-floating-options--hud` 容器，类名现已统一为 `choice-option-btn--*` 前缀）共用同一套规则，两处不再各自维护。
-- **选项成功率骰子判定**（v55，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注成功率（`[标题|档位|70%]`，见 option-format 描述），未标注时按风险档位兜底（保守 85% / 平衡 60% / 大胆 35%，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≤ `crit_success_max`（默认 5）大成功 → roll ≥ `crit_fail_min`（默认 95）大失败 → roll ≤ rate 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效）。**判定影响随所有点击行为生效**：失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，模板优先 `*_send_template`、为空回退 `fail_template`/`crit_success_template`/`crit_fail_template`，回退也为空则不附加；支持 `{rate}`/`{roll}` 占位符）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带；成功无注释。成功率徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；按把握分档着色 ≥70 绿 / 40-69 蓝 / <40 橙）与行内判定 chip（成功/失败/大成功/大失败，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无成功率选项（AI 自由发挥）不掷骰。
-- `src/theme.css` 已包含颜色、间距、字号、圆角、阴影、层级和状态色 token。间距使用
-  `--choice-space-1`~`--choice-space-6`，字号使用 `--choice-text-xs/sm/base/lg/xl`，新增样式不要继续散落裸值。
-- 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。不要恢复硬编码 z-index。
+- 当前走克制的卡片化、清晰层级、无玻璃拟态/强动效（仅现状；如你要求玻璃拟态或更强动效，照做即可）。
+- **选项 HUD 化**（`ui.hud_enabled`，默认开）：**保留的行为不变量**——选项行本体（`.choice-option-btn`、`.choice-option-type`、`.choice-option-rate`、`.choice-roll-chip`）在 global.css 单一来源维护，主面板与悬浮球弹窗共用同一套规则（两处不再各自维护，避免判定/选中态行为漂移）；行内判定 chip 状态（选中打勾、判定结果显示与淡出）是组件内存态、不持久化；`prefers-reduced-motion` 下关闭动画。**当前视觉（可改，以用户示例为准）**——左缘 3px 风险档位色条（保守/平衡/大胆，当前惰性引用各主题语义色：保守=成功、平衡=info、大胆=警告）、`--choice-rate-*` 高/低档当前复用警告/成功、悬停加深浮起 + 色条加宽 + 行尾箭头、生成后逐条滑入（当前 staggered 60ms/条，v-for key 含 generation id 保证切代重放）、同代已选打勾（✓ + 半透明虚线）。
+- **选项骰子判定**（v57 难度制，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注需求值（`[标题|档位|70]`，见 option-format 描述），未标注时按风险档位兜底（保守 35 / 平衡 60 / 大胆 85，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≥ `crit_success_min`（默认 96）大成功 → roll ≤ `crit_fail_max`（默认 5）大失败 → roll ≥ 需求值 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效；**掷出 ≥ 需求值才算成功、点数越大越好**——v55「掷 ≤ 率 = 成功」概率制已废弃，用户直觉与正文 AI 均按高点数=成功理解）。**判定影响随所有点击行为生效**：成功/失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，v57 起成功也注入；支持 `{rate}`/`{roll}`/`{margin}`/`{degree}` 占位符——`margin` = 点数−需求、`degree` = 口语化程度词（成功侧勉强得手/顺利达成/漂亮完胜、失败侧差点成功/事与愿违/彻底落败、彩蛋固定惊艳无比/灾难性失败，断点 ±33/±66 固定常量 `DEGREE_*` 放 dice.ts）。**v58 起成功/失败模板按程度档位拆分**：`success_/fail_send_{low,mid,high}_template` 各档独立演绎指令，`buildDiceMarker` 经 `degreeTierFor(outcome, margin)`（`src/core/dice.ts`，彩蛋返回 null 走单条）命中档位取模板，某档为空回退该结局单条回退文案（`success_template`/`fail_template`，铺到三档兜底）、两者皆空不注入；彩蛋 `crit_success/crit_fail` 各保持单条）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带。需求值徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；当前按需求高低分档着色 ≥70 橙 / 40-69 蓝 / <40 绿，高=难，v56 相对 v55 已反转配色，配色随改版可调）与行内判定 chip（**结局+差值**如「成功 +18」「惨败 −38」，差值=点数−需求带符号，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现；**判定结果不再弹酒馆 toastr**（v55 失败走 toastr.error 红得像插件报错，v56 起仅真实错误如「发送框不可用」才 toastr，判定只走行内 chip）。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无需求值选项（AI 自由发挥）不掷骰。**判定 chip 的组件内存态逻辑（rollResults/rollOf/fmtMargin/rollChipText，type RollResult）在主面板与悬浮球各自实现，属既定并行模式**（解析/判定/行为共享层在 option-format/option-action/dice，chip 状态是视图私有展示态），改动需两处同步，勿只改一处。
+- `src/theme.css` 提供颜色、间距、字号、圆角、阴影、层级和状态色 token；间距用
+  `--choice-space-1`~`--choice-space-6`，字号用 `--choice-text-xs/sm/base/lg/xl`（现状；新增样式可沿用，改版换体系亦可）。
+- 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。（功能提示：遮罩/浮层 z 序需可预测，改版另立体系时请先与用户确认或复用现有 token，避免弹窗被遮。）
 
 ### Shared 组件现状与待办
 
 `src/components/shared/` 已有
-`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ChoiceDisclosure.vue`（折叠区容器：标题行 + chevron + 右侧常显 `extra` 插槽 + 内容 slot；状态组件内 `ref` 不持久化、切子区卸载即重置；`inheritAttrs:false` + `$attrs` 落容器供 `data-tour` 锚点透传；生成页 4 处披露器在用）、`ImportSourceDialog.vue`、`tab-definitions.ts`（两级导航定义：`PageId` 一级页 × `TabId` 子区）、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
-`useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；不要用 CSS `@container`
-替代，因为部分移动 WebView 可能静默忽略该规则。（`ChoiceSection.vue`/`ChoiceCard.vue`/`ChoiceField.vue`
+`ChoiceDialog.vue`、`ChoiceSwitch.vue`、`DragHandle.vue`、`ChoiceSectionCard.vue`（设置页**卡片式可折叠分组**：整块带边框卡片，标题行 + chevron + 右侧常显 `extra` 插槽 + 内容 slot。状态组件内 `ref` 不持久化、切子区卸载即重置；`inheritAttrs:false` + `$attrs` 落容器供 `data-tour` 锚点透传；**展开用 `v-show` 瞬时显示**（此前用 `grid-template-rows` 高度动画，用户反馈内容延迟露出，改 v-show 零延迟、内容始终挂载）、`prefers-reduced-motion` 下 chevron 无动画；卡片带轻微投影与 `--choice-border-strong`、标题图标恒用语义色点亮（`tone` prop，默认 `primary`，`danger` 走 `--choice-color-error`）、展开 chevron 转主色。生成页骰子判定/候选冗余/防重复/每条字数/人称视角、外观页主题/字体大小、调试页分区、API 页重试/渠道与模型、统计页折叠分区在用，已取代 `ChoiceDisclosure.vue`（后者已删除））、`ImportSourceDialog.vue`、`tab-definitions.ts`（两级导航定义：`PageId` 一级页 × `TabId` 子区）、`useCompactLayout.ts`、`ConfigBindings.vue`（条目池/提示词页共用的「已绑定角色卡」徽章行，含解绑）。其中
+`useCompactLayout` 使用 `@vueuse/core` 的 `useElementSize`，断点为 420px；仍建议用 `useElementSize`
+而非 CSS `@container`，因部分移动 WebView 可能静默忽略该规则。（`ChoiceSection.vue`/`ChoiceCard.vue`/`ChoiceField.vue`
 三个曾作为设计系统预备的零引用组件已于死代码清理中删除，git 历史可回溯。）
 
 **共享样式原子收在 `src/global.css`**（非 scoped，全局生效）：`.choice-check`（内联小复选框）、
 `.choice-toggle`/`-custom`/`-label`（卡片式开关行，标题+描述+自定义复选框；原 Appearance/Generation 各
 scoped 一份逐字重复，已收归此处）、`.choice-config-*`、`.choice-btn-sm`、`.choice-icon-btn`、
-`.choice-section`/`-title`、`.choice-empty`（空状态邀请）等。新增设置页分区/开关/空状态优先复用这些原子，
-不要在组件 scoped 里重抄；只有「≥2 处逐字相同」的块才提取，独有样式保留 scoped。
+`.choice-section`/`-title`（**恒定展开的固定分组卡片**：带边框/圆角/内边距，与 `ChoiceSectionCard` 共用视觉语言，只在「是否可折叠」上区分）、`.choice-empty`（空状态邀请）等（现状收在此处）。新增设置页分区/开关/空状态复用这些原子即可，但这不是硬性要求——只有「≥2 处逐字相同」的块才值得提取，独有样式保留 scoped。
 空态采用范围：条目池页（空池/无配置）与统计页条目榜/命中榜已用 `.choice-empty` 图标空态，其余页保持
 `.choice-empty-hint` 纯文本提示。
 
@@ -241,11 +242,30 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
   从「隐藏整 tab」改为「隐藏高级子区」（content 隐 prompt/worldinfo/filter、system 隐 debug），
   开关仍在 appearance 子区（基础层始终可达）；守卫 watch 在 activeSubArea 落入隐藏子区时弹回当前页首个基础子区。
   窗口模型仍为自由拖拽/可缩放浮窗（未改）。**UI 去杂乱第一期（骨架）**已落地：导航重组 + 原子整合。
-  **第二期（开关折叠 + 措辞 + 空状态）**已落地：生成页「骰子判定/候选冗余/防重复/人称视角」四段收进
-  `ChoiceDisclosure` 折叠披露器（骰子总开关与防重复启用开关常显在标题行右侧 `extra` slot；折叠状态组件内
+  **第二期（开关折叠 + 措辞 + 空状态）**已落地：生成页「骰子判定/候选冗余/防重复/每条字数/人称视角」收进
+  `ChoiceSectionCard` 卡片式折叠分组（骰子总开关与防重复启用开关常显在标题行右侧 `extra` slot；折叠状态组件内
   ref 不持久化、默认收起；`data-tour="gen-dice"` 经 `$attrs` 留在容器锚点）；`PAGE_HINTS`/引导文案「tab
   栏/设置页」过时措辞已改为「题首/子区」；条目池页与统计页条目榜/命中榜空态升级为 `.choice-empty` 图标空态。
   `data-tour` 锚点重指无需再做（一期已核实全部 target 指向编辑器内部锚点、无指向 tab-strip）。
+  **第三期（卡片化去杂乱）**已落地：页内平铺控件统一收进「带边框卡片 + 标题行」分组。新增
+  `ChoiceSectionCard.vue` 可折叠分组组件（默认折叠、`grid-template-rows` 动画）、`.choice-section`
+  升级为恒定展开的固定分组卡片（与 `ChoiceSectionCard` 共用视觉、仅「是否可折叠」区分）。生成页拆为
+  基础行为/点击行为/生成数量/骰子判定/候选冗余/防重复/每条字数/人称视角 8 组，外观页主题/字体大小、
+  调试页分区、API 页重试/渠道与模型均改卡片；内容页高级子页（提示词/世界书/过滤）套固定 `.choice-section`
+  卡片外壳（上下文设置/提示词配置/模块列表、设置/全局排除/已启用与未启用世界书、过滤设置/标签提取/
+  全局与预设与角色卡正则区），条目池为列表工具页未改。
+  折叠态为组件内 ref 不持久化；未改任何 store/schema/生成逻辑。
+  **卡片精修**已落地：卡片加轻微投影与 `--choice-border-strong`、标题图标恒用语义色点亮（新增 `tone`
+  prop，`danger` 走红色）、展开 chevron 转主色；折叠默认态统一（生成页仅「基础行为」展开、其余全部默认折叠；
+  调试页「危险操作」`default-open` 保证重置按钮可见、「版本信息」恒展开固定卡；外观页仅「高级功能」固定、
+  悬浮窗/聊天界面/主题/字体大小 可折叠；API URL 输入框补 `flex:1` 与其他栏等宽）。
+  **卡片展开瞬时化 + 统计页卡片迁移**已落地：`ChoiceSectionCard` 折叠体改 `v-show` 瞬时显示（去掉高度动画，
+  消除展开内容延迟露出的反馈）；统计页各区块统一迁移到卡片体系——可折叠分区（条目榜（默认折叠）/骰子战绩/阵容计划/应用历史/
+  命中榜/管理）用 `ChoiceSectionCard`、恒展开分区（统计与自动化控制簇、概览）用固定 `.choice-section`（概览按用户要求恒展开、条目榜按用户要求可折叠且默认折叠），
+  锚点经 `$attrs` 落到卡片根（`scroll-margin-top` 挂 `.choice-section-card[data-anchor]`/`.choice-section[data-anchor]`），
+  原本地 `show*` 折叠 refs 与旧 `.choice-stats-section-*` 头部样式已删；粘性子头**跳转 pills 已移除**（按用户要求删掉跳转按钮），
+  维度切换/撤消/apply 流保留。统计页内部仪表盘（汇总卡/趋势/条目榜表/拆单/Dim/apply 流）与数据口径未动。
+  卡片标题行 hover 整行高亮（含右侧 extra 区）。
 
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
@@ -254,13 +274,13 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 55。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 57。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置编辑器（作为二级子区挂在 4 个一级页下：内容=条目池/提示词/世界书/过滤、生成=生成/API、统计=统计、系统=外观/调试）`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
 - `src/components/shared/`：设计系统基础组件、拖拽手柄、导入来源弹窗、tab 定义、窄屏布局 composable 与 `useConfirm.ts`（确认弹窗 Promise 化封装，Statistics 清空/应用建议/应用阵容三处使用）。
 - `src/type/`：Zod schema、默认值、迁移逻辑和领域类型；不要在组件里重新定义设置结构。
-- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`：`parseOptionType`/`parseOptionContent`/`parseOptionStyle`/`parseOptionRate`/`resolveOptionSuccessRate`，风险档位分级与成功率标注共享同一拆分——`[标题|保守/平衡/大胆]`、`[标题|大胆|70%]` 竖线标注，任一段既非受控档位词又非数字百分比则整段回退当标题，词表外/无标注返回 null 中性显示，成功率未标注时按 `GRADE_FALLBACK_RATE` 档位兜底，受控词表与 prompt core_rules 输出格式同步）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
+- `src/util/`：文件选择、SortableJS 配置、Zod 解析辅助、时间格式化（`time.ts`）与条目展示摘要（`entry-preview.ts`）；选项文本解析（`option-format.ts`：`parseOptionType`/`parseOptionContent`/`parseOptionStyle`/`parseOptionRate`/`resolveOptionSuccessRate`，风险档位分级与需求值标注共享同一拆分——`[标题|保守/平衡/大胆]`、`[标题|大胆|70]` 竖线标注，任一段既非受控档位词又非需求值数字则整段回退当标题，词表外/无标注返回 null 中性显示，需求值未标注时按 `GRADE_FALLBACK_RATE` 档位兜底（难度制：掷 ≥ 需求值=成功，越大越难），受控词表与 prompt core_rules 输出格式同步）与点击行为应用（`option-action.ts`）是主面板与悬浮球弹窗共用的共享层；`character-bindings.ts`
   提供角色卡绑定扫描（`getBoundCharacters`）与可靠持久化（`persistCharacter`，直接 POST
   `/api/characters/edit`，替代会丢扩展字段的 `saveCharacterDebounced`）。
 - 根级入口包括 `src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css` 和全局类型声明。
@@ -288,6 +308,15 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
 - `PoolEntry` 字段为 `id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`；`pinned`/`weight` 可被
   `PoolConfigEntry` 覆盖。`rule` 是写作约束，不是选用门槛；v20 起删除
   `condition`，v21 起候选条目必须交给 AI，`[规则: xxx]` 只约束该选项如何写。
+- **配置级全局规则/示例（系统专属选项能力）**：`PoolConfig` 可选字段 `rules`/`examples`（无条目级字段；
+  条目档位规则写在已有 `rule` 里，需要举例直接写进 rule 文本即可）。生成选项时（仅选项路径，润色不
+  注入），`generator.ts` 的 `buildPoolConfigRuleBlock` 纯函数把生效 config 的全局规则/示例组装成
+  `<系统专属选项规则与示例>` 段，**内联进候选文本**：拼在 `{{pool_selected}}` 展开值的末尾，随
+  option_task 的 user 消息一起发出——**不新增消息、不改 buildMessages 消息序列，不破坏原有提示词结构**。
+  **触发门槛是 config 级**：rules 与 examples 皆空的配置（默认/未配置）返回 `''` 不注入，通用行为
+  零变化；只有绑定了带 rules/examples 的配置（如「神级选择系统」类卡专用配置）才生效。`<options>` 解析
+  标签保持固定，不做自定义输出标签；奖励标记（`【系统奖励：…】`等）是内容不是结构。UI 入口：
+  PoolEditor 配置区（全局规则/示例）。导出/导入整对象序列化，字段自动携带。
 - 抽取顺序：解析 effectivePool
   → 拆分固定/非固定并处理固定条目溢出 → 按 category 分组并处理下溢 → 分组轮询、组内按 Efraimidis–Spirakis 加权无放回抽取 → 按
   `oversamplePct` 为非固定条目补充菜单候选 → 送入 prompt 前整体 shuffle。加权 key 为 `random()^(1/weight)`；具体实现以

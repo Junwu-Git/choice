@@ -503,24 +503,31 @@
   color: var(--choice-text-muted);
 }
 
-/* ===== 设置页分区容器 + 标题 =====
-   统一各设置页分区外观：纵向堆叠 + 标题下边线。本期先落原子，逐页采用留二期 */
+/* ===== 设置页分区容器 + 标题（恒定展开的固定组卡片）=====
+   UI 去杂乱：把平铺分区升级为「带边框卡片 + 标题行」，与 ChoiceSectionCard
+   （可折叠）共用同一视觉语言——同背景/边框/圆角/标题行，只在"是否可折叠"上区分。
+   需要折叠的密集区用 ChoiceSectionCard，恒定展开的一级分组用本卡片。 */
 .choice-section {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
+  background: var(--choice-bg-card);
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-md);
+  padding: var(--choice-space-3) var(--choice-space-4);
+  /* 与 ChoiceSectionCard 一致的轻微投影，让卡片从面板背景浮起 */
+  box-shadow: var(--choice-shadow-sm);
 }
 
 .choice-section-title {
   font-size: var(--choice-text-sm);
   font-weight: 600;
   color: var(--choice-text);
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--choice-border);
+  margin: 0;
 }
 
 /* ===== 空状态：居中邀请而非报错 =====
-   参考 .bbs-empty。本期先落原子，空条目池/空统计等采用留二期 */
+   本期先落原子，空条目池/空统计等采用留二期 */
 .choice-empty {
   display: flex;
   flex-direction: column;

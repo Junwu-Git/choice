@@ -1,6 +1,6 @@
 <template>
   <div class="choice-api-editor">
-    <div class="choice-retry-section">
+    <ChoiceSectionCard title="重试" icon="fa-solid fa-rotate">
       <div class="choice-retry-fields">
         <label class="choice-field">
           <span>{{ t`失败重试次数` }}</span>
@@ -28,9 +28,7 @@
       <span class="choice-field-hint">{{
         t`重试次数 0 = 不重试；网络错误或 5xx 时自动重试，两次重试之间按"重试间隔"等待（0 = 立即重试）`
       }}</span>
-    </div>
 
-    <div class="choice-retry-section">
       <label class="choice-check">
         <input v-model="globalStore.settings.api_tool_choice_none" type="checkbox" />
         {{ t`请求附带 tool_choice:none` }}
@@ -38,34 +36,35 @@
       <span class="choice-field-hint">{{
         t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
       }}</span>
-    </div>
+    </ChoiceSectionCard>
 
-    <div class="choice-api-select-row">
-      <label class="choice-field" style="flex: 1; min-width: 0">
-        <span>{{ t`生成 API` }}</span>
-        <select
-          :value="selectedApiId"
-          class="choice-select"
-          @change="selectApi(($event.target as HTMLSelectElement).value)"
+    <ChoiceSectionCard title="渠道与模型" icon="fa-solid fa-plug" default-open>
+      <div class="choice-api-select-row">
+        <label class="choice-field" style="flex: 1; min-width: 0">
+          <span>{{ t`生成 API` }}</span>
+          <select
+            :value="selectedApiId"
+            class="choice-select"
+            @change="selectApi(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
+              {{ api.name || t`<未命名>` }}
+            </option>
+          </select>
+        </label>
+        <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
+          <i class="fa-solid fa-plus"></i> {{ t`新建` }}
+        </button>
+        <button
+          class="menu_button"
+          style="flex-shrink: 0; margin-top: auto; color: var(--choice-color-error)"
+          :disabled="!selectedApiId"
+          :title="t`删除当前 API`"
+          @click="removeApi"
         >
-          <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
-            {{ api.name || t`<未命名>` }}
-          </option>
-        </select>
-      </label>
-      <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
-        <i class="fa-solid fa-plus"></i> {{ t`新建` }}
-      </button>
-      <button
-        class="menu_button"
-        style="flex-shrink: 0; margin-top: auto; color: var(--choice-color-error)"
-        :disabled="!selectedApiId"
-        :title="t`删除当前 API`"
-        @click="removeApi"
-      >
-        <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
-      </button>
-    </div>
+          <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
+        </button>
+      </div>
 
     <div class="choice-api-form" data-tour="api-form">
       <div class="choice-api-form-body">
@@ -153,11 +152,13 @@
       <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
       <button class="menu_button" @click="reset">{{ t`取消` }}</button>
     </div>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import toastr from 'toastr';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
@@ -294,23 +295,13 @@ const reset = () => {
 .choice-api-editor {
   display: flex;
   flex-direction: column;
-  gap: var(--choice-space-2);
+  gap: var(--choice-space-4);
 }
 
 .choice-api-select-row {
   display: flex;
   align-items: flex-end;
   gap: var(--choice-space-2);
-}
-
-.choice-retry-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  padding: var(--choice-space-2);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
 }
 
 /* 两个数字输入横排，窄容器自动折行堆叠——不依赖 CSS container query */
@@ -325,13 +316,10 @@ const reset = () => {
   min-width: 0;
 }
 
+/* 渠道与模型卡片内的表单：卡片已提供边框/背景，内层不再重复描边（避免卡中卡） */
 .choice-api-form {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
-  overflow: hidden;
 }
 
 .choice-api-form-body {
@@ -346,9 +334,11 @@ const reset = () => {
 }
 
 .choice-api-name-row .choice-input,
+.choice-api-url-row .choice-input,
 .choice-api-key-row .choice-input,
 .choice-model-row .choice-input {
-  /* 占满行宽：底色/边框/聚焦态由 global.css 的 .choice-input 提供 */
+  /* 占满行宽：底色/边框/聚焦态由 global.css 的 .choice-input 提供。
+     url 行此前漏加 flex:1，导致 API 地址输入栏明显比其他栏短（用户反馈） */
   flex: 1;
 }
 

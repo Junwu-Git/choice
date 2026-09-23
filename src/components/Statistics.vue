@@ -2,11 +2,10 @@
   <div class="choice-stats-settings">
     <!-- 控制簇：统计/自动化/AI 归因/AI 理由四开关集中（原「统计与自动化」+「AI 增强」两段合并，
          减少顶部标题噪音）；运行状态读数随开关显隐 -->
-    <div class="choice-stats-section">
-      <div class="choice-stats-section-head">
-        <h4 class="choice-stats-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计与自动化` }}</h4>
+    <div class="choice-section">
+      <div class="choice-stats-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计与自动化` }}</h4>
         <span class="choice-stats-info" :title="controlHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
       </div>
       <div class="choice-stats-ai-row">
         <label class="choice-stats-toggle">
@@ -85,11 +84,6 @@
         }}</span>
         <span v-else class="choice-stats-dim-note">{{ t`仅该条目池配置生效会话计入` }}</span>
       </div>
-      <div v-if="jumpTargets.length > 1" class="choice-stats-jump-bar">
-        <button v-for="j in jumpTargets" :key="j.anchor" class="choice-stats-jump-pill" @click="jumpTo(j.anchor)">
-          {{ j.label }}
-        </button>
-      </div>
     </div>
 
     <!-- 无 config 引导：应用建议需要 config 作为写入目标（关闭态隐藏——建议应用不可达） -->
@@ -125,20 +119,13 @@
       </button>
     </div>
 
-    <!-- 概览（可折叠，默认展开）：汇总卡片 + 样本分布 + 趋势三合一，减少标题噪音 -->
-    <div id="choice-stats-anchor-overview" class="choice-stats-section choice-stats-overview" data-anchor="overview">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showOverview = !showOverview">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showOverview }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-chart-pie"></i>{{ t`概览` }}</h4>
-        </button>
+    <!-- 概览（恒展开）：汇总卡片 + 样本分布 + 趋势三合一，减少标题噪音 -->
+    <div id="choice-stats-anchor-overview" class="choice-section" data-anchor="overview">
+      <div class="choice-stats-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-chart-pie"></i>{{ t`概览` }}</h4>
         <span class="choice-stats-info" :title="overviewHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
       </div>
-      <div v-if="showOverview" class="choice-stats-section-body choice-stats-overview-body">
+      <div class="choice-stats-overview-body">
         <!-- 汇总卡片 -->
         <div class="choice-stats-cards">
           <div class="choice-stats-card">
@@ -289,9 +276,8 @@
     </div>
 
     <!-- 条目榜（主内容；分组默认折叠，展开后限高滚动，避免无限撑长页面） -->
-    <div id="choice-stats-anchor-leaderboard" class="choice-stats-section" data-anchor="leaderboard">
-      <div class="choice-stats-section-head">
-        <h4 class="choice-stats-section-title"><i class="fa-solid fa-ranking-star"></i>{{ t`条目榜` }}</h4>
+    <ChoiceSectionCard id="choice-stats-anchor-leaderboard" title="条目榜" icon="fa-solid fa-ranking-star" data-anchor="leaderboard">
+      <template #extra>
         <span class="choice-stats-info" :title="leaderboardHelp"><i class="fa-solid fa-circle-info"></i></span>
         <div class="choice-stats-head-actions">
           <button
@@ -332,7 +318,7 @@
             <i :class="allExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
           </button>
         </div>
-      </div>
+      </template>
       <p class="choice-stats-sub">{{ t`分组 ${filteredGroups.length} 个 · 条目 ${leaderboardRowCount} 条` }}</p>
       <div class="choice-stats-toolbar">
         <input
@@ -464,22 +450,13 @@
           </div>
         </div>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 骰子战绩（全局维度，不随 config 切换；默认折叠） -->
-    <div id="choice-stats-anchor-dice" class="choice-stats-section" data-anchor="dice">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showDice = !showDice">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showDice }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-dice"></i>{{ t`骰子战绩` }}</h4>
-        </button>
+    <ChoiceSectionCard id="choice-stats-anchor-dice" title="骰子战绩" icon="fa-solid fa-dice" data-anchor="dice">
+      <template #extra>
         <span class="choice-stats-info" :title="diceHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
-      </div>
-      <div v-if="showDice" class="choice-stats-section-body">
+      </template>
         <p class="choice-stats-sub">
           {{ t`共 ${diceStats.total_rolls} 次判定 · 胜率 ${diceRateText}（大成功 + 成功 ÷ 总掷数）` }}
         </p>
@@ -552,34 +529,29 @@
             </div>
           </div>
         </template>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 阵容计划（半自动：默认折叠；仅具体 config 维度可写） -->
-    <div v-if="canApply" id="choice-stats-anchor-roster" class="choice-stats-section" data-anchor="roster">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showRoster = !showRoster">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showRoster }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-users-gear"></i>{{ t`阵容计划` }}</h4>
-        </button>
+    <ChoiceSectionCard
+      v-if="canApply"
+      id="choice-stats-anchor-roster"
+      title="阵容计划"
+      icon="fa-solid fa-users-gear"
+      data-anchor="roster"
+    >
+      <template #extra>
         <span class="choice-stats-info" :title="rosterHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions">
-          <button
-            v-if="showRoster && rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
-            class="menu_button choice-stats-apply-all"
-            :title="t`把落出/补入清单应用到当前配置`"
-            @click="applyRoster()"
-          >
-            <i class="fa-solid fa-users-gear"></i>
-            {{ t`应用阵容计划` }}
-            <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
-          </button>
-        </div>
-      </div>
-      <div v-if="showRoster" class="choice-stats-section-body">
+        <button
+          v-if="rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
+          class="menu_button choice-stats-apply-all"
+          :title="t`把落出/补入清单应用到当前配置`"
+          @click="applyRoster()"
+        >
+          <i class="fa-solid fa-users-gear"></i>
+          {{ t`应用阵容计划` }}
+          <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
+        </button>
+      </template>
         <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
         <div class="choice-stats-roster-bar">
           <label class="choice-stats-toggle">
@@ -629,33 +601,23 @@
             {{ rosterEmptyText }}
           </div>
         </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 应用历史：最近自动化写入批次（持久撤销槽的可视化，刷新不丢；默认折叠；统计或自动化
          任一关闭时隐藏——撤销入口保留在顶部维度条，config 写入记录与统计关停解耦） -->
-    <div
+    <ChoiceSectionCard
       v-if="statsEnabled && automationEnabled && historyEntries.length > 0"
       id="choice-stats-anchor-history"
-      class="choice-stats-section"
+      title="应用历史"
+      icon="fa-solid fa-clock-rotate-left"
       data-anchor="history"
     >
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showHistory = !showHistory">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showHistory }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-clock-rotate-left"></i>{{ t`应用历史` }}</h4>
-        </button>
+      <template #extra>
         <span class="choice-stats-info" :title="historyHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions">
-          <span v-if="undoCount > 1" class="choice-stats-dim-note">{{
-            t`共 ${historyEntries.length} 批，可逐条撤销`
-          }}</span>
-        </div>
-      </div>
-      <div v-if="showHistory" class="choice-stats-section-body">
+        <span v-if="undoCount > 1" class="choice-stats-dim-note">{{
+          t`共 ${historyEntries.length} 批，可逐条撤销`
+        }}</span>
+      </template>
         <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
         <div class="choice-stats-history">
           <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
@@ -685,23 +647,13 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 命中榜（用户选择条目的排行；默认折叠） -->
-    <div id="choice-stats-anchor-hitrank" class="choice-stats-section" data-anchor="hitrank">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showHitRank = !showHitRank">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showHitRank }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-crown"></i>{{ t`命中榜` }}</h4>
-        </button>
+    <ChoiceSectionCard id="choice-stats-anchor-hitrank" title="命中榜" icon="fa-solid fa-crown" data-anchor="hitrank">
+      <template #extra>
         <span class="choice-stats-info" :title="hitRankHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
-      </div>
-      <div v-if="showHitRank" class="choice-stats-section-body">
+      </template>
         <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
         <div v-if="hitRank.length === 0" class="choice-empty">
           <div class="choice-empty-icon"><i class="fa-solid fa-crown"></i></div>
@@ -742,23 +694,13 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 管理（默认折叠） -->
-    <div id="choice-stats-anchor-manage" class="choice-stats-section" data-anchor="manage">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showManage = !showManage">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showManage }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-sliders"></i>{{ t`管理` }}</h4>
-        </button>
+    <ChoiceSectionCard id="choice-stats-anchor-manage" title="管理" icon="fa-solid fa-sliders" data-anchor="manage">
+      <template #extra>
         <span class="choice-stats-info" :title="manageHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
-      </div>
-      <div v-if="showManage" class="choice-stats-section-body">
+      </template>
         <p class="choice-stats-sub">{{ t`导出 JSON 备份 / 清空后重新统计` }}</p>
         <div class="choice-stats-actions">
           <button class="menu_button" :title="t`导出统计为 JSON`" @click="exportStats()">
@@ -770,8 +712,7 @@
             {{ t`清空统计` }}
           </button>
         </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <ConfirmDialog :open="clearOpen" @confirm="confirmClear" @cancel="cancelClear" />
     <ConfirmDialog :open="applyOpen" @confirm="confirmApply" @cancel="cancelApply" />
@@ -826,6 +767,7 @@ import { aiAttributionState } from '@/core/ai-attribution';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useConfirm } from '@/components/shared/useConfirm';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import {
   SCHEMA_VERSION,
   SUGGEST_MIN_SAMPLES,
@@ -843,14 +785,6 @@ const masterPool = computed(() => gs.settings.master_pool);
 const configs = computed(() => gs.settings.configs);
 const groupOrder = computed(() => gs.settings.group_order);
 const sampleMin = SUGGEST_MIN_SAMPLES;
-
-// ── 折叠分区状态（组件内，不持久化：切 tab 组件卸载即重置） ──
-const showOverview = ref(true);
-const showDice = ref(false);
-const showHitRank = ref(false);
-const showRoster = ref(false);
-const showHistory = ref(false);
-const showManage = ref(false);
 
 // ── 区块标题 info tooltip：完整说明收进原生 title，页面只留一行副标题 ──
 /** 概览（汇总卡片 / 样本分布 / 趋势 三合一）说明 */
@@ -1060,6 +994,8 @@ const onCreateDefaultConfig = () => {
     name: t`默认配置`,
     entries,
     is_default: true,
+    rules: '',
+    examples: '',
     // generation 为 v35 起废弃的死字段（schema 必填），不承载任何运行时数据
     generation: GenerationSettings.parse({}),
   };
@@ -1429,28 +1365,8 @@ const historyEntries = computed(() => {
     .map(entry => ({ entry, changes: applyHistorySummary(entry, poolMap) }));
 });
 
-/** 粘性子头快捷跳转目标：仅列出当前可见的分区（阵容/历史按维度与开关条件显隐）。
- *  pills 点击 scrollIntoView 到对应 anchor section；anchor id 见各 section 的 id 属性。
- *  scroll-margin-top（见样式）抵消粘性头高度，避免钉顶头遮挡 section 标题。 */
-const jumpTargets = computed(() => {
-  const list: Array<{ anchor: string; label: string }> = [
-    { anchor: 'overview', label: t`概览` },
-    { anchor: 'leaderboard', label: t`条目榜` },
-  ];
-  list.push({ anchor: 'dice', label: t`骰子` });
-  if (canApply.value) list.push({ anchor: 'roster', label: t`阵容` });
-  if (statsEnabled.value && automationEnabled.value && historyEntries.value.length > 0) {
-    list.push({ anchor: 'history', label: t`历史` });
-  }
-  list.push({ anchor: 'hitrank', label: t`命中榜` });
-  list.push({ anchor: 'manage', label: t`管理` });
-  return list;
-});
-const jumpTo = (anchor: string): void => {
-  const el = document.getElementById(`choice-stats-anchor-${anchor}`);
-  el?.scrollIntoView({ block: 'start' });
-};
-
+/** 粘性子头快捷跳转已移除（用户要求删掉跳转按钮）；各 section 的 anchor id 与
+ *  scroll-margin-top 保留，为将来可能的定位/跳转预留。 */
 const historyTimeTitle = (ts: number): string => formatDateTime(ts);
 
 const undoHistoryEntry = (entryId: string) => {
@@ -1781,34 +1697,11 @@ const onClearStats = async () => {
   backdrop-filter: blur(6px);
 }
 
-/* 跳转 pills 行：横向排列、窄屏换行 */
-.choice-stats-jump-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--choice-space-1);
-}
-
-.choice-stats-jump-pill {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-full);
-  background: var(--choice-bg-element);
-  color: var(--choice-text-secondary);
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-3);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-}
-
-.choice-stats-jump-pill:hover {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-}
-
-/* 锚点分区滚动留白：抵消粘性头高度（维度条+跳转pills+内边距），避免跳转后标题被钉顶头遮挡 */
-.choice-stats-section[data-anchor] {
+/* 锚点分区滚动留白：抵消粘性头高度（维度条+内边距），避免跳转后标题被钉顶头遮挡。
+   统计页区块已迁移为卡片组件（可折叠 ChoiceSectionCard / 恒展开 .choice-section），
+   锚点 id 经 $attrs 落到根 <section>（.choice-section-card / .choice-section），scroll-margin 需挂在这两者上 */
+.choice-section-card[data-anchor],
+.choice-section[data-anchor] {
   scroll-margin-top: calc(var(--choice-space-6) * 2 + var(--choice-space-5));
 }
 
@@ -1975,62 +1868,28 @@ const onClearStats = async () => {
   word-break: normal;
 }
 
-/* ── 区块标题行（概览区可读标题 + 折叠区可点击切换，共用同一视觉语言） ── */
-.choice-stats-section-title {
-  margin: 0;
-  font-size: var(--choice-text-sm);
-  /* 字重统一 600（与全局 .choice-section-title 及面板标题一致，收敛 bold/600 混用） */
-  font-weight: 600;
-  color: var(--choice-text);
-  display: inline-flex;
+/* ── 恒展开固定卡（.choice-section）的标题行：标题左、帮助/操作右 ── */
+.choice-stats-card-head {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--choice-space-2);
-  white-space: nowrap;
-  transition: color var(--choice-transition);
+  margin-bottom: var(--choice-space-2);
 }
 
-.choice-stats-section-title i {
+/* 固定卡标题图标与卡片体系一致：主色点亮；可折叠卡（ChoiceSectionCard）标题已由组件自身着色 */
+.choice-stats-card-head .choice-section-title i {
   color: var(--choice-color-info);
-  font-size: var(--choice-text-sm);
-  flex-shrink: 0;
 }
 
-.choice-stats-section-head {
+/* 固定卡标题右侧：帮助 + 操作按钮聚成一组，靠右 */
+.choice-stats-card-head-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--choice-space-1) var(--choice-space-2);
-  margin-bottom: var(--choice-space-1);
-}
-
-/* 折叠分区标题行整行为可点击区域（button 复位）；展开/收起看 chevron 旋转 */
-.choice-stats-section-toggle {
-  display: inline-flex;
-  align-items: center;
   gap: var(--choice-space-2);
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: var(--choice-space-1) 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: inherit;
-  text-align: left;
-}
-
-.choice-stats-section-toggle:hover .choice-stats-section-title {
-  color: var(--choice-color-info);
-}
-
-.choice-stats-chevron {
-  flex-shrink: 0;
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  transition: transform var(--choice-transition);
-}
-
-.choice-stats-chevron--open {
-  transform: rotate(90deg);
+  justify-content: flex-end;
 }
 
 /* 说明入口：悬停显示完整口径/规则说明（原生 title，触屏长按可见） */
@@ -2066,30 +1925,11 @@ const onClearStats = async () => {
   color: var(--choice-text-muted);
 }
 
-/* 控制簇（首个分区）的状态读数在区块末尾：去掉自带下边距，间距交由其下粘性子头管理 */
-.choice-stats-section:first-child > .choice-stats-sub {
-  margin-bottom: 0;
-}
-
-/* 折叠分区展开后的内容容器：透明底 + 顶部微缩进，视觉上从属于标题行 */
-.choice-stats-section-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-1) 0 0 var(--choice-space-4);
-}
-
-/* 折叠体内的副标题由 flex gap 管间距，去掉自带下边距避免双倍空隙 */
-.choice-stats-section-body > .choice-stats-sub {
-  margin-bottom: 0;
-}
-
 /* 分段按钮组（趋势天数 / 排序维度）已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子 */
 
-/* ── 键盘焦点可见态：跳转 pill/组头/撤销与图标按钮统一描边（对照 border-active），
+/* ── 键盘焦点可见态：组头/撤销与图标按钮统一描边（对照 border-active），
     分段按钮已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子，focus 由原子承担，
     hover 反馈保留原样 */
-.choice-stats-jump-pill:focus-visible,
 .choice-stats-group-head:focus-visible,
 .choice-stats-undo:focus-visible,
 .choice-icon-btn:focus-visible {

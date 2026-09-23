@@ -14,7 +14,7 @@
     >
       <!-- 选项列表：无标题栏的紧凑排版，每行「类型标签 + 内容」。
            生成中且无旧结果时显示加载占位，有旧结果则保留旧选项不闪烁（同主面板约定）。
-           选项行本体（类型/成功率/判定 chip/档位色条）全部走 global.css 的
+           选项行本体（类型/需求值/判定 chip/档位色条）全部走 global.css 的
            .choice-option-btn 共享语言，与主面板同源 -->
       <div class="choice-floating-options-body">
         <template v-if="options.length > 0">
@@ -27,14 +27,18 @@
             @click="onSelect(option, index)"
           >
             <span class="choice-option-type">{{ parseOptionType(option.text) }}</span><!--
-            --><span v-if="rateOf(option) !== null" class="choice-option-rate" :class="rateClass(rateOf(option)!)"
-              >{{ rateOf(option) }}%</span
+            --><span v-if="rateOf(option) !== null" class="choice-option-rate" :class="rateClass(rateOf(option)!)">{{
+              rateOf(option)
+            }}</span
             ><!--
             --><span class="choice-option-content"
               >{{ parseOptionContent(option.text)
-              }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)}`">{{
-                rollLabel(rollOf(index)!)
-              }}</i></span
+              }}<i
+                v-if="rollOf(index)"
+                class="choice-roll-chip"
+                :class="`choice-roll-chip--${rollOf(index)!.outcome}`"
+                >{{ rollChipText(rollOf(index)!) }}</i
+              ></span
             >
           </button>
         </template>
@@ -193,26 +197,32 @@ const optionBtnStyle = (index: number): Record<string, string> => {
   return { animationDelay: `${index * 60}ms` };
 };
 
-// 骰子判定（v55）：成功率徽标与行内判定 chip 的总开关（独立于 HUD）。
-// 徽标显示规则 = 骰子开 + 该选项可解析出成功率（AI 标注或档位兜底）
+// 骰子判定（v56 难度制）：需求值徽标与行内判定 chip 的总开关（独立于 HUD）。
+// 徽标显示规则 = 骰子开 + 该选项可解析出需求值（AI 标注或档位兜底）
 const diceEnabled = computed(() => gs.settings.dice.enabled);
 const rateOf = (option: ChoiceOption): number | null =>
   diceEnabled.value ? resolveOptionSuccessRate(option.text) : null;
-// 徽标语义色按把握分档：高（≥70）绿 / 中（40-69）青 / 低（<40）橙；
-// 分档色走 --choice-rate-*（中档 = 主色），与 risk 档位色条语义区分（同主面板）
+// 徽标语义色按需求值分档（v56 难度制）：高需求（≥70）难=橙 / 中（40-69）青 / 低（<40）易=绿；
+// 分档色走 --choice-rate-*（中档 = 主色），与 risk 档位色条语义区分（同主面板，配色反转见 theme.css）
 const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
-// 行内判定反馈：同代内点过的选项记一次判定结局（纯视觉，不持久化），
-// key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）
-const rollResults = ref<ReadonlyMap<string, DiceOutcome>>(new Map());
-const rollOf = (index: number): DiceOutcome | null => rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+// 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），
+// key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）。
+// v57：差值 = 点数 − 需求（margin），chip 显示「结局+差值」如「成功 +18」「失败 −38」
+type RollResult = { outcome: DiceOutcome; margin: number };
+const rollResults = ref<ReadonlyMap<string, RollResult>>(new Map());
+const rollOf = (index: number): RollResult | null => rollResults.value.get(`${generationId.value}:${index}`) ?? null;
 const rollLabel = (o: DiceOutcome): string =>
   o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
+// 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
+const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
+const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
 
 const hasGradedOptions = computed(() => hudEnabled.value && options.value.some(o => parseOptionStyle(o.text) !== null));
 const legendTitle = computed(
-  () => t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；成功率徽标为骰子判定需求值` : ''),
+  () =>
+    t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；骰子需求值：掷出 ≥ 该值才算成功` : ''),
 );
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"
@@ -278,9 +288,12 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     matchedEntryId: option.matchedEntryId,
     scopeId: panelStore.currentGeneration?.scopeId,
   });
-  // 行内判定 chip（v55 骰子结果，返回值非 null = 本次真的掷了骰）
+  // 行内判定 chip（v57 骰子结果：结局+差值，返回值非 null = 本次真的掷了骰）
   if (dice) {
-    rollResults.value = new Map(rollResults.value).set(`${generationId.value}:${index}`, dice.outcome);
+    rollResults.value = new Map(rollResults.value).set(`${generationId.value}:${index}`, {
+      outcome: dice.outcome,
+      margin: dice.roll - dice.rate,
+    });
   }
   // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
   markOptionSelected(index);

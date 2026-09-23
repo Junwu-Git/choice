@@ -1,5 +1,7 @@
 <template>
   <div class="choice-filter-editor">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-filter"></i>{{ t`过滤设置` }}</h4>
     <!-- 状态栏 -->
     <div class="choice-config-status">
       <span class="choice-config-status-label">{{ t`当前生效` }}:</span>
@@ -32,9 +34,9 @@
         :title="gs.settings.filter_settings.st_regex_enabled ? t`酒馆正则已启用` : t`酒馆正则已关闭，仅使用本页规则`"
       />
     </div>
+    </div>
 
-    <hr class="sysHR" />
-
+    <div class="choice-section">
     <!-- 标签提取快速区（新手入口）：不理解分区/分组/正则也能用，填标签名即可。
          规则存进固定 id 的专用全局分组（见 global-settings ensureExtractGroup），
          生成时恒定先于下方手动分组的 tag/regex 规则执行（先裁剪后过滤），互不干扰。
@@ -84,16 +86,15 @@
         </span>
       </div>
     </div>
-
-    <hr class="sysHR" />
-
-    <!-- 全局正则区 -->
-    <div class="choice-inline-field-head" data-tour="filter-global-head">
-      <span class="choice-inline-label"> <i class="fa-solid fa-globe"></i> {{ t`全局正则区` }} </span>
-      <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('global')">
-        <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
-      </button>
     </div>
+
+    <div class="choice-section" data-tour="filter-global-head">
+      <div class="choice-filter-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-globe"></i>{{ t`全局正则区` }}</h4>
+        <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('global')">
+          <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
+        </button>
+      </div>
     <div ref="globalListEl" class="choice-filter-group-list" data-area="global">
       <FilterGroupPanel
         v-for="group in globalGroupsSorted"
@@ -113,16 +114,15 @@
         <span>{{ t`暂无全局分组，点击「新增分组」创建` }}</span>
       </div>
     </div>
-
-    <hr class="sysHR" />
-
-    <!-- 预设正则区 -->
-    <div class="choice-inline-field-head">
-      <span class="choice-inline-label"> <i class="fa-solid fa-sliders"></i> {{ t`预设正则区` }} </span>
-      <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('preset')">
-        <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
-      </button>
     </div>
+
+    <div class="choice-section">
+      <div class="choice-filter-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`预设正则区` }}</h4>
+        <button class="choice-btn-sm choice-btn-new" @click="gs.addFilterGroup('preset')">
+          <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
+        </button>
+      </div>
     <div ref="presetListEl" class="choice-filter-group-list" data-area="preset">
       <FilterGroupPanel
         v-for="group in presetGroupsSorted"
@@ -143,16 +143,15 @@
         <span>{{ t`暂无预设分组，点击「新增分组」创建` }}</span>
       </div>
     </div>
-
-    <hr class="sysHR" />
-
-    <!-- 角色卡正则区 -->
-    <div class="choice-inline-field-head">
-      <span class="choice-inline-label"> <i class="fa-solid fa-address-card"></i> {{ t`角色卡正则区` }} </span>
-      <button class="choice-btn-sm choice-btn-new" @click="addCharGroup">
-        <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
-      </button>
     </div>
+
+    <div class="choice-section">
+      <div class="choice-filter-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-address-card"></i>{{ t`角色卡正则区` }}</h4>
+        <button class="choice-btn-sm choice-btn-new" @click="addCharGroup">
+          <i class="fa-solid fa-plus"></i> {{ t`新增分组` }}
+        </button>
+      </div>
     <div ref="charListEl" class="choice-filter-group-list" data-area="character">
       <FilterGroupPanel
         v-for="group in charGroupsSorted"
@@ -172,8 +171,7 @@
         <span>{{ t`暂无角色卡分组，点击「新增分组」创建` }}</span>
       </div>
     </div>
-
-    <hr class="sysHR" />
+    </div>
 
     <button
       class="choice-entrypool-btn"
@@ -526,7 +524,17 @@ onUnmounted(() => {
 .choice-filter-editor {
   display: flex;
   flex-direction: column;
+  gap: var(--choice-space-4);
+}
+
+/* 正则区卡片标题行：标题左、右侧动作（新增分组等）靠右 */
+.choice-filter-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--choice-space-2);
+  margin-bottom: var(--choice-space-2);
 }
 
 /* 状态栏窄屏换行：徽章 flex-shrink:0 + 4 枚横排在窄面板必溢出，允许折行兜底 */

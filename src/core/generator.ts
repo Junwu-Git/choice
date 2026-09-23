@@ -31,6 +31,7 @@ import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
 import { enqueueAttributionAnalysis } from '@/core/ai-attribution';
 import type {
   ChatSettings,
+  PoolConfig,
   PoolEntry,
   PromptModule,
   SecondaryApi,
@@ -837,6 +838,16 @@ export function parseOptions(text: string, count: number): string[] {
   return result.slice(0, count);
 }
 
+const buildPoolConfigRuleBlock = (config: PoolConfig | null): string => {
+  const globalRules = config?.rules?.trim() ?? '';
+  const globalExamples = config?.examples?.trim() ?? '';
+  if (!globalRules && !globalExamples) return '';
+  const sections: string[] = [];
+  if (globalRules) sections.push(`【全局规则】\n${globalRules}`);
+  if (globalExamples) sections.push(`【全局示例】\n${globalExamples}`);
+  return `<系统专属选项规则与示例>\n${sections.join('\n\n')}\n</系统专属选项规则与示例>`;
+};
+
 // _target 预留：调用方语义上指定生成目标楼层，当前实现始终读取最新楼层上下文
 export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGeneration | null> {
   if (generatorState.loading) {
@@ -881,6 +892,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return line;
     };
     const poolSelectedText = pool.drawn.map(renderEntryLine).join('\n');
+    // 全局规则/示例内联进候选文本（config 级，纯 opt-in）：拼在候选条目行之后，随
+    // {{pool_selected}} 一起展开进 option_task 的 user 消息——不新增消息、不改消息序列，
+    // 不破坏原有提示词结构。仅当 config 携带 rules/examples（任一非空）才非空；
+    // 空配置返回 ''，poolSelected 与现在完全一致，通用行为零变化。
+    const poolConfigRuleBlock = buildPoolConfigRuleBlock(ps.effectiveConfig);
+    const poolSelectedTextFull = poolConfigRuleBlock
+      ? `${poolSelectedText}${poolSelectedText ? '\n\n' : ''}${poolConfigRuleBlock}`
+      : poolSelectedText;
     // 读上一 AI 楼层的已生成选项 + 当前楼层既有代，供后置去重参照（只读，不作条目）。
     // prevOptions 仍填充 Ctx 以兼容用户自定义模块引用 {{prev_options}} 的情况。
     const dedupRefs: string[] = [];
@@ -916,7 +935,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       count,
       pinnedCount,
       pinned: pool.pinned.map(renderEntryLine).join('\n'),
-      poolSelected: poolSelectedText || '无',
+      poolSelected: poolSelectedTextFull || '无',
       input: '',
       // 直接取全局设置而非硬编码：buildMessages 的 augmentedCtx 会再按 isEnrich 覆盖，
       // 这里提供一致的非死值，避免误导后人（审计 A4）

@@ -1,6 +1,8 @@
 <template>
   <div class="choice-prompt-editor">
-    <div class="choice-page-toolbar" data-tour="prompt-toolbar">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`上下文设置` }}</h4>
+      <div class="choice-page-toolbar" data-tour="prompt-toolbar">
       <label
         class="choice-context-rounds"
         :title="
@@ -40,8 +42,11 @@
         {{ t`数据库` }}
       </label>
     </div>
+    </div>
 
-    <div class="choice-config-bar">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-diagram-project"></i>{{ t`提示词配置` }}</h4>
+      <div class="choice-config-bar">
       <div class="choice-config-row">
         <label class="choice-config-label">{{ t`提示词配置` }}</label>
         <select v-model="selectedPromptConfigId" class="choice-config-select">
@@ -116,8 +121,11 @@
       <!-- 已绑定当前提示词配置的角色卡徽章（反向视角：角色卡→配置 的绑定关系列表，同过滤页角色卡区） -->
       <ConfigBindings :config-id="selectedPromptConfigId" kind="prompt" />
     </div>
+    </div>
 
-    <div class="choice-module-toolbar">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-list-ul"></i>{{ t`模块列表` }}</h4>
+      <div class="choice-module-toolbar">
       <div class="choice-module-toolbar-left">
         <div v-if="globalStore.settings.ui.enrich_enabled" class="choice-mode-switch">
           <button
@@ -336,6 +344,7 @@
           <textarea v-if="editingModule" v-model="editingModule.content" class="choice-textarea" rows="8"></textarea>
         </div>
       </template>
+    </div>
     </div>
 
     <ConfirmDialog

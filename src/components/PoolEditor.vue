@@ -190,6 +190,33 @@
           <p>{{ t`未选择条目，请点击"添加条目"选择` }}</p>
         </div>
       </div>
+
+      <!-- 配置级全局规则/示例（系统专属选项等按需使用；空则生成时不注入，不影响通用行为） -->
+      <div class="choice-inline-field">
+        <div class="choice-inline-field-head">
+          <label class="choice-inline-label">{{ t`全局规则` }}</label>
+          <span class="choice-inline-hint">{{ t`可选：系统语体/奖励机制等，随生成自动注入提示词` }}</span>
+        </div>
+        <textarea
+          v-model="selectedConfig.rules"
+          class="choice-textarea choice-inline-textarea"
+          rows="4"
+          :placeholder="t`例如：你是降临于宿主的高维意志体……选项越离谱奖励越好`"
+        ></textarea>
+      </div>
+
+      <div class="choice-inline-field">
+        <div class="choice-inline-field-head">
+          <label class="choice-inline-label">{{ t`全局示例` }}</label>
+          <span class="choice-inline-hint">{{ t`可选：整套样例输出，与全局规则一同注入` }}</span>
+        </div>
+        <textarea
+          v-model="selectedConfig.examples"
+          class="choice-textarea choice-inline-textarea"
+          rows="4"
+          :placeholder="t`例如：场景案例：{{user}}在野外偶遇女修……`"
+        ></textarea>
+      </div>
     </div>
 
     <div v-else-if="configs.length === 0" class="choice-empty">
@@ -326,6 +353,8 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     name: payload.name,
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
+    rules: '',
+    examples: '',
     // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode）与默认值漂移
     generation: GenerationSettings.parse({}),
   };
@@ -684,6 +713,27 @@ hr.sysHR {
 .choice-inline-field-label {
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* 配置级全局规则/示例编辑区：head 行 = 标签 + 右侧提示 */
+.choice-inline-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--choice-space-2);
+}
+
+.choice-inline-hint {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  text-align: right;
+}
+
+/* 规则/示例文本框：纵向留白，仅覆盖宽高/缩放；底色边框聚焦态由 global.css .choice-textarea 提供 */
+.choice-inline-textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
 }
 
 /* 小号输入框：仅覆盖宽度，底色/边框/聚焦态由 global.css 的 .choice-input 提供 */

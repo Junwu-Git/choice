@@ -1,6 +1,8 @@
 <template>
   <div class="choice-wi-editor">
-    <div class="choice-wi-checks" data-tour="wi-checks">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`设置` }}</h4>
+      <div class="choice-wi-checks" data-tour="wi-checks">
       <label class="choice-check">
         <input v-model="globalStore.settings.world_info.enabled" type="checkbox" />
         {{ t`启用世界书` }}
@@ -19,14 +21,12 @@
     <button class="menu_button" :title="t`从酒馆重新加载世界书列表和条目`" @click="refreshAll">
       {{ t`刷新列表` }}
     </button>
+    </div>
 
-    <div class="choice-wi-global-excl" data-tour="wi-excl">
-      <div class="choice-wi-section-title choice-wi-collapsible" @click="showGlobalExcl = !showGlobalExcl">
-        <i class="fa-solid" :class="showGlobalExcl ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-        {{ t`全局排除` }}
-        <span v-if="globalExcludedBooks.length > 0" class="choice-wi-count">({{ globalExcludedBooks.length }})</span>
-      </div>
-      <div v-if="showGlobalExcl" class="choice-wi-global-excl-body">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-ban"></i>{{ t`全局排除` }}</h4>
+      <div class="choice-wi-global-excl" data-tour="wi-excl">
+      <div class="choice-wi-global-excl-body">
         <div v-if="globalExcludedBooks.length === 0" class="choice-empty-hint">
           {{ t`未设置全局排除。全局排除的世界书在所有聊天中永久不被选项生成参考。` }}
         </div>
@@ -53,9 +53,11 @@
         </div>
       </div>
     </div>
+    </div>
 
-    <div v-if="activeBooks.length > 0" data-tour="wi-books">
-      <div class="choice-wi-section-title">{{ t`已启用的世界书` }}</div>
+    <div v-if="activeBooks.length > 0" class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-book-bookmark"></i>{{ t`已启用的世界书` }}</h4>
+      <div data-tour="wi-books">
       <div class="choice-wi-list">
         <template v-for="book in activeBooks" :key="book.name">
           <div
@@ -106,14 +108,11 @@
         </template>
       </div>
     </div>
+    </div>
 
-    <div v-if="inactiveBooks.length > 0">
-      <div class="choice-wi-section-title choice-wi-collapsible" @click="showInactive = !showInactive">
-        <i class="fa-solid" :class="showInactive ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-        {{ t`未启用的世界书` }}
-        <span class="choice-wi-count">({{ inactiveBooks.length }})</span>
-      </div>
-      <div v-if="showInactive" class="choice-wi-list">
+    <div v-if="inactiveBooks.length > 0" class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-book"></i>{{ t`未启用的世界书` }}</h4>
+      <div class="choice-wi-list">
         <div v-for="book in inactiveBooks" :key="book.name" class="choice-wi-row inactive">
           <span class="choice-wi-light"></span>
           <span class="choice-wi-name">{{ book.name }}</span>
@@ -182,8 +181,6 @@ type EntryInfo = {
 const allBooks = ref<BookInfo[]>([]);
 const bookEntries = ref<Record<string, EntryInfo[]>>({});
 const bookExpanded = ref<Set<string>>(new Set());
-const showInactive = ref(false);
-const showGlobalExcl = ref(false);
 const globalExclSearch = ref('');
 
 const activeBooks = computed(() =>
@@ -386,28 +383,6 @@ onUnmounted(() => {
   align-items: center;
   gap: var(--choice-space-1);
   font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-}
-
-.choice-wi-section-title {
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-  color: var(--choice-text-secondary);
-  margin-top: var(--choice-space-1);
-  padding-bottom: var(--choice-space-1);
-  border-bottom: 1px solid var(--choice-border);
-}
-
-.choice-wi-collapsible {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-1);
-  user-select: none;
-  transition: color var(--choice-transition);
-}
-
-.choice-wi-collapsible:hover {
   color: var(--choice-text-secondary);
 }
 

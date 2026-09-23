@@ -21,11 +21,16 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
  * opts.scopeId 为被点选项所在代的生成维度（ChoiceGeneration.scopeId）：命中回写直接归到
  * 该维度，避免点击时切了 config 导致记错；旧代消息缺该字段时由统计层兜底搜索。
  *
- * v55 骰子判定：仅行动选项视图（view='options'）且骰子开关开启时掷 D100。有成功率
- * （AI 标注或档位兜底）的选项按 resolveOptionSuccessRate 判定。判定结果随所有行为
- * 生效：失败/大成功/大失败时把演绎指令包在 HTML 注释中拼入应用文本（send 直接发送、
- * fill/insert/append 填入输入框可编辑删除，AI 请求文本原样携带、聊天界面渲染不可见）；
- * 成功无注释。返回判定结果供组件做行内视觉反馈，未掷骰（关闭/润色/无成功率）返回 null。
+ * v57 骰子判定（难度制）：仅行动选项视图（view='options'）且骰子开关开启时掷 D100。
+ * 有需求值（AI 标注或档位兜底）的选项按 resolveOptionSuccessRate 判定——掷出 ≥ 需求值
+ * 才算成功，点数越大越好。判定结果随所有行为生效：成功/失败/大成功/大失败都把演绎指令
+ * 包在 HTML 注释中拼入应用文本（send 直接发送、fill/insert/append 填入输入框可编辑删除，
+*  AI 请求文本原样携带、聊天界面渲染不可见；v57 起成功也注入，模板支持 {margin}/{degree}，
+ *  degree = 点数与需求差值的程度词，见 core/dice.ts marginDegree；成功模板为空则不注入）。
+ *  v58：成功/失败模板按 margin 档位拆独立指令（见 core/dice.ts degreeTierFor），
+ *  每档 send 为空回退该结局单条回退文案。
+ * 返回判定结果供组件做行内视觉反馈（判定 chip：结局+差值；不再弹酒馆 toastr，避免失败
+ * 红得像插件报错），未掷骰（关闭/润色/无需求值）返回 null。
  * 判定结果只进战绩统计（stats.dice），不进条目统计——last_selected_text 保持原始正文。
  */
 export async function applyOptionBehavior(
@@ -50,37 +55,42 @@ export async function applyOptionBehavior(
     if (d.enabled) {
       const rate = resolveOptionSuccessRate(option.text);
       if (rate !== null) {
-        const { roll, outcome } = rollDice(rate, d.crit_success_max, d.crit_fail_min);
+        const { roll, outcome } = rollDice(rate, d.crit_success_min, d.crit_fail_max);
         diceResult = { outcome, roll, rate };
-        // 隐形演绎注释随所有行为拼接：send 直接发送（AI 读到注释）、
+        // 隐形演绎注释随所有行为拼接（v57 起成功也注入）：send 直接发送（AI 读到注释）、
         // fill/insert/append 拼进输入框（用户可编辑删除，手动发送时 AI 同样读到）。
-        // 注释是 HTML 注释——聊天界面渲染不可见，AI 请求文本原样携带。
+        // 注释是 HTML 注释——聊天界面渲染不可见，AI 请求文本原样携带；
+        // 占位符 {rate}/{roll}/{margin}/{degree} 全部模板通用（degree 见 marginDegree）。
+        // v58：成功/失败按档位取独立模板；单条 fallback 文案铺到三档兜底（档位无关短标签）。
         const marker = buildDiceMarker(
           outcome,
           roll,
           rate,
           {
-            fail: d.fail_send_template,
+            fail: {
+              low: d.fail_send_low_template,
+              mid: d.fail_send_mid_template,
+              high: d.fail_send_high_template,
+            },
             critSuccess: d.crit_success_send_template,
             critFail: d.crit_fail_send_template,
+            success: {
+              low: d.success_send_low_template,
+              mid: d.success_send_mid_template,
+              high: d.success_send_high_template,
+            },
           },
           {
-            fail: d.fail_template,
+            fail: { low: d.fail_template, mid: d.fail_template, high: d.fail_template },
             critSuccess: d.crit_success_template,
             critFail: d.crit_fail_template,
+            success: { low: d.success_template, mid: d.success_template, high: d.success_template },
           },
         );
         appliedContent = marker + content;
-        // 判定播报：彩蛋与成败文案分开，toastr 类型跟随结局语义色
-        if (outcome === 'crit_success') {
-          toastr.success(t`🎲 大成功！点数 ${roll}`);
-        } else if (outcome === 'success') {
-          toastr.success(t`🎲 判定成功：点数 ${roll} ≤ 需求 ${rate}`);
-        } else if (outcome === 'crit_fail') {
-          toastr.error(t`🎲 大失败！点数 ${roll}`);
-        } else {
-          toastr.error(t`🎲 判定失败：点数 ${roll} > 需求 ${rate}`);
-        }
+        // 判定结果不弹酒馆 toastr（失败用 toastr.error 红得像插件报错）——
+        // 改由视图层行内判定 chip 反馈（结局+差值，主面板/悬浮球各自实现），
+        // 本共享层只返回 diceResult 供组件消费。
       }
     }
   }

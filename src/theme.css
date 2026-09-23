@@ -101,11 +101,11 @@
   --choice-risk-balanced: var(--choice-color-info);
   --choice-risk-bold: var(--choice-color-warning);
 
-  /* 成功率徽标分级色：中档取主色、高档/低档复用成功/警告色相，
-     与档位色条（--choice-risk-*）区分语义 */
-  --choice-rate-high: var(--choice-color-success);
+  /* 需求值徽标分级色（v56 难度制）：数字 = 达成所需的骰子点数下限，高需求难、低需求易
+     ——高档取警告色、低档取成功色、中档取主色，与档位色条（--choice-risk-*）区分语义 */
+  --choice-rate-high: var(--choice-color-warning);
   --choice-rate-mid: var(--choice-primary);
-  --choice-rate-low: var(--choice-color-warning);
+  --choice-rate-low: var(--choice-color-success);
 
   /* 基准行高与等宽字体栈：散落各组件的裸 line-height/等宽字体统一收敛于此 */
   --choice-line-height: 1.5;
