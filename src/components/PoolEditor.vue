@@ -195,7 +195,9 @@
       <div class="choice-inline-field">
         <div class="choice-inline-field-head">
           <label class="choice-inline-label">{{ t`规则（可选）` }}</label>
-          <span class="choice-inline-hint">{{ t`留空则不注入；无需任何标签，直接按需求或角色卡书写，AI 原样读取` }}</span>
+          <span class="choice-inline-hint">{{
+            t`留空则不注入；无需任何标签，直接按需求或角色卡书写，AI 原样读取`
+          }}</span>
         </div>
         <textarea
           v-model="selectedConfig.rules"
