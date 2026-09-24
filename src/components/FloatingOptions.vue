@@ -97,19 +97,11 @@
               {{ opt.label }}
             </button>
           </div>
-          <button
-            class="choice-tool-btn"
-            :title="t`恢复默认弹窗大小与字号`"
-            @click="onResetSize"
-          >
+          <button class="choice-tool-btn" :title="t`恢复默认弹窗大小与字号`" @click="onResetSize">
             <i class="fa-solid fa-rotate-left"></i>
           </button>
           <span class="choice-float-bar-spacer"></span>
-          <button
-            class="choice-tool-btn choice-tool-btn--active"
-            :title="t`完成调整`"
-            @click="onToggleAdjust"
-          >
+          <button class="choice-tool-btn choice-tool-btn--active" :title="t`完成调整`" @click="onToggleAdjust">
             <i class="fa-solid fa-sliders"></i>
           </button>
         </template>
@@ -165,11 +157,7 @@
             <i class="fa-solid fa-circle-info"></i>
           </span>
           <!-- 设置入口恒在工具区最右；调整按钮在其左侧（同主面板调整在设置左侧） -->
-          <button
-            class="choice-tool-btn"
-            :title="t`调整弹窗大小与字号`"
-            @click="onToggleAdjust"
-          >
+          <button class="choice-tool-btn" :title="t`调整弹窗大小与字号`" @click="onToggleAdjust">
             <i class="fa-solid fa-sliders"></i>
           </button>
           <button class="choice-tool-btn" :title="t`打开设置`" @click="openSettings">
