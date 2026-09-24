@@ -255,6 +255,7 @@ import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { parseOptionType, parseOptionContent, parseOptionStyle, resolveOptionSuccessRate } from '@/util/option-format';
 import { applyOptionBehavior } from '@/util/option-action';
 import type { DiceOutcome } from '@/core/dice';
+import { OPTION_FONT_SCALE } from '@/core/constants';
 
 const props = defineProps<{ compact?: boolean }>();
 
@@ -356,8 +357,8 @@ const heightHint = computed(() => {
 
 // ── 选项面板正文独立字号档（ui.option_font_size / option_font_size_auto）─────────
 // 只在全局 --choice-text-* 之上再乘一个面板档位（global.css 对 .choice-option-* 生效），
-// 不与全局 font_size 联动；自动档 = 不额外缩放（跟随全局结果）
-const OPTION_FONT_SCALE: Record<'small' | 'medium' | 'large', number> = { small: 0.85, medium: 1, large: 1.2 };
+// 不与全局 font_size 联动；自动档 = 不额外缩放（跟随全局结果）。
+// 缩放系数收在 constants.ts（OPTION_FONT_SCALE），与悬浮球弹窗字号档共用同一来源
 const optionFontScale = computed(() => {
   const ui = gs.settings.ui;
   return ui.option_font_size_auto ? 1 : OPTION_FONT_SCALE[ui.option_font_size];
