@@ -52,6 +52,9 @@
 
   --choice-transition: 150ms ease;
   --choice-transition-slow: 300ms ease-out;
+  /* 运动类过渡（transform/opacity：浮起、滑入、按下收缩）：分层微动效，
+     color/background/border 仍走 --choice-transition（150ms ease） */
+  --choice-transition-motion: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
   --choice-space-1: 4px;
   --choice-space-2: 8px;
@@ -70,6 +73,9 @@
   --choice-text-base: calc(15px * var(--choice-font-scale));
   --choice-text-lg: calc(17px * var(--choice-font-scale));
   --choice-text-xl: calc(20px * var(--choice-font-scale));
+  /* 最小可读档：图表日期标签等小尺寸元信息专用（此前统计趋势图用裸值 9px，
+     低于 token 体系；再小就失去可读性，不要继续往下加档） */
+  --choice-text-2xs: calc(10px * var(--choice-font-scale));
 
   --choice-z-panel: 10;
   --choice-z-dropdown: 30200;
@@ -85,6 +91,25 @@
   --choice-bg-element: var(--choice-surface-2);
   --choice-bg-elevated: var(--choice-surface-2);
   --choice-warning: var(--choice-color-warning);
+  /* danger：骰子失败/大失败判定 chip 引用（此前未定义，var() 回落继承色致
+     失败红色不渲染）；定义为 error 的别名，随主题块两极性自动切换 */
+  --choice-color-danger: var(--choice-color-error);
+
+  /* 风险档位分级色（选项 HUD 化）：惰性引用各主题块已覆盖的语义色，
+     不在 6 套主题块重复定义——逐主题块已有 success/info/warning 的亮暗双值 */
+  --choice-risk-conservative: var(--choice-color-success);
+  --choice-risk-balanced: var(--choice-color-info);
+  --choice-risk-bold: var(--choice-color-warning);
+
+  /* 需求值徽标分级色（v56 难度制）：数字 = 达成所需的骰子点数下限，高需求难、低需求易
+     ——高档取警告色、低档取成功色、中档取主色，与档位色条（--choice-risk-*）区分语义 */
+  --choice-rate-high: var(--choice-color-warning);
+  --choice-rate-mid: var(--choice-primary);
+  --choice-rate-low: var(--choice-color-success);
+
+  /* 基准行高与等宽字体栈：散落各组件的裸 line-height/等宽字体统一收敛于此 */
+  --choice-line-height: 1.5;
+  --choice-font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, 'Courier New', monospace;
 }
 
 /* ===== 亮色主题 — 暖白纸感磨砂 ===== */

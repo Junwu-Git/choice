@@ -1,13 +1,13 @@
 <template>
   <div class="choice-api-editor">
-    <div class="choice-retry-section">
+    <ChoiceSectionCard title="重试" icon="fa-solid fa-rotate">
       <div class="choice-retry-fields">
         <label class="choice-field">
           <span>{{ t`失败重试次数` }}</span>
           <input
             v-model.number="globalStore.settings.retry_count"
             type="number"
-            class="text_pole"
+            class="choice-input"
             min="0"
             max="10"
             placeholder="0"
@@ -18,139 +18,152 @@
           <input
             v-model.number="globalStore.settings.retry_interval"
             type="number"
-            class="text_pole"
+            class="choice-input"
             min="0"
             max="60"
             placeholder="1"
           />
         </label>
       </div>
-      <span class="choice-retry-hint">{{
+      <span class="choice-field-hint">{{
         t`重试次数 0 = 不重试；网络错误或 5xx 时自动重试，两次重试之间按"重试间隔"等待（0 = 立即重试）`
       }}</span>
-    </div>
 
-    <div class="choice-retry-section">
       <label class="choice-check">
         <input v-model="globalStore.settings.api_tool_choice_none" type="checkbox" />
         {{ t`请求附带 tool_choice:none` }}
       </label>
-      <span class="choice-retry-hint">{{
+      <span class="choice-field-hint">{{
         t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
       }}</span>
-    </div>
+    </ChoiceSectionCard>
 
-    <div class="choice-api-select-row">
-      <label class="choice-field" style="flex: 1; min-width: 0">
-        <span>{{ t`生成 API` }}</span>
-        <select
-          :value="selectedApiId"
-          class="text_pole"
-          @change="selectApi(($event.target as HTMLSelectElement).value)"
+    <ChoiceSectionCard title="渠道与模型" icon="fa-solid fa-plug" default-open>
+      <div class="choice-api-select-row">
+        <label class="choice-field" style="flex: 1; min-width: 0">
+          <span>{{ t`生成 API` }}</span>
+          <select
+            :value="selectedApiId"
+            class="choice-select"
+            @change="selectApi(($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
+              {{ api.name || t`<未命名>` }}
+            </option>
+          </select>
+        </label>
+        <button
+          class="menu_button"
+          style="flex-shrink: 0; margin-top: auto"
+          :title="t`新建 API 配置`"
+          @click="createApi"
         >
-          <option v-for="api in globalStore.settings.apis" :key="api.id" :value="api.id">
-            {{ api.name || t`<未命名>` }}
-          </option>
-        </select>
-      </label>
-      <button class="menu_button" style="flex-shrink: 0; margin-top: auto" :title="t`新建 API 配置`" @click="createApi">
-        <i class="fa-solid fa-plus"></i> {{ t`新建` }}
-      </button>
-      <button
-        class="menu_button"
-        style="flex-shrink: 0; margin-top: auto; color: var(--choice-color-error)"
-        :disabled="!selectedApiId"
-        :title="t`删除当前 API`"
-        @click="removeApi"
-      >
-        <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
-      </button>
-    </div>
+          <i class="fa-solid fa-plus"></i> {{ t`新建` }}
+        </button>
+        <button
+          class="menu_button"
+          style="flex-shrink: 0; margin-top: auto; color: var(--choice-color-error)"
+          :disabled="!selectedApiId"
+          :title="t`删除当前 API`"
+          @click="removeApi"
+        >
+          <i class="fa-solid fa-trash-can"></i> {{ t`删除` }}
+        </button>
+      </div>
 
-    <div class="choice-api-form" data-tour="api-form">
-      <div class="choice-api-form-body">
-        <div class="choice-api-name-row">
-          <input v-model="draftForm.name" class="text_pole" :placeholder="t`配置名称`" />
-        </div>
-        <div class="choice-api-url-row" data-tour="api-url">
-          <input v-model="draftForm.apiurl" class="text_pole" :placeholder="t`API 地址`" />
-        </div>
-        <div class="choice-api-key-row">
-          <input v-model="draftForm.key" class="text_pole" type="password" :placeholder="t`API 密钥`" />
-        </div>
-        <div class="choice-model-row">
-          <input
-            v-model="draftForm.model"
-            class="text_pole"
-            :placeholder="t`模型名称`"
-            @focus="modelDropdownOpen = true"
-            @blur="onModelBlur"
-          />
-          <button
-            class="menu_button choice-fetch-btn"
-            :disabled="fetching"
-            :title="t`从 API 拉取可用模型列表`"
-            @click="fetchModels"
-          >
-            <i v-if="fetching" class="fa-solid fa-spinner fa-spin"></i>
-            <i v-else class="fa-solid fa-cloud-arrow-down"></i>
-            {{ fetching ? '' : t`拉取` }}
-          </button>
-        </div>
-        <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
-          <div
-            v-for="model in modelList"
-            :key="model"
-            class="choice-model-item"
-            :class="{ 'choice-model-item--active': draftForm.model === model }"
-            @click="
-              draftForm.model = model;
-              modelDropdownOpen = false;
-            "
-          >
-            {{ model }}
+      <div class="choice-api-form" data-tour="api-form">
+        <div class="choice-api-form-body">
+          <div class="choice-api-name-row">
+            <input v-model="draftForm.name" class="choice-input" :placeholder="t`配置名称`" />
           </div>
-        </div>
-        <div class="choice-api-row">
-          <label class="choice-field">
-            <span>{{ t`温度` }}</span>
-            <input v-model.number="draftForm.temperature" type="number" class="text_pole" min="0" max="2" step="0.1" />
-          </label>
-          <label class="choice-field">
-            <span>{{ t`最大 Token` }}</span>
-            <input v-model.number="draftForm.max_tokens" type="number" class="text_pole" min="1" />
-          </label>
-          <label class="choice-field">
-            <span>{{ t`超时(秒)` }}</span>
-            <input v-model.number="draftForm.timeout" type="number" class="text_pole" min="0" placeholder="0" />
-          </label>
-        </div>
-        <div class="choice-api-bottom-row">
-          <div class="choice-api-checks">
-            <label class="choice-check">
-              <input v-model="draftForm.stream" type="checkbox" />
-              {{ t`流式` }}
+          <div class="choice-api-url-row" data-tour="api-url">
+            <input v-model="draftForm.apiurl" class="choice-input" :placeholder="t`API 地址`" />
+          </div>
+          <div class="choice-api-key-row">
+            <input v-model="draftForm.key" class="choice-input" type="password" :placeholder="t`API 密钥`" />
+          </div>
+          <div class="choice-model-row">
+            <input
+              v-model="draftForm.model"
+              class="choice-input"
+              :placeholder="t`模型名称`"
+              @focus="modelDropdownOpen = true"
+              @blur="onModelBlur"
+            />
+            <button
+              class="menu_button choice-fetch-btn"
+              :disabled="fetching"
+              :title="t`从 API 拉取可用模型列表`"
+              @click="fetchModels"
+            >
+              <i v-if="fetching" class="fa-solid fa-spinner fa-spin"></i>
+              <i v-else class="fa-solid fa-cloud-arrow-down"></i>
+              {{ fetching ? '' : t`拉取` }}
+            </button>
+          </div>
+          <div v-if="modelDropdownOpen && modelList.length > 0" class="choice-model-list">
+            <div
+              v-for="model in modelList"
+              :key="model"
+              class="choice-model-item"
+              :class="{ 'choice-model-item--active': draftForm.model === model }"
+              @click="
+                draftForm.model = model;
+                modelDropdownOpen = false;
+              "
+            >
+              {{ model }}
+            </div>
+          </div>
+          <div class="choice-api-row">
+            <label class="choice-field">
+              <span>{{ t`温度` }}</span>
+              <input
+                v-model.number="draftForm.temperature"
+                type="number"
+                class="choice-input"
+                min="0"
+                max="2"
+                step="0.1"
+              />
+            </label>
+            <label class="choice-field">
+              <span>{{ t`最大 Token` }}</span>
+              <input v-model.number="draftForm.max_tokens" type="number" class="choice-input" min="1" />
+            </label>
+            <label class="choice-field">
+              <span>{{ t`超时(秒)` }}</span>
+              <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
             </label>
           </div>
-          <input
-            v-model="draftForm.exclude_params"
-            class="text_pole"
-            :placeholder="t`排除参数`"
-            style="flex: 1; min-width: 0"
-          />
+          <div class="choice-api-bottom-row">
+            <div class="choice-api-checks">
+              <label class="choice-check">
+                <input v-model="draftForm.stream" type="checkbox" />
+                {{ t`流式` }}
+              </label>
+            </div>
+            <input
+              v-model="draftForm.exclude_params"
+              class="choice-input"
+              :placeholder="t`排除参数`"
+              style="flex: 1; min-width: 0"
+            />
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="choice-api-bottom-actions">
-      <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
-      <button class="menu_button" @click="reset">{{ t`取消` }}</button>
-    </div>
+      <div class="choice-api-bottom-actions">
+        <button class="menu_button" data-tour="api-save" @click="save">{{ t`保存` }}</button>
+        <button class="menu_button" @click="reset">{{ t`取消` }}</button>
+      </div>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import toastr from 'toastr';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
@@ -287,23 +300,13 @@ const reset = () => {
 .choice-api-editor {
   display: flex;
   flex-direction: column;
-  gap: var(--choice-space-2);
+  gap: var(--choice-space-4);
 }
 
 .choice-api-select-row {
   display: flex;
   align-items: flex-end;
   gap: var(--choice-space-2);
-}
-
-.choice-retry-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  padding: var(--choice-space-2);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
 }
 
 /* 两个数字输入横排，窄容器自动折行堆叠——不依赖 CSS container query */
@@ -318,26 +321,10 @@ const reset = () => {
   min-width: 0;
 }
 
-.choice-retry-hint {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-}
-
-.choice-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-secondary);
-}
-
+/* 渠道与模型卡片内的表单：卡片已提供边框/背景，内层不再重复描边（避免卡中卡） */
 .choice-api-form {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  background: var(--choice-bg-card);
-  overflow: hidden;
 }
 
 .choice-api-form-body {
@@ -351,17 +338,13 @@ const reset = () => {
   display: flex;
 }
 
-.choice-api-name-row .text_pole {
+.choice-api-name-row .choice-input,
+.choice-api-url-row .choice-input,
+.choice-api-key-row .choice-input,
+.choice-model-row .choice-input {
+  /* 占满行宽：底色/边框/聚焦态由 global.css 的 .choice-input 提供。
+     url 行此前漏加 flex:1，导致 API 地址输入栏明显比其他栏短（用户反馈） */
   flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-api-name-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-api-url-row {
@@ -372,56 +355,10 @@ const reset = () => {
   display: flex;
 }
 
-.choice-api-key-row .text_pole {
-  flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-api-key-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-icon-btn {
-  background: transparent;
-  color: var(--choice-color-error);
-  border: none;
-  cursor: pointer;
-  font-size: var(--choice-text-sm);
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--choice-radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--choice-transition);
-}
-
-.choice-icon-btn:hover {
-  background: var(--choice-bg-hover);
-}
-
 .choice-model-row {
   display: flex;
   align-items: center;
   gap: var(--choice-space-2);
-}
-
-.choice-model-row .text_pole {
-  flex: 1;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-model-row .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-fetch-btn {

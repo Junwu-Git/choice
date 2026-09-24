@@ -115,7 +115,7 @@ const onClose = () => emit('close');
 
 .choice-importsrc-error {
   font-size: var(--choice-text-xs);
-  color: var(--choice-color-error, #e5615e);
+  color: var(--choice-color-error);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
@@ -133,7 +133,7 @@ const onClose = () => emit('close');
 }
 
 .choice-importsrc-replace-btn {
-  color: var(--choice-color-error, #e5615e);
-  border-color: var(--choice-color-error, #e5615e);
+  color: var(--choice-color-error);
+  border-color: var(--choice-color-error);
 }
 </style>

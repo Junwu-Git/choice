@@ -205,6 +205,132 @@
   border-color: var(--choice-primary-hover);
 }
 
+/* ===== 表单控件（替代 ST 原生 .text_pole 的扩展自有原子）=====
+   背景/边框/圆角/聚焦态统一收敛于此，各页不得再 scoped 重写 input/select/textarea；
+   与 theme.css 的 [data-choice-theme] 接管并存，类名原生携带扩展语义 */
+.choice-input,
+.choice-select,
+.choice-textarea {
+  font-family: inherit;
+  font-size: var(--choice-text-sm);
+  line-height: var(--choice-line-height);
+  color: var(--choice-text);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-sm);
+  padding: var(--choice-space-1) var(--choice-space-2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: border-color var(--choice-transition);
+}
+
+.choice-input::placeholder,
+.choice-textarea::placeholder {
+  color: var(--choice-text-muted);
+  opacity: 1;
+}
+
+.choice-input:focus,
+.choice-select:focus,
+.choice-textarea:focus {
+  border-color: var(--choice-border-active);
+  outline: none;
+}
+
+/* 输入框宽度规格（替代散落的内联 style="width:…"） */
+.choice-input-w-sm {
+  width: 60px;
+}
+
+.choice-input-w-md {
+  width: 80px;
+}
+
+.choice-input-w-lg {
+  width: 100px;
+}
+
+/* ===== 表单元 =====
+   列向堆叠：标签行 + 控件 + hint。Generation/Api/Prompt 各页曾 scoped 逐字重复，现收归 */
+.choice-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+}
+
+.choice-field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+}
+
+.choice-field-label label {
+  font-weight: 600;
+}
+
+.choice-field-hint {
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
+  line-height: var(--choice-line-height);
+}
+
+/* ===== 分段控件（segmented control）原子：胶囊容器 + 等距按钮 =====
+   统一「一级导航 / 子 tab / 行为栏 / 主题切换 / 统计分段」的选中语言：
+   容器浅底描边，选中项主色实底白字、无 glow（glow 只留给焦点引导场景，
+   见 theme.css 的 glow 用量规则）。5 处分段历史 active 视觉漂移（部分带 glow、
+   部分用浅底 info）以此收敛。复用方只套 .choice-seg 容器 + .choice-seg-btn，
+   scoped 内勿再改选中底色，避免再次漂移 */
+.choice-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--choice-space-1);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-full);
+  flex-wrap: wrap;
+}
+
+.choice-seg-btn {
+  background: transparent;
+  color: var(--choice-text-secondary);
+  border: none;
+  border-radius: var(--choice-radius-full);
+  font-size: var(--choice-text-xs);
+  padding: var(--choice-space-1) var(--choice-space-3);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  /* 按下反馈：可点控件统一轻微收缩（分层 motion 过渡） */
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition),
+    box-shadow var(--choice-transition),
+    transform var(--choice-transition-motion);
+}
+
+.choice-seg-btn:hover {
+  color: var(--choice-text);
+}
+
+.choice-seg-btn:active {
+  transform: scale(0.98);
+}
+
+.choice-seg-btn.active {
+  background: var(--choice-primary);
+  color: var(--choice-text-on-primary);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
+}
+
+.choice-seg-btn.active:hover {
+  background: var(--choice-primary-hover);
+  color: var(--choice-text-on-primary);
+}
+
 .choice-config-status {
   display: flex;
   align-items: center;
@@ -289,7 +415,8 @@
   text-align: center;
 }
 
-/* 内联 checkbox 标签 */
+/* 内联 checkbox 标签：小号行内复选框（条目行/弹窗列表等紧凑场景）。
+    与下方 .choice-toggle 卡片式开关区分：后者带 custom/label 子节点 */
 .choice-check {
   display: inline-flex;
   align-items: center;
@@ -297,6 +424,137 @@
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   white-space: nowrap;
+  /* hover 微反馈：可点控件统一「文字加深」语言（与 .choice-toggle 卡片底色语言区分，
+     内联勾选保持轻量，不上底色） */
+  transition: color var(--choice-transition);
+}
+
+.choice-check:hover {
+  color: var(--choice-text);
+}
+
+/* ===== 卡片式开关行（标题 + 描述 + 自定义复选框）=====
+   外观/生成等设置页复用；原各页 scoped 内逐字重复，现收归全局原子。
+   与内联 .choice-check 区别：卡片底 + 自定义 16px 复选框 + 强标题/小描述 */
+.choice-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--choice-space-3);
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+  background: var(--choice-bg-card);
+  border-radius: var(--choice-radius-md);
+  padding: var(--choice-space-3);
+  cursor: pointer;
+  transition: background var(--choice-transition);
+}
+
+.choice-toggle:hover {
+  background: var(--choice-bg-hover);
+}
+
+.choice-toggle input[type='checkbox'] {
+  display: none;
+}
+
+.choice-toggle-custom {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--choice-border-strong);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition:
+    background var(--choice-transition),
+    border-color var(--choice-transition);
+  position: relative;
+}
+
+.choice-toggle input[type='checkbox']:checked + .choice-toggle-custom {
+  background: var(--choice-primary);
+  border-color: var(--choice-primary);
+}
+
+.choice-toggle input[type='checkbox']:checked + .choice-toggle-custom::after {
+  content: '✓';
+  color: var(--choice-text-on-primary);
+  font-size: var(--choice-text-xs);
+  font-weight: bold;
+  position: absolute;
+  line-height: 1;
+}
+
+.choice-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--choice-text-secondary);
+}
+
+.choice-toggle-label strong {
+  color: var(--choice-text);
+}
+
+.choice-toggle-label small {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+/* ===== 设置页分区容器 + 标题（恒定展开的固定组卡片）=====
+   UI 去杂乱：把平铺分区升级为「带边框卡片 + 标题行」，与 ChoiceSectionCard
+   （可折叠）共用同一视觉语言——同背景/边框/圆角/标题行，只在"是否可折叠"上区分。
+   需要折叠的密集区用 ChoiceSectionCard，恒定展开的一级分组用本卡片。 */
+.choice-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+  background: var(--choice-bg-card);
+  border: 1px solid var(--choice-border-strong);
+  border-radius: var(--choice-radius-md);
+  padding: var(--choice-space-3) var(--choice-space-4);
+  /* 与 ChoiceSectionCard 一致的轻微投影，让卡片从面板背景浮起 */
+  box-shadow: var(--choice-shadow-sm);
+}
+
+.choice-section-title {
+  font-size: var(--choice-text-sm);
+  font-weight: 600;
+  color: var(--choice-text);
+  margin: 0;
+}
+
+/* ===== 空状态：居中邀请而非报错 =====
+   本期先落原子，空条目池/空统计等采用留二期 */
+.choice-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--choice-space-3);
+  padding: var(--choice-space-6) var(--choice-space-4);
+  text-align: center;
+  color: var(--choice-text-muted);
+}
+
+.choice-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--choice-radius-md);
+  background: var(--choice-bg-element);
+  color: var(--choice-text-muted);
+  font-size: 22px;
+}
+
+.choice-empty p {
+  margin: 0;
+  font-size: var(--choice-text-sm);
+  max-width: 32ch;
 }
 
 /* 虚线入口按钮 */
@@ -322,6 +580,382 @@
   background: var(--choice-bg-hover);
   border-color: var(--choice-primary);
   color: var(--choice-text);
+}
+
+/* ===== 菜单项（右键快捷菜单 / 动作菜单）=====
+   图标+文字、左对齐、hover 高亮；取代各悬浮菜单/动作菜单自绘按钮语言 */
+.choice-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  width: 100%;
+  padding: var(--choice-space-2) var(--choice-space-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--choice-radius-sm);
+  color: var(--choice-text-secondary);
+  font-size: var(--choice-text-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-menu-item:hover:not(:disabled) {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.choice-menu-item > i {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+  /* 图标降一档：与文字层级区分，hover 时随文字加深 */
+  color: var(--choice-text-muted);
+  transition: color var(--choice-transition);
+}
+
+.choice-menu-item:hover:not(:disabled) > i {
+  color: var(--choice-text-secondary);
+}
+
+/* ===== 行内展开按钮（条目/书页等紧凑行的折叠触发）=====
+   与 ChoiceDisclosure 的整行按钮互补：行内小图标按钮，独立命中区、补 hover/focus */
+.choice-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--choice-radius-sm);
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-expand-btn:hover:not(:disabled) {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-expand-btn i {
+  transition: transform var(--choice-transition);
+}
+
+.choice-expand-btn.expanded i {
+  transform: rotate(90deg);
+}
+
+/* ===== 选项行（主面板 + 悬浮球弹窗单一来源）=====
+   两处 UI 的选项按钮此前各 scoped 写一份微调版（类名前缀不同、rate/type/roll chip
+   重复三遍），已统一为 .choice-option-btn 一套规则。display:block + 行内 type 徽标：
+   type 不再占独立列宽，随文字自适应不截断（长就长），整行同文本流自然折行 */
+.choice-option-btn {
+  display: block;
+  text-align: left;
+  background: var(--choice-bg-card);
+  color: var(--choice-text);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-sm);
+  cursor: pointer;
+  line-height: var(--choice-line-height);
+  min-width: 0;
+  /* HUD 分级色条（::before 左缘）与悬停箭头（::after）的定位基准 */
+  position: relative;
+  transition:
+    transform var(--choice-transition),
+    border-color var(--choice-transition),
+    box-shadow var(--choice-transition);
+}
+
+/* 左缘分级色条：透明占位（width 过渡不跳变），--hud 门控下按档位上色 */
+.choice-option-btn::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: var(--choice-radius-sm) 0 0 var(--choice-radius-sm);
+  background: transparent;
+  transition:
+    background var(--choice-transition),
+    width var(--choice-transition);
+}
+
+/* 悬停箭头：绝对定位在行尾，hover 才浮现（不占布局，opacity 过渡无位移跳变） */
+.choice-option-btn::after {
+  content: '›';
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  font-weight: 700;
+  color: var(--choice-primary);
+  opacity: 0;
+  transition:
+    opacity var(--choice-transition),
+    transform var(--choice-transition);
+}
+
+.choice-option-btn:hover {
+  border-color: var(--choice-border-active);
+  transform: translateY(-1px);
+  box-shadow: var(--choice-shadow-md);
+}
+
+.choice-option-btn:active {
+  transform: scale(0.985);
+}
+
+/* ===== 选项 HUD 化（ui.hud_enabled，容器 --hud 类整体门控）=====
+   主面板容器 .choice-panel--hud 与悬浮弹窗容器 .choice-floating-options--hud
+   共用同一档位/动效/选中语言；关闭开关 = 不加 --hud 类，回基础卡片样式 */
+.choice-panel--hud .choice-option-btn,
+.choice-floating-options--hud .choice-option-btn {
+  /* 逐条滑入：v-for key 含 generation id，切代/翻页重建元素时重放一次；
+     animation-delay 由调用方逐条 60ms 错开 */
+  animation: choice-option-enter 220ms ease-out both;
+}
+
+@keyframes choice-option-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.choice-panel--hud .choice-option-btn--conservative::before,
+.choice-floating-options--hud .choice-option-btn--conservative::before {
+  background: var(--choice-risk-conservative);
+}
+
+.choice-panel--hud .choice-option-btn--balanced::before,
+.choice-floating-options--hud .choice-option-btn--balanced::before {
+  background: var(--choice-risk-balanced);
+}
+
+.choice-panel--hud .choice-option-btn--bold::before,
+.choice-floating-options--hud .choice-option-btn--bold::before {
+  background: var(--choice-risk-bold);
+}
+
+/* 悬停增强：加深浮起 + 色条加宽 + 行尾浮现箭头 */
+.choice-panel--hud .choice-option-btn:hover,
+.choice-floating-options--hud .choice-option-btn:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    var(--choice-shadow-md),
+    inset 0 1px 0 var(--choice-frost-line);
+}
+
+.choice-panel--hud .choice-option-btn:hover::before,
+.choice-floating-options--hud .choice-option-btn:hover::before {
+  width: 5px;
+}
+
+.choice-panel--hud .choice-option-btn:hover::after,
+.choice-floating-options--hud .choice-option-btn:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 已选打勾：同代内点过的选项降透明度 + 虚线描边 + 类型徽标前 ✓ */
+.choice-panel--hud .choice-option-btn--selected,
+.choice-floating-options--hud .choice-option-btn--selected {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.choice-panel--hud .choice-option-btn--selected .choice-option-type::before,
+.choice-floating-options--hud .choice-option-btn--selected .choice-option-type::before {
+  content: '✓';
+  margin-right: 3px;
+  color: var(--choice-color-success);
+  font-weight: 700;
+}
+
+/* 类型徽标：行内块紧贴内容，宽度自适应不截断；字号与内容同号，
+   仅靠底纹+色相+字重区分（加粗收敛为 600，不滥用 700） */
+.choice-option-type {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: var(--choice-space-2);
+  font-weight: 600;
+  font-size: var(--choice-text-sm);
+  line-height: var(--choice-line-height);
+  color: var(--choice-text-secondary);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.choice-option-content {
+  line-height: var(--choice-line-height);
+  font-size: var(--choice-text-sm);
+  /* anywhere：词内可断且参与 min-content 计算，长英文 token/URL 折行显示 */
+  overflow-wrap: anywhere;
+}
+
+/* 选项面板独立字号档（ui.option_font_size，ActionOptionsPanel 设 --choice-option-font-scale）：
+   只作用聊天面板（.choice-panel 非 --compact），悬浮 popover 固定小字不参与；
+   在全局 --choice-text-*（已含 --choice-font-scale）之上再乘面板档，独立于全局字号设置 */
+.choice-panel:not(.choice-panel--compact) .choice-option-btn,
+.choice-panel:not(.choice-panel--compact) .choice-option-content,
+.choice-panel:not(.choice-panel--compact) .choice-option-type {
+  font-size: calc(var(--choice-text-sm) * var(--choice-option-font-scale, 1));
+}
+
+/* ===== 骰子判定：成功率徽标 + 行内判定 chip（骰子开关开启即显示，独立于 HUD）===== */
+/* 成功率徽标：类型徽标旁的小 pill，彩色加粗文字按把握分档着色；
+   分档色用 --choice-rate-*（中档 = 主色靛青），与档位色条（--choice-risk-*）刻意不同源，
+   避免同一行上「平衡档位」与「中成功率」同色双义 */
+.choice-option-rate {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-right: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  font-weight: 700;
+  line-height: var(--choice-line-height);
+  white-space: nowrap;
+}
+
+.choice-option-rate--high {
+  color: var(--choice-rate-high);
+}
+
+.choice-option-rate--mid {
+  color: var(--choice-rate-mid);
+}
+
+.choice-option-rate--low {
+  color: var(--choice-rate-low);
+}
+
+/* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留 */
+.choice-roll-chip {
+  position: absolute;
+  right: var(--choice-space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: var(--choice-text-xs);
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--choice-radius-sm);
+  animation: choice-roll-chip-fade 3s ease forwards;
+}
+
+.choice-roll-chip--success,
+.choice-roll-chip--crit_success {
+  color: var(--choice-color-success);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-success);
+}
+
+.choice-roll-chip--fail,
+.choice-roll-chip--crit_fail {
+  color: var(--choice-color-danger);
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-color-danger);
+}
+
+@keyframes choice-roll-chip-fade {
+  to {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-panel--hud .choice-option-btn,
+  .choice-floating-options--hud .choice-option-btn {
+    animation: none;
+  }
+
+  .choice-roll-chip {
+    animation: none;
+  }
+}
+
+/* ===== 工具按钮原子（面板头部/悬浮弹窗底部工具条共用）=====
+   透明底 + muted 图标，hover 才显底色——头部按钮密度高，带边框使噪音增大，
+   按钮身份靠 hover 反馈与主色图标（--main）区分，常驻描边留给分段控件 */
+.choice-tool-btn {
+  background: transparent;
+  color: var(--choice-text-muted);
+  border: none;
+  border-radius: var(--choice-radius-sm);
+  padding: var(--choice-space-1) var(--choice-space-2);
+  font-size: var(--choice-text-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--choice-space-1);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-tool-btn:hover:not(:disabled) {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-tool-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.choice-tool-btn--active {
+  color: var(--choice-primary);
+}
+
+/* 主操作（生成/取消/生成润色）：无边框语言下用主色图标区分主操作身份 */
+.choice-tool-btn--main {
+  color: var(--choice-primary);
+}
+
+.choice-tool-btn--main:hover:not(:disabled) {
+  color: var(--choice-primary-hover);
+}
+
+/* 行内提示图标（风险档位图例等）：muted 图标 + hover 主色，与工具按钮同密度 */
+.choice-icon-hint {
+  padding: var(--choice-space-1);
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.choice-icon-hint:hover {
+  color: var(--choice-primary);
 }
 
 /* FA 字形墨迹在 em 框内偏上（下缘约留 1/8em 空白），flex/inline-flex 按 em 框居中时
@@ -390,6 +1024,24 @@
   .choice-btn-sm {
     min-height: var(--choice-tap-min);
     padding: var(--choice-space-2) var(--choice-space-3);
+  }
+
+  .choice-expand-btn {
+    width: var(--choice-tap-min);
+    height: var(--choice-tap-min);
+  }
+
+  .choice-menu-item {
+    min-height: var(--choice-tap-min);
+  }
+
+  .choice-tool-btn {
+    min-height: var(--choice-tap-min);
+    padding: var(--choice-space-2) var(--choice-space-3);
+  }
+
+  .choice-seg-btn {
+    min-height: var(--choice-tap-min);
   }
 
   /* 40px 化后「配置选择 + 一排操作按钮」在 ~390px 视口放不下（新建按钮被截断），

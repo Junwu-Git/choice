@@ -13,51 +13,74 @@
           transition: isDragging ? 'none' : 'transform 0.3s ease-out',
         }"
       >
+        <!-- 题首：标题 + 引导按钮(❓/🎓) + 关闭。整条仍是拖拽手柄 -->
         <div ref="headerEl" class="choice-floating-header" data-tour="settings-header">
           <span class="choice-floating-title">
             <i class="fa-solid fa-chess"></i>
             {{ t`行动选项` }}
           </span>
-          <button class="choice-floating-close" @click="closeSettings">&times;</button>
-        </div>
-
-        <div class="choice-floating-body choice-scrollbar">
-          <div ref="tabsEl" class="choice-tabs" data-tour="tab-strip">
-            <button
-              v-for="tab in displayTabs"
-              :key="tab.id"
-              :ref="setTabBtnRef(tab.id)"
-              class="choice-tab"
-              :class="{ active: activeTab === tab.id }"
-              @click="onTabClick(tab.id)"
-            >
-              <i :class="tab.icon"></i>
-              {{ tab.label }}
-            </button>
+          <div class="choice-floating-head-actions">
             <button
               ref="guideBtn"
-              class="choice-tab choice-guide-btn"
+              class="choice-floating-head-btn"
               :title="t`页面指引`"
               @click="showGuide = !showGuide"
             >
               <i class="fa-solid fa-circle-question"></i>
             </button>
-            <button class="choice-tab choice-guide-btn" :title="t`新手引导 / 功能课堂`" @click="openChapterMenu">
+            <button class="choice-floating-head-btn" :title="t`新手引导 / 功能课堂`" @click="openChapterMenu">
               <i class="fa-solid fa-graduation-cap"></i>
+            </button>
+            <button class="choice-floating-close" :title="t`关闭`" @click="closeSettings">&times;</button>
+          </div>
+        </div>
+
+        <div class="choice-floating-body choice-scrollbar">
+          <!-- 一级导航：4 页胶囊分段栏。data-tour="tab-strip" 保留，向导聚光灯锚点沿用 -->
+          <div ref="pageStripEl" class="choice-nav" data-tour="tab-strip">
+            <button
+              v-for="p in PAGES"
+              :key="p.id"
+              :ref="setPageBtnRef(p.id)"
+              class="choice-nav-item"
+              :class="{ active: activePage === p.id }"
+              :title="p.label"
+              :aria-current="activePage === p.id ? 'page' : undefined"
+              @click="onPageClick(p.id)"
+            >
+              <i :class="p.icon"></i>
+              <span class="choice-nav-label">{{ p.label }}</span>
+            </button>
+          </div>
+
+          <!-- 二级子 tab 条：仅当可见子区 >1 时渲染（stats 页恒 1 个、简化模式下
+               content/system 各剩 1 个时自动隐藏，直接展示该编辑器） -->
+          <div v-if="displaySubAreas.length > 1" ref="subStripEl" class="choice-subtabs">
+            <button
+              v-for="s in displaySubAreas"
+              :key="s.id"
+              :ref="setSubBtnRef(s.id)"
+              class="choice-subtab"
+              :class="{ active: activeSubArea === s.id }"
+              :title="s.label"
+              @click="onSubClick(s.id)"
+            >
+              <i :class="s.icon"></i>
+              {{ s.label }}
             </button>
           </div>
 
           <GuidePopover :visible="showGuide" :anchor-el="guideBtn" :hint="currentHint" @close="showGuide = false" />
 
-          <PoolEditor v-if="activeTab === 'pool'" />
-          <GenerationSettings v-else-if="activeTab === 'generation'" />
-          <PromptEditor v-else-if="activeTab === 'prompt'" />
-          <ApiEditor v-else-if="activeTab === 'api'" />
-          <WorldInfoEditor v-else-if="activeTab === 'worldinfo'" />
-          <FilterEditor v-else-if="activeTab === 'filter'" />
-          <Statistics v-else-if="activeTab === 'stats'" />
-          <AppearanceSettings v-else-if="activeTab === 'appearance'" />
-          <DebugSettings v-else-if="activeTab === 'debug'" />
+          <PoolEditor v-if="activeSubArea === 'pool'" />
+          <GenerationSettings v-else-if="activeSubArea === 'generation'" />
+          <PromptEditor v-else-if="activeSubArea === 'prompt'" />
+          <ApiEditor v-else-if="activeSubArea === 'api'" />
+          <WorldInfoEditor v-else-if="activeSubArea === 'worldinfo'" />
+          <FilterEditor v-else-if="activeSubArea === 'filter'" />
+          <Statistics v-else-if="activeSubArea === 'stats'" />
+          <AppearanceSettings v-else-if="activeSubArea === 'appearance'" />
+          <DebugSettings v-else-if="activeSubArea === 'debug'" />
         </div>
 
         <div class="choice-floating-resize" @mousedown="onResizeStart">
@@ -79,7 +102,15 @@ import Statistics from '@/components/Statistics.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
-import { FLOATING_TABS, visibleTabs, ADVANCED_TAB_IDS, type TabId } from '@/components/shared/tab-definitions';
+import {
+  PAGES,
+  visibleSubAreas,
+  pageOfSubArea,
+  firstVisibleSubArea,
+  ADVANCED_TAB_IDS,
+  type PageId,
+  type TabId,
+} from '@/components/shared/tab-definitions';
 import { PAGE_HINTS } from '@/core/guide-content';
 import { isSettingsOpen, closeSettings, requestedTab } from '@/core/floating-state';
 import { maybeAutoOpenOnboarding, openChapterMenu, onboardingPendingTab } from '@/core/onboarding';
@@ -87,84 +118,110 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 
 const gs = useGlobalSettingsStore();
 
-// 简化模式（advanced_features_enabled=false）下 tab 栏只渲染基础 tab；
-// FLOATING_TABS 本体不动，隐藏的 tab 内容 v-if 链仍保留（不可激活即不可见）
-const displayTabs = computed(() => visibleTabs(FLOATING_TABS, gs.settings.ui.advanced_features_enabled));
+// 简化模式（advanced_features_enabled=false）下隐藏高级子区（prompt/worldinfo/
+// filter/debug）。语义从「隐藏整 tab」改为「隐藏子区」：content 页只剩条目池、
+// system 页只剩外观，子 tab 条随之隐藏、直接展示该编辑器
+const advanced = computed(() => gs.settings.ui.advanced_features_enabled);
 
-const activeTab = ref<TabId>('pool');
+const activePage = ref<PageId>('content');
+const activeSubArea = ref<TabId>('pool');
 const showGuide = ref(false);
 const guideBtn = ref<HTMLElement | null>(null);
 
-const onTabClick = (id: TabId) => {
-  // 兜底：抽屉/面板打开后引导仍未完成的场景，首次点 tab 也能触发自动弹出
-  maybeAutoOpenOnboarding();
-  activeTab.value = id;
-};
+const currentPage = computed(() => PAGES.find(p => p.id === activePage.value)!);
+// 某页当前可见子区：仅过滤不排序，展示顺序跟随 page.subAreas
+const displaySubAreas = computed(() => visibleSubAreas(currentPage.value, advanced.value));
 
-// 简化模式守卫：开关关闭瞬间，若当前停在高级 tab 则弹回条目池，避免内容区空白。
-// 同时 watch 开关与 activeTab 两个源（合并为一个 watcher）：开关变化捕获"关闭瞬间"，
-// activeTab 变化兜住其它写入路径（onboardingPendingTab 直跳、开关关闭期间设置隐藏 tab
-// 后再打开面板等）——任何时刻 activeTab 指向隐藏 tab 都会被弹回。两源任一触发走同一守卫，
-// 同一 tick 内幂等（已弹回 pool 后再次触发是 no-op）
-watch([() => gs.settings.ui.advanced_features_enabled, activeTab], ([advanced, tab]) => {
-  if (!advanced && ADVANCED_TAB_IDS.includes(tab as (typeof ADVANCED_TAB_IDS)[number])) {
-    activeTab.value = 'pool';
+// 切一级页：默认落到该页首个可见子区（简化模式下落到唯一基础子区）
+function onPageClick(id: PageId) {
+  // 兜底：抽屉/面板打开后引导仍未完成的场景，首次点导航也触发自动弹出
+  maybeAutoOpenOnboarding();
+  activePage.value = id;
+  const page = PAGES.find(p => p.id === id)!;
+  activeSubArea.value = firstVisibleSubArea(page, advanced.value).id;
+}
+
+function onSubClick(id: TabId) {
+  maybeAutoOpenOnboarding();
+  activeSubArea.value = id;
+}
+
+// 信号统一入口：子区 id → 同步 page + subArea 两级状态。
+// requestedTab / onboardingPendingTab 都是子区 id，若只设 subArea 不设 page，
+// displaySubAreas 仍读旧 page 的子区列表，会出现「跳了子区但 page 没跟」的错位
+function goToSubArea(id: TabId) {
+  activePage.value = pageOfSubArea(id).id;
+  activeSubArea.value = id;
+}
+
+// 引导 ❓ 提示键：以当前子区 id 取 PAGE_HINTS（键不变，源从旧 activeTab 换成 activeSubArea）
+const currentHint = computed(() => PAGE_HINTS[activeSubArea.value]);
+
+// 简化守卫：advanced 关闭瞬间，或 activeSubArea 被设到高级子区而当前 !advanced 时，
+// 弹回当前页首个基础子区，避免内容区空白（旧逻辑粒度从 tab 搬到 subArea）
+const advancedIds = new Set<string>(ADVANCED_TAB_IDS);
+watch([advanced, activeSubArea], ([adv, sub]) => {
+  if (!adv && advancedIds.has(sub)) {
+    activeSubArea.value = firstVisibleSubArea(currentPage.value, false).id;
   }
 });
 
-// 面板打开瞬间触发首次自动弹出（向导实例挂在 FloatingRoot，全局单实例）；
-// maybeAutoOpenOnboarding 内部自判 onboarding_done，重复调用无副作用
+// 面板打开瞬间触发首次自动弹出（向导实例挂在 FloatingRoot，全局单实例）
 watch(isSettingsOpen, open => {
   if (open) maybeAutoOpenOnboarding();
 });
 
-// 向导「跳转到某 tab」：pendingTab 由打开中的面板消费后置回 null，
-// 向导是全局单实例，不知道哪个面板开着，只能走这一层间接
+// 向导「跳转到某子区」：pendingTab 由打开中的面板消费后置回 null
 watch(onboardingPendingTab, tab => {
   if (tab) {
-    activeTab.value = tab;
+    goToSubArea(tab);
     onboardingPendingTab.value = null;
   }
 });
 
-// 统计页「定位条目」请求切 tab：与向导同模式但信号独立，并发不互相覆盖
+// 统计页「定位条目」请求切子区：与向导同模式但信号独立，并发不互相覆盖
 watch(requestedTab, tab => {
   if (tab) {
-    activeTab.value = tab;
+    goToSubArea(tab);
     requestedTab.value = null;
   }
 });
 
-const currentHint = computed(() => PAGE_HINTS[activeTab.value]);
-
-// 手机视口下 tab 栏横向滚动、滚动条被隐藏，溢出的激活 tab 需手动滚回可视区，
-// 否则用户感知不到"后面还有 tab"
-const tabsEl = ref<HTMLElement | null>(null);
-const tabBtnEls = new Map<TabId, HTMLElement>();
-const setTabBtnRef = (id: TabId) => (el: unknown) => {
-  if (el instanceof HTMLElement) tabBtnEls.set(id, el);
+// 手机视口下导航条横向溢出时滚动条被隐藏，激活项需手动滚回可视区
+const pageStripEl = ref<HTMLElement | null>(null);
+const subStripEl = ref<HTMLElement | null>(null);
+const pageBtnEls = new Map<PageId, HTMLElement>();
+const subBtnEls = new Map<TabId, HTMLElement>();
+const setPageBtnRef = (id: PageId) => (el: unknown) => {
+  if (el instanceof HTMLElement) pageBtnEls.set(id, el);
+};
+const setSubBtnRef = (id: TabId) => (el: unknown) => {
+  if (el instanceof HTMLElement) subBtnEls.set(id, el);
 };
 
-const scrollActiveTabIntoStrip = () => {
-  const strip = tabsEl.value;
-  const btn = tabBtnEls.get(activeTab.value);
+// 用 getBoundingClientRect 计算相对位置而非 offsetLeft：strip 非 positioned，
+// offsetLeft 的 offsetParent 不一定是 strip；且禁用 scrollIntoView——
+// 它会把所有可滚祖先一起滚（含竖向），移动端反而可能把页面拖动
+function scrollBtnIntoStrip(strip: HTMLElement | null, btn: HTMLElement | undefined) {
   if (!strip || !btn) return;
-  // 用 getBoundingClientRect 计算相对位置而非 offsetLeft：strip 非 positioned，
-  // offsetLeft 相对的 offsetParent 不一定是 strip；且禁用 scrollIntoView——
-  // 它会把所有可滚祖先一起滚（含竖向），移动端反而可能把页面拖动
   const stripRect = strip.getBoundingClientRect();
   const btnRect = btn.getBoundingClientRect();
   const target = strip.scrollLeft + (btnRect.left - stripRect.left) - (strip.clientWidth - btnRect.width) / 2;
   strip.scrollLeft = Math.max(0, Math.min(target, strip.scrollWidth - strip.clientWidth));
-};
+}
 
-watch(activeTab, () => nextTick(scrollActiveTabIntoStrip));
-// 弹窗 DOM 由 v-if 按需创建：每次打开 scrollLeft 归零，而组件实例整个页面生命周期只 mount 一次，
-// onMounted 覆盖不到"重新打开"，必须监听开关注册补居中
+watch(activePage, () => nextTick(() => scrollBtnIntoStrip(pageStripEl.value, pageBtnEls.get(activePage.value))));
+watch(activeSubArea, () => nextTick(() => scrollBtnIntoStrip(subStripEl.value, subBtnEls.get(activeSubArea.value))));
+// 弹窗 DOM 由 v-if 按需创建：每次打开 scrollLeft 归零，而组件实例整页生命周期只 mount 一次，
+// onMounted 覆盖不到「重新打开」，必须监听开关注册补居中
 watch(isSettingsOpen, open => {
-  if (open) nextTick(scrollActiveTabIntoStrip);
+  if (!open) return;
+  nextTick(() => {
+    scrollBtnIntoStrip(pageStripEl.value, pageBtnEls.get(activePage.value));
+    scrollBtnIntoStrip(subStripEl.value, subBtnEls.get(activeSubArea.value));
+  });
 });
-onMounted(() => nextTick(scrollActiveTabIntoStrip));
+onMounted(() => nextTick(() => scrollBtnIntoStrip(pageStripEl.value, pageBtnEls.get(activePage.value))));
 
 // 手机首次打开近全屏：窄视口下 680x500 的桌面默认尺寸既放不下也没多少可视内容。
 // 只影响无 localStorage 存档的首次打开；老用户已持久化的尺寸不动（打开时有 clamp 兜底）
@@ -180,7 +237,7 @@ const dialogEl = ref<HTMLElement | null>(null);
 const headerEl = ref<HTMLElement | null>(null);
 
 // 按住标题栏拖动、在弹窗外松手时，浏览器对按下/抬起目标不同的点击会在最近公共
-// 祖先（恰好是 overlay 自身）派发 click，@click.self 会误判成"点了遮罩"把面板关掉
+// 祖先（恰好是 overlay 自身）派发 click，@click.self 会误判成「点了遮罩」把面板关掉
 // （实测：拖完松手面板直接消失）。onEnd 先于该 click 触发，用时间戳挡掉松手后
 // 一小段窗口内的遮罩点击；250ms 足够覆盖事件派发延迟，不影响正常点遮罩关闭
 let dragJustEndedAt = 0;
@@ -207,7 +264,7 @@ function clampPanelX(x: number): number {
 }
 
 // 面板坐标持久化在 localStorage，窗口缩小/换分辨率后可能整体落在视口外，
-// 表现为"点击气泡后主界面不出现"。每次打开时先夹回可视区，并同步给 useDraggable
+// 表现为「点击气泡后主界面不出现」。每次打开时先夹回可视区，并同步给 useDraggable
 // （storage → posX 变化不会自动联动内部 x/y，必须手动写回）。
 watch(isSettingsOpen, open => {
   if (!open) return;
@@ -314,8 +371,8 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   align-items: center;
   justify-content: space-between;
   padding: var(--choice-space-3) var(--choice-space-4);
-  background: linear-gradient(180deg, rgba(var(--choice-primary-rgb), 0.08), transparent);
-  border-bottom: 1px solid var(--choice-border);
+  background: var(--choice-bg-panel);
+  border-bottom: 1px solid var(--choice-border-strong);
   cursor: move;
   user-select: none;
 }
@@ -327,6 +384,35 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   display: inline-flex;
   align-items: center;
   gap: var(--choice-space-2);
+}
+
+.choice-floating-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+}
+
+.choice-floating-head-btn {
+  background: none;
+  border: none;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-base);
+  cursor: pointer;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-floating-head-btn:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
 }
 
 .choice-floating-close {
@@ -357,33 +443,92 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   overflow-y: auto;
   /* 触屏上内容拖到滚动边缘时禁止滚动链传导，避免把弹窗背后的酒馆聊天页一起拖走 */
   overscroll-behavior: contain;
-  padding: var(--choice-space-4);
+  /* 留白：space-4 → space-5，控件不再紧贴边沿 */
+  padding: var(--choice-space-5);
   flex: 1;
 }
 
-.choice-tabs {
-  display: inline-flex;
+/* ===== 一级导航：全宽胶囊分段栏 ===== */
+.choice-nav {
+  display: flex;
   gap: var(--choice-space-1);
   margin-bottom: var(--choice-space-3);
-  /* 手机视口下 tab 溢出时必须在 tab 栏内部横向滚动：
-     若不滚，手势会穿透到 .choice-floating-body（overflow-y:auto 隐式推出 overflow-x:auto），
-     整个面板内容被横着划走；overscroll-behavior-x 再挡掉滚动到边缘后向页面链式传导 */
   max-width: 100%;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
-.choice-tabs::-webkit-scrollbar {
+.choice-nav::-webkit-scrollbar {
   display: none;
 }
 
-.choice-tab {
+.choice-nav-item {
+  flex: 1 1 0;
+  min-width: 0;
   background: var(--choice-bg-element);
   color: var(--choice-text-secondary);
   border: 1px solid var(--choice-border-strong);
   border-radius: var(--choice-radius-full);
-  padding: var(--choice-space-2) var(--choice-space-4);
+  padding: var(--choice-space-2) var(--choice-space-3);
+  font-size: var(--choice-text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--choice-space-1);
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition),
+    box-shadow var(--choice-transition),
+    transform var(--choice-transition-motion);
+}
+
+.choice-nav-item:hover {
+  color: var(--choice-text);
+  background: var(--choice-bg-hover);
+}
+
+.choice-nav-item:active {
+  transform: scale(0.98);
+}
+
+.choice-nav-item.active {
+  background: var(--choice-primary);
+  border-color: var(--choice-primary);
+  color: var(--choice-text-on-primary);
+  /* 一级导航是焦点引导场景：保留弱 glow，强化"当前所在页"的层级（见 theme.css glow 规则） */
+  box-shadow: 0 0 10px var(--choice-primary-glow);
+}
+
+/* ===== 二级子 tab 条：更轻量（浅底描边 active） =====
+   选中态与全局 .choice-seg 一致：实底主色 + 白字 + 无 glow（常规选中不用 glow，
+   glow 只留一级导航/主 CTA 作焦点引导，见 theme.css glow 规则） */
+.choice-subtabs {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: var(--choice-space-4);
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background: var(--choice-bg-element);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-full);
+  padding: var(--choice-space-1);
+}
+
+.choice-subtabs::-webkit-scrollbar {
+  display: none;
+}
+
+.choice-subtab {
+  background: transparent;
+  color: var(--choice-text-muted);
+  border: none;
+  border-radius: var(--choice-radius-full);
+  padding: var(--choice-space-1) var(--choice-space-3);
   font-size: var(--choice-text-xs);
   cursor: pointer;
   white-space: nowrap;
@@ -393,26 +538,26 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   transition:
     background var(--choice-transition),
     color var(--choice-transition),
-    box-shadow var(--choice-transition);
+    transform var(--choice-transition-motion);
 }
 
-.choice-tab:hover {
-  color: var(--choice-text);
-  background: var(--choice-bg-hover);
+.choice-subtab:hover {
+  color: var(--choice-text-secondary);
 }
 
-.choice-tab.active {
+.choice-subtab:active {
+  transform: scale(0.98);
+}
+
+.choice-subtab.active {
   background: var(--choice-primary);
-  border-color: var(--choice-primary);
   color: var(--choice-text-on-primary);
-  box-shadow: 0 0 10px var(--choice-primary-glow);
+  box-shadow: inset 0 1px 0 var(--choice-frost-line);
 }
 
-.choice-guide-btn {
-  width: 32px;
-  justify-content: center;
-  padding: var(--choice-space-2) 0;
-  font-size: var(--choice-text-base);
+.choice-subtab.active:hover {
+  background: var(--choice-primary-hover);
+  color: var(--choice-text-on-primary);
 }
 
 .choice-floating-resize {
@@ -445,39 +590,41 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 /* ===== 触摸设备（手机）适配 =====
    以电容触屏为主指针时：角落缩放把手对近全屏面板无意义，隐藏以免误导；
    header 本体拖拽保留（pointer 事件实现，仍可微调位置，clamp 防出界）。
-   tab 与关闭键是高频触控目标，抬到触控尺寸 */
+   导航与关闭键是高频触控目标，抬到触控尺寸 */
 @media (hover: none) and (pointer: coarse) {
   .choice-floating-resize {
     display: none;
   }
 
-  .choice-tab {
+  .choice-nav-item {
     min-height: var(--choice-tap-min);
-    padding: var(--choice-space-2) var(--choice-space-4);
+    padding: var(--choice-space-2) var(--choice-space-3);
   }
 
+  .choice-floating-head-btn,
   .choice-floating-close {
     width: var(--choice-tap-min);
     height: var(--choice-tap-min);
   }
 }
 
-/* 手机（<480px 触屏）压缩顶部区：全尺寸头部(65px)+tab(44px) 在手机上吃掉近 1/6
-   屏高。关闭键/tab 收到 32/34px 仍是可接受的触控目标；仅窄屏生效，平板触屏保持
+/* 手机（<480px 触屏）压缩顶部区：全尺寸头部 + 一级条在手机上吃掉近 1/6
+   屏高。关闭键/导航收到 32/34px 仍是可接受的触控目标；仅窄屏生效，平板触屏保持
    全尺寸（上-block 的选择器在此被更高特异性覆盖） */
 @media (hover: none) and (pointer: coarse) and (max-width: 480px) {
   .choice-floating-header {
     padding: var(--choice-space-1) var(--choice-space-3);
   }
 
+  .choice-floating-head-btn,
   .choice-floating-close {
     width: 32px;
     height: 32px;
   }
 
-  .choice-tab {
+  .choice-nav-item {
     min-height: 34px;
-    padding: var(--choice-space-1) var(--choice-space-3);
+    padding: var(--choice-space-1) var(--choice-space-2);
   }
 
   .choice-floating-body {

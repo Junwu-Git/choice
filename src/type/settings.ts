@@ -96,6 +96,9 @@ export const PoolConfig = z
     name: z.string(),
     entries: z.array(PoolConfigEntry),
     is_default: z.boolean().default(false),
+    /** 该配置的规则/示例自由文本（可空）：用户按需求或角色卡自行书写、无固定结构、不加任何标签，
+     *  AI 原样读取其内容。仅按需配置：空串 = 不注入，现有通用行为零变化。老存档由 default('') 补齐。 */
+    rules: z.string().default(''),
     /** @deprecated v35 起抽取参数（分组抽取/打乱/固定溢出/冗余比例）收归全局
      *  GlobalSettings.generation——条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动
      *  任何生成参数（历史上生成设置页冗余比例读生效池配置，切池配置即跳变）。本字段仅为
@@ -1072,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 53;
+export const SCHEMA_VERSION = 59;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1240,6 +1243,51 @@ const UISettings = z
      * 全新档走 zod default(false) 即简化模式，降低新用户首启认知负荷。
      */
     advanced_features_enabled: z.boolean().default(false),
+    /**
+     * 选项 HUD 化总开关：false = 关闭分级色条/悬停增强/滑入动画/已选打勾全部视觉增强
+     * （选项仍按基础卡片样式渲染）。AI 输出侧是否带风险档位标注不受本字段影响——
+     * 关闭时标注存在也按中性显示。老存档缺字段由 default(true) 补齐，无需 bump schema_version
+     */
+    hud_enabled: z.boolean().default(true),
+    /**
+     * 悬浮球选项弹窗锁（与聊天面板锁 panel_lock 解耦，off/open 二态）：
+     * off = 点选项后弹窗收起、外部点击/Esc 可关闭；open = 弹窗常开，点选项/外部点击/Esc 均不收起。
+     * 聊天面板的 panel_lock 管面板展开/收起自动化，互不影响。
+     * 老存档缺字段由 default('off') 补齐，无需 bump schema_version
+     */
+    floating_options_lock: z.enum(['off', 'open']).default('off'),
+    /**
+     * 聊天面板「点击聊天正文收起」：false = 关闭（现状）；true = 展开的面板在用户点击
+     * 面板外普通聊天正文/空白处时收起。仅收起、不反向弹开；链接/按钮/输入框/工具栏等
+     * 交互元素不触发（.mes 本体不排除——手机端整屏文字也可收起）。
+     * 老存档缺字段由 default(false) 补齐，无需 bump schema_version
+     */
+    panel_collapse_on_outside_click: z.boolean().default(false),
+    /**
+     * 悬浮球样式：ring = 现状环形（桌面 60 / 手机 48）；compact = 紧凑小点（桌面 48 / 手机 40），
+     * 削弱内环装饰、呼吸更静，手机端更不遮挡。直径计算见 floating-state 的 bubbleSizeFor。
+     * 老存档缺字段由 default('ring') 补齐，无需 bump schema_version
+     */
+    bubble_style: z.enum(['ring', 'compact']).default('ring'),
+    /**
+     * 选项面板正文字号档（独立于全局 font_size/--choice-font-scale）：
+     * 仅作用聊天面板内 .choice-option-btn/.choice-option-content 的缩放，
+     * 悬浮 popover 与设置面板不受影响。option_font_size_auto=true 时忽略本字段
+     * （跟随全局档，scale=1）。老存档缺字段由 default('medium') 补齐
+     */
+    option_font_size: z.enum(['small', 'medium', 'large']).default('medium'),
+    /**
+     * 选项面板字号是否跟随全局字号档：true 时 option_font_size 不生效（面板 scale=1，
+     * 由 --choice-font-scale 全局缩放统一接管）；false = 面板独立档生效。
+     * 语义同 font_size_auto。老存档缺字段由 default(true) 补齐
+     */
+    option_font_size_auto: z.boolean().default(true),
+    /**
+     * 选项面板展开高度（px）：>0 = 面板 body max-height 用该值（拖动条回写）；
+     * 0 = 自动（沿用 45dvh / docked 40dvh 上限）。不与字号档联动。
+     * 老存档缺字段由 default(0) 补齐，无需 bump schema_version
+     */
+    option_panel_height: z.number().min(0).max(1000).default(0).catch(0),
   })
   .prefault({});
 type UISettings = z.infer<typeof UISettings>;
@@ -1359,6 +1407,29 @@ export const ScopeStats = z
   .prefault({});
 export type ScopeStats = z.infer<typeof ScopeStats>;
 
+/** 骰子各结局计数。战绩独立于条目池统计，不参与建议或权重。
+ *  仅被 DiceStats 内部引用（通过 DiceStats 类型向外部暴露），无需独立导出 */
+const DiceOutcomeCounts = z
+  .object({
+    crit_success: z.number().min(0).default(0).catch(0),
+    success: z.number().min(0).default(0).catch(0),
+    fail: z.number().min(0).default(0).catch(0),
+    crit_fail: z.number().min(0).default(0).catch(0),
+  })
+  .prefault({});
+type DiceOutcomeCounts = z.infer<typeof DiceOutcomeCounts>;
+
+/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。 */
+export const DiceStats = z
+  .object({
+    total_rolls: z.number().min(0).default(0).catch(0),
+    by_outcome: DiceOutcomeCounts.prefault({}),
+    daily: z.record(z.string(), DiceOutcomeCounts).prefault({}),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type DiceStats = z.infer<typeof DiceStats>;
+
 export const StatsSettings = z
   .object({
     /** 全局总量（所有 scope 之和，汇总卡片用）。已废弃不再写入（record 只写 scope 级，
@@ -1374,10 +1445,23 @@ export const StatsSettings = z
     /** AI 建议分析缓存（键 = 统计维度 scopeId）：见 AiAnalysisScope 注释。
      *  只读展示数据，不参与建议引擎/阵容计划判定；清空统计时一并清除。 */
     ai_analysis: z.record(z.string(), AiAnalysisScope).prefault({}),
+    /** 骰子判定战绩（全局维度，不随 config 维度）：随 stats_enabled 采集；
+     *  不参与条目建议/权重/AI 分析；清空统计时一并清除。 */
+    dice: DiceStats.prefault({}),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白骰子战绩（纯数据构造，不依赖任何 store）。 */
+export function createEmptyDiceStats(): DiceStats {
+  return {
+    total_rolls: 0,
+    by_outcome: { crit_success: 0, success: 0, fail: 0, crit_fail: 0 },
+    daily: {},
+    updated_at: 0,
+  };
+}
 
 /** 构造一份空白统计（v51 形态）：迁移清零与「清空统计」共用同一真相源，
  *  避免两处各自构造默认对象造成形态漂移。纯数据构造，不依赖任何 store。 */
@@ -1388,9 +1472,86 @@ export function createEmptyStats(): StatsSettings {
     entries: {},
     last_hit_generation_id: null,
     ai_analysis: {},
+    dice: createEmptyDiceStats(),
     updated_at: Date.now(),
   };
 }
+
+/** 骰子判定设置（v57，难度制）：选项点击时掷 D100 判定成败——AI 标注/档位兜底的数字是
+ *  「需求值」，掷出 ≥ 需求才算成功（点数越大越好，与正文 AI 直觉一致；v55 的
+ *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给发送文本带隐形
+ *  演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
+ *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。模板占位符
+ *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
+ *  成功侧勉强得手/顺利达成/漂亮完胜、失败侧差点成功/事与愿违/彻底落败、彩蛋固定
+ *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
+ *  send 模板（success_/fail_send_{low,mid,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
+ *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。 */
+export const DiceSettings = z
+  .object({
+    /** 总开关：关 = 不掷骰、不显示需求值徽标、选项行为与 v54 完全一致 */
+    enabled: z.boolean().default(false),
+    /** 大成功阈值（下限）：掷出 ≥ 本值 → 大成功（默认 96，即顶部 5%，2–100） */
+    crit_success_min: z.number().min(2).max(100).default(96).catch(96),
+    /** 大失败阈值（上限）：掷出 ≤ 本值 → 大失败（默认 5，即底部 5%，1–99） */
+    crit_fail_max: z.number().min(1).max(99).default(5).catch(5),
+    /** send 模板为空时使用的回退文案，支持 {rate}（需求值）和 {roll}（点数）。 */
+    fail_template: z.string().default('【判定失败】'),
+    /** 大成功回退文案，同样支持占位符。 */
+    crit_success_template: z.string().default('【大成功】'),
+    /** 大失败回退文案，同样支持占位符。 */
+    crit_fail_template: z.string().default('【大失败】'),
+    /** 成功后回退文案（v57：成功也注入演绎指令），同样支持占位符。 */
+    success_template: z.string().default('【判定成功】'),
+    /** 隐形演绎指令（按程度档位拆分，v58）：实际包在 HTML 注释中随消息发送/填入，
+     *  聊天界面不可见；所有点击行为共用（send 直接发送、fill/insert/append 填入输入框
+     *  可编辑）。成功侧三档 = 勉强得手（low）/顺利达成（mid）/漂亮完胜（high），
+     *  失败侧三档 = 差点成功（low）/事与愿违（mid）/彻底落败（high），按 margin
+     *  命中档位取对应模板。某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
+     *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
+    success_send_low_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+      ),
+    success_send_mid_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+      ),
+    success_send_high_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+      ),
+    fail_send_low_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
+      ),
+    fail_send_mid_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+      ),
+    fail_send_high_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+      ),
+    crit_success_send_template: z
+      .string()
+      .default(
+        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
+      ),
+    crit_fail_send_template: z
+      .string()
+      .default(
+        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+      ),
+  })
+  .prefault({});
+export type DiceSettings = z.infer<typeof DiceSettings>;
 
 export const GlobalSettings = z
   .object({
@@ -1461,6 +1622,8 @@ export const GlobalSettings = z
     global_count_mode: z.string().default('4'),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
+    /** 骰子判定（v56 难度制）：AI 标注/档位兜底需求值 + D100 随机判定（掷 ≥ 需求值=成功），失败等结局前缀标记 */
+    dice: DiceSettings.prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——

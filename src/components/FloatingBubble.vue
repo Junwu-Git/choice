@@ -25,6 +25,7 @@
         'choice-floating-bubble--snap-right-dir': isSnappedRight,
         'choice-floating-bubble--pressed': isPressed,
         'choice-floating-bubble--above-overlay': isSettingsOpen,
+        'choice-floating-bubble--compact': bubbleCompact,
       }"
       :style="{
         '--choice-x': x + 'px',
@@ -104,6 +105,10 @@ const clearSuppressSelect = () => {
 };
 
 const isGenerating = computed(() => generatorState.loading);
+
+// 紧凑小点样式（ui.bubble_style='compact'）：直径由 floating-state.bubbleSize 统一
+// 处理，这里只挂视觉类（内环保留度/呼吸节奏走本组件样式表）
+const bubbleCompact = computed(() => useGlobalSettingsStore().settings.ui.bubble_style === 'compact');
 
 const posX = useStorage(STORAGE_KEY_X, window.innerWidth - BUBBLE_SIZE.value - 16);
 const posY = useStorage(STORAGE_KEY_Y, window.innerHeight - BUBBLE_SIZE.value - 80);
@@ -389,6 +394,16 @@ onUnmounted(() => {
 .choice-floating-bubble--disabled {
   opacity: 0.5;
   filter: grayscale(30%);
+}
+
+/* 紧凑小点（ui.bubble_style='compact'）：小直径下内环装饰与呼吸动画都收淡，
+   观感更接近干净的小圆点，手机端更不占视觉注意力（直径由 floating-state 管） */
+.choice-floating-bubble--compact .choice-bubble-inner-ring {
+  opacity: 0.12;
+}
+
+.choice-floating-bubble--compact.choice-floating-bubble--idle {
+  animation-duration: 12s;
 }
 
 /* 命中屏蔽层：与气泡同 z-index，DOM 顺序在气泡之前（同层后者在上），

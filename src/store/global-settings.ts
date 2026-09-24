@@ -822,6 +822,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '全局默认',
         entries: makeEntries(oldGlobalPool),
         is_default: true,
+        rules: '',
         // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）
         generation: (oldGlobalGen as any) ?? GenerationSettings.parse({}),
       });
@@ -834,6 +835,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: charName ? `角色 ${charName}` : '角色默认',
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
+        rules: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -856,6 +858,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         name: '聊天默认',
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
+        rules: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -887,6 +890,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           enabled: true,
         })),
         is_default: true,
+        rules: '',
         generation: GenerationSettings.parse({}),
       });
     }
@@ -951,6 +955,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
             enabled: true,
           })),
           is_default: true,
+          rules: '',
           generation: GenerationSettings.parse({}),
         },
       ];
@@ -1871,6 +1876,187 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const cfg of validated.prompt_configs) migrateV52ModuleContent(cfg.modules);
   }
 
+  // v54：选项 HUD 化配套的风险档位标注（保守/平衡/大胆）写进默认提示词——core_rules
+  // 补"标题内竖线标注档位"的输出格式说明 + "整批档位错开"要求，thinking_prompt 自检句补
+  // 档位核对。exact-match（内容 === v53 后默认才换，同 v53 模式）保证用户自定义过的模块
+  // 不动；from 字面量冻结 JSON 改动前的默认原文，to 取自 DEFAULT_MODULES（改动后即新默认），
+  // 迁移终态与 JSON 单一事实源零漂移；覆盖工作副本 + 所有配置快照。旧 v52 档在上一块
+  // （<53）已被收敛为 v53 默认，正好是 v54 的 from，链式收敛到新默认。
+  // 视觉 HUD 化本身（ui.hud_enabled）由 zod default(true) 补齐，无需迁移。
+  if ((validated.schema_version ?? 0) < 54) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V53_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题]内容"（标题用[]包裹）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV53ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V53_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV53ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV53ModuleContent(cfg.modules);
+  }
+
+  // v55：骰子判定配套的成功率标注写进默认提示词——core_rules 输出格式扩为
+  // "[标题|档位|成功率]内容" + 成功率按难度标注要求，thinking_prompt 自检句补
+  // 成功率核对。exact-match（内容 === v54 后默认才换，同 v53/v54 模式）保证用户
+  // 自定义过的模块不动；from 字面量冻结 JSON 改动前的默认原文，to 取自
+  // DEFAULT_MODULES（改动后即新默认），迁移终态与 JSON 单一事实源零漂移；
+  // 覆盖工作副本 + 所有配置快照。旧 v53 档在上一块（<54）已被收敛为 v54 默认，
+  // 正好是 v55 的 from，链式收敛到新默认。骰子设置本身（GlobalSettings.dice）由
+  // zod prefault 补齐，无需内容迁移。
+  if ((validated.schema_version ?? 0) < 55) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V54_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式），整批尽量错开、别都标同一档。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题|档位]内容"（如 "[顺势而为|大胆]内容"：标题用[]包裹，[]内竖线前是简洁行动标题、竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；拿不准档位就省略竖线只写标题）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV54ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V54_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV54ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV54ModuleContent(cfg.modules);
+  }
+
+  // v56：骰子判定改难度制——「成功率」标注语义反转并更名「需求值」（掷出 ≥ 需求
+  // 才算成功，行动越难标得越高），core_rules 输出格式示例去 %、thinking_prompt
+  // 自检句的档位趋同方向反转。exact-match（内容 === v55 默认才换，同 v53-v55
+  // 模式）保证用户自定义过的模块不动；from 字面量冻结 JSON 改动前的默认原文，
+  // to 取自 DEFAULT_MODULES（改动后即新默认），迁移终态与 JSON 单一事实源零漂移；
+  // 覆盖工作副本 + 所有配置快照。旧 v54 档在上一块（<55）已被收敛为 v55 默认，
+  // 正好是 v56 的 from，链式收敛到新默认。骰子设置字段更名（crit_success_max →
+  // crit_success_min 等）由 zod 解析 strip 旧键 + 新默认补齐，无需内容迁移。
+  if ((validated.schema_version ?? 0) < 56) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V55_CONTENT_PAIR_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与成功率（见输出格式），档位整批尽量错开、成功率随难度区分。
+
+输出格式是硬约束：全部候选包在 <options> 内、每行一条、格式 "[标题|档位|成功率]内容"（如 "[顺势而为|大胆|70%]内容"：标题用[]包裹，[]内竖线前是简洁行动标题、第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；成功率为 0-100 的整数百分比，按该选项在当前场景里的难度与成功把握估计——把握越低标得越低；拿不准档位或成功率就省略对应竖线段，不许乱标）、每条 {{min_chars}}-{{max_chars}} 字；内容中严禁使用[]或【】；只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？成功率（0-100 的整数百分比）是否按难度给出、与档位风险趋同（越难越低）？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV55ModuleContent = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V55_CONTENT_PAIR_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV55ModuleContent(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV55ModuleContent(cfg.modules);
+  }
+
+  // v57：骰子成功/失败模板按程度档位拆分。旧单条 success_send_template / fail_send_template
+  // 语义最接近 mid 档（「顺利达成」/「事与愿违」），迁到 *_send_mid_template；
+  // low/high 档为空（回退该结局短文案）。dice 对象 prefault({}) 已在 zod 补齐为新默认，
+  // 但旧键被 strip 前仍在 extension_settings 里——此处显式读取并回写 mid，
+  // 避免用户自定义过的旧模板在拆档后丢失（zod default 只补缺失、不覆盖已存值）。
+  // v56 及以前无 low/mid/high 拆分字段，用户不可能在本版本改过 mid，直接覆盖即可。
+  if ((validated.schema_version ?? 0) < 57) {
+    const dice = validated.dice as any;
+    const oldSuccess = _.get(extension_settings, [setting_field, 'dice', 'success_send_template']);
+    if (typeof oldSuccess === 'string' && oldSuccess.trim()) {
+      dice.success_send_mid_template = oldSuccess;
+    }
+    const oldFail = _.get(extension_settings, [setting_field, 'dice', 'fail_send_template']);
+    if (typeof oldFail === 'string' && oldFail.trim()) {
+      dice.fail_send_mid_template = oldFail;
+    }
+  }
+
+  // v58：PoolConfig 的 rules/examples 两字段合并为单一自由文本 rules。examples 已从 schema
+  // 删除、被 zod strip 掉，parse 后 validated.configs 里已无它——必须读原始存档（同 v57 dice 先例），
+  // 把老档 examples 内容折并进 rules，避免用户写的样例丢失。
+  if ((validated.schema_version ?? 0) < 58) {
+    const rawConfigs: unknown = _.get(extension_settings, [setting_field, 'configs']);
+    if (Array.isArray(rawConfigs)) {
+      rawConfigs.forEach((raw, i) => {
+        const dst = validated.configs[i];
+        if (!dst || !raw || typeof raw !== 'object') return;
+        const examples = (raw as any).examples;
+        if (typeof examples === 'string' && examples.trim()) {
+          dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
+        }
+      });
+    }
+  }
+
+  // v59：新增「认知边界（非全知）」模块补建——缓解"选项太过全知"（用了角色不该知道的
+  // 信息 / 对看不到的事物做反应）。老存档 prompt_rules.modules 无此模块（v59 新增），
+  // 按 id 去重后从 DEFAULT_MODULES 取对象插入（克隆带 enabled:true，默认生效）；
+  // 开关 = 该模块在提示词编辑器里的启用复选框。
+  // 与 v24 reward_prompt 补建同构：prompt_rules.modules 与每个 prompt_configs[].modules 都要补，
+  // 漏掉 configs 会导致"切换提示词配置后模块消失"。
+  if ((validated.schema_version ?? 0) < 59) {
+    const ensureKnowledgeBoundary = (modules: PromptModuleType[]): void => {
+      if (modules.some(m => m.id === 'knowledge_boundary')) return;
+      const template = DEFAULT_MODULES.find(m => m.id === 'knowledge_boundary');
+      if (template) modules.push(klona(template));
+    };
+    ensureKnowledgeBoundary(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      ensureKnowledgeBoundary(cfg.modules);
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2607,6 +2793,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
           enabled: true,
         })),
         is_default: true,
+        rules: '',
         generation: GenerationSettings.parse({}),
       },
     ];

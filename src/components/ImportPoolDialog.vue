@@ -160,6 +160,6 @@ const formatDate = (iso: string | undefined) => {
 }
 
 .import-dlg-replace-label {
-  color: var(--choice-warning, #e8a838);
+  color: var(--choice-color-warning);
 }
 </style>

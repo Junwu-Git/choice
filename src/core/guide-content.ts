@@ -51,7 +51,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         icon: 'fa-solid fa-chess',
         title: '欢迎使用行动选项',
         html: `<p><strong>行动选项</strong>会在主线对话之外，单独调用一次 API，根据当前剧情异步生成一组行动选项；点选其中一条，按所选方式进入输入框（直接发送 / 覆盖输入框 / 尾附在末尾 / 插到光标处），不占用楼层、不打断对话节奏。</p>
-<p>上手只需三步：<strong>配置 API → 生成选项 → 点选发送</strong>。条目池等其余功能均开箱即用，之后可从 tab 栏的 <i class="fa-solid fa-graduation-cap"></i> 功能课堂按需深入。跟着做即可，随时可以退出。</p>`,
+<p>上手只需三步：<strong>配置 API → 生成选项 → 点选发送</strong>。条目池等其余功能均开箱即用，之后可从设置面板题首的 <i class="fa-solid fa-graduation-cap"></i> 功能课堂按需深入。跟着做即可，随时可以退出。</p>`,
         target: '[data-tour="settings-header"]',
       },
       {
@@ -94,7 +94,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         icon: 'fa-solid fa-flag-checkered',
         title: '完成！',
         html: `<p>核心链路到此打通：API 已就绪，你已经能收到（或马上会收到）第一组行动选项了。</p>
-<p>想深入了解某个功能：tab 栏的 <i class="fa-solid fa-circle-question"></i> 查看当前页要点；<i class="fa-solid fa-graduation-cap"></i> 打开功能课堂，按章节学习条目池、提示词、世界书等进阶玩法。</p>
+<p>想深入了解某个功能：题首的 <i class="fa-solid fa-circle-question"></i> 查看当前子区要点；题首的 <i class="fa-solid fa-graduation-cap"></i> 打开功能课堂，按章节学习条目池、提示词、世界书等进阶玩法。</p>
 <p><strong>祝游玩愉快！</strong></p>`,
       },
     ],
@@ -191,7 +191,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         icon: 'fa-solid fa-align-left',
         title: '提示词：选项提示词怎么组装',
         html: `<p>选项内容由这里的<strong>提示词模块</strong>驱动：<strong>顶部工具栏</strong>可切换上下文轮数模式、开关预填充；下方是模块列表，可拖拽排序、编辑内容。</p>
-<p>默认配置开箱即用，新手无需改动；想调整时点 <i class="fa-solid fa-circle-question"></i> 查看本页说明。</p>`,
+<p>默认配置开箱即用，新手无需改动；想调整时点 <i class="fa-solid fa-circle-question"></i> 查看本子区说明。</p>`,
         tab: 'prompt',
         target: '[data-tour="prompt-toolbar"]',
       },
@@ -413,7 +413,7 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
     points: [
       '「悬浮窗」区：开关控制屏幕右下角的悬浮球；单击可选出选项弹窗或出设置（右键 / 长按查看选项或进设置）。',
       '「聊天界面」区：选项面板开关（关闭后改用悬浮球弹窗查看选项、输入润色同步隐藏）、停靠位置（聊天内 / 输入框上方）、魔棒菜单入口。',
-      '「高级功能」区：提示词、世界书、过滤、调试等进阶设置页的显隐开关。',
+      '「高级功能」区：提示词、世界书、过滤、调试等进阶子区的显隐开关。',
       '主题五种模式：自动（检测酒馆亮暗）、跟随酒馆配色、强制暗色/亮色，另有 4 个独立预设主题（黄昏/樱花/青瓷/蜜糖）。',
       '字体默认跟随设备（手机小号、桌面中号），点具体档位固定，点「自动」还原。',
     ],

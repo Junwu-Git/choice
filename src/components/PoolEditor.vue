@@ -17,7 +17,7 @@
         </label>
         <label class="choice-inline-gen-item">
           <span :title="t`固定条目超过数量上限时：全发=全部保留，截断=只取前N个`">{{ t`固定溢出` }}</span>
-          <select v-model="globalStore.settings.generation.pinned_overflow" class="text_pole">
+          <select v-model="globalStore.settings.generation.pinned_overflow" class="choice-select">
             <option value="send_all">{{ t`全发` }}</option>
             <option value="trim">{{ t`截断` }}</option>
           </select>
@@ -31,7 +31,7 @@
     <div class="choice-config-bar">
       <div class="choice-config-row">
         <label class="choice-config-label">{{ t`配置` }}</label>
-        <select v-model="selectedConfigId" class="text_pole choice-config-select">
+        <select v-model="selectedConfigId" class="choice-config-select">
           <option v-for="cfg in configs" :key="cfg.id" :value="cfg.id">{{ cfg.name }}</option>
         </select>
         <button class="choice-btn-sm" :title="t`重命名`" :disabled="!selectedConfig" @click="startRenameConfig">
@@ -117,12 +117,15 @@
           >
             <div class="choice-inline-entry-row">
               <DragHandle :title="t`拖动排序`" />
-              <i
-                class="fa-solid choice-inline-expand"
-                :class="expandedEntries.has(cfgEntry.entry_id) ? 'fa-chevron-down' : 'fa-chevron-right'"
+              <button
+                type="button"
+                class="choice-expand-btn"
+                :class="{ expanded: expandedEntries.has(cfgEntry.entry_id) }"
                 :title="t`查看条目内容与规则`"
                 @click="toggleExpandEntry(cfgEntry.entry_id)"
-              ></i>
+              >
+                <i class="fa-solid fa-chevron-right"></i>
+              </button>
               <span class="choice-inline-entry-text" @click="toggleExpandEntry(cfgEntry.entry_id)">
                 <span
                   class="choice-inline-cat-badge"
@@ -147,7 +150,7 @@
                   <span class="choice-inline-field-label">{{ t`权重` }}</span>
                   <input
                     v-model.number="cfgEntry.weight"
-                    class="text_pole choice-small-input"
+                    class="choice-input choice-small-input"
                     type="number"
                     min="0"
                     :title="t`权重`"
@@ -182,14 +185,32 @@
             </div>
           </div>
         </div>
-        <div v-else class="choice-empty-hint">
-          <span>{{ t`未选择条目，请点击"添加条目"选择` }}</span>
+        <div v-else class="choice-empty">
+          <div class="choice-empty-icon"><i class="fa-solid fa-layer-group"></i></div>
+          <p>{{ t`未选择条目，请点击"添加条目"选择` }}</p>
         </div>
+      </div>
+
+      <!-- 配置级规则/示例：用户按需求或角色卡自行书写，不加任何标签；空则生成时不注入，不影响通用行为 -->
+      <div class="choice-inline-field">
+        <div class="choice-inline-field-head">
+          <label class="choice-inline-label">{{ t`规则（可选）` }}</label>
+          <span class="choice-inline-hint">{{
+            t`留空则不注入；无需任何标签，直接按需求或角色卡书写，AI 原样读取`
+          }}</span>
+        </div>
+        <textarea
+          v-model="selectedConfig.rules"
+          class="choice-textarea choice-inline-textarea"
+          rows="4"
+          :placeholder="t`例如：选项按角色当前性格与场景书写，动词开头、不超过 15 字`"
+        ></textarea>
       </div>
     </div>
 
-    <div v-else-if="configs.length === 0" class="choice-empty-hint">
-      <span>{{ t`暂无配置，请点击新建创建配置` }}</span>
+    <div v-else-if="configs.length === 0" class="choice-empty">
+      <div class="choice-empty-icon"><i class="fa-solid fa-database"></i></div>
+      <p>{{ t`暂无配置，请点击新建创建配置` }}</p>
     </div>
 
     <hr class="sysHR" />
@@ -321,6 +342,7 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     name: payload.name,
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
+    rules: '',
     // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode）与默认值漂移
     generation: GenerationSettings.parse({}),
   };
@@ -498,6 +520,15 @@ onUnmounted(() => {
   gap: var(--choice-space-2);
 }
 
+/* 分隔线：条目池页的历史粗 hr.sysHR（酒馆全局银色粗线）改为主题细边框语言，
+   与全扩展的 border token 一致（简约去装饰） */
+hr.sysHR {
+  border: none;
+  border-top: 1px solid var(--choice-border);
+  margin: var(--choice-space-2) 0;
+  background: transparent;
+}
+
 /* 内联编辑区域 */
 .choice-inline-edit {
   display: flex;
@@ -524,33 +555,6 @@ onUnmounted(() => {
   gap: var(--choice-space-1);
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
-}
-
-.choice-inline-gen-item .text_pole {
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-1);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-inline-gen-item .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
-.choice-inline-gen-item select.text_pole {
-  width: auto;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-inline-gen-item select.text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 
 .choice-inline-entries {
@@ -592,7 +596,8 @@ onUnmounted(() => {
     width: 32px;
   }
 
-  .choice-inline-expand {
+  /* 展开按钮在窄屏行内被收掉：条目标题本身仍可点展开，按钮只是冗余视觉 */
+  .choice-expand-btn {
     display: none;
   }
 
@@ -642,14 +647,6 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.choice-inline-expand {
-  cursor: pointer;
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  flex-shrink: 0;
-  padding-left: var(--choice-space-2);
-}
-
 .choice-inline-entry-detail {
   display: flex;
   flex-direction: column;
@@ -693,20 +690,6 @@ onUnmounted(() => {
   border-left: 1px solid var(--choice-border);
 }
 
-.choice-inline-entry-fields .text_pole {
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-2);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-inline-entry-fields .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
-}
-
 .choice-inline-field-item {
   display: inline-flex;
   align-items: center;
@@ -720,30 +703,29 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.choice-inline-field-item .text_pole {
+/* 配置级规则/示例编辑区：head 行 = 标签 + 右侧提示 */
+.choice-inline-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--choice-space-2);
+}
+
+.choice-inline-hint {
   font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-2);
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
+  color: var(--choice-text-muted);
+  text-align: right;
 }
 
-.choice-inline-field-item .text_pole:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
+/* 规则/示例文本框：纵向留白，仅覆盖宽高/缩放；底色边框聚焦态由 global.css .choice-textarea 提供 */
+.choice-inline-textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
 }
 
+/* 小号输入框：仅覆盖宽度，底色/边框/聚焦态由 global.css 的 .choice-input 提供 */
 .choice-small-input {
   width: 40px;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border-strong);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
-  color: var(--choice-text);
-}
-
-.choice-small-input:focus {
-  border-color: var(--choice-border-active);
-  outline: none;
 }
 </style>

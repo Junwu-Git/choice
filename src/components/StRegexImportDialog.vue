@@ -347,7 +347,7 @@ const onCancel = () => {
   cursor: not-allowed;
 }
 .choice-strdlg-badge--warn {
-  color: var(--choice-color-warning, #d4a017);
+  color: var(--choice-color-warning);
 }
 .choice-strdlg-list {
   display: flex;

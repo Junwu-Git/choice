@@ -1,14 +1,30 @@
 <template>
   <div class="choice-appearance-editor">
+    <!-- 高级功能分区：纯 UI 分层开关，独立成区——它是「设置页显示哪些 tab」的开关，
+         不属于悬浮窗或聊天界面任一类别。appearance 是基础 tab，简化模式下它是
+         重新开启高级 tab 的唯一入口，必须任何模式下都可达 -->
+    <div class="choice-section">
+      <h4 class="choice-section-title">{{ t`高级功能` }}</h4>
+      <div class="choice-behavior-grid">
+        <label class="choice-toggle">
+          <input v-model="ui.advanced_features_enabled" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`显示进阶设置页` }}</strong>
+            <small>{{ t`提示词、世界书、过滤、调试等设置页的显隐开关` }}</small>
+          </span>
+        </label>
+      </div>
+    </div>
+
     <!-- 悬浮窗分区：悬浮球开关 + 单击行为。data-tour 锚点挂在此区
          （引导 chapter 的 appearance-floating 步骤聚焦悬浮窗相关设置） -->
-    <div class="choice-appearance-section" data-tour="appearance-floating">
-      <span class="choice-appearance-section-title">{{ t`悬浮窗` }}</span>
+    <ChoiceSectionCard title="悬浮窗" icon="fa-solid fa-circle-nodes" data-tour="appearance-floating">
       <div class="choice-behavior-grid">
-        <label class="choice-check">
-          <input v-model="ui.floating_enabled" type="checkbox" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
+        <label class="choice-toggle">
+          <input :checked="ui.floating_enabled" type="checkbox" @change="onEntryToggle('floating', $event)" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
             <strong>{{ t`悬浮窗` }}</strong>
             <small>{{ t`在屏幕右下角显示快捷按钮` }}</small>
           </span>
@@ -16,9 +32,9 @@
       </div>
       <!-- 悬浮球单击行为：options=单击切换选项弹窗，settings=单击打开设置面板。
            右键/长按快捷菜单不受影响，两种模式下弹窗与设置都可达 -->
-      <div class="choice-theme-switch choice-position-switch">
+      <div class="choice-seg choice-position-switch">
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.bubble_click_action === 'options' }"
           :title="t`单击悬浮球呼出选项弹窗`"
           @click="ui.bubble_click_action = 'options'"
@@ -27,7 +43,7 @@
           {{ t`单击出选项` }}
         </button>
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.bubble_click_action === 'settings' }"
           :title="t`单击悬浮球打开设置面板（右键/长按仍可查看选项）`"
           @click="ui.bubble_click_action = 'settings'"
@@ -36,34 +52,71 @@
           {{ t`单击出设置` }}
         </button>
       </div>
-    </div>
+      <!-- 悬浮球样式：ring=现状环形；compact=紧凑小点（手机端更小、更不遮挡）。
+           直径随样式联动（floating-state.bubbleSizeFor 单一来源） -->
+      <div class="choice-seg choice-position-switch">
+        <button
+          class="choice-seg-btn"
+          :class="{ active: ui.bubble_style === 'ring' }"
+          :title="t`当前样式：环形（桌面 60 / 手机 48 px）`"
+          @click="ui.bubble_style = 'ring'"
+        >
+          <i class="fa-solid fa-circle"></i>
+          {{ t`环形` }}
+        </button>
+        <button
+          class="choice-seg-btn"
+          :class="{ active: ui.bubble_style === 'compact' }"
+          :title="t`紧凑小点（桌面 48 / 手机 40 px），削弱内环装饰，手机上更不遮挡`"
+          @click="ui.bubble_style = 'compact'"
+        >
+          <i class="fa-solid fa-circle-dot"></i>
+          {{ t`紧凑` }}
+        </button>
+      </div>
+    </ChoiceSectionCard>
 
     <!-- 聊天界面分区：聊天内选项面板 + 停靠位置 + 魔棒入口 -->
-    <div class="choice-appearance-section">
-      <span class="choice-appearance-section-title">{{ t`聊天界面` }}</span>
+    <ChoiceSectionCard title="聊天界面" icon="fa-solid fa-comments">
       <div class="choice-behavior-grid">
-        <label class="choice-check">
-          <input v-model="ui.chat_panel_enabled" type="checkbox" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
+        <label class="choice-toggle">
+          <input :checked="ui.chat_panel_enabled" type="checkbox" @change="onEntryToggle('chat', $event)" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
             <strong>{{ t`选项面板` }}</strong>
             <small>{{ t`在聊天界面显示选项面板；关闭后改用悬浮球弹窗查看选项` }}</small>
           </span>
         </label>
-        <label class="choice-check">
-          <input v-model="ui.wand_menu_enabled" type="checkbox" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
+        <label class="choice-toggle">
+          <input v-model="ui.panel_collapse_on_outside_click" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`点击聊天正文收起` }}</strong>
+            <small>{{ t`展开的面板在点击聊天正文/空白处时收起（点链接/按钮/输入框不触发）` }}</small>
+          </span>
+        </label>
+        <label class="choice-toggle">
+          <input :checked="ui.wand_menu_enabled" type="checkbox" @change="onEntryToggle('wand', $event)" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
             <strong>{{ t`魔棒菜单入口` }}</strong>
             <small>{{ t`在扩展程序（魔棒）菜单中显示行动选项入口` }}</small>
+          </span>
+        </label>
+        <label class="choice-toggle">
+          <input v-model="ui.hud_enabled" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`选项 HUD 化` }}</strong>
+            <small>{{ t`分级色条（保守/平衡/大胆）/ 悬停增强 / 滑入动画 / 已选标记` }}</small>
           </span>
         </label>
       </div>
       <!-- 面板停靠位置：切换由 panel-mount 监听设置变更即时迁移挂载点。
            输入框上方 = 停靠模式，展开限高滚动，选项再多不覆盖整屏 -->
-      <div class="choice-theme-switch choice-position-switch">
+      <div class="choice-seg choice-position-switch">
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.panel_position === 'chat' }"
           :title="t`跟随最新楼层下方，随聊天滚动`"
           @click="ui.panel_position = 'chat'"
@@ -72,7 +125,7 @@
           {{ t`聊天内` }}
         </button>
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.panel_position === 'input' }"
           :title="t`固定在输入框上方，不随聊天滚动；展开限高滚动，选项再多不占满屏`"
           @click="ui.panel_position = 'input'"
@@ -81,30 +134,12 @@
           {{ t`输入框上方` }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <!-- 高级功能分区：纯 UI 分层开关，独立成区——它是「设置页显示哪些 tab」的开关，
-         不属于悬浮窗或聊天界面任一类别。appearance 是基础 tab，简化模式下它是
-         重新开启高级 tab 的唯一入口，必须任何模式下都可达 -->
-    <div class="choice-appearance-section">
-      <span class="choice-appearance-section-title">{{ t`高级功能` }}</span>
-      <div class="choice-behavior-grid">
-        <label class="choice-check">
-          <input v-model="ui.advanced_features_enabled" type="checkbox" />
-          <span class="choice-check-custom"></span>
-          <span class="choice-check-label">
-            <strong>{{ t`显示进阶设置页` }}</strong>
-            <small>{{ t`提示词、世界书、过滤、调试等设置页的显隐开关` }}</small>
-          </span>
-        </label>
-      </div>
-    </div>
-
-    <div class="choice-appearance-section" data-tour="appearance-theme">
-      <span class="choice-appearance-section-title">{{ t`主题` }}</span>
-      <div class="choice-theme-switch">
+    <ChoiceSectionCard title="主题" icon="fa-solid fa-palette" data-tour="appearance-theme">
+      <div class="choice-seg">
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.theme_mode === 'auto' }"
           :title="t`自动检测酒馆主题（亮/暗）`"
           @click="ui.theme_mode = 'auto'"
@@ -113,7 +148,7 @@
           {{ t`自动` }}
         </button>
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.theme_mode === 'st' }"
           :title="t`完全跟随酒馆主题配色`"
           @click="ui.theme_mode = 'st'"
@@ -122,7 +157,7 @@
           {{ t`跟随` }}
         </button>
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.theme_mode === 'dark' }"
           :title="t`强制使用暗色主题`"
           @click="ui.theme_mode = 'dark'"
@@ -131,7 +166,7 @@
           {{ t`暗色` }}
         </button>
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.theme_mode === 'light' }"
           :title="t`强制使用亮色主题`"
           @click="ui.theme_mode = 'light'"
@@ -144,7 +179,7 @@
         <button
           v-for="preset in THEME_PRESETS"
           :key="preset.id"
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.theme_mode === preset.id }"
           :title="t`切换到${preset.label}主题`"
           @click="ui.theme_mode = preset.id"
@@ -153,16 +188,15 @@
           {{ preset.label }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
-    <div class="choice-appearance-section">
-      <span class="choice-appearance-label">{{ t`字体大小` }}</span>
-      <div class="choice-theme-switch">
+    <ChoiceSectionCard title="字体大小" icon="fa-solid fa-text-height">
+      <div class="choice-seg">
         <!-- 跟随设备：有效档在 global-settings 计算（触屏 small / 桌面 medium）。
              点具体档位即退出跟随并固定，此按钮用于回到自动——不加它，手机用户
              一旦点过档位就再也回不到"手机默认小字"的状态 -->
         <button
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: ui.font_size_auto }"
           :title="t`跟随设备：触屏默认小号，桌面默认中号；选择具体档位后固定为该档`"
           @click="ui.font_size_auto = true"
@@ -172,7 +206,7 @@
         <button
           v-for="size in fontSizes"
           :key="size.value"
-          class="choice-theme-btn"
+          class="choice-seg-btn"
           :class="{ active: !ui.font_size_auto && ui.font_size === size.value }"
           :title="size.tip"
           @click="onPickFontSize(size.value)"
@@ -180,16 +214,24 @@
           {{ size.label }}
         </button>
       </div>
-    </div>
+    </ChoiceSectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { THEME_OPTIONS } from '@/core/theme-presets';
+import { setEntryVisible, type EntryKey } from '@/core/entry-points';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);
+
+// 入口开关：v-model 直绑会绕过「至少保留一个入口」保底（可全关后插件无从找回），
+// 改走 setEntryVisible 护栏——关掉最后一个时被拒绝并 toastr 提示
+const onEntryToggle = (key: EntryKey, e: Event) => {
+  setEntryVisible(key, (e.target as HTMLInputElement).checked);
+};
 
 // 预设主题按钮数据源：与面板循环按钮共用注册表，按 kind 过滤——
 // 不能用 swatch 是否为空判断（语义过载），mode 档按钮由上方四个固定按钮承担
@@ -215,20 +257,6 @@ const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
   gap: var(--choice-space-4);
 }
 
-.choice-appearance-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-}
-
-.choice-appearance-section-title {
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-  color: var(--choice-text);
-  padding-bottom: 2px;
-  border-bottom: 1px solid var(--choice-border);
-}
-
 .choice-behavior-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -239,73 +267,6 @@ const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
 .choice-position-switch {
   margin-top: var(--choice-space-2);
   flex-wrap: wrap;
-}
-
-.choice-check {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--choice-space-3);
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-secondary);
-  background: var(--choice-bg-card);
-  border-radius: var(--choice-radius-md);
-  padding: var(--choice-space-3) var(--choice-space-3);
-  cursor: pointer;
-  transition: background var(--choice-transition);
-}
-
-.choice-check:hover {
-  background: var(--choice-bg-hover);
-}
-
-.choice-check input[type='checkbox'] {
-  display: none;
-}
-
-.choice-check-custom {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--choice-border-strong);
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 1px;
-  transition:
-    background var(--choice-transition),
-    border-color var(--choice-transition);
-  position: relative;
-}
-
-.choice-check input[type='checkbox']:checked + .choice-check-custom {
-  background: var(--choice-primary);
-  border-color: var(--choice-primary);
-}
-
-.choice-check input[type='checkbox']:checked + .choice-check-custom::after {
-  content: '✓';
-  color: var(--choice-text-on-primary);
-  font-size: var(--choice-text-xs);
-  font-weight: bold;
-  position: absolute;
-  line-height: 1;
-}
-
-.choice-check-label {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--choice-text-secondary);
-}
-
-.choice-check-label strong {
-  color: var(--choice-text);
-}
-
-.choice-check-label small {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
 }
 
 .choice-enrich-count {
@@ -327,51 +288,9 @@ const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
   font-weight: bold;
 }
 
-.choice-field-hint {
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-}
-
-.choice-theme-switch {
-  display: inline-flex;
-  /* 8 个主题按钮单行放不下（窄面板尤甚），允许换行成两排 */
-  flex-wrap: wrap;
-  gap: 2px;
-  background: var(--choice-bg-element);
-  border-radius: var(--choice-radius-full);
-  padding: var(--choice-space-1);
-}
-
-.choice-theme-btn {
-  background: transparent;
-  color: var(--choice-text-muted);
-  border: none;
-  border-radius: var(--choice-radius-full);
-  padding: var(--choice-space-1) var(--choice-space-3);
-  font-size: var(--choice-text-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition),
-    box-shadow var(--choice-transition);
-}
-
-.choice-theme-btn:hover {
-  color: var(--choice-text-secondary);
-}
-
-.choice-theme-btn.active {
-  background: var(--choice-primary);
-  color: var(--choice-text-on-primary);
-  box-shadow: 0 0 8px var(--choice-primary-glow);
-}
-
 /* 预设主题按钮的色点：颜色来自 THEME_OPTIONS.swatch（与 theme.css 主色手工同步），
-   走 Vue :style 绑定而非写死 CSS——注册表增删主题时按钮无需改样式 */
+   走 Vue :style 绑定而非写死 CSS——注册表增删主题时按钮无需改样式。
+   分段容器/按钮本体走 global.css 的 .choice-seg/.choice-seg-btn 原子 */
 .choice-theme-swatch {
   width: 10px;
   height: 10px;

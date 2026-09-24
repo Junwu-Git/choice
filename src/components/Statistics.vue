@@ -2,11 +2,10 @@
   <div class="choice-stats-settings">
     <!-- 控制簇：统计/自动化/AI 归因/AI 理由四开关集中（原「统计与自动化」+「AI 增强」两段合并，
          减少顶部标题噪音）；运行状态读数随开关显隐 -->
-    <div class="choice-stats-section">
-      <div class="choice-stats-section-head">
-        <h4 class="choice-stats-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计与自动化` }}</h4>
+    <div class="choice-section">
+      <div class="choice-stats-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计与自动化` }}</h4>
         <span class="choice-stats-info" :title="controlHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
       </div>
       <div class="choice-stats-ai-row">
         <label class="choice-stats-toggle">
@@ -85,11 +84,6 @@
         }}</span>
         <span v-else class="choice-stats-dim-note">{{ t`仅该条目池配置生效会话计入` }}</span>
       </div>
-      <div v-if="jumpTargets.length > 1" class="choice-stats-jump-bar">
-        <button v-for="j in jumpTargets" :key="j.anchor" class="choice-stats-jump-pill" @click="jumpTo(j.anchor)">
-          {{ j.label }}
-        </button>
-      </div>
     </div>
 
     <!-- 无 config 引导：应用建议需要 config 作为写入目标（关闭态隐藏——建议应用不可达） -->
@@ -125,20 +119,13 @@
       </button>
     </div>
 
-    <!-- 概览（可折叠，默认展开）：汇总卡片 + 样本分布 + 趋势三合一，减少标题噪音 -->
-    <div id="choice-stats-anchor-overview" class="choice-stats-section choice-stats-overview" data-anchor="overview">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showOverview = !showOverview">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showOverview }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-chart-pie"></i>{{ t`概览` }}</h4>
-        </button>
+    <!-- 概览（恒展开）：汇总卡片 + 样本分布 + 趋势三合一，减少标题噪音 -->
+    <div id="choice-stats-anchor-overview" class="choice-section" data-anchor="overview">
+      <div class="choice-stats-card-head">
+        <h4 class="choice-section-title"><i class="fa-solid fa-chart-pie"></i>{{ t`概览` }}</h4>
         <span class="choice-stats-info" :title="overviewHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
       </div>
-      <div v-if="showOverview" class="choice-stats-section-body choice-stats-overview-body">
+      <div class="choice-stats-overview-body">
         <!-- 汇总卡片 -->
         <div class="choice-stats-cards">
           <div class="choice-stats-card">
@@ -250,12 +237,12 @@
         <div class="choice-stats-sub-block">
           <div class="choice-stats-sub-block-head">
             <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`趋势` }}</span>
-            <div class="choice-stats-seg">
+            <div class="choice-seg">
               <button
                 v-for="d in trendRangeOptions"
                 :key="d"
-                class="choice-stats-seg-btn"
-                :class="{ 'choice-stats-seg-btn--active': trendDays === d }"
+                class="choice-seg-btn"
+                :class="{ active: trendDays === d }"
                 @click="trendDays = d"
               >
                 {{ d }} {{ t`天` }}
@@ -289,9 +276,13 @@
     </div>
 
     <!-- 条目榜（主内容；分组默认折叠，展开后限高滚动，避免无限撑长页面） -->
-    <div id="choice-stats-anchor-leaderboard" class="choice-stats-section" data-anchor="leaderboard">
-      <div class="choice-stats-section-head">
-        <h4 class="choice-stats-section-title"><i class="fa-solid fa-ranking-star"></i>{{ t`条目榜` }}</h4>
+    <ChoiceSectionCard
+      id="choice-stats-anchor-leaderboard"
+      title="条目榜"
+      icon="fa-solid fa-ranking-star"
+      data-anchor="leaderboard"
+    >
+      <template #extra>
         <span class="choice-stats-info" :title="leaderboardHelp"><i class="fa-solid fa-circle-info"></i></span>
         <div class="choice-stats-head-actions">
           <button
@@ -332,7 +323,7 @@
             <i :class="allExpanded ? 'fa-solid fa-compress' : 'fa-solid fa-expand'"></i>
           </button>
         </div>
-      </div>
+      </template>
       <p class="choice-stats-sub">{{ t`分组 ${filteredGroups.length} 个 · 条目 ${leaderboardRowCount} 条` }}</p>
       <div class="choice-stats-toolbar">
         <input
@@ -341,12 +332,12 @@
           type="search"
           :placeholder="t`搜索内容 / 类型 / 分类`"
         />
-        <div class="choice-stats-seg">
+        <div class="choice-seg">
           <button
             v-for="o in sortOptions"
             :key="o.key"
-            class="choice-stats-seg-btn"
-            :class="{ 'choice-stats-seg-btn--active': sortBy === o.key }"
+            class="choice-seg-btn"
+            :class="{ active: sortBy === o.key }"
             @click="sortBy = o.key"
           >
             {{ o.label }}
@@ -357,11 +348,13 @@
           <span>{{ t`只看有数据` }}</span>
         </label>
       </div>
-      <div v-if="groups.length === 0" class="choice-empty-hint">
-        {{ t`条目库为空——先在条目池页添加条目并生成一组选项` }}
+      <div v-if="groups.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-ranking-star"></i></div>
+        <p>{{ t`条目库为空——先在条目池页添加条目并生成一组选项` }}</p>
       </div>
-      <div v-else-if="filteredGroups.length === 0" class="choice-empty-hint">
-        {{ t`没有匹配的条目，试试调整搜索或筛选条件` }}
+      <div v-else-if="filteredGroups.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-ranking-star"></i></div>
+        <p>{{ t`没有匹配的条目，试试调整搜索或筛选条件` }}</p>
       </div>
       <div v-else class="choice-stats-groups">
         <div v-for="g in filteredGroups" :key="g.key" class="choice-stats-group">
@@ -462,222 +455,265 @@
           </div>
         </div>
       </div>
-    </div>
+    </ChoiceSectionCard>
+
+    <!-- 骰子战绩（全局维度，不随 config 切换；默认折叠） -->
+    <ChoiceSectionCard id="choice-stats-anchor-dice" title="骰子战绩" icon="fa-solid fa-dice" data-anchor="dice">
+      <template #extra>
+        <span class="choice-stats-info" :title="diceHelp"><i class="fa-solid fa-circle-info"></i></span>
+      </template>
+      <p class="choice-stats-sub">
+        {{ t`共 ${diceStats.total_rolls} 次判定 · 胜率 ${diceRateText}（大成功 + 成功 ÷ 总掷数）` }}
+      </p>
+      <div v-if="diceStats.total_rolls === 0" class="choice-empty-hint">{{ t`尚未进行过骰子判定` }}</div>
+      <template v-else>
+        <div class="choice-stats-cards">
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"><i class="fa-solid fa-dice"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`总掷数` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.total_rolls }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--crit-success"
+              ><i class="fa-solid fa-star"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`大成功` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_success }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-check"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`成功` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.success }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-xmark"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`失败` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.fail }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--crit-fail"
+              ><i class="fa-solid fa-bolt"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`大失败` }}</div>
+              <div class="choice-stats-card-value">{{ diceStats.by_outcome.crit_fail }}</div>
+            </div>
+          </div>
+        </div>
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-chart-column"></i>{{ t`近 7 天判定` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`每日判定次数（含大成功/大失败）` }}</p>
+          <div class="choice-chart">
+            <div v-for="p in diceTrend" :key="p.key" class="choice-chart-day">
+              <div class="choice-chart-bars">
+                <div
+                  class="choice-chart-col choice-chart-col--dice"
+                  :style="{ height: diceBarHeight(p.total) }"
+                  :title="`${p.label} ${t`判定`} ${p.total}`"
+                ></div>
+              </div>
+              <!-- 骰子图固定 7 天，标签全显示（不复用受 trendDays 影响的 showChartLabel） -->
+              <span class="choice-chart-label">{{ p.label }}</span>
+            </div>
+          </div>
+        </div>
+      </template>
+    </ChoiceSectionCard>
 
     <!-- 阵容计划（半自动：默认折叠；仅具体 config 维度可写） -->
-    <div v-if="canApply" id="choice-stats-anchor-roster" class="choice-stats-section" data-anchor="roster">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showRoster = !showRoster">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showRoster }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-users-gear"></i>{{ t`阵容计划` }}</h4>
-        </button>
+    <ChoiceSectionCard
+      v-if="canApply"
+      id="choice-stats-anchor-roster"
+      title="阵容计划"
+      icon="fa-solid fa-users-gear"
+      data-anchor="roster"
+    >
+      <template #extra>
         <span class="choice-stats-info" :title="rosterHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions">
-          <button
-            v-if="showRoster && rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
-            class="menu_button choice-stats-apply-all"
-            :title="t`把落出/补入清单应用到当前配置`"
-            @click="applyRoster()"
-          >
-            <i class="fa-solid fa-users-gear"></i>
-            {{ t`应用阵容计划` }}
-            <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
-          </button>
+        <button
+          v-if="rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
+          class="menu_button choice-stats-apply-all"
+          :title="t`把落出/补入清单应用到当前配置`"
+          @click="applyRoster()"
+        >
+          <i class="fa-solid fa-users-gear"></i>
+          {{ t`应用阵容计划` }}
+          <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
+        </button>
+      </template>
+      <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
+      <div class="choice-stats-roster-bar">
+        <label class="choice-stats-toggle">
+          <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
+          <span>{{ t`启用` }}</span>
+        </label>
+        <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
+          {{ t`目标在役条数` }}
+          <input
+            v-model="rosterSizeText"
+            class="text_pole choice-stats-roster-input"
+            type="number"
+            min="1"
+            step="1"
+            :placeholder="t`如 12`"
+            @blur="syncRosterDisplay"
+          />
+        </label>
+      </div>
+      <div v-if="rosterPlan" class="choice-stats-roster-readout">
+        {{ t`在役 ${rosterPlan.activeCount} 条` }}
+        <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
+        · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
+      </div>
+      <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
+        <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
+            <i class="fa-solid fa-arrow-down"></i>
+            {{ t`落出 (${rosterPlan.drops.length})` }}
+          </div>
+          <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
+          </div>
+        </div>
+        <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
+          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
+            <i class="fa-solid fa-arrow-up"></i>
+            {{ t`补入 (${rosterPlan.promotes.length})` }}
+          </div>
+          <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
+            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
+            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
+          </div>
+        </div>
+        <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
+          {{ rosterEmptyText }}
         </div>
       </div>
-      <div v-if="showRoster" class="choice-stats-section-body">
-        <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
-        <div class="choice-stats-roster-bar">
-          <label class="choice-stats-toggle">
-            <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
-            <span>{{ t`启用` }}</span>
-          </label>
-          <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
-            {{ t`目标在役条数` }}
-            <input
-              v-model="rosterSizeText"
-              class="text_pole choice-stats-roster-input"
-              type="number"
-              min="1"
-              step="1"
-              :placeholder="t`如 12`"
-              @blur="syncRosterDisplay"
-            />
-          </label>
-        </div>
-        <div v-if="rosterPlan" class="choice-stats-roster-readout">
-          {{ t`在役 ${rosterPlan.activeCount} 条` }}
-          <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
-          · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
-        </div>
-        <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
-          <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
-            <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
-              <i class="fa-solid fa-arrow-down"></i>
-              {{ t`落出 (${rosterPlan.drops.length})` }}
-            </div>
-            <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
-              <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-              <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-            </div>
-          </div>
-          <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
-            <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
-              <i class="fa-solid fa-arrow-up"></i>
-              {{ t`补入 (${rosterPlan.promotes.length})` }}
-            </div>
-            <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
-              <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-              <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-            </div>
-          </div>
-          <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
-            {{ rosterEmptyText }}
-          </div>
-        </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 应用历史：最近自动化写入批次（持久撤销槽的可视化，刷新不丢；默认折叠；统计或自动化
          任一关闭时隐藏——撤销入口保留在顶部维度条，config 写入记录与统计关停解耦） -->
-    <div
+    <ChoiceSectionCard
       v-if="statsEnabled && automationEnabled && historyEntries.length > 0"
       id="choice-stats-anchor-history"
-      class="choice-stats-section"
+      title="应用历史"
+      icon="fa-solid fa-clock-rotate-left"
       data-anchor="history"
     >
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showHistory = !showHistory">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showHistory }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-clock-rotate-left"></i>{{ t`应用历史` }}</h4>
-        </button>
+      <template #extra>
         <span class="choice-stats-info" :title="historyHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions">
-          <span v-if="undoCount > 1" class="choice-stats-dim-note">{{
-            t`共 ${historyEntries.length} 批，可逐条撤销`
-          }}</span>
-        </div>
-      </div>
-      <div v-if="showHistory" class="choice-stats-section-body">
-        <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
-        <div class="choice-stats-history">
-          <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
-            <div class="choice-stats-history-head">
-              <span
-                class="choice-stats-kind"
-                :class="h.entry.kind === 'roster' ? 'choice-stats-kind--roster' : 'choice-stats-kind--suggestions'"
-                >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
-              >
-              <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
-                h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
-              }}</span>
-              <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
-              <button
-                class="choice-icon-btn choice-stats-history-undo"
-                :title="t`撤销这一批应用`"
-                @click="undoHistoryEntry(h.entry.id)"
-              >
-                <i class="fa-solid fa-rotate-left"></i>
-              </button>
-            </div>
-            <div v-if="h.changes.length > 0" class="choice-stats-history-changes">
-              <div v-for="c in h.changes" :key="c.entryId" class="choice-stats-history-change">
-                <span class="choice-stats-type-badge">{{ c.name }}</span>
-                <span class="choice-stats-history-change-text">{{ c.change }}</span>
-              </div>
+        <span v-if="undoCount > 1" class="choice-stats-dim-note">{{
+          t`共 ${historyEntries.length} 批，可逐条撤销`
+        }}</span>
+      </template>
+      <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
+      <div class="choice-stats-history">
+        <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
+          <div class="choice-stats-history-head">
+            <span
+              class="choice-stats-kind"
+              :class="h.entry.kind === 'roster' ? 'choice-stats-kind--roster' : 'choice-stats-kind--suggestions'"
+              >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
+            >
+            <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
+              h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
+            }}</span>
+            <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
+            <button
+              class="choice-icon-btn choice-stats-history-undo"
+              :title="t`撤销这一批应用`"
+              @click="undoHistoryEntry(h.entry.id)"
+            >
+              <i class="fa-solid fa-rotate-left"></i>
+            </button>
+          </div>
+          <div v-if="h.changes.length > 0" class="choice-stats-history-changes">
+            <div v-for="c in h.changes" :key="c.entryId" class="choice-stats-history-change">
+              <span class="choice-stats-type-badge">{{ c.name }}</span>
+              <span class="choice-stats-history-change-text">{{ c.change }}</span>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 命中榜（用户选择条目的排行；默认折叠） -->
-    <div id="choice-stats-anchor-hitrank" class="choice-stats-section" data-anchor="hitrank">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showHitRank = !showHitRank">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showHitRank }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-crown"></i>{{ t`命中榜` }}</h4>
-        </button>
+    <ChoiceSectionCard id="choice-stats-anchor-hitrank" title="命中榜" icon="fa-solid fa-crown" data-anchor="hitrank">
+      <template #extra>
         <span class="choice-stats-info" :title="hitRankHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
+      </template>
+      <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
+      <div v-if="hitRank.length === 0" class="choice-empty">
+        <div class="choice-empty-icon"><i class="fa-solid fa-crown"></i></div>
+        <p>{{ t`尚未选择过任何条目` }}</p>
       </div>
-      <div v-if="showHitRank" class="choice-stats-section-body">
-        <p class="choice-stats-sub">{{ t`被选择过的条目，按命中次数排序` }}</p>
-        <div v-if="hitRank.length === 0" class="choice-empty-hint">{{ t`尚未选择过任何条目` }}</div>
-        <div v-else class="choice-stats-rank">
-          <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
-            <div class="choice-stats-rank-main">
-              <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
-              <span
-                class="choice-stats-type-badge"
-                :class="{
-                  'choice-stats-type-badge--none': !row.type && !row.deleted,
-                  'choice-stats-type-badge--deleted': row.deleted,
-                }"
-                >{{ typeLabel(row) }}</span
-              >
-              <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ hitText(row) }}</span>
-              <button
-                v-if="!row.deleted"
-                class="choice-icon-btn choice-stats-locate"
-                :title="t`在条目库中定位`"
-                @click="locateEntry(row.entryId)"
-              >
-                <i class="fa-solid fa-location-crosshairs"></i>
-              </button>
-            </div>
-            <div class="choice-stats-rank-meta">
-              <span
-                >{{ t`命中次数` }} <b>{{ row.count }}</b></span
-              >
-              <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
-                >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
-              >
-              <span
-                >{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span
-              >
-            </div>
+      <div v-else class="choice-stats-rank">
+        <div v-for="(row, i) in hitRank" :key="row.entryId" class="choice-stats-rank-row">
+          <div class="choice-stats-rank-main">
+            <span class="choice-stats-rank-no" :class="'choice-rank-' + Math.min(i + 1, 4)">{{ i + 1 }}</span>
+            <span
+              class="choice-stats-type-badge"
+              :class="{
+                'choice-stats-type-badge--none': !row.type && !row.deleted,
+                'choice-stats-type-badge--deleted': row.deleted,
+              }"
+              >{{ typeLabel(row) }}</span
+            >
+            <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ hitText(row) }}</span>
+            <button
+              v-if="!row.deleted"
+              class="choice-icon-btn choice-stats-locate"
+              :title="t`在条目库中定位`"
+              @click="locateEntry(row.entryId)"
+            >
+              <i class="fa-solid fa-location-crosshairs"></i>
+            </button>
+          </div>
+          <div class="choice-stats-rank-meta">
+            <span
+              >{{ t`命中次数` }} <b>{{ row.count }}</b></span
+            >
+            <span v-if="row.last_selected_text" class="choice-stats-meta-expected"
+              >{{ t`最近选中` }} <b class="choice-stats-meta-hit-text">{{ row.last_selected_text }}</b></span
+            >
+            <span
+              >{{ t`最近选中时间` }} <b>{{ timeAgo(row.last_selected_at) }}</b></span
+            >
           </div>
         </div>
       </div>
-    </div>
+    </ChoiceSectionCard>
 
     <!-- 管理（默认折叠） -->
-    <div id="choice-stats-anchor-manage" class="choice-stats-section" data-anchor="manage">
-      <div class="choice-stats-section-head">
-        <button class="choice-stats-section-toggle" @click="showManage = !showManage">
-          <i
-            class="fa-solid fa-chevron-right choice-stats-chevron"
-            :class="{ 'choice-stats-chevron--open': showManage }"
-          ></i>
-          <h4 class="choice-stats-section-title"><i class="fa-solid fa-sliders"></i>{{ t`管理` }}</h4>
-        </button>
+    <ChoiceSectionCard id="choice-stats-anchor-manage" title="管理" icon="fa-solid fa-sliders" data-anchor="manage">
+      <template #extra>
         <span class="choice-stats-info" :title="manageHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <div class="choice-stats-head-actions"></div>
+      </template>
+      <p class="choice-stats-sub">{{ t`导出 JSON 备份 / 清空后重新统计` }}</p>
+      <div class="choice-stats-actions">
+        <button class="menu_button" :title="t`导出统计为 JSON`" @click="exportStats()">
+          <i class="fa-solid fa-download"></i>
+          {{ t`导出 JSON` }}
+        </button>
+        <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="onClearStats">
+          <i class="fa-solid fa-broom"></i>
+          {{ t`清空统计` }}
+        </button>
       </div>
-      <div v-if="showManage" class="choice-stats-section-body">
-        <p class="choice-stats-sub">{{ t`导出 JSON 备份 / 清空后重新统计` }}</p>
-        <div class="choice-stats-actions">
-          <button class="menu_button" :title="t`导出统计为 JSON`" @click="exportStats()">
-            <i class="fa-solid fa-download"></i>
-            {{ t`导出 JSON` }}
-          </button>
-          <button class="menu_button" :title="t`清空全部统计计数与排行榜`" @click="onClearStats">
-            <i class="fa-solid fa-broom"></i>
-            {{ t`清空统计` }}
-          </button>
-        </div>
-      </div>
-    </div>
+    </ChoiceSectionCard>
 
     <ConfirmDialog :open="clearOpen" @confirm="confirmClear" @cancel="cancelClear" />
     <ConfirmDialog :open="applyOpen" @confirm="confirmApply" @cancel="cancelApply" />
@@ -709,6 +745,7 @@ import {
   planRoster,
   applyRosterPlan,
   reEnableEntry,
+  diceWinRate,
   GLOBAL_SCOPE,
   NONE_SCOPE,
   suggestionKey,
@@ -731,12 +768,15 @@ import { aiAttributionState } from '@/core/ai-attribution';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useConfirm } from '@/components/shared/useConfirm';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import {
   SCHEMA_VERSION,
   SUGGEST_MIN_SAMPLES,
   GenerationSettings,
   AI_ANALYSIS_DEBOUNCE_MS,
+  createEmptyDiceStats,
   type AiAnalysisEntry,
+  type DiceStats,
   type PoolConfigEntry,
 } from '@/type/settings';
 
@@ -746,13 +786,6 @@ const masterPool = computed(() => gs.settings.master_pool);
 const configs = computed(() => gs.settings.configs);
 const groupOrder = computed(() => gs.settings.group_order);
 const sampleMin = SUGGEST_MIN_SAMPLES;
-
-// ── 折叠分区状态（组件内，不持久化：切 tab 组件卸载即重置） ──
-const showOverview = ref(true);
-const showHitRank = ref(false);
-const showRoster = ref(false);
-const showHistory = ref(false);
-const showManage = ref(false);
 
 // ── 区块标题 info tooltip：完整说明收进原生 title，页面只留一行副标题 ──
 /** 概览（汇总卡片 / 样本分布 / 趋势 三合一）说明 */
@@ -767,6 +800,7 @@ const leaderboardHelp = computed(() =>
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
+const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的 D100 判定结局计数与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
 const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
@@ -961,6 +995,7 @@ const onCreateDefaultConfig = () => {
     name: t`默认配置`,
     entries,
     is_default: true,
+    rules: '',
     // generation 为 v35 起废弃的死字段（schema 必填），不承载任何运行时数据
     generation: GenerationSettings.parse({}),
   };
@@ -1032,6 +1067,33 @@ const barHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / trendMax.v
 
 /** 日期 label 稀疏规则：7 天全显示；30 天每 5 天显示一个，末尾（今天）始终显示 */
 const showChartLabel = (i: number) => trendDays.value <= 7 || i % 5 === 0 || i === trend.value.length - 1;
+
+// ── 骰子战绩（全局维度，不随 config 切换） ──
+const diceStats = computed<DiceStats>(() => stats.value.dice ?? createEmptyDiceStats());
+const diceRateText = computed(() => {
+  const r = diceWinRate(diceStats.value);
+  return r === null ? '—' : rateText(r);
+});
+/** 近 7 天每日判定次数（合并四档计数），与 stats.ts dailyKey 同格式（本地时区） */
+const diceTrend = computed(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const out: Array<{ key: string; label: string; total: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const c = diceStats.value.daily[key];
+    out.push({
+      key,
+      label: `${d.getMonth() + 1}/${d.getDate()}`,
+      total: c ? c.crit_success + c.success + c.fail + c.crit_fail : 0,
+    });
+  }
+  return out;
+});
+const diceTrendMax = computed(() => Math.max(1, ...diceTrend.value.map(p => p.total)));
+const diceBarHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / diceTrendMax.value) * 100)) : 0) + '%';
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
@@ -1303,27 +1365,8 @@ const historyEntries = computed(() => {
     .map(entry => ({ entry, changes: applyHistorySummary(entry, poolMap) }));
 });
 
-/** 粘性子头快捷跳转目标：仅列出当前可见的分区（阵容/历史按维度与开关条件显隐）。
- *  pills 点击 scrollIntoView 到对应 anchor section；anchor id 见各 section 的 id 属性。
- *  scroll-margin-top（见样式）抵消粘性头高度，避免钉顶头遮挡 section 标题。 */
-const jumpTargets = computed(() => {
-  const list: Array<{ anchor: string; label: string }> = [
-    { anchor: 'overview', label: t`概览` },
-    { anchor: 'leaderboard', label: t`条目榜` },
-  ];
-  if (canApply.value) list.push({ anchor: 'roster', label: t`阵容` });
-  if (statsEnabled.value && automationEnabled.value && historyEntries.value.length > 0) {
-    list.push({ anchor: 'history', label: t`历史` });
-  }
-  list.push({ anchor: 'hitrank', label: t`命中榜` });
-  list.push({ anchor: 'manage', label: t`管理` });
-  return list;
-});
-const jumpTo = (anchor: string): void => {
-  const el = document.getElementById(`choice-stats-anchor-${anchor}`);
-  el?.scrollIntoView({ block: 'start' });
-};
-
+/** 粘性子头快捷跳转已移除（用户要求删掉跳转按钮）；各 section 的 anchor id 与
+ *  scroll-margin-top 保留，为将来可能的定位/跳转预留。 */
 const historyTimeTitle = (ts: number): string => formatDateTime(ts);
 
 const undoHistoryEntry = (entryId: string) => {
@@ -1548,6 +1591,8 @@ const exportStats = () => {
       updated_at: stats.value.updated_at,
       // v51 按 config 维度（scopeId = config.id；无 config 会话 = '__none__'）
       entries: stats.value.entries,
+      // 骰子判定战绩（全局维度原始结构）
+      dice: stats.value.dice,
     },
     // 自动化应用历史（建议/阵容批次快照，随 apply_history 持久化）
     apply_history: gs.settings.apply_history,
@@ -1643,39 +1688,20 @@ const onClearStats = async () => {
   flex-direction: column;
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) 0;
-  /* 不透明背景：暗/亮主题下均不透出下方滚动内容 */
+  /* 不透明背景：暗/亮主题下均不透出下方滚动内容；细阴影与 content 分层，
+     现代面板感（传统做法只有一条 hard border）。blur 为渐进增强，老 WebView
+     忽略 backdrop-filter 时回落纯色 + 阴影，仍可读 */
   background: var(--choice-bg);
   border-bottom: 1px solid var(--choice-border);
+  box-shadow: 0 var(--choice-space-1) var(--choice-space-4) rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(6px);
 }
 
-/* 跳转 pills 行：横向排列、窄屏换行 */
-.choice-stats-jump-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--choice-space-1);
-}
-
-.choice-stats-jump-pill {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-full);
-  background: var(--choice-bg-element);
-  color: var(--choice-text-secondary);
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-3);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-}
-
-.choice-stats-jump-pill:hover {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-}
-
-/* 锚点分区滚动留白：抵消粘性头高度（维度条+跳转pills+内边距），避免跳转后标题被钉顶头遮挡 */
-.choice-stats-section[data-anchor] {
+/* 锚点分区滚动留白：抵消粘性头高度（维度条+内边距），避免跳转后标题被钉顶头遮挡。
+   统计页区块已迁移为卡片组件（可折叠 ChoiceSectionCard / 恒展开 .choice-section），
+   锚点 id 经 $attrs 落到根 <section>（.choice-section-card / .choice-section），scroll-margin 需挂在这两者上 */
+.choice-section-card[data-anchor],
+.choice-section[data-anchor] {
   scroll-margin-top: calc(var(--choice-space-6) * 2 + var(--choice-space-5));
 }
 
@@ -1792,6 +1818,24 @@ const onClearStats = async () => {
   color: var(--choice-text-secondary);
 }
 
+/* 骰子战绩彩蛋结局：大成功（星标）与 大失败（闪电）语义对立——
+   大成功用成功绿、大失败用失败红，不再同色难辨 */
+.choice-stats-card-icon--crit-success {
+  background: var(--choice-color-success-bg);
+  color: var(--choice-color-success);
+}
+
+.choice-stats-card-icon--crit-fail {
+  background: var(--choice-color-error-bg);
+  color: var(--choice-color-error);
+}
+
+/* 骰子战绩失败结局（普通失败） */
+.choice-stats-card-icon--danger {
+  background: var(--choice-color-error-bg);
+  color: var(--choice-color-error);
+}
+
 .choice-stats-card-body {
   display: flex;
   flex-direction: column;
@@ -1824,60 +1868,28 @@ const onClearStats = async () => {
   word-break: normal;
 }
 
-/* ── 区块标题行（概览区可读标题 + 折叠区可点击切换，共用同一视觉语言） ── */
-.choice-stats-section-title {
-  margin: 0;
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text);
-  display: inline-flex;
+/* ── 恒展开固定卡（.choice-section）的标题行：标题左、帮助/操作右 ── */
+.choice-stats-card-head {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--choice-space-2);
-  white-space: nowrap;
-  transition: color var(--choice-transition);
+  margin-bottom: var(--choice-space-2);
 }
 
-.choice-stats-section-title i {
+/* 固定卡标题图标与卡片体系一致：主色点亮；可折叠卡（ChoiceSectionCard）标题已由组件自身着色 */
+.choice-stats-card-head .choice-section-title i {
   color: var(--choice-color-info);
-  font-size: var(--choice-text-sm);
-  flex-shrink: 0;
 }
 
-.choice-stats-section-head {
+/* 固定卡标题右侧：帮助 + 操作按钮聚成一组，靠右 */
+.choice-stats-card-head-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--choice-space-1) var(--choice-space-2);
-  margin-bottom: var(--choice-space-1);
-}
-
-/* 折叠分区标题行整行为可点击区域（button 复位）；展开/收起看 chevron 旋转 */
-.choice-stats-section-toggle {
-  display: inline-flex;
-  align-items: center;
   gap: var(--choice-space-2);
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: var(--choice-space-1) 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: inherit;
-  text-align: left;
-}
-
-.choice-stats-section-toggle:hover .choice-stats-section-title {
-  color: var(--choice-color-info);
-}
-
-.choice-stats-chevron {
-  flex-shrink: 0;
-  color: var(--choice-text-muted);
-  font-size: var(--choice-text-xs);
-  transition: transform var(--choice-transition);
-}
-
-.choice-stats-chevron--open {
-  transform: rotate(90deg);
+  justify-content: flex-end;
 }
 
 /* 说明入口：悬停显示完整口径/规则说明（原生 title，触屏长按可见） */
@@ -1913,65 +1925,11 @@ const onClearStats = async () => {
   color: var(--choice-text-muted);
 }
 
-/* 控制簇（首个分区）的状态读数在区块末尾：去掉自带下边距，间距交由其下粘性子头管理 */
-.choice-stats-section:first-child > .choice-stats-sub {
-  margin-bottom: 0;
-}
+/* 分段按钮组（趋势天数 / 排序维度）已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子 */
 
-/* 折叠分区展开后的内容容器：透明底 + 顶部微缩进，视觉上从属于标题行 */
-.choice-stats-section-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-1) 0 0 var(--choice-space-4);
-}
-
-/* 折叠体内的副标题由 flex gap 管间距，去掉自带下边距避免双倍空隙 */
-.choice-stats-section-body > .choice-stats-sub {
-  margin-bottom: 0;
-}
-
-/* ── 分段按钮组（趋势天数 / 排序维度共用） ── */
-.choice-stats-seg {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  flex-wrap: wrap;
-}
-
-.choice-stats-seg-btn {
-  border: none;
-  background: none;
-  color: var(--choice-text-secondary);
-  font-size: var(--choice-text-xs);
-  padding: 2px 8px;
-  border-radius: var(--choice-radius-sm);
-  cursor: pointer;
-  transition:
-    background var(--choice-transition),
-    color var(--choice-transition);
-  white-space: nowrap;
-}
-
-.choice-stats-seg-btn:hover {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text);
-}
-
-.choice-stats-seg-btn--active {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-  font-weight: 600;
-}
-
-/* 键盘焦点可见态：分段按钮/跳转 pill/组头/撤销与图标按钮统一描边（对照 border-active），
-   鼠标操作的 hover 反馈保留原样 */
-.choice-stats-seg-btn:focus-visible,
-.choice-stats-jump-pill:focus-visible,
+/* ── 键盘焦点可见态：组头/撤销与图标按钮统一描边（对照 border-active），
+    分段按钮已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子，focus 由原子承担，
+    hover 反馈保留原样 */
 .choice-stats-group-head:focus-visible,
 .choice-stats-undo:focus-visible,
 .choice-icon-btn:focus-visible {
@@ -2024,10 +1982,14 @@ const onClearStats = async () => {
   background: var(--choice-color-success);
 }
 
+.choice-chart-col--dice {
+  background: var(--choice-color-info);
+}
+
 .choice-chart-label {
   flex-shrink: 0;
   text-align: center;
-  font-size: 9px;
+  font-size: var(--choice-text-2xs);
   line-height: 1;
   color: var(--choice-text-muted);
   padding-top: 3px;
@@ -2455,6 +2417,8 @@ const onClearStats = async () => {
   font-size: var(--choice-text-xs);
   font-weight: 700;
   color: var(--choice-text-muted);
+  /* 数字对齐：刷新/翻页时排名位宽不抖动 */
+  font-variant-numeric: tabular-nums;
 }
 
 .choice-rank-1 {
@@ -2466,8 +2430,7 @@ const onClearStats = async () => {
 }
 
 .choice-rank-3 {
-  color: var(--choice-color-warning);
-  opacity: 0.75;
+  color: var(--choice-text-muted);
 }
 
 .choice-stats-type-badge {
@@ -2660,6 +2623,8 @@ const onClearStats = async () => {
 .choice-stats-history-time {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
+  /* 数字对齐：时间戳数字位宽不抖动 */
+  font-variant-numeric: tabular-nums;
 }
 
 .choice-stats-history-count {

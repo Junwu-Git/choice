@@ -3,9 +3,11 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { CATEGORY_DELETED, CATEGORY_UNGROUPED, DELETED_GROUP_PREFIX } from '@/core/constants';
 import type { ChoiceOption } from '@/core/options-store';
+import type { DiceOutcome } from '@/core/dice';
 import {
   APPLY_HISTORY_LIMIT,
   createEmptyStats,
+  createEmptyDiceStats,
   STATS_WINDOW_SIZE,
   SUGGEST_MIN_SAMPLES,
   SUGGEST_DOWNGRADE_EXCESS,
@@ -17,6 +19,7 @@ import {
   ROSTER_EXPLORE_RATIO,
   type ApplyHistoryEntry,
   type DailyCount,
+  type DiceStats,
   type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
@@ -250,6 +253,38 @@ export function recordOptionSelected(
   // 1 次"的口径（单槽按代记忆，与点击次数无关）。hitScopes 仅在真正计数命中后 add（见上），
   // 全去重/null/无 id 路径为空 → 不写单槽，行为与注释语义一致
   if (generationId && hitScopes.size > 0) stats.last_hit_generation_id = generationId;
+}
+
+/** 记录一次骰子判定（全局战绩，不随 config 维度）。随 stats_enabled 采集：
+ *  关 = 早退零写入（与 recordOptionsGenerated/recordOptionSelected 同口径）。
+ *  判定结果只进独立战绩字段，不参与条目建议/权重/AI 分析、不写 last_selected_text。
+ *  outcome/roll/rate 由 option-action 判定后传入；daily 键与趋势图同口径（本地时区）。 */
+export function recordDiceRoll(outcome: DiceOutcome, _roll: number, _rate: number): void {
+  const gs = useGlobalSettingsStore();
+  if (!gs.settings.stats_enabled) return;
+  const stats = gs.settings.stats;
+  // 老档/未经过 zod parse 的运行时对象可能缺 dice 字段，惰性补一份空白战绩
+  const dice = stats.dice ?? (stats.dice = createEmptyDiceStats());
+  dice.total_rolls += 1;
+  dice.by_outcome[outcome] = (dice.by_outcome[outcome] ?? 0) + 1;
+  const key = dailyKey();
+  // 原型键守卫（与 getDaily 同源）：daily 是持久化普通对象，防御篡改存档注入的键
+  if (!Object.prototype.hasOwnProperty.call(dice.daily, key)) {
+    Object.defineProperty(dice.daily, key, {
+      value: { crit_success: 0, success: 0, fail: 0, crit_fail: 0 },
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  dice.daily[key][outcome] += 1;
+  dice.updated_at = Date.now();
+}
+
+/** 骰子胜率（纯函数）：大成功+成功 ÷ 总掷数；未掷过返回 null（组件显示占位）。 */
+export function diceWinRate(dice: DiceStats): number | null {
+  if (!dice || dice.total_rolls <= 0) return null;
+  return (dice.by_outcome.crit_success + dice.by_outcome.success) / dice.total_rolls;
 }
 
 /** AI 归因结果与本地 Dice 归因的对称修正（纯函数，L1 归因队列成功后调用）。

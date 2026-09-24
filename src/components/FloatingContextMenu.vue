@@ -8,15 +8,15 @@
         '--choice-menu-y': menuY + 'px',
       }"
     >
-      <button class="choice-floating-context-item" @click.stop="onShowOptions">
+      <button class="choice-menu-item" @click.stop="onShowOptions">
         <i class="fa-solid fa-chess"></i>
         {{ t`查看行动选项` }}
       </button>
-      <button class="choice-floating-context-item" @click.stop="onOpenSettings">
+      <button class="choice-menu-item" @click.stop="onOpenSettings">
         <i class="fa-solid fa-gear"></i>
         {{ t`打开设置` }}
       </button>
-      <button class="choice-floating-context-item" @click.stop="onHideBubble">
+      <button class="choice-menu-item" @click.stop="onHideBubble">
         <i class="fa-solid fa-eye-slash"></i>
         {{ t`隐藏悬浮球` }}
       </button>
@@ -33,7 +33,7 @@ import {
   bubbleY,
   bubbleSize,
 } from '@/core/floating-state';
-import { useGlobalSettingsStore } from '@/store/global-settings';
+import { setEntryVisible } from '@/core/entry-points';
 
 const MENU_WIDTH = 140;
 
@@ -65,8 +65,11 @@ const onOpenSettings = () => {
 };
 
 const onHideBubble = () => {
-  const gs = useGlobalSettingsStore();
-  gs.settings.ui.floating_enabled = false;
+  // 入口保底：悬浮球是最后一个开着入口时拒绝隐藏（toastr 提示在 setEntryVisible 内），
+  // 菜单保持打开让用户理解原因；成功隐藏才收起菜单
+  if (!setEntryVisible('floating', false)) {
+    return;
+  }
   isBubbleContextMenuOpen.value = false;
 };
 
@@ -108,29 +111,5 @@ onUnmounted(() => {
   padding: var(--choice-space-1);
 }
 
-.choice-floating-context-item {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  width: 100%;
-  padding: var(--choice-space-2) var(--choice-space-3);
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text);
-  background: none;
-  border: none;
-  border-radius: var(--choice-radius-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background var(--choice-transition);
-}
-
-.choice-floating-context-item:hover {
-  background: var(--choice-bg-hover);
-}
-
-.choice-floating-context-item i {
-  width: 16px;
-  color: var(--choice-text-muted);
-  text-align: center;
-}
+/* 菜单项本体样式走 global.css 的 .choice-menu-item 原子（图标+文字、hover 高亮、触屏抬升） */
 </style>
