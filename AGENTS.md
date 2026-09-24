@@ -211,6 +211,7 @@ hover 设备显示）；触屏不淡化；只能解锁或点击悬浮球开关�
 时主面板整组隐藏且润色按钮隐藏，但 store 数据同步与自动生成照常运行（弹窗读同一 panelStore）。popover 状态
 `isBubbleOptionsOpen` / `closeBubbleOptions` 位于
 `floating-state.ts`，设置面板打开时自动收起。`hasUnseenResult`、未读结果徽章和快速预览 popover 尚未接入。
+悬浮球弹窗支持**尺寸与字号调整**（独立于聊天面板，字段 `floating_popover_width`（0=自动 320）/`floating_popover_height`（0=自动 55dvh）/`floating_option_font_size`+`_auto`，zod default 补齐、不 bump schema_version）：底部工具条「调整」按钮（`fa-sliders`，位于设置入口左侧）进入**调整态**（组件内存态 `adjusting`，不持久化）——选项区上方出现**「宽度 / 高度」两条独立拖动条**（方向恒定直观：宽度条向右拖增宽=固定左缘右扩、高度条向下拖增高=固定顶缘下延，`onWidthResizeStart`/`onHeightResizeStart` 分别处理），工具条换成字号档（自动/小/中/大）+ 重置默认按钮；拖动 live 写 store，宽下限 200 / 高下限 120、宽上限 min(720, 视口-16) / 高上限 min(1000, 视口×0.9)。**调整态锁定弹窗坐标**（`adjustPos` 快照 popoverX/Y），避免拖动中宽度实时变化触发「气泡右侧↔翻左侧」判定来回跳变，退出后按新尺寸实时重新定位；**调整态 body 用固定 `height`（`bodyHeightStyle`，`height` + `maxHeight:none`），让设定的高度在选项少时也撑出留白、拖动可见**，正常态退回 `max-height` 收紧。字号缩放系数与聊天面板共用 `OPTION_FONT_SCALE`（`src/core/constants.ts` 单一来源），`global.css` 对 `.choice-floating-options` 加与主面板同款覆盖规则。**调整态下点弹窗外 / Esc = 完成调整（不收起弹窗）**，正常态才走锁定/收起逻辑。
 
 **悬浮球样式**：`ui.bubble_style`（`ring` / `compact`，AppearanceSettings「悬浮窗」分区选择）。直径单一来源是 `floating-state.ts`
 的 `bubbleSizeFor(style, isMobile)`：`ring` 桌面 60 / 手机 48；`compact` 桌面 48 / 手机 40（手机更小、更不遮挡），
@@ -230,7 +231,7 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
   `true`，schema `src/type/settings.ts`）控制该入口显隐，通过全局设置 `$subscribe`
   即时同步；该开关只影响魔棒入口，不联动 `floating_enabled`、不影响选项面板/悬浮窗。
 - 聊天选项面板支持 `ui.panel_collapse_on_outside_click`（默认关）：开启后仅当点击命中聊天区 `#chat` 内的普通正文/空白处收起，链接/按钮/输入框/工具栏等交互目标排除、不反向点击展开（**不排除 .mes 本体**，手机端整屏文字也可触发收起）；触发范围收窄到 `#chat` 内——点其他插件浮动面板（DOM 多在 `#chat` 外）不收起、也不吞其点击，避免误伤。
-- 面板正文有独立字号 `ui.option_font_size` + `ui.option_font_size_auto`（只乘聊天面板选项文字，不影响悬浮 popover）。
+- 面板正文有独立字号 `ui.option_font_size` + `ui.option_font_size_auto`（只乘聊天面板选项文字）；悬浮球弹窗有自己独立的 `floating_option_font_size`+`_auto`（见上「悬浮球弹窗」段），两处互不影响。
 - **调整模式**（ActionOptionsPanel 组件内存态 `adjusting`，不持久化）：标题栏「调整」按钮（`fa-sliders`，位于设置入口左侧，不占用生成/锁定/主题的高频位置）进入，调整态下选项与行为栏禁用，仅显示标题栏下方的调整工具条——左端大触摸高度拖动区（pointer drag 实时写 `ui.option_panel_height`，0=自动 45/40dvh 上限、上限对齐 schema 的 1000）+ 右端字号档（自动/小/中/大，写 `ui.option_font_size`）。外观页不再提供「选项面板字号」段，字号唯一入口在调整态。**调整态面板临时绝对定位、底部锚定**（进入时父容器 `#choice-panel-mount` 置 `position:relative` + 保留面板原高，面板 `position:absolute; bottom:0` 铺满宽度）：面板增高时顶部向上抬升（**往上长**）、底部与输入框不动，拖动把手随光标走——公式 `option_panel_height = resizeStartH - (clientY - resizeStartY)`，向上拖变高、向下拖变矮。**点击面板外任意处 = 完成调整**（退出调整模式，与「点击聊天正文收起」开关无关），退出时仅还原父容器样式，不做任何滚动跳转，面板保留在原处。
 - **设置面板导航为两级结构**（`FloatingSettings.vue` + `shared/tab-definitions.ts`）：
   一级 4 个胶囊页（内容/生成/统计/系统）+ 页内二级子 tab 条（分段控件）。
@@ -277,7 +278,7 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v57/v58 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker、程度档位模板）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v57/v58 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker、程度档位模板）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量 + 选项字号缩放 `OPTION_FONT_SCALE`，聊天面板与悬浮球弹窗共用），以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是

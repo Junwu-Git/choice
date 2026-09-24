@@ -18,3 +18,15 @@ export const DELETED_GROUP_PREFIX = 'del:';
 
 /** 空值展示占位（统计页数字/文本缺省态；避免各处硬编码 '–'） */
 export const EMPTY_DISPLAY = '–';
+
+/**
+ * 选项面板/悬浮球弹窗正文字号缩放系数（ui.option_font_size 与
+ * ui.floating_option_font_size 共用）。容器设 `--choice-option-font-scale`，
+ * global.css 在 --choice-text-sm 之上再乘它。聊天面板与悬浮球两处字号档若各自
+ * 硬编码数字会漂移，故收在此单一来源
+ */
+export const OPTION_FONT_SCALE: Record<'small' | 'medium' | 'large', number> = {
+  small: 0.85,
+  medium: 1,
+  large: 1.2,
+};

@@ -822,11 +822,21 @@
 }
 
 /* 选项面板独立字号档（ui.option_font_size，ActionOptionsPanel 设 --choice-option-font-scale）：
-   只作用聊天面板（.choice-panel 非 --compact），悬浮 popover 固定小字不参与；
+   只作用聊天面板（.choice-panel 非 --compact），悬浮球弹窗有独立字号档（见下条规则，
+   FloatingOptions 设 --choice-option-font-scale）；设置面板不受影响。
    在全局 --choice-text-*（已含 --choice-font-scale）之上再乘面板档，独立于全局字号设置 */
 .choice-panel:not(.choice-panel--compact) .choice-option-btn,
 .choice-panel:not(.choice-panel--compact) .choice-option-content,
 .choice-panel:not(.choice-panel--compact) .choice-option-type {
+  font-size: calc(var(--choice-text-sm) * var(--choice-option-font-scale, 1));
+}
+
+/* 悬浮球弹窗独立字号档（ui.floating_option_font_size，FloatingOptions 设同名
+   --choice-option-font-scale，作用域独立于聊天面板、互不影响）。默认 scale=1
+   即现状固定小字（--choice-text-sm），语义与聊天面板覆盖规则完全一致 */
+.choice-floating-options .choice-option-btn,
+.choice-floating-options .choice-option-content,
+.choice-floating-options .choice-option-type {
   font-size: calc(var(--choice-text-sm) * var(--choice-option-font-scale, 1));
 }
 

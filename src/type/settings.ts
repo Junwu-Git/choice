@@ -1272,8 +1272,9 @@ const UISettings = z
     /**
      * 选项面板正文字号档（独立于全局 font_size/--choice-font-scale）：
      * 仅作用聊天面板内 .choice-option-btn/.choice-option-content 的缩放，
-     * 悬浮 popover 与设置面板不受影响。option_font_size_auto=true 时忽略本字段
-     * （跟随全局档，scale=1）。老存档缺字段由 default('medium') 补齐
+     * 悬浮球弹窗有自己独立的 floating_option_font_size，互不影响；设置面板不受影响。
+     * option_font_size_auto=true 时忽略本字段（跟随全局档，scale=1）。
+     * 老存档缺字段由 default('medium') 补齐
      */
     option_font_size: z.enum(['small', 'medium', 'large']).default('medium'),
     /**
@@ -1288,6 +1289,31 @@ const UISettings = z
      * 老存档缺字段由 default(0) 补齐，无需 bump schema_version
      */
     option_panel_height: z.number().min(0).max(1000).default(0).catch(0),
+    /**
+     * 悬浮球弹窗宽度（px）：>0 = 用该值；0 = 自动（320，视口窄就放给视口）。
+     * 悬浮球弹窗是独立 UI、独立于聊天面板的尺寸设置；进调整态拖对角把手回写。
+     * 老存档缺字段由 default(0) 补齐，无需 bump schema_version
+     */
+    floating_popover_width: z.number().min(200).max(720).default(0).catch(0),
+    /**
+     * 悬浮球弹窗选项区高度（px）：>0 = 选项 body 限高用该值；0 = 自动（55dvh）。
+     * 与 option_panel_height 各自独立（悬浮球浮层、聊天面板锚底部，场景不同）。
+     * 老存档缺字段由 default(0) 补齐，无需 bump schema_version
+     */
+    floating_popover_height: z.number().min(0).max(1000).default(0).catch(0),
+    /**
+     * 悬浮球弹窗正文字号档（独立于聊天面板 option_font_size）：
+     * 影响 .choice-floating-options 内 .choice-option-* 的缩放；
+     * floating_option_font_size_auto=true 时忽略本字段（跟随全局，scale=1）。
+     * 老存档缺字段由 default('medium') 补齐，无需 bump schema_version
+     */
+    floating_option_font_size: z.enum(['small', 'medium', 'large']).default('medium'),
+    /**
+     * 悬浮球弹窗字号是否跟随全局字号档：true 时 floating_option_font_size 不生效
+     * （弹窗 scale=1，由 --choice-font-scale 全局缩放统一接管）。
+     * 老存档缺字段由 default(true) 补齐，无需 bump schema_version
+     */
+    floating_option_font_size_auto: z.boolean().default(true),
   })
   .prefault({});
 type UISettings = z.infer<typeof UISettings>;
