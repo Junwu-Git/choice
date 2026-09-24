@@ -697,9 +697,11 @@ const STRIP_REASONING_TAGS_RE =
  *  （"内容A🎞️ [B]…"）也按新选项拆 */
 const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
 
-/** 尝试把 `<options>` 块文本当 JSON 数组解析（纯回退路径，prompt 不要求 AI 输出 JSON）。
+/** 尝试把 `<options>` 块文本当 JSON 数组解析（主路径；解析失败走括号回退）。
  *  返回解析出的选项字符串数组，或 null（非数组 / 解析失败 / 解析后全空）。
- *  兼容多种元素形态：纯字符串、{text}、{option}、{t,c}、{type,content}。
+ *  兼容多种元素形态：{title,content}、纯字符串、{text}、{option}、{t,c}、{type,content}。
+ *  有 title 时重建为 `[title]content`（title 可带 |档位|需求值 标注，供骰子/档位消费）；
+ *  内容含 []/【】/换行等任意字符都在 content 字符串里、依赖下游 ^ 锚定解析当内容处理，不切分。
  *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
 const parseJsonOptionArray = (c: string): string[] | null => {
   try {
@@ -710,6 +712,12 @@ const parseJsonOptionArray = (c: string): string[] | null => {
     const items = p
       .map(x => {
         if (typeof x === 'string') return x.trim();
+        const title = typeof x?.title === 'string' ? x.title.trim() : '';
+        const body =
+          (typeof x?.content === 'string' ? x.content.trim() : null) ??
+          (typeof x?.text === 'string' ? x.text.trim() : null) ??
+          '';
+        if (title) return body ? `[${title}]${body}` : `[${title}]`;
         return (
           x?.text?.trim() ??
           x?.option?.trim() ??
@@ -759,14 +767,17 @@ export function parseOptions(text: string, count: number): string[] {
     .replace(/\s*```$/, '')
     .trim();
 
-  // 尝试 JSON 解析（纯回退路径，prompt 不要求 AI 输出 JSON）
+  // 主路径：JSON 数组（prompt 契约要求）。AI 输出以 `[` 开头即优先按 JSON 解析；
+  // 结构读出内容（含 []/【】/换行都安全）。解析失败落到下面的括号回退。
   if (c.startsWith('[')) {
     const jsonParsed = parseJsonOptionArray(c);
     if (jsonParsed) return jsonParsed.slice(0, count);
   }
 
-  // 【】或 [] 格式：标题用【】或 [] 包裹，后续文本为内容，跨行自动合并
-  // 边界判定按提示词契约"每条选项独占一行"做行锚定：只有行首（间隙含换行或正文）的
+  // 回退路径（非 JSON 产出者，如旧提示词快照/老模型）：【】或 [] 格式——标题用【】或 []
+  // 包裹，后续文本为内容，跨行自动合并。此路径下内容里再出现 []/【】仍可能被切（接受范围，
+  // 历史上为兼容 run-on 与 【标题】 容错而保留）。边界判定按提示词契约"每条选项独占一行"
+  // 做行锚定：只有行首（间隙含换行或正文）的
   // 括号才开启新选项。同一行内紧邻/仅隔空白或 emoji 的连续括号是"标签堆叠"（如
   // "[回溯闪回]🎞️ [记忆片段·三年前] 正文"、"[回溯闪回]【三年前·初二暑假】正文"），
   // 必须并入同一条——AI 常无视禁令在正文里用【】/[]写场景头，若把每个括号都当边界，
@@ -838,15 +849,9 @@ export function parseOptions(text: string, count: number): string[] {
   return result.slice(0, count);
 }
 
-const buildPoolConfigRuleBlock = (config: PoolConfig | null): string => {
-  const globalRules = config?.rules?.trim() ?? '';
-  const globalExamples = config?.examples?.trim() ?? '';
-  if (!globalRules && !globalExamples) return '';
-  const sections: string[] = [];
-  if (globalRules) sections.push(`【全局规则】\n${globalRules}`);
-  if (globalExamples) sections.push(`【全局示例】\n${globalExamples}`);
-  return `<系统专属选项规则与示例>\n${sections.join('\n\n')}\n</系统专属选项规则与示例>`;
-};
+// 该配置的规则/示例自由文本：用户自行书写、无固定结构、不加任何标签，AI 原样读取。
+// 空串返回 ''（不注入，通用行为零变化）；非空时由调用方原样拼到候选条目之后。
+const buildConfigRuleText = (config: PoolConfig | null): string => config?.rules?.trim() ?? '';
 
 // _target 预留：调用方语义上指定生成目标楼层，当前实现始终读取最新楼层上下文
 export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGeneration | null> {
@@ -892,13 +897,12 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return line;
     };
     const poolSelectedText = pool.drawn.map(renderEntryLine).join('\n');
-    // 全局规则/示例内联进候选文本（config 级，纯 opt-in）：拼在候选条目行之后，随
-    // {{pool_selected}} 一起展开进 option_task 的 user 消息——不新增消息、不改消息序列，
-    // 不破坏原有提示词结构。仅当 config 携带 rules/examples（任一非空）才非空；
-    // 空配置返回 ''，poolSelected 与现在完全一致，通用行为零变化。
-    const poolConfigRuleBlock = buildPoolConfigRuleBlock(ps.effectiveConfig);
-    const poolSelectedTextFull = poolConfigRuleBlock
-      ? `${poolSelectedText}${poolSelectedText ? '\n\n' : ''}${poolConfigRuleBlock}`
+    // 该配置的规则/示例原文内联进候选文本（config 级，纯 opt-in）：拼在候选条目行之后，
+    // 随 {{pool_selected}} 一起展开进 option_task 的 user 消息——不新增消息、不改消息序列、
+    // 不加任何标签，用户自行组织内容。空配置返回 ''，poolSelected 与现在完全一致。
+    const configRuleText = buildConfigRuleText(ps.effectiveConfig);
+    const poolSelectedTextFull = configRuleText
+      ? `${poolSelectedText}${poolSelectedText ? '\n\n' : ''}${configRuleText}`
       : poolSelectedText;
     // 读上一 AI 楼层的已生成选项 + 当前楼层既有代，供后置去重参照（只读，不作条目）。
     // prevOptions 仍填充 Ctx 以兼容用户自定义模块引用 {{prev_options}} 的情况。

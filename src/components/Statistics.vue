@@ -996,7 +996,6 @@ const onCreateDefaultConfig = () => {
     entries,
     is_default: true,
     rules: '',
-    examples: '',
     // generation 为 v35 起废弃的死字段（schema 必填），不承载任何运行时数据
     generation: GenerationSettings.parse({}),
   };

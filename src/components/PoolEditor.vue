@@ -191,30 +191,17 @@
         </div>
       </div>
 
-      <!-- 配置级全局规则/示例（系统专属选项等按需使用；空则生成时不注入，不影响通用行为） -->
+      <!-- 配置级规则/示例：用户按需求或角色卡自行书写，不加任何标签；空则生成时不注入，不影响通用行为 -->
       <div class="choice-inline-field">
         <div class="choice-inline-field-head">
-          <label class="choice-inline-label">{{ t`全局规则` }}</label>
-          <span class="choice-inline-hint">{{ t`可选：系统语体/奖励机制等，随生成自动注入提示词` }}</span>
+          <label class="choice-inline-label">{{ t`规则（可选）` }}</label>
+          <span class="choice-inline-hint">{{ t`留空则不注入；无需任何标签，直接按需求或角色卡书写，AI 原样读取` }}</span>
         </div>
         <textarea
           v-model="selectedConfig.rules"
           class="choice-textarea choice-inline-textarea"
           rows="4"
-          :placeholder="t`例如：你是降临于宿主的高维意志体……选项越离谱奖励越好`"
-        ></textarea>
-      </div>
-
-      <div class="choice-inline-field">
-        <div class="choice-inline-field-head">
-          <label class="choice-inline-label">{{ t`全局示例` }}</label>
-          <span class="choice-inline-hint">{{ t`可选：整套样例输出，与全局规则一同注入` }}</span>
-        </div>
-        <textarea
-          v-model="selectedConfig.examples"
-          class="choice-textarea choice-inline-textarea"
-          rows="4"
-          :placeholder="t`例如：场景案例：{{user}}在野外偶遇女修……`"
+          :placeholder="t`例如：选项按角色当前性格与场景书写，动词开头、不超过 15 字`"
         ></textarea>
       </div>
     </div>
@@ -354,7 +341,6 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
     rules: '',
-    examples: '',
     // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode）与默认值漂移
     generation: GenerationSettings.parse({}),
   };
@@ -715,7 +701,7 @@ hr.sysHR {
   flex-shrink: 0;
 }
 
-/* 配置级全局规则/示例编辑区：head 行 = 标签 + 右侧提示 */
+/* 配置级规则/示例编辑区：head 行 = 标签 + 右侧提示 */
 .choice-inline-field-head {
   display: flex;
   align-items: baseline;

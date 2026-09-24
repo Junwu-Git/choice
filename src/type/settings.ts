@@ -96,11 +96,9 @@ export const PoolConfig = z
     name: z.string(),
     entries: z.array(PoolConfigEntry),
     is_default: z.boolean().default(false),
-    /** 该配置的「全局规则」（可空）：系统专属选项的语体/奖励机制/格式要求等，随生成自动注入。
-     *  仅按需配置：空串 = 不注入，现有通用行为零变化。老存档由 default('') 补齐，无需 bump */
+    /** 该配置的规则/示例自由文本（可空）：用户按需求或角色卡自行书写、无固定结构、不加任何标签，
+     *  AI 原样读取其内容。仅按需配置：空串 = 不注入，现有通用行为零变化。老存档由 default('') 补齐。 */
     rules: z.string().default(''),
-    /** 该配置的「全局示例」（可空）：整套样例输出，与 rules 一同自动注入。规则见 rules 注释 */
-    examples: z.string().default(''),
     /** @deprecated v35 起抽取参数（分组抽取/打乱/固定溢出/冗余比例）收归全局
      *  GlobalSettings.generation——条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动
      *  任何生成参数（历史上生成设置页冗余比例读生效池配置，切池配置即跳变）。本字段仅为
@@ -1077,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 57;
+export const SCHEMA_VERSION = 59;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */

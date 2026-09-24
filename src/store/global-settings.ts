@@ -823,7 +823,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         entries: makeEntries(oldGlobalPool),
         is_default: true,
         rules: '',
-        examples: '',
         // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）
         generation: (oldGlobalGen as any) ?? GenerationSettings.parse({}),
       });
@@ -837,7 +836,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
         rules: '',
-        examples: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -861,7 +859,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
         rules: '',
-        examples: '',
         generation: GenerationSettings.parse({}),
       });
       try {
@@ -894,7 +891,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         })),
         is_default: true,
         rules: '',
-        examples: '',
         generation: GenerationSettings.parse({}),
       });
     }
@@ -960,7 +956,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           })),
           is_default: true,
           rules: '',
-          examples: '',
           generation: GenerationSettings.parse({}),
         },
       ];
@@ -2027,6 +2022,41 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v58：PoolConfig 的 rules/examples 两字段合并为单一自由文本 rules。examples 已从 schema
+  // 删除、被 zod strip 掉，parse 后 validated.configs 里已无它——必须读原始存档（同 v57 dice 先例），
+  // 把老档 examples 内容折并进 rules，避免用户写的样例丢失。
+  if ((validated.schema_version ?? 0) < 58) {
+    const rawConfigs: unknown = _.get(extension_settings, [setting_field, 'configs']);
+    if (Array.isArray(rawConfigs)) {
+      rawConfigs.forEach((raw, i) => {
+        const dst = validated.configs[i];
+        if (!dst || !raw || typeof raw !== 'object') return;
+        const examples = (raw as any).examples;
+        if (typeof examples === 'string' && examples.trim()) {
+          dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
+        }
+      });
+    }
+  }
+
+  // v59：新增「认知边界（非全知）」模块补建——缓解"选项太过全知"（用了角色不该知道的
+  // 信息 / 对看不到的事物做反应）。老存档 prompt_rules.modules 无此模块（v59 新增），
+  // 按 id 去重后从 DEFAULT_MODULES 取对象插入（克隆带 enabled:true，默认生效）；
+  // 开关 = 该模块在提示词编辑器里的启用复选框。
+  // 与 v24 reward_prompt 补建同构：prompt_rules.modules 与每个 prompt_configs[].modules 都要补，
+  // 漏掉 configs 会导致"切换提示词配置后模块消失"。
+  if ((validated.schema_version ?? 0) < 59) {
+    const ensureKnowledgeBoundary = (modules: PromptModuleType[]): void => {
+      if (modules.some(m => m.id === 'knowledge_boundary')) return;
+      const template = DEFAULT_MODULES.find(m => m.id === 'knowledge_boundary');
+      if (template) modules.push(klona(template));
+    };
+    ensureKnowledgeBoundary(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      ensureKnowledgeBoundary(cfg.modules);
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2764,7 +2794,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         })),
         is_default: true,
         rules: '',
-        examples: '',
         generation: GenerationSettings.parse({}),
       },
     ];

@@ -157,6 +157,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   控制模块顺序和参与方式。上下文通过 `context_mode`
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
   模块必须排在 assistant 相关模块之前；人称和字数可配置，当前默认选项/润色范围为 10–60 个字符，不要把它写死成第三人称或 30–80 字。
+- **认知边界（非全知）模块**：`knowledge_boundary`（`option_only`、默认启用、`order: 13.5` 浮点插值，排序在 `wi_depth_after`(13) 与 `core_rules`(14) 之间）。用于缓解“选项太过全知”（用了角色不该知道的信息 / 对看不到的事物做反应），内容独立成块声明“信息分层 / 禁止越界 / 逐条自检”，不改动 `core_rules`、`thinking_prompt` 等用户可编辑模块。开关 = 提示词编辑器里该模块的启用复选框；v59 迁移向 `prompt_rules.modules` 与各 `prompt_configs[].modules` 补建（仿 v24 reward_prompt 先例）。
 
 ## UI 设计系统与约定
 
@@ -251,9 +252,15 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
   `ChoiceSectionCard.vue` 可折叠分组组件（默认折叠、`grid-template-rows` 动画）、`.choice-section`
   升级为恒定展开的固定分组卡片（与 `ChoiceSectionCard` 共用视觉、仅「是否可折叠」区分）。生成页拆为
   基础行为/点击行为/生成数量/骰子判定/候选冗余/防重复/每条字数/人称视角 8 组，外观页主题/字体大小、
-  调试页分区、API 页重试/渠道与模型均改卡片；内容页高级子页（提示词/世界书/过滤）套固定 `.choice-section`
-  卡片外壳（上下文设置/提示词配置/模块列表、设置/全局排除/已启用与未启用世界书、过滤设置/标签提取/
-  全局与预设与角色卡正则区），条目池为列表工具页未改。
+   调试页分区、API 页重试/渠道与模型均改卡片；内容页高级子页（提示词/过滤）套固定 `.choice-section`
+   卡片外壳（上下文设置/提示词配置/模块列表、过滤设置/标签提取/
+    全局与预设与角色卡正则区）；世界书页「设置」与「已启用的世界书」为固定 `.choice-section`（恒展开常驻，
+    已启用紧跟设置，标题带条数），「全局排除」与「未启用的世界书」为可折叠 `ChoiceSectionCard`
+    （默认折叠）；「已启用的世界书」内每本书的条目折叠保留在区块内容体，**本扩展显式启用（在
+    `enabled_books`）的行带「移除」按钮**（`disableBook` 只从 `enabled_books` 删、不动 mods/overrides），
+    ST 全局/角色/聊天激活书不显示移除按钮；「未启用的世界书」与「全局排除」一样带搜索框 + 限高滚动列表
+    （`inactiveSearch`/`filteredInactiveBooks`，仅展示过滤、不写 store），无刷新列表按钮
+    （`refreshAll` 经 onMounted/onActivated/CHAT_CHANGED 自动加载），条目池为列表工具页未改。
   折叠态为组件内 ref 不持久化；未改任何 store/schema/生成逻辑。
   **卡片精修**已落地：卡片加轻微投影与 `--choice-border-strong`、标题图标恒用语义色点亮（新增 `tone`
   prop，`danger` 走红色）、展开 chevron 转主色；折叠默认态统一（生成页仅「基础行为」展开、其余全部默认折叠；
@@ -274,7 +281,7 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 57。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 58。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置编辑器（作为二级子区挂在 4 个一级页下：内容=条目池/提示词/世界书/过滤、生成=生成/API、统计=统计、系统=外观/调试）`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
@@ -308,15 +315,20 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
 - `PoolEntry` 字段为 `id`、`type`、`content`、`rule`、`pinned`、`weight`、`category`；`pinned`/`weight` 可被
   `PoolConfigEntry` 覆盖。`rule` 是写作约束，不是选用门槛；v20 起删除
   `condition`，v21 起候选条目必须交给 AI，`[规则: xxx]` 只约束该选项如何写。
-- **配置级全局规则/示例（系统专属选项能力）**：`PoolConfig` 可选字段 `rules`/`examples`（无条目级字段；
-  条目档位规则写在已有 `rule` 里，需要举例直接写进 rule 文本即可）。生成选项时（仅选项路径，润色不
-  注入），`generator.ts` 的 `buildPoolConfigRuleBlock` 纯函数把生效 config 的全局规则/示例组装成
-  `<系统专属选项规则与示例>` 段，**内联进候选文本**：拼在 `{{pool_selected}}` 展开值的末尾，随
-  option_task 的 user 消息一起发出——**不新增消息、不改 buildMessages 消息序列，不破坏原有提示词结构**。
-  **触发门槛是 config 级**：rules 与 examples 皆空的配置（默认/未配置）返回 `''` 不注入，通用行为
-  零变化；只有绑定了带 rules/examples 的配置（如「神级选择系统」类卡专用配置）才生效。`<options>` 解析
-  标签保持固定，不做自定义输出标签；奖励标记（`【系统奖励：…】`等）是内容不是结构。UI 入口：
-  PoolEditor 配置区（全局规则/示例）。导出/导入整对象序列化，字段自动携带。
+- **配置级规则/示例（单一自由文本，按配置绑定）**：`PoolConfig` 只有单一自由文本字段 `rules`（`examples` 已删除）；
+  无条目级字段，条目档位规则写在已有 `rule` 里。生成选项时（仅选项路径，润色不注入），`generator.ts` 的
+  `buildConfigRuleText` 纯函数返回生效 config 的 `rules` 原文（trim；空串返回 `''` 不注入，通用行为零变化），
+  **内联进候选文本**、拼在 `{{pool_selected}}` 展开值的末尾——**不加任何标签/小节标题**，用户自行组织内容，
+  随 option_task 的 user 消息一起发出（不新增消息、不改 buildMessages 消息序列、不破坏原有提示词结构）。
+  UI 入口：PoolEditor 配置区单个「规则（可选）」输入框。导出/导入整对象序列化，字段自动携带。
+- **选项输出契约（JSON 主路径 + 括号回退）**：AI 生成行动选项时（仅选项路径），prompt 要求把候选输出成
+  `<options>` 内的 JSON 数组（元素 `{"title":"标题|档位|需求值","content":"正文"}`）。`parseOptions` 以
+  JSON 为主路径：`parseJsonOptionArray` 解析后重建 `[title]content` 字符串并返回 `string[]`（与旧档同构），
+  content 由 JSON 结构读出、可含任意字符（含 `[]`/`【】`/换行）而绝不切分——这正是让配置级 `rules` 里用户写的
+  `[]`/`【】` 内容在选项正文中绝对安全（不切碎、不丢正文）的机制；解析失败回退到原有 `[标题]内容` 括号启发式
+  （含 `【标题】` 容错、run-on 恢复、`标题: 内容` 行级），旧提示词快照/老模型照旧。奖励标记
+  （`【系统奖励：…】`等）是内容不是结构。display/归因/去重均走 `^` 锚定解析、只剥首标题，故重建字符串中
+  内容侧括号天然安全；输出契约改动不影响读消息里的存量选项。
 - 抽取顺序：解析 effectivePool
   → 拆分固定/非固定并处理固定条目溢出 → 按 category 分组并处理下溢 → 分组轮询、组内按 Efraimidis–Spirakis 加权无放回抽取 → 按
   `oversamplePct` 为非固定条目补充菜单候选 → 送入 prompt 前整体 shuffle。加权 key 为 `random()^(1/weight)`；具体实现以
