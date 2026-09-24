@@ -277,11 +277,11 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v56 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v57/v58 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker、程度档位模板）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量），以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 58。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 59。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置编辑器（作为二级子区挂在 4 个一级页下：内容=条目池/提示词/世界书/过滤、生成=生成/API、统计=统计、系统=外观/调试）`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
