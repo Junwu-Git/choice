@@ -12,9 +12,9 @@ import {
   SUGGEST_MIN_SAMPLES,
   SUGGEST_DOWNGRADE_EXCESS,
   SUGGEST_UPGRADE_EXCESS,
-  SUGGEST_DISABLE_EXCESS,
   SUGGEST_WEIGHT_MIN,
   SUGGEST_WEIGHT_MAX,
+  SUGGEST_WEIGHT_DEFAULT,
   SUGGEST_UPGRADE_MULTIPLIER,
   ROSTER_EXPLORE_RATIO,
   type ApplyHistoryEntry,
@@ -734,7 +734,7 @@ function entryMetrics(
 
 // ── 建议引擎（只建议不改权重之外的东西；写入由 applySuggestions 显式触发） ───
 
-type SuggestionAction = 'down' | 'up' | 'disable';
+type SuggestionAction = 'down' | 'up';
 
 export type Suggestion = {
   entryId: string;
@@ -749,8 +749,11 @@ export type Suggestion = {
   excess: number;
   /** 当前有效权重（config 覆盖 ?? master_pool） */
   currentWeight: number;
-  /** down/up 的目标权重；disable 无 */
+  /** down/up 的目标权重 */
   newWeight?: number;
+  /** up 的来源：'upgrade' = 数据驱动提权（超额高）；'recover' = 低于默认权重的回捞（保持多样性）。
+   *  down 无此字段。 */
+  reason?: 'upgrade' | 'recover';
   /** 依据口径：'窗口' | '全量' */
   basis: '窗口' | '全量';
 };
@@ -760,20 +763,21 @@ export type Suggestion = {
  *  都会让指纹变化 → 旧理由不再展示（隐藏而非误导），直到下次分析按新指纹重写。
  *  excess 只取 2 位小数：理由不随微小数据波动频繁失效，小幅变化仍算同一建议 */
 export function suggestionKey(s: Suggestion): string {
-  return `${s.action}:${s.newWeight !== undefined ? s.newWeight : 'disable'}:${s.basis}:${s.excess.toFixed(2)}:${s.currentWeight}`;
+  return `${s.action}:${s.newWeight}:${s.basis}:${s.excess.toFixed(2)}:${s.currentWeight}`;
 }
 
 /** 单条目建议（纯函数）：数据源优先窗口（recent ≥ SUGGEST_MIN_SAMPLES），否则全量
  *  （rounds_included ≥ SUGGEST_MIN_SAMPLES），样本不足返回 null。
- *  阈值：超额命中率（rate - expected）≤ -0.3 且 0 命中 → 停用；≤ -0.2 → 降权
- *  （减半、下限 SUGGEST_WEIGHT_MIN）；≥ +0.15 → 提权（×SUGGEST_UPGRADE_MULTIPLIER
- *  =1.5 保守倍率、上限 SUGGEST_WEIGHT_MAX）。
- *  额外停用：期望=0 且样本充足且 0 命中 →「从未被采纳」直接建议停用（精确归因下
- *  期望只在输出被匹配的轮次累计，AI 从不采用其方向时恒 0；历史共现数据期望恒 >0，
- *  不会误触发）。
+ *  阈值（超额命中率 = rate - expected）：≤ SUGGEST_DOWNGRADE_EXCESS(-0.2) → 降权
+ *  （减半、下限 SUGGEST_WEIGHT_MIN）；≥ SUGGEST_UPGRADE_EXCESS(0.15) → 提权
+ *  （×SUGGEST_UPGRADE_MULTIPLIER=1.5 保守倍率、上限 SUGGEST_WEIGHT_MAX）。
+ *  建议引擎永不停用（不置 enabled=false）：极端低表现条目最多降到下限，靠「回捞」保住多样性。
+ *  回捞（recover）：落在中性带（未到降权、也未到提权阈值）的条目若当前权重低于
+ *  SUGGEST_WEIGHT_DEFAULT(=1)，按 1.5× 逐步向默认回升——避免「低权重 → 抽不到 → 不被选 →
+ *  继续低」的收敛死循环让池子只剩少数固定选项。冷却（entryMetrics 返回 null）会拦住回捞：
+ *  自动化调整后不足 SUGGEST_MIN_SAMPLES 轮新数据不回捞，避免降权↔回捞高频振荡。
  *  pinned 条目跳过（固定必发，权重不影响出现频率，改它无意义）。
- *  已停用条目（effectiveEnabled=false，建议停用或阵容落出已生效）直接跳过——
- *  不重复建议，避免「停用后标签永远挂着」的口径不自洽。
+ *  已停用条目（effectiveEnabled=false，阵容落出已生效）直接跳过——不重复建议。
  *  已删除条目（deleted=true，master_pool 已无此 id）直接跳过——config 引用即使仍指向
  *  该 id，条目也已不在 effectivePool，建议与写入均无实际意义（纯噪音，含「样本不足」
  *  这类展示标签一并屏蔽）。
@@ -798,7 +802,7 @@ export function entrySuggestion(
   const m = entryMetrics(row);
   if (!m) return null;
   const { samples, rate, expected: expectedRate, excess, basis } = m;
-  const base: Omit<Suggestion, 'action' | 'newWeight'> = {
+  const base: Omit<Suggestion, 'action' | 'newWeight' | 'reason'> = {
     entryId: row.entryId,
     samples,
     rate,
@@ -807,15 +811,6 @@ export function entrySuggestion(
     currentWeight: row.effectiveWeight,
     basis,
   };
-  // 停用优先：更极端（超额极低且一次未命中）给更强动作；停用后不再进 effectivePool，
-  // 无新数据，不会自动恢复——UI 须提示用户可撤销。
-  // 精确归因下另加「从未被采纳」停用：期望=0 说明其在输出中从未被匹配到（AI 从不采用），
-  // 样本充足时直接给停用建议（被 AI 舍弃的条目）；历史共现数据 expected>0 不误触发
-  // （rate/expected 均为按 samples 平均后的比率，与原始 hits/expected_sum 同零性）
-  const neverAdopted = expectedRate === 0 && rate === 0 && samples >= SUGGEST_MIN_SAMPLES;
-  if ((excess <= SUGGEST_DISABLE_EXCESS && rate === 0) || neverAdopted) {
-    return { ...base, action: 'disable' };
-  }
   if (excess <= SUGGEST_DOWNGRADE_EXCESS) {
     const newWeight = Math.max(SUGGEST_WEIGHT_MIN, row.effectiveWeight * 0.5);
     // 权重已在下限边界时降权无实际变化：返回 null 而非零差异建议，
@@ -828,15 +823,22 @@ export function entrySuggestion(
     // 翻倍会让高权重条目更快向 SUGGEST_WEIGHT_MAX 收敛，权重分散度劣化（见 settings.ts 常量注释）
     const newWeight = Math.min(SUGGEST_WEIGHT_MAX, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
     if (newWeight === row.effectiveWeight) return null;
-    return { ...base, action: 'up', newWeight };
+    return { ...base, action: 'up', newWeight, reason: 'upgrade' };
+  }
+  // 中性带（未差到降权、也未好到提权）：低于默认权重 → 回捞一步向默认回升，保持多样性。
+  // 低于默认权重的条目（含已降权到下限的）会随冷却周期逐步回升，不再永久困在低位。
+  if (row.effectiveWeight < SUGGEST_WEIGHT_DEFAULT) {
+    const newWeight = Math.min(SUGGEST_WEIGHT_DEFAULT, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
+    if (newWeight === row.effectiveWeight) return null;
+    return { ...base, action: 'up', newWeight, reason: 'recover' };
   }
   return null;
 }
 
-export type EntryInsight = 'downgrade' | 'disable' | 'good' | 'insufficient' | 'disabled' | 'cooldown' | null;
+export type EntryInsight = 'downgrade' | 'recover' | 'good' | 'insufficient' | 'disabled' | 'cooldown' | null;
 
-/** 洞察标签（展示层派生）：有建议 → 按其动作标「候选降权/建议停用/表现良好」；
- *  已停用条目 → 「已停用」（真实启用态，不再给建议）；自动化调整后新数据不足 →
+/** 洞察标签（展示层派生）：有建议 → 按其动作标「候选降权/权重回捞/表现良好」；
+ *  已停用条目 → 「已停用」（真实启用态，仅阵容落出会置，不再给建议）；自动化调整后新数据不足 →
  *  「冷却中」（等新样本再评级）；参与 >0 但样本不足 → 「样本不足」；
  *  无参与/无建议 → 无标签。只提示不改权重。
  *  suggestion 为可选预计算值（组件一次 entrySuggestion、多标签复用，避免每处重算）：
@@ -860,7 +862,7 @@ export function entryInsight(
   if (row.deleted) return null;
   if (!row.effectiveEnabled) return 'disabled';
   const s = suggestion !== undefined ? suggestion : entrySuggestion(row);
-  if (s) return s.action === 'down' ? 'downgrade' : s.action === 'disable' ? 'disable' : 'good';
+  if (s) return s.action === 'down' ? 'downgrade' : s.reason === 'recover' ? 'recover' : 'good';
   // 冷却中：仅当调整后的窗口数据确实不足门槛（entryMetrics 因冷却返回 null）才标——
   // 若冷却早已过期（新数据 ≥10 轮）但未达任何建议阈值，应回落到「无标签」而非永远「冷却中」
   // 全局聚合视图 recent 恒为 []（窗口口径仅单一 scope 有效）：无窗口数据无法判冷却，
@@ -898,9 +900,8 @@ export function applySuggestions(scopeId: string, suggestions: Suggestion[]): Su
   for (const s of suggestions) {
     const entry = config.entries.find(e => e.entry_id === s.entryId);
     if (!entry) continue;
-    if (s.action === 'disable') {
-      entry.enabled = false;
-    } else if (s.newWeight !== undefined) {
+    // 建议动作只有 down/up（权重改写）：永不置 enabled=false（停用仅来自阵容落出）
+    if (s.newWeight !== undefined) {
       entry.weight = s.newWeight;
     }
     applied += 1;
@@ -1081,9 +1082,9 @@ export function undoApply(entryId: string): boolean {
   return ok;
 }
 
-/** 手动重新启用 config 中已停用的条目（统计页「重新启用」就地入口）。
+/** 手动重新启用 config 中已停用的条目（统计页「重新启用」就地入口，仅阵容落出会置 enabled=false）。
  *  用户显式动作，语义同条目池页编辑：不写 apply_history、不刷冷却标记——
- *  重新启用后的条目按既有数据直接评级（可能再次被建议停用，属用户选择）。
+ *  重新启用后的条目按既有数据直接评级（可能再次被降权/回捞，属用户选择）。
  *  config/引用不存在或条目已在启用态时忽略，返回是否实际改写了 enabled。 */
 export function reEnableEntry(scopeId: string, entryId: string): boolean {
   const gs = useGlobalSettingsStore();
@@ -1092,7 +1093,7 @@ export function reEnableEntry(scopeId: string, entryId: string): boolean {
   const entry = config.entries.find(e => e.entry_id === entryId);
   if (!entry || entry.enabled === true) return false;
   entry.enabled = true;
-  // 重新启用后建议形态会变（已停用不再出建议 → 可能重新评级）：旧的「停用建议」理由作废
+  // 重新启用后建议形态会变（已停用不再出建议 → 可能重新评级）：旧的建议理由作废
   invalidateAiReasons(gs, scopeId, [entryId]);
   return true;
 }

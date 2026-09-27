@@ -1083,15 +1083,19 @@ export const STATS_WINDOW_SIZE = 50;
 /** 建议最少样本轮次：窗口长度（或全量参与轮次）≥ 此值才出建议，样本不足只标「样本不足」 */
 export const SUGGEST_MIN_SAMPLES = 10;
 /** 建议阈值（超额命中率 = 实际命中率 - 期望命中率，期望 = Σ(matched/count) 平均）：
- *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）；
- *  低于期望 30pp 且无一次命中 → 建议停用。启发式常量，随数据积累调参。 */
+ *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）。
+ *  建议引擎永不产生「停用」动作（只改权重）：极端条目最多降到 SUGGEST_WEIGHT_MIN，绝不置 enabled=false。
+ *  启发式常量，随数据积累调参。 */
 export const SUGGEST_DOWNGRADE_EXCESS = -0.2;
 export const SUGGEST_UPGRADE_EXCESS = 0.15;
-export const SUGGEST_DISABLE_EXCESS = -0.3;
 /** 建议写入的权重边界：降权减半（下限 0.2）、提权按 SUGGEST_UPGRADE_MULTIPLIER
  *  （上限 5），防反复提权/降权失控。这是自动化改写逻辑，不是对用户输入值的 clamp。 */
 export const SUGGEST_WEIGHT_MIN = 0.2;
 export const SUGGEST_WEIGHT_MAX = 5;
+/** 回捞（恢复）目标权重：低于此值的条目在中性带（excess 未到降权阈值）且冷却期结束后，
+ *  按 SUGGEST_UPGRADE_MULTIPLIER 逐步向本值回升，防止池子收敛成少数固定选项、保住多选项多样性。
+ *  与条目默认权重 1 对齐。 */
+export const SUGGEST_WEIGHT_DEFAULT = 1;
 /** 建议提权幅度：表现良好条目 × 此倍率（保守化 1.5，非翻倍）——
  *  提权不改变期望基线（期望只依赖输出条数与匹配），高权重条目曝光更多匹配机会、
  *  稳定采用时易持续提权；放缓幅度让权重向 MAX 收敛变慢，缓解权重分散度劣化。

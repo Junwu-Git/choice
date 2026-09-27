@@ -255,7 +255,7 @@ function buildAnalysisPrompt(batch: AnalysisPayload[]): ChatMsg[] {
   return [
     {
       role: 'system',
-      content: `你是行动选项条目统计分析器。请根据条目内容与统计指标，为每条已有统计建议生成简洁、具体、可核验的中文理由。理由最多 ${AI_REASON_MAX_CHARS} 个字符，只解释为什么统计引擎会建议提权、降权或停用，不得改变动作，不得编造未提供的剧情信息。confidence 为 0 到 1 的数字。`,
+      content: `你是行动选项条目统计分析器。请根据条目内容与统计指标，为每条已有统计建议生成简洁、具体、可核验的中文理由。理由最多 ${AI_REASON_MAX_CHARS} 个字符，只解释为什么统计引擎会建议提权、降权或回捞（低位条目向默认权重回升），不得改变动作，不得编造未提供的剧情信息。confidence 为 0 到 1 的数字。`,
     },
     {
       role: 'user',

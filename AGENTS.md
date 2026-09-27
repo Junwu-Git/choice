@@ -94,9 +94,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   全局搜索定位，最后回退当前生效维度。 `by_entry` 记录含 `last_selected_text`（最近命中选项正文，parse 后去标头）与
   `last_included_at` （最近参与时间戳）——单槽近似（非历史 log），供条目榜 tooltip 与命中榜展示。
   **命中榜纯函数**（`hitLeaderboard`）：只列精确命中 >0 的条目，按命中次数降序 → 最近选中时间倒序，replace 了早期按 type 聚合的类型榜（type 在此扩展中多为条目标题、与条目榜重复）。
-  **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、否则全量）：超额 ≤−0.2
+  **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、否则全量）；**永不停用——建议动作只有 down/up 两种（纯权重改写），绝不置 enabled=false**（enabled 翻转仅来自阵容落出/手动重新启用）：超额 ≤−0.2
   → 降权（`SUGGEST_WEIGHT_MIN`=0.2 下限，减半）；超额 ≥+0.15
-  → 提权（上限 5，`SUGGEST_UPGRADE_MULTIPLIER`=1.5 保守倍率——提权不改变期望、翻倍会加速权重向上限收敛，放缓幅度缓解权重分散度劣化）；超额 ≤−0.3 且 0 命中，或样本充足且期望=0（输出中从未被采纳）→ 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、不会自动恢复）；pinned 跳过（固定必发，权重无意义）；**已停用条目跳过**（`effectiveEnabled=false`
+  → 提权（`reason:'upgrade'`，上限 5，`SUGGEST_UPGRADE_MULTIPLIER`=1.5 保守倍率——提权不改变期望、翻倍会加速权重向上限收敛，放缓幅度缓解权重分散度劣化）；落在中性带（未到降/提权阈值）且当前权重低于默认 `SUGGEST_WEIGHT_DEFAULT`(=1) → **回捞** `up`（`reason:'recover'`，`newWeight = min(默认, 当前×1.5)` 逐步向默认回升——防止「低权重→抽不到→不被选→继续低」的收敛死循环让池子只剩少数固定选项，保住多选项多样性；冷却（`entryMetrics` 返回 null）会拦住回捞防高频振荡）；pinned 跳过（固定必发，权重无意义）；**已停用条目跳过**（`effectiveEnabled=false`
   不再重复建议，行内标「已停用」，杜绝「停用后标签永远挂着」的口径不自洽）；
   **已删除条目跳过**（`deleted=true`，master_pool 已无此 id，建议与写入均无意义，含展示标签一并屏蔽）；config 维度下未被当前 config 引用但保留历史统计的条目只展示洞察，不进入可应用建议集合，避免
   `applySuggestions` 找不到覆盖层引用而产生「永远无法应用」的幻影建议；
@@ -106,7 +106,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `SUGGEST_MIN_SAMPLES`
   轮新数据返回 null（「冷却中」不评级不落出），全量兜底此时禁用（含变更前数据）——保证建议基于新权重下的真实表现、防止 1↔2↔4 权重颠簸。从未调整（=0）的条目行为与旧版一致。**应用走 config 覆盖层**：
   `applySuggestions(scopeId, list)` 直写目标 config 的
-  `PoolConfigEntry`（weight/enabled），应用前存受影响条目的局部快照（`snapshotEntryRefs`，只含本批改写的条目 id，非
+  `PoolConfigEntry`（只写 weight；enabled 翻转仅由 `applyRosterPlan` 阵容落出/补入改写，建议路径不再触碰 enabled），应用前存受影响条目的局部快照（`snapshotEntryRefs`，只含本批改写的条目 id，非
   `config.entries`
   全量——撤销/摘要只依赖受影响集，避免大池下历史体积随条目数膨胀）+ 受影响条目冷却标记，批次连同局部快照入 **持久撤销槽
   `apply_history`**（`GlobalSettings` 顶层字段，上限
@@ -141,7 +141,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   随维度）、条目榜搜索/排序/「只看有数据」（`applyEntryFilters` 纯函数，组件只渲染；勾选持久化在
   `ui.stats_only_with_data`，切页/刷新不丢）、命中率/期望/近 10 轮窗口命中率读数与洞察徽标并入 meta 行（主行只留类型徽标 + 内容 + 右侧操作按钮，meta 行数字列 `tabular-nums` 对齐；洞察徽标由组件内 `buildInsightBadge` 单一映射文案/语义色/tooltip，模板不再散落 if/else）、洞察标签（`entryInsight`
   由 `entrySuggestion`
-  派生：候选降权/建议停用/表现良好/样本不足/ 已停用（`effectiveEnabled=false`）/冷却中（调整后新数据不足）；
+  派生：候选降权/权重回捞/表现良好/样本不足/ 已停用（`effectiveEnabled=false`）/冷却中（调整后新数据不足）；
   **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，写入入持久撤销槽可撤销；组件侧 `rowMeta`
   每行一次性计算 suggestion+insight+badge 供标签/按钮/批量应用复用（`entryInsight`
   接受可选预计算 suggestion 参数），已停用条目行内另有「重新启用」就地恢复（`reEnableEntry`，置 config 引用 enabled=true，不记历史不刷冷却）、阵容计划区（`planRoster`
