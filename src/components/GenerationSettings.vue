@@ -128,7 +128,19 @@
               v-model="gs.settings.dice.success_send_low_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 0–32，给 AI 的演绎指令`"
+              :placeholder="t`margin 0–19，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`险胜` }}</span>
+            <input
+              v-model="gs.settings.dice.success_send_mid_low_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin 20–39，给 AI 的演绎指令`"
             />
           </label>
         </div>
@@ -140,7 +152,7 @@
               v-model="gs.settings.dice.success_send_mid_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 33–65，给 AI 的演绎指令`"
+              :placeholder="t`margin 40–59，给 AI 的演绎指令`"
             />
           </label>
         </div>
@@ -149,10 +161,22 @@
           <label class="choice-count-item">
             <span>{{ t`漂亮完胜` }}</span>
             <input
+              v-model="gs.settings.dice.success_send_mid_high_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin 60–79，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`成功` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`势如破竹` }}</span>
+            <input
               v-model="gs.settings.dice.success_send_high_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin ≥66，给 AI 的演绎指令`"
+              :placeholder="t`margin ≥80，给 AI 的演绎指令`"
             />
           </label>
           <label class="choice-count-item">
@@ -172,7 +196,19 @@
               v-model="gs.settings.dice.fail_send_low_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −1–−32，给 AI 的演绎指令`"
+              :placeholder="t`margin −1–−19，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`功亏一篑` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_send_mid_low_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin −20–−39，给 AI 的演绎指令`"
             />
           </label>
         </div>
@@ -184,7 +220,19 @@
               v-model="gs.settings.dice.fail_send_mid_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −33–−65，给 AI 的演绎指令`"
+              :placeholder="t`margin −40–−59，给 AI 的演绎指令`"
+            />
+          </label>
+        </div>
+        <div class="choice-dice-template-row">
+          <strong>{{ t`失败` }}</strong>
+          <label class="choice-count-item">
+            <span>{{ t`溃败` }}</span>
+            <input
+              v-model="gs.settings.dice.fail_send_mid_high_template"
+              class="choice-input"
+              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+              :placeholder="t`margin −60–−79，给 AI 的演绎指令`"
             />
           </label>
         </div>
@@ -196,7 +244,7 @@
               v-model="gs.settings.dice.fail_send_high_template"
               class="choice-input"
               :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin ≤−66，给 AI 的演绎指令`"
+              :placeholder="t`margin ≤−80，给 AI 的演绎指令`"
             />
           </label>
           <label class="choice-count-item">

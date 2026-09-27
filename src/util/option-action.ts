@@ -61,7 +61,7 @@ export async function applyOptionBehavior(
         // fill/insert/append 拼进输入框（用户可编辑删除，手动发送时 AI 同样读到）。
         // 注释是 HTML 注释——聊天界面渲染不可见，AI 请求文本原样携带；
         // 占位符 {rate}/{roll}/{margin}/{degree} 全部模板通用（degree 见 marginDegree）。
-        // v58：成功/失败按档位取独立模板；单条 fallback 文案铺到三档兜底（档位无关短标签）。
+        // v58：成功/失败按档位取独立模板；单条 fallback 文案铺到五档兜底（档位无关短标签）。
         const marker = buildDiceMarker(
           outcome,
           roll,
@@ -69,22 +69,38 @@ export async function applyOptionBehavior(
           {
             fail: {
               low: d.fail_send_low_template,
+              mid_low: d.fail_send_mid_low_template,
               mid: d.fail_send_mid_template,
+              mid_high: d.fail_send_mid_high_template,
               high: d.fail_send_high_template,
             },
             critSuccess: d.crit_success_send_template,
             critFail: d.crit_fail_send_template,
             success: {
               low: d.success_send_low_template,
+              mid_low: d.success_send_mid_low_template,
               mid: d.success_send_mid_template,
+              mid_high: d.success_send_mid_high_template,
               high: d.success_send_high_template,
             },
           },
           {
-            fail: { low: d.fail_template, mid: d.fail_template, high: d.fail_template },
+            fail: {
+              low: d.fail_template,
+              mid_low: d.fail_template,
+              mid: d.fail_template,
+              mid_high: d.fail_template,
+              high: d.fail_template,
+            },
             critSuccess: d.crit_success_template,
             critFail: d.crit_fail_template,
-            success: { low: d.success_template, mid: d.success_template, high: d.success_template },
+            success: {
+              low: d.success_template,
+              mid_low: d.success_template,
+              mid: d.success_template,
+              mid_high: d.success_template,
+              high: d.success_template,
+            },
           },
         );
         appliedContent = marker + content;

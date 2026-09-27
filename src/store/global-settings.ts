@@ -2057,6 +2057,25 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v60：新增「难度判定细则」模块补建——为 AI 判定选项难度（档位 + 需求值）提供结构化规则，
+  // 缓解此前提示词里只有一句「行动越难标得越高」、需求值随意简陋。老存档 prompt_rules.modules
+  // 无此模块（v60 新增），按 id 去重后从 DEFAULT_MODULES 取对象插入（克隆带 enabled:true，
+  // 默认生效）；开关 = 该模块在提示词编辑器里的启用复选框。与 v59 knowledge_boundary 补建同构：
+  // prompt_rules.modules 与每个 prompt_configs[].modules 都要补，漏掉 configs 会导致
+  // "切换提示词配置后模块消失"。骰子档位模板的新字段（success_/fail_send_{mid_low,mid_high}）
+  // 由 zod default 补齐，无需独立内容迁移。
+  if ((validated.schema_version ?? 0) < 60) {
+    const ensureDifficultyRules = (modules: PromptModuleType[]): void => {
+      if (modules.some(m => m.id === 'difficulty_rules')) return;
+      const template = DEFAULT_MODULES.find(m => m.id === 'difficulty_rules');
+      if (template) modules.push(klona(template));
+    };
+    ensureDifficultyRules(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) {
+      ensureDifficultyRules(cfg.modules);
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
