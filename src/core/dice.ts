@@ -1,41 +1,74 @@
 /**
  * 选项骰子判定（v57 共享层）：难度制——AI 标注/档位兜底的数字是「需求值」，
  * 掷出 ≥ 需求才算成功，点数越大越好（与用户直觉、正文 AI 理解一致，v55 的
- * 「掷 ≤ 率 = 成功」概率制已废弃）。rollDice 掷 1–100 判定成败，
- * buildDiceMarker 按结局渲染隐形演绎注释（HTML 注释，AI 可见、聊天渲染不可见）。
- * v57 起：成功也注入注释；所有结局模板均可用 {rate}/{roll}/{margin}/{degree}，
- * margin = 点数 − 需求，degree 按口语化程度词（成功侧/失败侧各五档，见 marginDegree）。
+ * 「掷 ≤ 率 = 成功」概率制已废弃）。v61 起抽象出「判定方向」：
+ *   - high（默认，难度制原语义）：点数 ≥ 目标=成功；
+ *   - low（COC 百分位）：点数 ≤ 目标=成功。
+ * 大成功/大失败彩蛋阈值在两模式下语义相反（high：掷 ≥ 高值=大成功；low：掷 ≤ 低值=大成功），
+ * 由调用方按 dice.low_roll 选好阈值组后经 judgeOutcome 判定——本模块不感知 schema 字段名。
+ * rollDice 掷 1–100（D100 路径）；骰式表达式路径（NdM，v61，dice.allow_formula）复用
+ * judgeOutcome 判定，只是 value/target 落在骰式值域上。buildDiceMarker 按结局渲染隐形
+ * 演绎注释（HTML 注释，AI 可见、聊天渲染不可见）。v57 起：成功也注入注释；所有结局模板
+ * 均可用 {rate}/{roll}/{margin}/{degree}，margin 由调用方经 diceMargin 归一化（成功侧为正），
+ * degree 按口语化程度词（成功侧/失败侧各五档，见 marginDegree）。
  * UI 徽标与判定入口统一走 option-format.ts 的 resolveOptionSuccessRate 解析需求值
  * （档位兜底也在解析层），本模块只负责随机判定、程度词与注释渲染，不持有任何 UI/统计依赖。
  */
 
 export type DiceOutcome = 'crit_success' | 'success' | 'fail' | 'crit_fail';
+/** 判定方向：high = 点数 ≥ 目标成功（默认，点数越大越好）；low = 点数 ≤ 目标成功（COC 百分位） */
+export type DiceRollMode = 'high' | 'low';
 
 const clampInt = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, Math.round(Number.isFinite(v) ? v : lo)));
 
-/** 掷 D100（1–100）并按阈值判定（难度制）。判定序固定：彩蛋优先于成败——即便
- *  rate=1（极高需求），roll ≥ critSuccessMin 仍判大成功；critFailMax ≥
- *  critSuccessMin 时两段彩蛋重叠，双双失效退化为纯成败判定。阈值各自 clamp 到
- *  [1,99]/[2,100]，防非法设置让判定失灵 */
+/** 通用成败判定（D100 与骰式路径共用）：按 value 与 target、彩蛋阈值、判定方向给出结局。
+ *  判定序固定：彩蛋优先于成败——即便 target=1（high 模式极高需求），value ≥ 大成功阈值仍判大成功。
+ *  彩蛋阈值在对应模式下的允许区间内 clamp（high：大成功 [2,100]、大失败 [1,99]；low 反之），
+ *  两段彩蛋重叠（low≥high）时双双失效退化为纯成败判定，防非法设置让判定失灵。 */
+export function judgeOutcome(
+  value: number,
+  target: number,
+  critSuccessThreshold: number,
+  critFailThreshold: number,
+  mode: DiceRollMode = 'high',
+): DiceOutcome {
+  if (mode === 'low') {
+    // COC 百分位：小点数=大成功（掷 ≤ critSuccessThreshold），大点数=大失败（掷 ≥ critFailThreshold）
+    const critS = clampInt(critSuccessThreshold, 1, 99);
+    const critF = clampInt(critFailThreshold, 2, 100);
+    const critsActive = critS < critF;
+    if (critsActive && value <= critS) return 'crit_success';
+    if (critsActive && value >= critF) return 'crit_fail';
+    return value <= target ? 'success' : 'fail';
+  }
+  // high（默认）：大点数=大成功（掷 ≥ critSuccessThreshold），小点数=大失败（掷 ≤ critFailThreshold）
+  const low = clampInt(critFailThreshold, 1, 99);
+  const high = clampInt(critSuccessThreshold, 2, 100);
+  const critsActive = low < high;
+  if (critsActive && value >= high) return 'crit_success';
+  if (critsActive && value <= low) return 'crit_fail';
+  return value >= target ? 'success' : 'fail';
+}
+
+/** 掷 D100（1–100）并按阈值判定（难度制）。critSuccessMin/critFailMax 是 high 模式下的
+ *  大成功下限/大失败上限（默认 96/5）；low 模式调用方应传对应阈值组（见 option-action.ts）。
+ *  返回的 roll 与 outcome 供 chip/marker/统计消费。 */
 export function rollDice(
   rate: number,
   critSuccessMin: number,
   critFailMax: number,
+  mode: DiceRollMode = 'high',
 ): { roll: number; outcome: DiceOutcome } {
   const roll = Math.floor(Math.random() * 100) + 1;
-  const low = clampInt(critFailMax, 1, 99);
-  const high = clampInt(critSuccessMin, 2, 100);
-  const critsActive = low < high;
-  const outcome: DiceOutcome =
-    critsActive && roll >= high
-      ? 'crit_success'
-      : critsActive && roll <= low
-        ? 'crit_fail'
-        : roll >= rate
-          ? 'success'
-          : 'fail';
-  return { roll, outcome };
+  return { roll, outcome: judgeOutcome(roll, rate, critSuccessMin, critFailMax, mode) };
+}
+
+/** 归一化判定差值（成功侧恒为正、失败侧恒为负，供 chip 与 marker 共用同一口径）：
+ *  high = roll − rate（点数越大差距越大）；low = rate − roll（点数越小差距越大）。
+ *  margin=0 表示恰好达标。 */
+export function diceMargin(mode: DiceRollMode, roll: number, rate: number): number {
+  return mode === 'low' ? rate - roll : roll - rate;
 }
 
 /** 程度词断点（固定常量，D100 下 margin ≈ −99…+99 按五等分对称；如需可配置
@@ -107,7 +140,9 @@ export type DiceTemplates = {
 /** 渲染隐形演绎注释：HTML 注释包住模板文本，AI 读得到、酒馆聊天渲染不可见。
  *  模板优先取 send 版，为空回退 fallback 版；fallback 也为空则整体返回空串
  *  （不附加注释）。占位符 {rate}/{roll}/{margin}/{degree} 所有模板通用（v57 起
- *  成功也注入；margin = roll − rate，degree = marginDegree 程度词，模板可选用）。
+ *  成功也注入；margin = 判定差值，默认 high 口径 roll − rate，调用方可传 diceMargin
+ *  （v61 判定方向）归一化的 margin 以保证低点数模式成功侧为正；degree = marginDegree
+ *  程度词，模板可选用）。
  *  v58：成功/失败按 degreeTierFor 命中档位取对应 send 模板；彩蛋取单条。
  *  模板内如出现 `-->` 会提前截断注释（HTML 语法），设置页 hint 已提示避免输入 `--`。 */
 export function buildDiceMarker(
@@ -116,8 +151,8 @@ export function buildDiceMarker(
   rate: number,
   templates: DiceTemplates,
   fallback: DiceTemplates,
+  margin = roll - rate,
 ): string {
-  const margin = roll - rate;
   let tpl: string;
   if (outcome === 'success') {
     const tier = degreeTierFor(outcome, margin)!;

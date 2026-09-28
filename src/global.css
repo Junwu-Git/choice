@@ -867,6 +867,72 @@
   color: var(--choice-rate-low);
 }
 
+/* v61 骰式表达式：骰式选项的徽标用独立强调色（区别于纯需求值分档），提示「这是骰式而非 D100」 */
+.choice-option-rate--formula {
+  color: var(--choice-color-info);
+}
+
+/* v62 卡牌：星级语义色（卡库/卡组/商店/开包弹窗共用）。
+   左缘色条 = 星级色，与 cards-meta.ts 的 CARD_STAR_COLOR 语义一致（勿单边漂移） */
+.choice-card-star--1 {
+  border-left-color: var(--choice-rate-low);
+}
+.choice-card-star--2 {
+  border-left-color: var(--choice-primary);
+}
+.choice-card-star--3 {
+  border-left-color: var(--choice-color-info);
+}
+.choice-card-star--4 {
+  border-left-color: var(--choice-warning);
+}
+.choice-card-star--5 {
+  border-left-color: var(--choice-color-error);
+}
+.choice-card-star--1 .choice-cardpack-card-star,
+.choice-card-star--1 .cbadge-star {
+  color: var(--choice-rate-low);
+}
+.choice-card-star--2 .choice-cardpack-card-star,
+.choice-card-star--2 .cbadge-star {
+  color: var(--choice-primary);
+}
+.choice-card-star--3 .choice-cardpack-card-star,
+.choice-card-star--3 .cbadge-star {
+  color: var(--choice-color-info);
+}
+.choice-card-star--4 .choice-cardpack-card-star,
+.choice-card-star--4 .cbadge-star {
+  color: var(--choice-warning);
+}
+.choice-card-star--5 .choice-cardpack-card-star,
+.choice-card-star--5 .cbadge-star {
+  color: var(--choice-color-error);
+}
+
+/* v62 判定行内触发卡徽标（主面板/悬浮球共用）：chip 旁显示触发卡的图徽/名称 */
+.choice-card-tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.choice-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--choice-text-xs);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--choice-border-strong);
+  border-left-width: 3px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-secondary);
+  white-space: nowrap;
+}
+
 /* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留 */
 .choice-roll-chip {
   position: absolute;
@@ -899,6 +965,28 @@
   to {
     opacity: 0.5;
   }
+}
+
+/* v61 就地重掷 ↻：紧贴 chip 左侧（chip 绝对定位在行尾），独立可点、不随 chip 淡出。
+   @click.stop 由组件保证不触发选项本体；reduced-motion 下无动画（本就无动画）。 */
+.choice-roll-reroll {
+  position: absolute;
+  right: 4.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--choice-radius-sm);
+  color: var(--choice-text-secondary);
+  cursor: pointer;
+  font-size: var(--choice-text-xs);
+}
+.choice-roll-reroll:hover {
+  color: var(--choice-primary);
+  background: var(--choice-bg-element);
 }
 
 @media (prefers-reduced-motion: reduce) {

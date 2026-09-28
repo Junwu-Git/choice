@@ -1449,16 +1449,173 @@ const DiceOutcomeCounts = z
   .prefault({});
 type DiceOutcomeCounts = z.infer<typeof DiceOutcomeCounts>;
 
-/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。 */
+/** 单次骰子判定历史条目（v61）。text = parse 后选项正文的短摘要，rate = 本次判定的实际
+ *  比较目标（D100 为需求值、骰式为映射 DC），roll = 点数/骰式总和，outcome = 结局。
+ *  供统计页最近判定回顾；不参与条目建议/权重/AI 分析。 */
+const DiceHistoryEntry = z
+  .object({
+    ts: z.number().default(0),
+    text: z.string().default(''),
+    rate: z.number().default(0),
+    roll: z.number().default(0),
+    outcome: z.enum(['crit_success', 'success', 'fail', 'crit_fail']).default('fail'),
+  })
+  .prefault({});
+type DiceHistoryEntry = z.infer<typeof DiceHistoryEntry>;
+
+/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。history 为最近判定日志（v61），
+ *  上限 DICE_HISTORY_LIMIT 由 stats.ts 固化，超出丢最旧。 */
 export const DiceStats = z
   .object({
     total_rolls: z.number().min(0).default(0).catch(0),
     by_outcome: DiceOutcomeCounts.prefault({}),
     daily: z.record(z.string(), DiceOutcomeCounts).prefault({}),
+    /** 最近判定历史（FIFO，v61）：随 stats_enabled 采集，清空统计一并清除 */
+    history: z.array(DiceHistoryEntry).prefault([]),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type DiceStats = z.infer<typeof DiceStats>;
+
+// ── 卡牌系统（v62 增量字段，全走 zod default/prefault 补齐，不 bump schema_version）────────
+// 每张卡是可装备的效果卡：触发条件（选项类型/档位/需求区间/骰值区间/结局）+ 效果
+// （骰值/需求/彩蛋窗口修正、结局转化、强制重掷、叙事注入）。收藏全局 + 按 config 装备。
+// 耐久 = 功能基础值 × 星级系数（见 core/cards-constraints.ts）；角色主题池由 AI 按
+// 角色卡世界观懒生成、可重复掉落。货币「行动币」由骰子结局收支 + 分解重复高级卡获得。
+
+/** 星级：1星至5星（抽卡权重递减，耐久系数递增，装备等级预算受限） */
+export const CARD_STARS = ['1', '2', '3', '4', '5'] as const;
+export type CardStar = (typeof CARD_STARS)[number];
+/** 卡类型：武器/法术/祝福/试炼（装备位同类最多 1 张；功能基础耐久区分） */
+export const CARD_TYPES = ['weapon', 'spell', 'blessing', 'trial'] as const;
+export type CardType = (typeof CARD_TYPES)[number];
+/** 卡来源：builtin = 内置（全球反复掉落）；character = 角色主题池（懒生成、可重复掉落） */
+export const CARD_SOURCES = ['builtin', 'character'] as const;
+export type CardSource = (typeof CARD_SOURCES)[number];
+
+/** 卡触发条件：单对象含可选字段，按 kind 取值匹配。kind 语义：
+ *  type = 选项类型（parseOptionType 命中 typeValue）；grade = 风险档位（conservative/balanced/bold）；
+ *  demand = 需求值区间 [min,max]；roll = 骰值区间 [min,max]；outcome = 判定结局。 */
+export const CardTrigger = z
+  .object({
+    kind: z.enum(['type', 'grade', 'demand', 'roll', 'outcome']).default('type'),
+    typeValue: z.string().default(''),
+    grade: z.enum(['conservative', 'balanced', 'bold']).nullable().default(null),
+    min: z.number().default(0),
+    max: z.number().default(0),
+    outcome: z.enum(['success', 'fail', 'crit_success', 'crit_fail']).nullable().default(null),
+  })
+  .prefault({});
+export type CardTrigger = z.infer<typeof CardTrigger>;
+
+/** 卡效果（六类）：roll_bonus 掷骰前 ±；demand_mod ±DC；crit_window 扩/收彩蛋区间；
+ *  outcome_convert 结局转化；reroll 强制重掷；narrative 注入演绎指令（支持 {rate}/{roll}/{margin}/{degree}）。 */
+export const CardEffect = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('roll_bonus'), amount: z.number().default(0) }),
+  z.object({ kind: z.literal('demand_mod'), amount: z.number().default(0) }),
+  z.object({
+    kind: z.literal('crit_window'),
+    success_delta: z.number().default(0),
+    fail_delta: z.number().default(0),
+  }),
+  z.object({
+    kind: z.literal('outcome_convert'),
+    from: z.enum(['fail', 'crit_success']),
+    to: z.enum(['success', 'crit_success']),
+  }),
+  z.object({ kind: z.literal('reroll'), on: z.enum(['fail', 'crit_fail']).default('fail') }),
+  z.object({ kind: z.literal('narrative'), text: z.string().default('') }),
+]);
+export type CardEffect = z.infer<typeof CardEffect>;
+
+/** 卡定义（内置 or 角色主题池卡）。内置卡 id 稳定；角色卡 id=uuidv4() 且归组到角色池。 */
+export const Card = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    type: z.enum(CARD_TYPES),
+    star: z.enum(CARD_STARS),
+    trigger: CardTrigger.prefault({}),
+    effects: z.array(CardEffect).prefault([]),
+    narrative: z.string().default(''),
+    source: z.enum(CARD_SOURCES),
+  })
+  .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
+export type Card = z.infer<typeof Card>;
+
+/** 收藏条目（键 = card_id）：level 升级成长、durability/max_durability 按功能×星级公式；
+ *  损坏 = durability<=0；抽中已拥有卡 = level++ + 修复到满（内置与角色卡都适用）。 */
+export const CardOwned = z
+  .object({
+    card_id: z.string().default(''),
+    level: z.number().min(1).default(1).catch(1),
+    obtained_at: z.number().default(0),
+    trigger_count: z.number().min(0).default(0).catch(0),
+    durability: z.number().min(0).default(0).catch(0),
+    max_durability: z.number().min(0).default(0).catch(0),
+    source: z.enum(CARD_SOURCES).default('builtin'),
+  })
+  .prefault({});
+export type CardOwned = z.infer<typeof CardOwned>;
+
+/** 某 config 的卡组（≤5 格、同类 ≤1、受等级预算约束）。独立 record，不写进 PoolConfig.entries。 */
+export const CardDeck = z
+  .object({
+    config_id: z.string().default(''),
+    slots: z.array(z.object({ card_id: z.string(), type: z.enum(CARD_TYPES) })).prefault([]),
+  })
+  .prefault({});
+export type CardDeck = z.infer<typeof CardDeck>;
+
+/** 角色 AI 主题卡池：首次幸运掉落需要时懒生成并固定（generated=true）；池内卡反复掉落供升级/修耐久。 */
+export const CardCharacterPool = z
+  .object({
+    character_id: z.string().default(''),
+    generated: z.boolean().default(false),
+    card_ids: z.array(z.string()).prefault([]),
+  })
+  .prefault({});
+export type CardCharacterPool = z.infer<typeof CardCharacterPool>;
+
+/** 每日任务进度（v62，游戏进度层）：键 = 本地日期 YYYY-MM-DD，每天 0 点按 date 重置。
+ *  任务键集固定（generate=生成一次选项 / judge=做一次判定 / select=点选一个选项），
+ *  各任务达标阈值集中 cards-constraints.ts 的 CARD_DAILY_TARGETS（生成1/判定10/点选8）；
+ *  count 为当日累计进度，done=达标可领，claimed=已领取（各奖 1 次免费 3 选 1 开包）。
+ *  进度复用既有生成/判定/选择埋点（bumpDailyTask 钩子），不建独立计数器。 */
+export const CardDaily = z
+  .object({
+    date: z.string().default(''),
+    tasks: z
+      .record(
+        z.string(),
+        z.object({
+          count: z.number().min(0).default(0).catch(0),
+          done: z.boolean().default(false),
+          claimed: z.boolean().default(false),
+        }),
+      )
+      .prefault({}),
+  })
+  .prefault({});
+export type CardDaily = z.infer<typeof CardDaily>;
+
+/** 卡牌统计（stats.card，统计层）：随 stats_enabled 采集、clearStats 清。
+ *  游戏进度（货币余额/保底/每日/收藏/角色池）放 GlobalSettings，不被清空。 */
+export const CardStats = z
+  .object({
+    lucky_hits: z.number().min(0).default(0).catch(0),
+    packs_opened: z.number().min(0).default(0).catch(0),
+    cards_obtained: z.number().min(0).default(0).catch(0),
+    per_card: z.record(z.string(), z.object({ triggers: z.number().default(0) })).prefault({}),
+    pity_epicplus_hits: z.number().min(0).default(0).catch(0),
+    currency_earned_by_outcome: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
+    currency_earned: z.number().min(0).default(0).catch(0),
+    currency_spent: z.number().min(0).default(0).catch(0),
+    daily_rewards_claimed: z.number().min(0).default(0).catch(0),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type CardStats = z.infer<typeof CardStats>;
 
 export const StatsSettings = z
   .object({
@@ -1478,10 +1635,31 @@ export const StatsSettings = z
     /** 骰子判定战绩（全局维度，不随 config 维度）：随 stats_enabled 采集；
      *  不参与条目建议/权重/AI 分析；清空统计时一并清除。 */
     dice: DiceStats.prefault({}),
+    /** 卡牌系统统计（统计层，随 stats_enabled 采集、clearStats 清）。游戏进度
+     *  （card_currency/card_pity/card_daily/card_collection/card_character_pools）
+     *  放 GlobalSettings，不被清空——防「清统计把玩家攒的货币/保底进度抹了」。 */
+    card: CardStats.prefault({}),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白卡牌统计（纯数据构造，不依赖任何 store）。统计层随 stats_enabled 采集、
+ *  清空统计一并清；游戏进度（卡币/保底/每日/收藏/角色池）放 GlobalSettings 不被清。 */
+export function createEmptyCardStats(): CardStats {
+  return {
+    lucky_hits: 0,
+    packs_opened: 0,
+    cards_obtained: 0,
+    per_card: {},
+    pity_epicplus_hits: 0,
+    currency_earned_by_outcome: {},
+    currency_earned: 0,
+    currency_spent: 0,
+    daily_rewards_claimed: 0,
+    updated_at: 0,
+  };
+}
 
 /** 构造一份空白骰子战绩（纯数据构造，不依赖任何 store）。 */
 export function createEmptyDiceStats(): DiceStats {
@@ -1489,6 +1667,7 @@ export function createEmptyDiceStats(): DiceStats {
     total_rolls: 0,
     by_outcome: { crit_success: 0, success: 0, fail: 0, crit_fail: 0 },
     daily: {},
+    history: [],
     updated_at: 0,
   };
 }
@@ -1503,6 +1682,7 @@ export function createEmptyStats(): StatsSettings {
     last_hit_generation_id: null,
     ai_analysis: {},
     dice: createEmptyDiceStats(),
+    card: createEmptyCardStats(),
     updated_at: Date.now(),
   };
 }
@@ -1601,6 +1781,23 @@ export const DiceSettings = z
       .default(
         '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
       ),
+    /** 判定方向（v61）：high = 点数越大越好（默认，难度制原语义）；low = 点数 ≤ 需求=成功
+     *  （COC 百分位）。low 开启时大成功/大失败彩蛋阈值改用 low_roll_crit_success_max /
+     *  low_roll_crit_fail_min（见下）。默认关保持既有判定不变。 */
+    low_roll: z.boolean().default(false),
+    /** low 模式大成功阈值（上限）：掷出 ≤ 本值 → 大成功（默认 5，COC 百分位，范围 1–99） */
+    low_roll_crit_success_max: z.number().min(1).max(99).default(5).catch(5),
+    /** low 模式大失败阈值（下限）：掷出 ≥ 本值 → 大失败（默认 96，范围 2–100） */
+    low_roll_crit_fail_min: z.number().min(2).max(100).default(96).catch(96),
+    /** 角色属性驱动 DC（v61，默认关）：选项无显式需求值时，从当前角色卡解析属性值做需求值；
+     *  AI 标注始终优先，属性只替换档位兜底这一级；识别不到静默回退档位兜底。 */
+    attr_dc_enabled: z.boolean().default(false),
+    /** 允许 AI 标注真实骰式（NdM，如 2d6+3，v61，默认关）：开启后第三段为合法骰式的选项
+     *  改掷表达式而非 D100，需求值(0-100)按比映射到骰式值域当 DC。默认关保证不改变既有解析。 */
+    allow_formula: z.boolean().default(false),
+    /** 就地重掷（v61，默认关）：开启后点选项先掷骰出示 ↻，玩家重掷满意后确认才应用发送；
+     *  关闭保持现状（点击即判定+应用）。 */
+    reroll_enabled: z.boolean().default(false),
   })
   .prefault({});
 export type DiceSettings = z.infer<typeof DiceSettings>;
@@ -1676,6 +1873,32 @@ export const GlobalSettings = z
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
     /** 骰子判定（v56 难度制）：AI 标注/档位兜底需求值 + D100 随机判定（掷 ≥ 需求值=成功），失败等结局前缀标记 */
     dice: DiceSettings.prefault({}),
+    // ── 卡牌系统（v62，游戏进度层；清空统计不清）────────
+    /** 卡牌总开关（默认关）：关 = 判定管线不读卡、无卡触发/无幸运开包/无行动币收支，
+     *  存量升级零行为变化；收藏库/卡库展示常驻不受开关影响。 */
+    card_enabled: z.boolean().default(false),
+    /** 幸运数（默认 100，1–100）：点选项判定时 D100 恰好掷中本数 → 触发「开卡包」3 选 1。
+     *  比普通大成功更难，可配置制造验证场景。 */
+    card_lucky_number: z.number().min(1).max(100).default(100).catch(100),
+    /** 每次开卡包展示张数（默认 3）：混合池按稀有度权重抽出后 3 选 1。 */
+    card_pack_offer: z.number().min(2).max(5).default(3).catch(3),
+    /** 收藏库（键 = card_id）：每张已拥有的卡；耐久扣到 0 = 损坏，重复获得/兑换/分解可修。 */
+    card_collection: z.record(z.string(), CardOwned).prefault({}),
+    /** 卡组（键 = config.id）：每个 config 一套卡组，固定 ≤5 格、同类 ≤1、受等级预算约束。 */
+    card_decks: z.record(z.string(), CardDeck).prefault({}),
+    /** 全量卡定义（键 = card_id）：内置卡定义在 BUILTIN_CARDS 常量，角色主题卡由 AI 生成后
+     *  存这里（card_collection 只记持有/耐久/等级，不冗余卡效果）。抽卡/装备/展示统一从
+     *  本记录 + 内置常量解析卡定义。 */
+    card_definitions: z.record(z.string(), Card).prefault({}),
+    /** 角色 AI 主题卡池（键 = character id）：首次幸运掉落需要时懒生成并固定；
+     *  generated=true 后不再重生成，池内卡反复掉落供升级/修耐久。 */
+    card_character_pools: z.record(z.string(), CardCharacterPool).prefault({}),
+    /** 连抽保底计数（键 = config.id）：连续未出史诗+ 累计，达 CARD_PITY_SOFT 时保底轮必含史诗+，出后重置。 */
+    card_pity: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
+    /** 行动币余额（全局唯一货币，量级稀有）：骰子结局收支 + 分解重复高级卡获得；≥0 不扣穿。 */
+    card_currency: z.number().min(0).default(0).catch(0),
+    /** 每日任务进度（3 个小任务，各奖 1 次免费开包）：本地日期键，每天 0 点重置。 */
+    card_daily: CardDaily.prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——

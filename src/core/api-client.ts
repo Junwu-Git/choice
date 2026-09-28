@@ -2,6 +2,11 @@ import toastr from 'toastr';
 import type { SecondaryApi } from '@/type/settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
+/** 按 active_api_id 解析启用的副 API（cards-ai 等仅需一次解析的模块经此取；generator 也用它）。
+ *  放在 api-client（统一副 AI 请求装配入口）避免 cards-ai → generator → cards 的依赖环。 */
+export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
+  id ? apis.find(a => a.id === id) : undefined;
+
 /** 与酒馆 generate 端点对接的消息格式：system/user/assistant 三态分离。
  *  不拼成单段字符串塞进单条消息，遵循"提示词组装走角色结构"的架构约束。 */
 export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string };

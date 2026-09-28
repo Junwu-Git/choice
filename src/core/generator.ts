@@ -12,7 +12,7 @@ import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensio
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
-import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
+import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
@@ -28,13 +28,13 @@ import {
   type ChoiceOption,
 } from '@/core/options-store';
 import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
+import { bumpDailyTask } from '@/core/cards';
 import { enqueueAttributionAnalysis } from '@/core/ai-attribution';
 import type {
   ChatSettings,
   PoolConfig,
   PoolEntry,
   PromptModule,
-  SecondaryApi,
   WIBookMode,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
@@ -96,8 +96,7 @@ export const resolveCount = (cm: string): number => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
-  id ? apis.find(a => a.id === id) : undefined;
+export { resolveCustomApi };
 
 /**
  * 解析世界书参与范围（全局排除 + 聊天排除 + 数据库开关 + 数据库目标书强制排除/启用）。
@@ -958,6 +957,19 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     }
     const messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
 
+    // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
+    // 指令（运行时多 token，不改用户提示词），让 AI 在相关选项上输出真实骰式。
+    // 追加到末条 user 消息，避免「system 紧随 user」的次序噪音；末条非 user 才另起 system。
+    if (gs.settings.dice.allow_formula && messages.length > 0) {
+      const line = t`可选进阶：若某条选项涉及具体骰子检定，可在标题标注真实骰式与需求值，格式 [标题|骰式|需求值]（如 [攻击|2d6+3|70]）；不涉及的选项保持原有格式即可。`;
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role === 'user') {
+        lastMsg.content += `\n\n${line}`;
+      } else {
+        messages.push({ role: 'system', content: line });
+      }
+    }
+
     const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
     if (!api) {
       toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
@@ -1088,6 +1100,8 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线；
     // scopeId 传入生成时维度（与 generation.scopeId 同源），统计层不再二次解析
     recordOptionsGenerated(options, poolEntryIds, gid, scopeId);
+    // v62 每日任务「生成一次选项」进度：复用生成成功路径埋点（card_enabled 开才累计）
+    bumpDailyTask(useGlobalSettingsStore(), 'generate');
     // L1 AI 归因增强：生成成功后异步入队（fire-and-forget，不进关键路径）。开关关/无 API
     // 时 enqueue 内部 no-op；失败静默保留 Dice 结果——主体功能对 AI 零依赖。
     // allPrefixMatched=true 时整轮前缀高置信命中，enqueue 直接跳过（省一次外部请求）。

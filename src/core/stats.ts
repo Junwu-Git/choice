@@ -8,6 +8,7 @@ import {
   APPLY_HISTORY_LIMIT,
   createEmptyStats,
   createEmptyDiceStats,
+  createEmptyCardStats,
   STATS_WINDOW_SIZE,
   SUGGEST_MIN_SAMPLES,
   SUGGEST_DOWNGRADE_EXCESS,
@@ -18,6 +19,7 @@ import {
   SUGGEST_UPGRADE_MULTIPLIER,
   ROSTER_EXPLORE_RATIO,
   type ApplyHistoryEntry,
+  type CardStats,
   type DailyCount,
   type DiceStats,
   type PoolConfig,
@@ -255,11 +257,15 @@ export function recordOptionSelected(
   if (generationId && hitScopes.size > 0) stats.last_hit_generation_id = generationId;
 }
 
+/** 骰子判定历史条数上限（v61，FIFO，超出丢最旧）。 */
+export const DICE_HISTORY_LIMIT = 50;
+
 /** 记录一次骰子判定（全局战绩，不随 config 维度）。随 stats_enabled 采集：
  *  关 = 早退零写入（与 recordOptionsGenerated/recordOptionSelected 同口径）。
  *  判定结果只进独立战绩字段，不参与条目建议/权重/AI 分析、不写 last_selected_text。
- *  outcome/roll/rate 由 option-action 判定后传入；daily 键与趋势图同口径（本地时区）。 */
-export function recordDiceRoll(outcome: DiceOutcome, _roll: number, _rate: number): void {
+ *  outcome/roll/rate 由 option-action 判定后传入；daily 键与趋势图同口径（本地时区）。
+ *  text 为 parse 后选项正文的短摘要，写入 history 供统计页最近判定回顾（v61）。 */
+export function recordDiceRoll(outcome: DiceOutcome, roll: number, rate: number, text = ''): void {
   const gs = useGlobalSettingsStore();
   if (!gs.settings.stats_enabled) return;
   const stats = gs.settings.stats;
@@ -278,6 +284,10 @@ export function recordDiceRoll(outcome: DiceOutcome, _roll: number, _rate: numbe
     });
   }
   dice.daily[key][outcome] += 1;
+  // 最近判定历史（FIFO，上限 DICE_HISTORY_LIMIT）。历史数组可能未初始化（老档），惰性补齐。
+  const history = dice.history ?? (dice.history = []);
+  history.push({ ts: Date.now(), text: text.slice(0, 60), rate, roll, outcome });
+  if (history.length > DICE_HISTORY_LIMIT) history.splice(0, history.length - DICE_HISTORY_LIMIT);
   dice.updated_at = Date.now();
 }
 
@@ -285,6 +295,100 @@ export function recordDiceRoll(outcome: DiceOutcome, _roll: number, _rate: numbe
 export function diceWinRate(dice: DiceStats): number | null {
   if (!dice || dice.total_rolls <= 0) return null;
   return (dice.by_outcome.crit_success + dice.by_outcome.success) / dice.total_rolls;
+}
+
+// ── 卡牌统计（v62，随 stats_enabled 采集；清空统计一并清，游戏进度在 GlobalSettings） ──
+
+/** 惰性取卡牌统计记录（老档/未过 zod parse 的运行时对象可能缺字段）。 */
+const cardStats = (): CardStats => {
+  const gs = useGlobalSettingsStore();
+  const stats = gs.settings.stats;
+  return stats.card ?? (stats.card = createEmptyCardStats());
+};
+
+/** 记录一次卡触发（效果实际触发）：每卡独立计数，供卡牌分区/卡库展示。 */
+export function recordCardTrigger(cardId: string): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  const rec = (s.per_card[cardId] ??= { triggers: 0 });
+  rec.triggers += 1;
+  s.updated_at = Date.now();
+}
+
+/** 记录一次幸运数命中（触发开卡包）。 */
+export function recordCardLuckyHit(): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  s.lucky_hits += 1;
+  s.updated_at = Date.now();
+}
+
+/** 记录一次开卡包（幸运触发开包）。 */
+export function recordPackOpened(): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  s.packs_opened += 1;
+  s.updated_at = Date.now();
+}
+
+/** 记录获得一张卡（开卡包/商店购买）。 */
+export function recordCardsObtained(): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  s.cards_obtained += 1;
+  s.updated_at = Date.now();
+}
+
+/** 记录一次保底命中（抽到史诗/传说并重置保底）。 */
+export function recordPityHit(): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  s.pity_epicplus_hits += 1;
+  s.updated_at = Date.now();
+}
+
+/** 记录行动币获得（分解收益等，不在骰子结局收支内）。 */
+export function recordCurrencyEarned(amount: number): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled || amount <= 0) return;
+  const s = cardStats();
+  s.currency_earned += amount;
+  s.updated_at = Date.now();
+}
+
+/** 记录骰子结局收支（大成功+5/成功+2/失败-1/大失败-3）：正向记入 earned 与 by_outcome；
+ *  负向（损失）只体现在余额，不在 stats 记支出（支出专指商店消费）。 */
+export function recordCurrencyOutcome(delta: number): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled || delta <= 0) return;
+  const s = cardStats();
+  const key = outcomeKeyFor(delta);
+  if (key) s.currency_earned_by_outcome[key] = (s.currency_earned_by_outcome[key] ?? 0) + delta;
+  s.currency_earned += delta;
+  s.updated_at = Date.now();
+}
+
+/** 记录行动币消费（商店定向卡/卡包）。 */
+export function recordCurrencySpent(amount: number): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled || amount <= 0) return;
+  const s = cardStats();
+  s.currency_spent += amount;
+  s.updated_at = Date.now();
+}
+
+/** 记录每日任务领奖次数。 */
+export function recordDailyReward(): void {
+  if (!useGlobalSettingsStore().settings.stats_enabled) return;
+  const s = cardStats();
+  s.daily_rewards_claimed += 1;
+  s.updated_at = Date.now();
+}
+
+/** 依据收益来源反推结局键（仅用于 by_outcome 展示；负向不记录，故仅正向映射）。 */
+const OUTCOME_CURRENCY = { crit_success: 5, success: 2 } as const;
+function outcomeKeyFor(delta: number): keyof typeof OUTCOME_CURRENCY | null {
+  for (const [k, v] of Object.entries(OUTCOME_CURRENCY)) {
+    if (v === delta) return k as keyof typeof OUTCOME_CURRENCY;
+  }
+  return null;
 }
 
 /** AI 归因结果与本地 Dice 归因的对称修正（纯函数，L1 归因队列成功后调用）。

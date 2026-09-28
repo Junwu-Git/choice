@@ -95,8 +95,35 @@
           <span>{{ t`启用骰子判定` }}</span>
         </label>
       </template>
+      <!-- v61 DND / COC 判定模式：分段切换。dice.low_roll=false=DND(高点数成功)，true=COC(低点数成功) -->
+      <div class="choice-seg" data-tour="gen-dice-mode">
+        <button
+          class="choice-seg-btn"
+          :class="{ active: !gs.settings.dice.low_roll }"
+          :title="t`点数越大越好：掷出 ≥ 需求值即为成功（默认）`"
+          @click="gs.settings.dice.low_roll = false"
+        >
+          <i class="fa-solid fa-dice-d20"></i>
+          {{ t`DND` }}
+        </button>
+        <button
+          class="choice-seg-btn"
+          :class="{ active: gs.settings.dice.low_roll }"
+          :title="t`点数越小越好：掷出 ≤ 需求值即为成功（COC 百分位）`"
+          @click="gs.settings.dice.low_roll = true"
+        >
+          <i class="fa-solid fa-dice"></i>
+          {{ t`COC` }}
+        </button>
+      </div>
+      <small class="choice-field-hint">{{
+        gs.settings.dice.low_roll
+          ? t`COC：点数 ≤ 需求值=成功，点数越小越好（大成功看点数最小、大失败看点数最大）`
+          : t`DND：点数 ≥ 需求值=成功，点数越大越好（大成功看点数最大、大失败看点数最小）`
+      }}</small>
+      <!-- 彩蛋阈值：随判定模式切换字段组（DND 用高值大成功/低值大失败，COC 反之） -->
       <div class="choice-count-row">
-        <label class="choice-count-item">
+        <label v-if="!gs.settings.dice.low_roll" class="choice-count-item">
           <span>{{ t`大成功阈值` }}</span>
           <input
             v-model.number="gs.settings.dice.crit_success_min"
@@ -104,10 +131,10 @@
             type="number"
             min="2"
             max="100"
-            :title="t`掷出 ≥ 此值判为大成功（默认 96）`"
+            :title="t`DND：掷出 ≥ 此值判为大成功（默认 96）`"
           />
         </label>
-        <label class="choice-count-item">
+        <label v-if="!gs.settings.dice.low_roll" class="choice-count-item">
           <span>{{ t`大失败阈值` }}</span>
           <input
             v-model.number="gs.settings.dice.crit_fail_max"
@@ -115,190 +142,250 @@
             type="number"
             min="1"
             max="99"
-            :title="t`掷出 ≤ 此值判为大失败（默认 5）`"
+            :title="t`DND：掷出 ≤ 此值判为大失败（默认 5）`"
+          />
+        </label>
+        <label v-if="gs.settings.dice.low_roll" class="choice-count-item">
+          <span>{{ t`大成功阈值` }}</span>
+          <input
+            v-model.number="gs.settings.dice.low_roll_crit_success_max"
+            class="choice-input choice-input-w-md"
+            type="number"
+            min="1"
+            max="99"
+            :title="t`COC：掷出 ≤ 此值判为大成功（默认 5）`"
+          />
+        </label>
+        <label v-if="gs.settings.dice.low_roll" class="choice-count-item">
+          <span>{{ t`大失败阈值` }}</span>
+          <input
+            v-model.number="gs.settings.dice.low_roll_crit_fail_min"
+            class="choice-input choice-input-w-md"
+            type="number"
+            min="2"
+            max="100"
+            :title="t`COC：掷出 ≥ 此值判为大失败（默认 96）`"
           />
         </label>
       </div>
-      <div class="choice-dice-template-list">
-        <div class="choice-dice-template-row">
-          <strong>{{ t`成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`勉强得手` }}</span>
-            <input
-              v-model="gs.settings.dice.success_send_low_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 0–19，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`险胜` }}</span>
-            <input
-              v-model="gs.settings.dice.success_send_mid_low_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 20–39，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`顺利达成` }}</span>
-            <input
-              v-model="gs.settings.dice.success_send_mid_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 40–59，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`漂亮完胜` }}</span>
-            <input
-              v-model="gs.settings.dice.success_send_mid_high_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin 60–79，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`势如破竹` }}</span>
-            <input
-              v-model="gs.settings.dice.success_send_high_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin ≥80，给 AI 的演绎指令`"
-            />
-          </label>
-          <label class="choice-count-item">
-            <span>{{ t`回退文案` }}</span>
-            <input
-              v-model="gs.settings.dice.success_template"
-              class="choice-input"
-              :placeholder="t`演绎指令留空时使用，如：【判定成功】`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`差点成功` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_send_low_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −1–−19，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`功亏一篑` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_send_mid_low_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −20–−39，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`事与愿违` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_send_mid_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −40–−59，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`溃败` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_send_mid_high_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin −60–−79，给 AI 的演绎指令`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`彻底落败` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_send_high_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`margin ≤−80，给 AI 的演绎指令`"
-            />
-          </label>
-          <label class="choice-count-item">
-            <span>{{ t`回退文案` }}</span>
-            <input
-              v-model="gs.settings.dice.fail_template"
-              class="choice-input"
-              :placeholder="t`演绎指令留空时使用，如：【判定失败】`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`大成功` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`隐形演绎指令` }}</span>
-            <input
-              v-model="gs.settings.dice.crit_success_send_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
-            />
-          </label>
-          <label class="choice-count-item">
-            <span>{{ t`回退文案` }}</span>
-            <input
-              v-model="gs.settings.dice.crit_success_template"
-              class="choice-input"
-              :placeholder="t`演绎指令留空时使用，如：【大成功】`"
-            />
-          </label>
-        </div>
-        <div class="choice-dice-template-row">
-          <strong>{{ t`大失败` }}</strong>
-          <label class="choice-count-item">
-            <span>{{ t`隐形演绎指令` }}</span>
-            <input
-              v-model="gs.settings.dice.crit_fail_send_template"
-              class="choice-input"
-              :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-              :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
-            />
-          </label>
-          <label class="choice-count-item">
-            <span>{{ t`回退文案` }}</span>
-            <input
-              v-model="gs.settings.dice.crit_fail_template"
-              class="choice-input"
-              :placeholder="t`演绎指令留空时使用，如：【大失败】`"
-            />
-          </label>
-        </div>
+      <!-- 附加玩法：卡片式开关行（标题 + 一行说明，替代无说明裸复选框） -->
+      <div class="choice-dice-toggle-list">
+        <label class="choice-toggle" :title="t`点选项先掷骰出示 ↻，重掷满意后再次点击才应用发送`">
+          <input v-model="gs.settings.dice.reroll_enabled" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`就地重掷（↻）` }}</strong>
+            <small>{{ t`点选项先掷骰出示 ↻，重掷满意后再次点击才应用发送` }}</small>
+          </span>
+        </label>
+        <label class="choice-toggle" :title="t`允许 AI 标注真实骰式（如 [标题|2d6+3|70]），改掷表达式而非固定 D100`">
+          <input v-model="gs.settings.dice.allow_formula" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`骰式表达式` }}</strong>
+            <small>{{
+              t`AI 在标题标注真实骰式才生效，格式 [标题|骰式|需求值]（如 [攻击|2d6+3|70]）；开启后生成时会提示 AI 输出骰式`
+            }}</small>
+          </span>
+        </label>
+        <label
+          class="choice-toggle"
+          :title="t`选项无显式需求值时，从当前角色卡解析属性值做需求值（识别不到回退档位兜底）`"
+        >
+          <input v-model="gs.settings.dice.attr_dc_enabled" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`属性驱动 DC` }}</strong>
+            <small>{{ t`选项无显式需求值时，从当前角色卡解析属性做需求值` }}</small>
+          </span>
+        </label>
       </div>
+      <!-- 演绎文案模板：收进可折叠「高级」区，减轻主体卡片负担 -->
+      <ChoiceSectionCard title="演绎文案模板（高级）" icon="fa-solid fa-comment">
+        <small class="choice-field-hint">{{
+          t`成功/失败按点数与需求值的差距（margin）分档，每档独立演绎指令；大成功/大失败为单条。指令以 HTML 注释注入（AI 可见、聊天界面不可见；填入输入框可见可编辑删除），模板支持 {rate} {roll} {margin} {degree}；某档留空回退该结局回退文案、两者皆空则不注入`
+        }}</small>
+        <div class="choice-dice-template-list">
+          <div class="choice-dice-template-row">
+            <strong>{{ t`成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`勉强得手` }}</span>
+              <input
+                v-model="gs.settings.dice.success_send_low_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin 0–19，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`险胜` }}</span>
+              <input
+                v-model="gs.settings.dice.success_send_mid_low_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin 20–39，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`顺利达成` }}</span>
+              <input
+                v-model="gs.settings.dice.success_send_mid_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin 40–59，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`漂亮完胜` }}</span>
+              <input
+                v-model="gs.settings.dice.success_send_mid_high_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin 60–79，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`势如破竹` }}</span>
+              <input
+                v-model="gs.settings.dice.success_send_high_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin ≥80，给 AI 的演绎指令`"
+              />
+            </label>
+            <label class="choice-count-item">
+              <span>{{ t`回退文案` }}</span>
+              <input
+                v-model="gs.settings.dice.success_template"
+                class="choice-input"
+                :placeholder="t`演绎指令留空时使用，如：【判定成功】`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`差点成功` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_send_low_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin −1–−19，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`功亏一篑` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_send_mid_low_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin −20–−39，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`事与愿违` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_send_mid_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin −40–−59，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`溃败` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_send_mid_high_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin −60–−79，给 AI 的演绎指令`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`彻底落败` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_send_high_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`margin ≤−80，给 AI 的演绎指令`"
+              />
+            </label>
+            <label class="choice-count-item">
+              <span>{{ t`回退文案` }}</span>
+              <input
+                v-model="gs.settings.dice.fail_template"
+                class="choice-input"
+                :placeholder="t`演绎指令留空时使用，如：【判定失败】`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`大成功` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`隐形演绎指令` }}</span>
+              <input
+                v-model="gs.settings.dice.crit_success_send_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
+              />
+            </label>
+            <label class="choice-count-item">
+              <span>{{ t`回退文案` }}</span>
+              <input
+                v-model="gs.settings.dice.crit_success_template"
+                class="choice-input"
+                :placeholder="t`演绎指令留空时使用，如：【大成功】`"
+              />
+            </label>
+          </div>
+          <div class="choice-dice-template-row">
+            <strong>{{ t`大失败` }}</strong>
+            <label class="choice-count-item">
+              <span>{{ t`隐形演绎指令` }}</span>
+              <input
+                v-model="gs.settings.dice.crit_fail_send_template"
+                class="choice-input"
+                :title="t`模板内勿输入 --（会截断 HTML 注释）`"
+                :placeholder="t`给 AI 的演绎指令，支持 {rate} {roll} {margin} {degree}`"
+              />
+            </label>
+            <label class="choice-count-item">
+              <span>{{ t`回退文案` }}</span>
+              <input
+                v-model="gs.settings.dice.crit_fail_template"
+                class="choice-input"
+                :placeholder="t`演绎指令留空时使用，如：【大失败】`"
+              />
+            </label>
+          </div>
+        </div>
+      </ChoiceSectionCard>
       <small class="choice-field-hint">{{
-        t`开启后点击选项时掷 D100：AI 标注需求值优先，未标注时按风险档位兜底（保守 35 / 平衡 60 / 大胆 85）。判定为掷出 ≥ 需求值才算成功、点数越大越好。成功/失败会按点数与需求值的差距（margin）分三档，每档有独立的演绎指令——成功：勉强得手 / 顺利达成 / 漂亮完胜，失败：差点成功 / 事与愿违 / 彻底落败；大成功/大失败为固定单条。指令以 HTML 注释注入（AI 可见、聊天界面不可见；填入时输入框可见注释，可编辑删除），模板支持 {rate} {roll} {margin} {degree}；某档 send 留空回退该结局的回退文案、两者皆空则不注入。润色视图与无需求值选项不参与判定`
+        t`开启后点击选项时掷骰判定：AI 标注需求值优先，未标注按风险档位兜底（保守 35 / 平衡 60 / 大胆 85）。润色视图与无需求值选项不参与判定；判定方向见上方 DND / COC 模式。`
       }}</small>
     </ChoiceSectionCard>
 
@@ -500,6 +587,14 @@ const clampEnrichChars = () => {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
+}
+
+/* v61 附加玩法开关行：卡片式开关行纵向堆叠（标题 + 说明），上下留白与主体卡内其他分区一致 */
+.choice-dice-toggle-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+  margin-top: var(--choice-space-1);
 }
 
 .choice-dice-template-row {

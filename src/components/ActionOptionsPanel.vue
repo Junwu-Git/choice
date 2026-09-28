@@ -182,11 +182,6 @@
               <i class="fa-solid fa-chevron-right"></i>
             </button>
           </span>
-          <!-- 风险档位图例：HUD 开启且当前代存在带档位标注的选项时显示。
-               原生 title tooltip（触屏长按可见），不占用常驻布局 -->
-          <span v-if="hasGradedOptions" class="choice-icon-hint" :title="legendTitle">
-            <i class="fa-solid fa-circle-info"></i>
-          </span>
         </div>
         <button
           v-for="(option, index) in visibleOptions"
@@ -199,17 +194,36 @@
         >
           <span class="choice-option-type">{{ parseOptionType(option.text) }}</span><!--
           --><span
-            v-if="activeView === 'options' && rateOf(option) !== null"
+            v-if="activeView === 'options' && (rateOf(option) !== null || formulaOf(option))"
             class="choice-option-rate"
-            :class="rateClass(rateOf(option)!)"
-            >{{ rateOf(option) }}</span
+            :class="formulaOf(option) ? 'choice-option-rate--formula' : rateClass(rateOf(option)!)"
+            :title="formulaOf(option) ? `${t`骰式`} ${formulaOf(option)}（${t`难度`} ${rateOf(option)}）` : ''"
+            >{{ formulaOf(option) || rateOf(option) }}</span
           >
           <span class="choice-option-content"
             >{{ parseOptionContent(option.text)
             }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
               rollChipText(rollOf(index)!)
-            }}</i></span
-          >
+            }}</i
+            ><template v-if="rollOf(index)?.cards?.triggered?.length"
+              ><span class="choice-card-tag-row"
+                ><span
+                  v-for="tc in rollOf(index)!.cards!.triggered"
+                  :key="tc.card.id"
+                  class="choice-card-tag"
+                  :class="`choice-card-star--${tc.card.star}`"
+                  :title="`${tc.card.name}：${tc.summary}`"
+                  ><i class="fa-solid fa-id-badge"></i>{{ tc.card.name }}</span
+                ></span
+              ></template
+            ><span
+              v-if="isPending(index)"
+              class="choice-roll-reroll"
+              role="button"
+              :title="t`重掷`"
+              @click.stop="onReroll(option, index)"
+              ><i class="fa-solid fa-rotate"></i></span
+          ></span>
         </button>
         <div v-if="!compact && activeView === 'options' && underflow" class="choice-panel-hint">
           {{ t`本轮选项少于设定数量` }}
@@ -252,8 +266,12 @@ import { nextThemeMode, themeLabel } from '@/core/theme-presets';
 import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
-import { parseOptionType, parseOptionContent, parseOptionStyle, resolveOptionSuccessRate } from '@/util/option-format';
-import { applyOptionBehavior } from '@/util/option-action';
+import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
+import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
+import { resolveRateForDisplay } from '@/core/attribute-dc';
+import { openCardPack } from '@/core/card-pack-state';
+import type { CardResolution } from '@/core/cards';
+import { getStCharacter } from '@/core/st-character';
 import type { DiceOutcome } from '@/core/dice';
 import { OPTION_FONT_SCALE } from '@/core/constants';
 
@@ -424,8 +442,14 @@ const optionBtnStyle = (index: number): Record<string, string> => {
 // 徽标显示规则 = 骰子开 + 选项可解析出需求值（AI 标注或档位兜底），且仅选项视图
 // （润色视图不掷骰，也不显示需求值，口径与 option-action.ts 判定分支一致）
 const diceEnabled = computed(() => gs.settings.dice.enabled);
+// v61：徽标与判定共用同一需求值解析（AI 标注 / 角色属性 / 档位兜底 / 骰式代理），
+// 见 attribute-dc.resolveRateForDisplay；当前角色取自 store 的响应式 currentCharacterId
+const currentChar = computed(() => (gs.currentCharacterId != null ? getStCharacter(gs.currentCharacterId) : undefined));
 const rateOf = (option: ChoiceOption): number | null =>
-  diceEnabled.value ? resolveOptionSuccessRate(option.text) : null;
+  diceEnabled.value ? resolveRateForDisplay(option.text, currentChar.value, gs.settings.dice) : null;
+// v61 骰式表达式：选项是否骰式标注，返回骰式文本（如 2d6+3）；allow_formula 关或非骰式返回 null
+const formulaOf = (option: ChoiceOption): string | null =>
+  gs.settings.dice.allow_formula ? (parseOptionDice(option.text)?.formula ?? null) : null;
 // 徽标语义色按需求值分档（v56 难度制）：高需求（≥70）难=橙 / 中（40-69）蓝 / 低（<40）易=绿——
 // 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*（配色反转见 theme.css）
 const rateClass = (rate: number): string =>
@@ -433,27 +457,22 @@ const rateClass = (rate: number): string =>
 
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代/翻页自然失效（同 selectedKeys 机制）。
-// v57：差值 = 点数 − 需求（margin），chip 显示「结局+差值」如「成功 +18」「失败 −38」
-type RollResult = { outcome: DiceOutcome; margin: number };
+// v57：差值 = 判定 margin；v61 起 margin 由 option-action 经 diceMargin 归一化（成功侧为正），
+// chip 显示「结局+差值」如「成功 +18」「失败 −38」。
+type RollResult = { outcome: DiceOutcome; margin: number; cards?: CardResolution };
 const rollResults = ref<ReadonlyMap<string, RollResult>>(new Map());
-const rollOf = (index: number): RollResult | null => rollResults.value.get(`${generationId.value}:${index}`) ?? null;
+// v61 就地重掷两步流状态：stagedFull = 已 stage 未应用的完整判定结果（含 roll/rate 供 marker），
+// pendingApply = 已 stage 未应用的 key 集合（决定是否显示 ↻）。正常流程（reroll 关）不写这两个。
+const stagedFull = ref<ReadonlyMap<string, DiceRollResult>>(new Map());
+const pendingApply = ref<ReadonlySet<string>>(new Set());
+const keyOf = (index: number): string => `${generationId.value}:${index}`;
+const rollOf = (index: number): RollResult | null => rollResults.value.get(keyOf(index)) ?? null;
+const isPending = (index: number): boolean => pendingApply.value.has(keyOf(index));
 const rollLabel = (o: DiceOutcome): string =>
   o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
 // 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
 const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
 const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
-
-// 风险档位图例：仅选项视图且存在带档位标注的选项时显示（enrich 视图不带档位）
-const hasGradedOptions = computed(
-  () =>
-    activeView.value === 'options' &&
-    hudEnabled.value &&
-    visibleOptions.value.some(o => parseOptionStyle(o.text) !== null),
-);
-const legendTitle = computed(
-  () =>
-    t`风险档位：保守（绿）/ 平衡（蓝）/ 大胆（橙）` + (diceEnabled.value ? t`；骰子需求值：掷出 ≥ 该值才算成功` : ''),
-);
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
 // 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
@@ -731,25 +750,64 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 翻页后正确；generationId 用于同代重复点击的命中去重）
   const isEnrich = activeView.value === 'enrich';
   const gen = isEnrich ? null : panelStore.currentGeneration;
+  const d = gs.settings.dice;
+  const key = keyOf(index);
+  // v61 就地重掷两步流（reroll_enabled 且本选项会掷骰）：首掷只 stage（出示 ↻、不应用不发送），
+  // 再次点击 = 用已 stage 结果应用。正常流程（reroll 关）保持原「点击即掷+应用」。
+  const willRoll = !isEnrich && d.enabled && resolveRateForDisplay(option.text, currentChar.value, d) !== null;
+  if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
+    const staged = rollOptionDice(option.text);
+    if (staged) {
+      rollResults.value = new Map(rollResults.value).set(key, { outcome: staged.outcome, margin: staged.margin, cards: staged.cards });
+      stagedFull.value = new Map(stagedFull.value).set(key, staged);
+      pendingApply.value = new Set(pendingApply.value).add(key);
+      return; // 首掷只出示 ↻，不应用
+    }
+  }
+  const preRolled = willRoll && d.reroll_enabled ? (stagedFull.value.get(key) ?? null) : undefined;
   const dice = await applyOptionBehavior(option, behavior.value, {
     view: isEnrich ? 'enrich' : 'options',
     poolEntryIds: gen?.poolEntryIds ?? [],
     generationId: gen?.id,
     matchedEntryId: option.matchedEntryId,
     scopeId: gen?.scopeId,
+    ...(preRolled ? { preRolled } : {}),
   });
   // 行内判定 chip（v57 骰子结果：结局+差值；润色视图恒返回 null，不标记）
   if (dice) {
-    rollResults.value = new Map(rollResults.value).set(`${generationId.value}:${index}`, {
+    rollResults.value = new Map(rollResults.value).set(key, {
       outcome: dice.outcome,
-      margin: dice.roll - dice.rate,
+      margin: dice.margin,
+      cards: dice.cards,
     });
+    // v62 幸运数命中 → 开卡包弹窗（applyOptionBehavior 已把卡叙事并入注释、commit 已在共享层完成，
+    // 组件只需把 offer 交由全局弹窗消费；幸运数开包与每日/商店共用同一弹窗信号）
+    if (dice.cards?.packOffer) openCardPack(dice.cards.packOffer, 'lucky');
+  }
+  // 重掷流已应用：清 stage 态（↻ 消失，保留 chip 作为本次判定反馈）
+  if (willRoll && d.reroll_enabled) {
+    const np = new Set(pendingApply.value);
+    np.delete(key);
+    pendingApply.value = np;
+    const ns = new Map(stagedFull.value);
+    ns.delete(key);
+    stagedFull.value = ns;
   }
   // 已选打勾（HUD 视觉反馈）：选中成功后才标记，与统计口径无关
   markOptionSelected(index);
   // 锁定展开时点选项后面板不收起（常开）
   panelStore.autoSetCollapsed(true);
   emit('select');
+};
+
+// v61 就地重掷：重掷当前选项（重新掷骰并更新 chip 与 stage 结果），不应用不发送。
+// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）。
+const onReroll = (option: ChoiceOption, index: number) => {
+  const full = rollOptionDice(option.text);
+  if (!full) return;
+  const key = keyOf(index);
+  rollResults.value = new Map(rollResults.value).set(key, { outcome: full.outcome, margin: full.margin, cards: full.cards });
+  stagedFull.value = new Map(stagedFull.value).set(key, full);
 };
 </script>
 

@@ -6,6 +6,9 @@
   <OnboardingWizard />
   <!-- 首启欢迎卡：同样是全局单例（锚定悬浮球坐标，一次只该有一张） -->
   <WelcomeCard />
+  <!-- v62 开卡包全局单实例：主面板/悬浮球幸运命中、卡牌页商店/每日领包共用同一信号
+       （card-pack-state），只在此挂一份 Teleport 弹窗避免多份遮罩 -->
+  <CardPackDialog />
 </template>
 
 <script setup lang="ts">
@@ -14,6 +17,7 @@ import FloatingSettings from '@/components/FloatingSettings.vue';
 import FloatingBubble from '@/components/FloatingBubble.vue';
 import OnboardingWizard from '@/components/OnboardingWizard.vue';
 import WelcomeCard from '@/components/WelcomeCard.vue';
+import CardPackDialog from '@/components/CardPackDialog.vue';
 
 const store = useGlobalSettingsStore();
 const ui = computed(() => store.settings.ui);

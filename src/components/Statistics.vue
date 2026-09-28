@@ -529,6 +529,125 @@
             </div>
           </div>
         </div>
+        <!-- 最近判定历史（v61）：FIFO 上限 DICE_HISTORY_LIMIT，随 stats_enabled 采集 -->
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-clock-rotate-left"></i>{{ t`最近判定` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`最近 ${diceHistoryLimit} 次判定（点数 / 需求 / 结局）` }}</p>
+          <div v-if="diceHistory.length === 0" class="choice-empty-hint">{{ t`暂无判定历史` }}</div>
+          <ol v-else class="choice-dice-history-list">
+            <li v-for="(h, i) in diceHistory" :key="i" class="choice-dice-history-item">
+              <span class="choice-dice-history-text" :title="h.text">{{ h.text }}</span>
+              <span class="choice-dice-history-nums"
+                ><b>{{ h.roll }}</b
+                >/{{ h.rate }}
+                <span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${h.outcome}`">{{
+                  rollLabelHist(h.outcome)
+                }}</span></span
+              >
+            </li>
+          </ol>
+        </div>
+      </template>
+    </ChoiceSectionCard>
+
+    <!-- 卡牌（统计层，全局维度；默认折叠：卡库/触发/幸运数/货币收支读数） -->
+    <ChoiceSectionCard id="choice-stats-anchor-card" title="卡牌" icon="fa-solid fa-chess-knight" data-anchor="card">
+      <template #extra>
+        <span class="choice-stats-info" :title="cardHelp"><i class="fa-solid fa-circle-info"></i></span>
+      </template>
+      <p class="choice-stats-sub">
+        {{ t`幸运命中 ${cardStats.lucky_hits} · 开包 ${cardStats.packs_opened} · 获得卡 ${cardStats.cards_obtained} · 保底命中 ${cardStats.pity_epicplus_hits}` }}
+      </p>
+      <div v-if="cardStats.lucky_hits === 0 && cardStats.cards_obtained === 0" class="choice-empty-hint">
+        {{ t`尚未触卡。开卡牌总开关后，判定击中幸运数可开卡包；卡触发继续下面的明细。` }}
+      </div>
+      <template v-else>
+        <div class="choice-stats-cards">
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--warning"
+              ><i class="fa-solid fa-star"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`幸运命中` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.lucky_hits }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--info"
+              ><i class="fa-solid fa-gift"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`开包次数` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.packs_opened }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-layer-group"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`获得卡` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.cards_obtained }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
+              ><i class="fa-solid fa-shield-halved"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`保底命中` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.pity_epicplus_hits }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-coins"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`行动币获得` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.currency_earned }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"
+              ><i class="fa-solid fa-minus"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`行动币支出` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.currency_spent }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--neutral"
+              ><i class="fa-solid fa-list-check"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`每日领奖` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.daily_rewards_claimed }}</div>
+            </div>
+          </div>
+        </div>
+        <!-- 每卡触发次数（join 卡定义，按触发次数降序） -->
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-id-badge"></i>{{ t`每卡触发` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`卡效果实际触发的次数（累计）` }}</p>
+          <div v-if="cardTopTriggers.length === 0" class="choice-empty-hint">{{ t`暂无卡触发` }}</div>
+          <ol v-else class="choice-dice-history-list">
+            <li v-for="t in cardTopTriggers" :key="t.card_id" class="choice-dice-history-item">
+              <span class="choice-dice-history-text" :title="t.name">{{ t.name }}</span>
+              <span class="choice-dice-history-nums"
+                ><b>{{ t.triggers }}</b
+                 ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
+                   CARD_STAR_LABEL[t.star]
+                 }}</span></span
+              >
+            </li>
+          </ol>
+        </div>
       </template>
     </ChoiceSectionCard>
 
@@ -750,6 +869,7 @@ import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
+import type { DiceOutcome } from '@/core/dice';
 import {
   buildStatsView,
   entryGroups,
@@ -770,6 +890,7 @@ import {
   applyRosterPlan,
   reEnableEntry,
   diceWinRate,
+  DICE_HISTORY_LIMIT,
   GLOBAL_SCOPE,
   NONE_SCOPE,
   suggestionKey,
@@ -799,10 +920,14 @@ import {
   GenerationSettings,
   AI_ANALYSIS_DEBOUNCE_MS,
   createEmptyDiceStats,
+  createEmptyCardStats,
   type AiAnalysisEntry,
+  type CardStats,
   type DiceStats,
   type PoolConfigEntry,
 } from '@/type/settings';
+import { CARD_STAR_LABEL } from '@/core/cards-meta';
+import { BUILTIN_CARDS } from '@/core/cards-builtin';
 
 const gs = useGlobalSettingsStore();
 const stats = computed(() => gs.settings.stats);
@@ -1118,6 +1243,27 @@ const diceTrend = computed(() => {
 });
 const diceTrendMax = computed(() => Math.max(1, ...diceTrend.value.map(p => p.total)));
 const diceBarHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / diceTrendMax.value) * 100)) : 0) + '%';
+/** 最近判定历史（v61）：最新在前，空数组兜底老档缺字段。 */
+const diceHistory = computed(() => [...(diceStats.value.history ?? [])].reverse());
+const diceHistoryLimit = DICE_HISTORY_LIMIT;
+const rollLabelHist = (o: DiceOutcome): string =>
+  o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
+
+// ── 卡牌（统计层，全局维度，不随 config 切换） ──
+const cardStats = computed<CardStats>(() => stats.value.card ?? createEmptyCardStats());
+const cardHelp = t`卡牌系统统计（全局维度，不随条目池配置切换）：幸运数命中/开包/得卡/保底命中/行动币收支/每日领奖，以及每卡触发次数。随「统计采集」开关积累；清空统计时一并清除（行动币余额/保底/每日进度/收藏属游戏进度层，不清除）。`;
+/** 每卡触发次数（join 卡定义，按触发次数降序取前 20） */
+const cardTopTriggers = computed(() => {
+  const per = cardStats.value.per_card ?? {};
+  return Object.entries(per)
+    .map(([card_id, v]) => {
+      const def = BUILTIN_CARDS.find(c => c.id === card_id) ?? gs.settings.card_definitions[card_id];
+      return { card_id, triggers: v.triggers, name: def?.name ?? card_id, star: def?.star ?? '1' };
+    })
+    .filter(x => x.triggers > 0)
+    .sort((a, b) => b.triggers - a.triggers)
+    .slice(0, 20);
+});
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
@@ -2708,5 +2854,54 @@ const onClearStats = async () => {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   min-width: 0;
+}
+
+/* ── 骰子最近判定历史（v61） ── */
+.choice-dice-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.choice-dice-history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  padding: 3px var(--choice-space-2);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-element);
+  font-size: var(--choice-text-xs);
+}
+.choice-dice-history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--choice-text-secondary);
+}
+.choice-dice-history-nums {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--choice-text-secondary);
+}
+.choice-dice-history-nums b {
+  color: var(--choice-text);
+}
+.choice-dice-history-outcome {
+  font-weight: 600;
+  margin-left: var(--choice-space-1);
+}
+.choice-dice-history-outcome--crit_success,
+.choice-dice-history-outcome--success {
+  color: var(--choice-color-success);
+}
+.choice-dice-history-outcome--fail,
+.choice-dice-history-outcome--crit_fail {
+  color: var(--choice-color-danger);
 }
 </style>

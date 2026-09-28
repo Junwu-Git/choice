@@ -17,6 +17,8 @@
  * 仅含义从「成功概率」改为「达成所需的骰子点数下限」。
  */
 
+import { isDiceFormula } from '@/core/dice-expression';
+
 // 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
 const OPTION_SEP_RE = /[:：]\s/;
 
@@ -53,19 +55,22 @@ const parseRateSegment = (segment: string): number | null => {
   return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : null;
 };
 
-/** 标题内竖线分段拆分（标题 | 档位 | 成功率），最多拆两段竖线。
- *  兼容规则：任一段既非受控档位词、又非成功率数字 → 整段回退，title 保留
- *  去引号原文（含竖线），style/rate 均 null——与 v54「词表外整体当标题」一致，
- *  防止把自定义 type 里的竖线误拆成标注。档位/成功率允许顺序互换（各认首个）。
+/** 标题内竖线分段拆分（标题 | 档位 | 成功率 | 骰式），最多拆若干竖线段。
+ *  兼容规则：任一段既不是受控档位词、也不是成功率数字、也不是合法骰式 → 整段回退，
+ *  title 保留去引号原文（含竖线），style/rate 均 null——与 v54「词表外整体当标题」一致，
+ *  防止把自定义 type 里的竖线误拆成标注。档位/成功率/骰式允许顺序互换（各认首个）。
+ *  骰式段（v61，`isDiceFormula` 如 `2d6+3`）识别为有效段并从标题剥离（供允 AI 标注真实
+ *  骰式时选项标题保持干净，如 `[攻击|2d6+3|70]` → title 只留「攻击」）。
  *  竖线两侧做 trim、段落去引号（容忍 AI 输出 "[顺势而为 | 大胆 | 70%]"）。 */
 const splitBracketParts = (
   rawTitle: string,
-): { title: string; style: OptionStyleGrade | null; rate: number | null } => {
-  if (!rawTitle.includes('|')) return { title: rawTitle, style: null, rate: null };
+): { title: string; style: OptionStyleGrade | null; rate: number | null; formula: string | null } => {
+  if (!rawTitle.includes('|')) return { title: rawTitle, style: null, rate: null, formula: null };
   const parts = rawTitle.split('|');
   const [head] = parts;
   let style: OptionStyleGrade | null = null;
   let rate: number | null = null;
+  let formula: string | null = null;
   let unrecognized = false;
   for (let i = 1; i < parts.length; i++) {
     const seg = parts[i].trim().replace(/"/g, '');
@@ -92,11 +97,19 @@ const splitBracketParts = (
       rate = parsedRate;
       continue;
     }
+    if (isDiceFormula(seg)) {
+      if (formula !== null) {
+        unrecognized = true;
+        break;
+      }
+      formula = seg;
+      continue;
+    }
     unrecognized = true;
     break;
   }
-  if (unrecognized) return { title: rawTitle, style: null, rate: null };
-  return { title: head, style, rate };
+  if (unrecognized) return { title: rawTitle, style: null, rate: null, formula: null };
+  return { title: head, style, rate, formula };
 };
 
 /** 档位 → 兜底需求值（AI 未标注时按风险档位推导，供骰子判定。难度制：数字 = 达成
@@ -140,6 +153,58 @@ export const resolveOptionSuccessRate = (text: string): number | null => {
   if (rate !== null) return rate;
   const style = parseOptionStyle(text);
   return style ? GRADE_FALLBACK_RATE[style] : null;
+};
+
+/** 骰式标注解析（v61，dice.allow_formula）：标题内竖线段含合法骰式（如 `2d6+3`）时，
+ *  返回 {formula, rate} —— rate 为 0-100 难度代理（显式需求值段或档位兜底，需有其一）。
+ *  无骰式段 / 无难度代理 / 段非法 → 返回 null（调用方回退既有解析路径，不改默认行为）。 */
+export const parseOptionDice = (text: string): { formula: string; rate: number } | null => {
+  const m = text.match(OPTION_TYPE_BRACKET_RE);
+  if (!m) return null;
+  const parts = m[1].replace(/"/g, '').split('|');
+  let formula: string | null = null;
+  let rate: number | null = null;
+  let grade: OptionStyleGrade | null = null;
+  let bad = false;
+  for (let i = 1; i < parts.length; i++) {
+    const seg = parts[i].replace(/"/g, '').trim();
+    if (seg === '') {
+      bad = true;
+      break;
+    }
+    if (isDiceFormula(seg)) {
+      if (formula) {
+        bad = true;
+        break;
+      }
+      formula = seg;
+      continue;
+    }
+    const gradeV = STYLE_GRADE_WORDS[seg];
+    if (gradeV) {
+      if (grade) {
+        bad = true;
+        break;
+      }
+      grade = gradeV;
+      continue;
+    }
+    const parsedRate = parseRateSegment(seg);
+    if (parsedRate !== null) {
+      if (rate !== null) {
+        bad = true;
+        break;
+      }
+      rate = parsedRate;
+      continue;
+    }
+    bad = true;
+    break;
+  }
+  if (bad || !formula) return null;
+  // 难度代理：显式需求值优先，否则档位兜底；都没有就不当作骰式判定（返回 null）
+  const proxy = rate !== null ? rate : grade ? GRADE_FALLBACK_RATE[grade] : null;
+  return proxy === null ? null : { formula, rate: proxy };
 };
 
 export const parseOptionContent = (text: string): string => {

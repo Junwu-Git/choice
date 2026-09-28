@@ -4,11 +4,22 @@
 // 仅把「扁平 9 tab」重组为「4 页 × 子区」。
 
 /** 一级页 id（导航栏胶囊） */
-export type PageId = 'content' | 'generation' | 'stats' | 'system';
+export type PageId = 'content' | 'generation' | 'stats' | 'cards' | 'system';
 
 /** 子区 id（= 旧 TabId；引导与信号键不变） */
 export type TabId =
-  'pool' | 'generation' | 'prompt' | 'api' | 'worldinfo' | 'filter' | 'stats' | 'appearance' | 'debug';
+  | 'pool'
+  | 'generation'
+  | 'prompt'
+  | 'api'
+  | 'worldinfo'
+  | 'filter'
+  | 'stats'
+  | 'library'
+  | 'deck'
+  | 'shop'
+  | 'appearance'
+  | 'debug';
 
 interface SubAreaDefinition {
   id: TabId;
@@ -50,6 +61,16 @@ export const PAGES: PageDefinition[] = [
     label: '统计',
     icon: 'fa-solid fa-ranking-star',
     subAreas: [{ id: 'stats', label: '统计', icon: 'fa-solid fa-ranking-star' }],
+  },
+  {
+    id: 'cards',
+    label: '卡牌',
+    icon: 'fa-solid fa-chess-knight',
+    subAreas: [
+      { id: 'library', label: '卡库', icon: 'fa-solid fa-layer-group' },
+      { id: 'deck', label: '卡组', icon: 'fa-solid fa-table-cells' },
+      { id: 'shop', label: '兑换与任务', icon: 'fa-solid fa-coins' },
+    ],
   },
   {
     id: 'system',
