@@ -73,8 +73,7 @@ function effectLabel(e: CardEffect): string {
     case 'crit_window':
       return `彩蛋±${e.success_delta}/${e.fail_delta}`;
     case 'outcome_convert': {
-      const to =
-        e.to === 'success' ? '成功' : e.to === 'crit_success' ? '大成功' : e.to;
+      const to = e.to === 'success' ? '成功' : e.to === 'crit_success' ? '大成功' : e.to;
       return `${e.from}→${to}`;
     }
     case 'reroll':

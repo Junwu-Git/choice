@@ -4,7 +4,9 @@
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-box-open"></i> {{ t`收藏进度` }}</h4>
       <div class="choice-lib-progress">
-        <span class="choice-lib-stat">{{ t`已收集` }} <b>{{ ownedCount }}/{{ ownableCount }}</b></span>
+        <span class="choice-lib-stat"
+          >{{ t`已收集` }} <b>{{ ownedCount }}/{{ ownableCount }}</b></span
+        >
         <span v-for="r in CARD_STAR_ORDER" :key="r" class="choice-lib-stat" :title="CARD_STAR_LABEL[r]">
           <i class="fa-solid fa-sort-down" :style="{ color: CARD_STAR_COLOR[r] }"></i>{{ starCounts[r] }}
         </span>
@@ -21,7 +23,9 @@
             <template v-if="ownedMap[c.id]">
               <span class="choice-lib-owned-chip">Lv.{{ ownedMap[c.id].level }}</span>
               <span class="choice-lib-durability" :class="{ broken: isCardBroken(ownedMap[c.id]) }">
-                <i class="fa-solid fa-shield-half"></i>{{ ownedMap[c.id].durability }}/{{ ownedMap[c.id].max_durability }}
+                <i class="fa-solid fa-shield-half"></i>{{ ownedMap[c.id].durability }}/{{
+                  ownedMap[c.id].max_durability
+                }}
               </span>
               <span v-if="isCardBroken(ownedMap[c.id])" class="choice-lib-broken">{{ t`损坏` }}</span>
               <span v-else class="choice-lib-triggers" :title="t`触发次数`">

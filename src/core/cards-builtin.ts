@@ -31,8 +31,15 @@ const builtin = (spec: BuiltinSpec): Card => ({
   source: 'builtin',
 });
 
-const R = (kind: Card['trigger']['kind'], value: Partial<Card['trigger']> = {}): Card['trigger'] =>
-  ({ kind, typeValue: '', grade: null, min: 0, max: 0, outcome: null, ...value });
+const R = (kind: Card['trigger']['kind'], value: Partial<Card['trigger']> = {}): Card['trigger'] => ({
+  kind,
+  typeValue: '',
+  grade: null,
+  min: 0,
+  max: 0,
+  outcome: null,
+  ...value,
+});
 
 /** 内置卡库（只读常量）。导出为只读数组，UI 不可编辑。 */
 export const BUILTIN_CARDS: readonly Card[] = [

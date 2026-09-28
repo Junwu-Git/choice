@@ -3,9 +3,7 @@
     <div v-if="cardPack" class="choice-cardpack-overlay" @click.self="closeCardPack()">
       <div class="choice-cardpack-dialog">
         <div class="choice-cardpack-header">
-          <span class="choice-cardpack-title">
-            <i class="fa-solid fa-gift"></i> {{ t`开卡包` }}
-          </span>
+          <span class="choice-cardpack-title"> <i class="fa-solid fa-gift"></i> {{ t`开卡包` }} </span>
           <span v-if="cardPack.offer.pityGuaranteed" class="choice-cardpack-pity">
             <i class="fa-solid fa-shield-halved"></i>{{ t`保底已触发` }}
           </span>
@@ -14,7 +12,7 @@
         <p class="choice-cardpack-tip">{{ t`选 1 张纳入收藏；抽中已拥有/损坏卡将升级并修复耐久。` }}</p>
         <div class="choice-cardpack-cards">
           <button
-            v-for="(opt, i) in (cardPack?.offer.options ?? [])"
+            v-for="(opt, i) in cardPack?.offer.options ?? []"
             :key="opt.card.id"
             class="choice-cardpack-card"
             :class="`choice-card-star--${opt.card.star}`"

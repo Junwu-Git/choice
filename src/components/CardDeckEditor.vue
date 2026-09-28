@@ -10,12 +10,19 @@
       </p>
 
       <div v-if="equipped.length" class="choice-deck-slots">
-        <div v-for="e in equipped" :key="e.card.id" class="choice-deck-slot" :class="`choice-card-star--${e.card.star}`">
+        <div
+          v-for="e in equipped"
+          :key="e.card.id"
+          class="choice-deck-slot"
+          :class="`choice-card-star--${e.card.star}`"
+        >
           <CardBadge :card="e.card" />
           <div class="choice-deck-slot-owned">
             <span class="choice-lib-owned-chip">Lv.{{ ownedMap[e.card.id]?.level }}</span>
             <span class="choice-lib-durability">
-              <i class="fa-solid fa-shield-half"></i>{{ ownedMap[e.card.id]?.durability }}/{{ ownedMap[e.card.id]?.max_durability }}
+              <i class="fa-solid fa-shield-half"></i>{{ ownedMap[e.card.id]?.durability }}/{{
+                ownedMap[e.card.id]?.max_durability
+              }}
             </span>
           </div>
           <button class="choice-btn-sm" @click="onUnequip(e.card.id)">{{ t`卸下` }}</button>
@@ -30,9 +37,19 @@
     <ChoiceSectionCard title="可装备收藏" icon="fa-solid fa-layer-group">
       <p class="choice-deck-hint">{{ t`损坏的卡不可装备；灰色禁用项说明未满足同类/等级预算/格数限制。` }}</p>
       <div class="choice-deck-collection">
-        <div v-for="c in equipableCards" :key="c.id" class="choice-deck-col-card" :class="[`choice-card-star--${c.star}`, { disabled: !canEquip(c) }]">
+        <div
+          v-for="c in equipableCards"
+          :key="c.id"
+          class="choice-deck-col-card"
+          :class="[`choice-card-star--${c.star}`, { disabled: !canEquip(c) }]"
+        >
           <CardBadge :card="c" />
-          <button class="choice-btn-sm" :disabled="!canEquip(c)" :title="canEquip(c) ? '' : equipReason(c)" @click="onEquip(c.id)">
+          <button
+            class="choice-btn-sm"
+            :disabled="!canEquip(c)"
+            :title="canEquip(c) ? '' : equipReason(c)"
+            @click="onEquip(c.id)"
+          >
             {{ t`装备` }}
           </button>
         </div>
@@ -46,7 +63,14 @@
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import CardBadge from '@/components/CardBadge.vue';
-import { currentCardConfigId, equipCard, unequipCard, isCardBroken, resolveEquippedCards, type EquippedCard } from '@/core/cards';
+import {
+  currentCardConfigId,
+  equipCard,
+  unequipCard,
+  isCardBroken,
+  resolveEquippedCards,
+  type EquippedCard,
+} from '@/core/cards';
 import { CARD_STAR_BUDGET } from '@/core/cards-constraints';
 import toastr from 'toastr';
 import type { Card } from '@/type/settings';
@@ -85,8 +109,7 @@ const equipReason = (c: Card): string => {
   if (equippedTypes.value.has(c.type)) return t`同类卡最多装备 1 张`;
   if (equipped.value.length >= 5) return t`装备位已满（≤5）`;
   const max = CARD_STAR_BUDGET[c.star];
-  if (max !== undefined && (equippedStarCount.value[c.star] ?? 0) >= max)
-    return t`${c.star}星卡最多 ${max} 张`;
+  if (max !== undefined && (equippedStarCount.value[c.star] ?? 0) >= max) return t`${c.star}星卡最多 ${max} 张`;
   return '';
 };
 

@@ -558,7 +558,9 @@
         <span class="choice-stats-info" :title="cardHelp"><i class="fa-solid fa-circle-info"></i></span>
       </template>
       <p class="choice-stats-sub">
-        {{ t`幸运命中 ${cardStats.lucky_hits} · 开包 ${cardStats.packs_opened} · 获得卡 ${cardStats.cards_obtained} · 保底命中 ${cardStats.pity_epicplus_hits}` }}
+        {{
+          t`幸运命中 ${cardStats.lucky_hits} · 开包 ${cardStats.packs_opened} · 获得卡 ${cardStats.cards_obtained} · 保底命中 ${cardStats.pity_epicplus_hits}`
+        }}
       </p>
       <div v-if="cardStats.lucky_hits === 0 && cardStats.cards_obtained === 0" class="choice-empty-hint">
         {{ t`尚未触卡。开卡牌总开关后，判定击中幸运数可开卡包；卡触发继续下面的明细。` }}
@@ -566,18 +568,14 @@
       <template v-else>
         <div class="choice-stats-cards">
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--warning"
-              ><i class="fa-solid fa-star"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--warning"><i class="fa-solid fa-star"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`幸运命中` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.lucky_hits }}</div>
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--info"
-              ><i class="fa-solid fa-gift"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--info"><i class="fa-solid fa-gift"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`开包次数` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.packs_opened }}</div>
@@ -611,9 +609,7 @@
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--danger"
-              ><i class="fa-solid fa-minus"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-minus"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`行动币支出` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.currency_spent }}</div>
@@ -641,9 +637,9 @@
               <span class="choice-dice-history-text" :title="t.name">{{ t.name }}</span>
               <span class="choice-dice-history-nums"
                 ><b>{{ t.triggers }}</b
-                 ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
-                   CARD_STAR_LABEL[t.star]
-                 }}</span></span
+                ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
+                  CARD_STAR_LABEL[t.star]
+                }}</span></span
               >
             </li>
           </ol>

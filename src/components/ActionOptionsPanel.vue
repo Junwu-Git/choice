@@ -758,7 +758,11 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
     const staged = rollOptionDice(option.text);
     if (staged) {
-      rollResults.value = new Map(rollResults.value).set(key, { outcome: staged.outcome, margin: staged.margin, cards: staged.cards });
+      rollResults.value = new Map(rollResults.value).set(key, {
+        outcome: staged.outcome,
+        margin: staged.margin,
+        cards: staged.cards,
+      });
       stagedFull.value = new Map(stagedFull.value).set(key, staged);
       pendingApply.value = new Set(pendingApply.value).add(key);
       return; // 首掷只出示 ↻，不应用
@@ -806,7 +810,11 @@ const onReroll = (option: ChoiceOption, index: number) => {
   const full = rollOptionDice(option.text);
   if (!full) return;
   const key = keyOf(index);
-  rollResults.value = new Map(rollResults.value).set(key, { outcome: full.outcome, margin: full.margin, cards: full.cards });
+  rollResults.value = new Map(rollResults.value).set(key, {
+    outcome: full.outcome,
+    margin: full.margin,
+    cards: full.cards,
+  });
   stagedFull.value = new Map(stagedFull.value).set(key, full);
 };
 </script>

@@ -73,8 +73,7 @@ const mergeCardNarratives = (marker: string, lines: string[]): string => {
 };
 
 /** 无结局模板时为卡叙事单独包一条注释。 */
-const wrapCardNarratives = (lines: string[]): string =>
-  lines.length ? `<!--${lines.join('\n')}-->\n` : '';
+const wrapCardNarratives = (lines: string[]): string => (lines.length ? `<!--${lines.join('\n')}-->\n` : '');
 
 /** 按设置掷一次骰并判出结果（D100 或骰式）。无需求值/骰子关闭返回 null。纯判定、不应用、不记账。
  *  供 applyOptionBehavior 与 v61 就地重掷（rollOptionDice → stage → 确认应用）共用。

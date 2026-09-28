@@ -71,7 +71,8 @@ export async function generateCharacterPool(charId: string): Promise<void> {
   if (ch.data?.scenario) messages.push({ role: 'system', content: substituteParams(ch.data.scenario) });
   messages.push({
     role: 'user',
-    content: '请依据上述角色信息，为这个角色设计 4-8 张贴合其世界观的主题效果卡，输出 JSON 数组。若无法或不全生成，数量可以更少，但必须是合法的 JSON。',
+    content:
+      '请依据上述角色信息，为这个角色设计 4-8 张贴合其世界观的主题效果卡，输出 JSON 数组。若无法或不全生成，数量可以更少，但必须是合法的 JSON。',
   });
 
   try {

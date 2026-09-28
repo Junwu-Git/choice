@@ -20,11 +20,7 @@
 import { BUILTIN_CARDS } from '@/core/cards-builtin';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import {
-  parseOptionStyle,
-  parseOptionType,
-  type OptionStyleGrade,
-} from '@/util/option-format';
+import { parseOptionStyle, parseOptionType, type OptionStyleGrade } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import {
   clampEffect,
@@ -44,15 +40,7 @@ import {
   type CardDailyKey,
 } from '@/core/cards-constraints';
 import { diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@/core/dice';
-import type {
-  Card,
-  CardDeck,
-  CardEffect,
-  CardOwned,
-  CardStar,
-  CardTrigger,
-  GlobalSettings,
-} from '@/type/settings';
+import type { Card, CardDeck, CardEffect, CardOwned, CardStar, CardTrigger, GlobalSettings } from '@/type/settings';
 
 // ── 领域类型 ─────────────────────────────────────────────────────────────
 
@@ -461,7 +449,9 @@ function upgradeOrAcquire(s: GlobalSettings, card: Card, ownedBefore: boolean): 
       existing.level += 1;
     } else {
       // 满级后再重复：随机折回其他未满级卡（防溢出）
-      const candidates = Object.values(s.card_collection).filter(o => o.level < CARD_MAX_LEVEL && o.card_id !== card.id);
+      const candidates = Object.values(s.card_collection).filter(
+        o => o.level < CARD_MAX_LEVEL && o.card_id !== card.id,
+      );
       const target = candidates[Math.floor(Math.random() * candidates.length)];
       if (target) target.level += 1;
     }

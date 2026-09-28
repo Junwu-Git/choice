@@ -5,7 +5,9 @@
       <h4 class="choice-section-title"><i class="fa-solid fa-coins"></i> {{ t`行动币` }}</h4>
       <div class="choice-shop-balance">
         <span class="choice-shop-coins"><i class="fa-solid fa-coins"></i>{{ gs.settings.card_currency }}</span>
-        <span class="choice-shop-balance-hint">{{ t`由判定结局收支 + 分解重复高级卡获得，属全局进度，清空统计不清除。` }}</span>
+        <span class="choice-shop-balance-hint">{{
+          t`由判定结局收支 + 分解重复高级卡获得，属全局进度，清空统计不清除。`
+        }}</span>
       </div>
     </div>
 
@@ -79,7 +81,13 @@ import {
   currentCardConfigId,
 } from '@/core/cards';
 import { openCardPack } from '@/core/card-pack-state';
-import { CARD_DAILY_KEYS, CARD_DAILY_TARGETS, CARD_PRICE, CARD_PACK_PRICE, CARD_DISMANTLE } from '@/core/cards-constraints';
+import {
+  CARD_DAILY_KEYS,
+  CARD_DAILY_TARGETS,
+  CARD_PRICE,
+  CARD_PACK_PRICE,
+  CARD_DISMANTLE,
+} from '@/core/cards-constraints';
 import type { CardDailyKey } from '@/core/cards-constraints';
 import toastr from 'toastr';
 import type { Card, CardOwned, CardStar } from '@/type/settings';

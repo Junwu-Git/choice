@@ -187,9 +187,7 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
 }
 
 /** 装备位等级预算校验：按 CARD_STAR_BUDGET 限制各高星卡数量。返回 { ok, errors[] }。 */
-export function checkDeckBudget(
-  cards: Array<{ star: CardStar }>,
-): { ok: boolean; errors: string[] } {
+export function checkDeckBudget(cards: Array<{ star: CardStar }>): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
   for (const [star, max] of Object.entries(CARD_STAR_BUDGET)) {
     const n = cards.filter(c => c.star === star).length;
