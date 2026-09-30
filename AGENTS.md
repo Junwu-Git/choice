@@ -29,6 +29,8 @@ SillyTavern 第三方扩展，基于 `tavern_extension_template`。核心：单�
 
 **骰子判定**（`GlobalSettings.dice`，默认关）：AI 在标题标需求值（`[标题|档位|70]`），未标按档位兜底（保守 35/平衡 60/大胆 85）。点选项掷 D100：roll≥96 大成功 → roll≤5 大失败 → roll≥需求 成功 → 失败（彩蛋优先），**掷出 ≥ 需求才算成功、点数越大越好**。v61 增量（默认关）：`low_roll`（COC 反向：≤需求=成功）、`attr_dc_enabled`（角色属性驱动 DC，仅属性来源反向）、`allow_formula`（骰式 NdM）、`reroll_enabled`（就地重掷两步流）。判定方向抽象在 `src/core/dice.ts`（`judgeOutcome`/`DiceRollMode`/`diceMargin`）。判定影响 `buildDiceMarker` 包成 HTML 注释（成功/失败五档程度模板；send 直接发、fill 填入可编辑），聊天界面默认隐藏注释、AI 请求原样携带。需求值徽标 + 行内判定 chip（结局+差值、3s 淡出、内存态不持久化）在主面板与悬浮球同步实现——**判定 chip 的内存态逻辑两处各自实现，属既定并行模式，改动需两处同步**；判定不弹 toastr。
 
+**卡牌系统**（`GlobalSettings.card_*`，`card_enabled` 默认关）：判定管线叠加层，只在 `card_enabled=true` 且非骰式（`allow_formula`）路径生效（`resolveCardRoll`），关则零回归。4 类型槽（武器/法术/祝福/试炼，`CARD_SLOT_TYPES`）+ 星级预算（3★≤2/4★≤1/5★≤1）；效果分预掷（roll_bonus/demand_mod/crit_window）与后置（outcome_convert/reroll/narrative，卡叙事并入判定 HTML 注释）。卡为**永久收藏**（v66 起无耐久/等级，重复获得折算 `CARD_DUPLICATE_VALUE` 行动币）；经济单线：结局收支行动币（+5/+2/−1/−3）→ 收藏页 5 币开包 3 选 1，幸运数 100 也触发开包；保底/商店/每日任务/分解/血战/副本/技能卡/诅咒均已在 v66 瘦身裁撤，勿回填。角色主题池由 AI 懒生成（`cards-ai.ts`）入 `card_definitions` 混合掉落。防刷：同楼层（message+swipe）只结算一次卡牌经济（`cardSettled`）。点选前「可触发」空心 chip（`previewTriggeredCards`，只匹配 type/grade/demand 掷前可知触发）与点选后已触发实心 chip 同属主面板/悬浮球双渲染并行模式，改动需两处同步。
+
 ## UI 要点（现状，可改）
 
 - 当前主视觉 `--choice-primary` 蓝色系 + 克制卡片化；移动端优先（先在 ~380px 验证）。改版以用户示例为准。
@@ -40,15 +42,15 @@ SillyTavern 第三方扩展，基于 `tavern_extension_template`。核心：单�
 
 ## 目录
 
-- `src/core/`：生成器 `generator.ts`、抽取 `pool-resolver.ts`、去重 `option-dedup.ts`、消息持久化 `options-store.ts`、统计/建议/撤销 `stats.ts`、L1 归因 `ai-attribution.ts`、L2 理由 `ai-analysis.ts`、骰子 `dice.ts`/`dice-expression.ts`/`attribute-dc.ts`、血量对轰 `battle.ts`（v63 副本/Boss/技能卡/临时状态）、浮动/入口/面板 `floating-state.ts`/`entry-points.ts`/`panel-mount.ts`、副 API `api-client.ts`/`api-presets.ts`、引导 `onboarding.ts`/`guide-content.ts`、绑定 `bindings.ts`、常量 `constants.ts`，以及可选桥接 `baibai/ejs/shujuku/st-character/st-regex-source`。
-- `src/store/`：`global-settings`/`character-settings`/`chat-settings`/`pool-selector`/`prompt-config-selector`/`panel-state`。设置 schema 唯一来源 `src/type/settings.ts`（当前 65）。
-- `src/components/`：主面板 `ActionOptionsPanel`；悬浮 `FloatingBubble/Root/Settings/ContextMenu/Options`；9 个设置编辑器（`PoolEditor`/`GenerationSettings`/`PromptEditor`/`ApiEditor`/`WorldInfoEditor`/`FilterEditor`/`Statistics`/`AppearanceSettings`/`DebugSettings`）；条目池/导入/引导/通用弹窗若干——改组件前先翻目录确认。
+- `src/core/`：生成器 `generator.ts`、抽取 `pool-resolver.ts`、去重 `option-dedup.ts`、消息持久化 `options-store.ts`、统计/建议/撤销 `stats.ts`、L1 归因 `ai-attribution.ts`、L2 理由 `ai-analysis.ts`、骰子 `dice.ts`/`dice-expression.ts`/`attribute-dc.ts`、卡牌 `cards.ts`/`cards-builtin.ts`/`cards-constraints.ts`/`cards-meta.ts`/`cards-ai.ts`/`card-pack-state.ts`、浮动/入口/面板 `floating-state.ts`/`entry-points.ts`/`panel-mount.ts`、副 API `api-client.ts`/`api-presets.ts`、引导 `onboarding.ts`/`guide-content.ts`、绑定 `bindings.ts`、常量 `constants.ts`，以及可选桥接 `baibai/ejs/shujuku/st-character/st-regex-source`。
+- `src/store/`：`global-settings`/`character-settings`/`chat-settings`/`pool-selector`/`prompt-config-selector`/`panel-state`。设置 schema 唯一来源 `src/type/settings.ts`（当前 66）。
+- `src/components/`：主面板 `ActionOptionsPanel`；悬浮 `FloatingBubble/Root/Settings/ContextMenu/Options`；9 个设置编辑器（`PoolEditor`/`GenerationSettings`/`PromptEditor`/`ApiEditor`/`WorldInfoEditor`/`FilterEditor`/`Statistics`/`AppearanceSettings`/`DebugSettings`）；卡牌 `CardPoolEditor`（卡牌页壳）/`CardDeckEditor`/`CardSlotPicker`/`CardLibrary`/`CardCollection`/`CardFace`/`CardPackDialog`；条目池/导入/引导/通用弹窗若干——改组件前先翻目录确认。
 - `src/util/`：选项解析 `option-format.ts` + 点击行为 `option-action.ts` 是主面板与悬浮球共用共享层；`character-bindings.ts`（`getBoundCharacters` + `persistCharacter`）；时间格式化/条目预览等。
 - 根级：`src/index.ts`、`src/pinia.ts`、`src/theme.css`、`src/global.css`。
 
 ## 新手引导
 
-内容单一来源 `src/core/guide-content.ts`（`GUIDE_CHAPTERS` 7 章 + `PAGE_HINTS` 9 子区 + `DIALOG_HINTS`）。`quick-start` 为唯一默认路径，另有 6 进阶章。题首 🎓/❓ 打开章节菜单 / 结构化 `PAGE_HINTS`；唯一受控 `v-html` 例外是 `OnboardingWizard` 步骤富文本（内容 100% 来自编译期静态脚本，勿传用户可控数据）。`data-tour` 锚点分散在组件模板，增删向导步骤时同步检查。`docs/` 下无设计参考文档，当前源码是唯一标准。
+内容单一来源 `src/core/guide-content.ts`（`GUIDE_CHAPTERS` 7 章 + `PAGE_HINTS` 8 子区 + `DIALOG_HINTS`）。`quick-start` 为唯一默认路径，另有 6 进阶章。题首 🎓/❓ 打开章节菜单 / 结构化 `PAGE_HINTS`；唯一受控 `v-html` 例外是 `OnboardingWizard` 步骤富文本（内容 100% 来自编译期静态脚本，勿传用户可控数据）。`data-tour` 锚点分散在组件模板，增删向导步骤时同步检查。`docs/` 下无设计参考文档，当前源码是唯一标准。
 
 ## 条目池模型与抽取算法
 
