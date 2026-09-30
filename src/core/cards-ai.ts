@@ -5,18 +5,18 @@
  *
  * 设计要点：
  *  - 懒生成、fire-and-forget（由 cards.ts ensureCharacterPool 触发）；该次掉落回退纯内置池。
- *  - 池生成后 generated=true 固定不再重生成，但池内卡反复掉落 → 升级/修耐久（可重复获得）。
+ *  - 池生成后 generated=true 固定不再重生成，但池内卡反复掉落（可重复获得折算）。
  *  - 批内每张过 validateCard 校验 + clampEffect 硬限：数值超限/字段非法/叙事超长 → 该张作废；
  *    整批至少保留合法张才置 generated=true；全作废则不置位（下次掉落重试，避免拉低掉落体验）。
  *  - 未配置 API / 无当前角色 / 解析失败 / 断网 → 静默回退纯内置池，不影响内置抽卡。
- *  - 合法张入 card_collection（source='character'、按角色池归组、耐久按功能×星级初始化）。
+ *  - 合法张入 card_collection（source='character'、按角色池归组）。
  */
 
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { substituteParams } from '@sillytavern/script';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { getStCharacter } from '@/core/st-character';
-import { clampEffect, cardMaxDurability, validateCard } from '@/core/cards-constraints';
+import { clampEffect, validateCard } from '@/core/cards-constraints';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { Card } from '@/type/settings';
 
@@ -93,19 +93,14 @@ export async function generateCharacterPool(charId: string): Promise<void> {
       legal.push(candidate);
     }
     if (legal.length === 0) return; // 全作废：不置位，下次掉落重试
-    // 合法的角色主题卡入册：定义 + 持有（source=character、按角色池归组、耐久初始化）
+    // 合法的角色主题卡入册：定义 + 持有（source=character、按角色池归组）
     for (const card of legal) {
       gs.settings.card_definitions[card.id] = card;
-      const owned = gs.settings.card_collection[card.id];
-      if (!owned) {
-        const max = cardMaxDurability(card.type, card.star, 1);
+      if (!gs.settings.card_collection[card.id]) {
         gs.settings.card_collection[card.id] = {
           card_id: card.id,
-          level: 1,
           obtained_at: Date.now(),
           trigger_count: 0,
-          durability: max,
-          max_durability: max,
           source: 'character',
         };
       }

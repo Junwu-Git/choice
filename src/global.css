@@ -872,42 +872,22 @@
   color: var(--choice-color-info);
 }
 
-/* v62 卡牌：星级语义色（卡库/卡组/商店/开包弹窗共用）。
-   左缘色条 = 星级色，与 cards-meta.ts 的 CARD_STAR_COLOR 语义一致（勿单边漂移） */
+/* v62 卡牌：星级专用色板（判定行内触发卡 chip 的左缘色条）。
+   取 theme.css 的 --choice-star-N（卡面 CardFace 自用同一色板，经自身注入 var，不依赖此处左缘单条） */
 .choice-card-star--1 {
-  border-left-color: var(--choice-rate-low);
+  border-left-color: var(--choice-star-1);
 }
 .choice-card-star--2 {
-  border-left-color: var(--choice-primary);
+  border-left-color: var(--choice-star-2);
 }
 .choice-card-star--3 {
-  border-left-color: var(--choice-color-info);
+  border-left-color: var(--choice-star-3);
 }
 .choice-card-star--4 {
-  border-left-color: var(--choice-warning);
+  border-left-color: var(--choice-star-4);
 }
 .choice-card-star--5 {
-  border-left-color: var(--choice-color-error);
-}
-.choice-card-star--1 .choice-cardpack-card-star,
-.choice-card-star--1 .cbadge-star {
-  color: var(--choice-rate-low);
-}
-.choice-card-star--2 .choice-cardpack-card-star,
-.choice-card-star--2 .cbadge-star {
-  color: var(--choice-primary);
-}
-.choice-card-star--3 .choice-cardpack-card-star,
-.choice-card-star--3 .cbadge-star {
-  color: var(--choice-color-info);
-}
-.choice-card-star--4 .choice-cardpack-card-star,
-.choice-card-star--4 .cbadge-star {
-  color: var(--choice-warning);
-}
-.choice-card-star--5 .choice-cardpack-card-star,
-.choice-card-star--5 .cbadge-star {
-  color: var(--choice-color-error);
+  border-left-color: var(--choice-star-5);
 }
 
 /* v62 判定行内触发卡徽标（主面板/悬浮球共用）：chip 旁显示触发卡的图徽/名称 */

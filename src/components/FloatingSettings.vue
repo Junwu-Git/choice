@@ -80,9 +80,13 @@
           <FilterEditor v-else-if="activeSubArea === 'filter'" />
           <Statistics v-else-if="activeSubArea === 'stats'" />
           <CardPoolEditor
-            v-else-if="activeSubArea === 'library' || activeSubArea === 'deck' || activeSubArea === 'shop'"
-            :area="cardArea"
-          />
+              v-else-if="
+                activeSubArea === 'library' ||
+                activeSubArea === 'deck' ||
+                activeSubArea === 'collection'
+              "
+              :area="cardArea"
+            />
           <AppearanceSettings v-else-if="activeSubArea === 'appearance'" />
           <DebugSettings v-else-if="activeSubArea === 'debug'" />
         </div>
@@ -137,12 +141,14 @@ const currentPage = computed(() => PAGES.find(p => p.id === activePage.value)!);
 // 某页当前可见子区：仅过滤不排序，展示顺序跟随 page.subAreas
 const displaySubAreas = computed(() => visibleSubAreas(currentPage.value, advanced.value));
 
-// 卡牌页子区（library/deck/shop）窄化：v-else-if 已保证 activeSubArea 属卡牌子区，
+// 卡牌页子区（library/deck/collection）窄化：v-else-if 已保证 activeSubArea 属卡牌子区，
 // 此处收窄类型供 CardPoolEditor 的 area prop 复用（避免在模板里写 TS as 联合导致
 // Vue 过滤器解析歧义）
-const cardArea = computed<'library' | 'deck' | 'shop'>(() => {
+const cardArea = computed<'library' | 'deck' | 'collection'>(() => {
   const a = activeSubArea.value;
-  return a === 'deck' ? 'deck' : a === 'shop' ? 'shop' : 'library';
+  if (a === 'deck') return 'deck';
+  if (a === 'collection') return 'collection';
+  return 'library';
 });
 
 // 切一级页：默认落到该页首个可见子区（简化模式下落到唯一基础子区）

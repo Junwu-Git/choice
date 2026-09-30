@@ -9,7 +9,7 @@
 
 import type { CardOffer } from '@/core/cards';
 
-export type PackVia = 'lucky' | 'daily' | 'shop';
+export type PackVia = 'lucky' | 'shop';
 
 /** 当前待开的卡包（null = 无弹窗）。同一时间仅一个；via 决定统计埋点（每日领奖计数等）。 */
 export const cardPack = ref<{ offer: CardOffer; via: PackVia } | null>(null);

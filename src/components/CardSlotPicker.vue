@@ -8,7 +8,7 @@
           </span>
           <button class="choice-slotpicker-close" :title="t`关闭`" @click="emit('close')">&times;</button>
         </div>
-        <p class="choice-slotpicker-tip">{{ t`仅列出该类型已拥有且未损坏的卡；星级预算超限项置灰。` }}</p>
+        <p class="choice-slotpicker-tip">{{ t`仅列出该类型已拥有的卡；星级预算超限项置灰。` }}</p>
 
         <div v-if="candidates.length" class="choice-slotpicker-cards">
           <div v-for="c in candidates" :key="c.id" class="choice-slotpicker-card">
@@ -30,7 +30,7 @@
         </div>
         <div v-else class="choice-empty">
           <i class="fa-solid fa-layer-group"></i>
-          <span>{{ t`该类型暂无可用卡——通过开包/商店/幸运数掉落获得后即可装备。` }}</span>
+          <span>{{ t`该类型暂无可用卡——通过开卡包/幸运数掉落获得后即可装备。` }}</span>
         </div>
 
         <div class="choice-slotpicker-footer">
@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { canEquipInDeck, cardDefById, equipCard, isCardBroken, resolveDeckSlots } from '@/core/cards';
+import { canEquipInDeck, cardDefById, equipCard, resolveDeckSlots } from '@/core/cards';
 import { CARD_TYPE_ICON, CARD_TYPE_LABEL } from '@/core/cards-meta';
 import toastr from 'toastr';
 import type { Card, CardType } from '@/type/settings';
@@ -63,7 +63,6 @@ const isCurrent = (c: Card): boolean => c.id === currentId.value;
 /** 该类型已拥有的卡。用 cardDefById 解析（含内置卡；card_definitions 只存角色池卡） */
 const candidates = computed<Card[]>(() =>
   Object.values(gs.settings.card_collection)
-    .filter(o => !isCardBroken(o))
     .map(o => cardDefById(o.card_id))
     .filter((d): d is Card => !!d && d.type === props.type),
 );

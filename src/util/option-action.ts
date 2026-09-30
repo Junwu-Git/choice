@@ -8,7 +8,7 @@ import { getStCharacter } from '@/core/st-character';
 import { recordOptionSelected, recordDiceRoll } from '@/core/stats';
 import { rollDice, buildDiceMarker, diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@/core/dice';
 import { rollDiceExpression, mapProxyToRange } from '@/core/dice-expression';
-import { resolveCardRoll, commitCardRun, bumpDailyTask, type CardResolution } from '@/core/cards';
+import { resolveCardRoll, commitCardRun, type CardResolution } from '@/core/cards';
 import type { DiceSettings } from '@/type/settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
@@ -264,8 +264,6 @@ export async function applyOptionBehavior(
   // 供统计页展示与归因种子——判定注释只进发送文本，不污染统计口径。
   if ((opts?.view ?? 'options') === 'options') {
     recordOptionSelected(opts?.poolEntryIds ?? [], opts?.generationId, content, opts?.matchedEntryId, opts?.scopeId);
-    // v62 每日任务「点选选项」进度：复用本路径埋点（card_enabled 开才累计）
-    bumpDailyTask(useGlobalSettingsStore(), 'select');
   }
   if (behavior === 'send') {
     // 发送：输入框此刻短暂包含「隐形注释+正文」，发送后酒馆清空，用户不可感知。
@@ -288,10 +286,8 @@ export async function applyOptionBehavior(
   // 最近判定历史（含选项正文摘要），就地重掷只记最终应用的这一次。
   if (diceResult) {
     recordDiceRoll(diceResult.outcome, diceResult.roll, diceResult.rate, content);
-    // v62 每日任务「做一次判定」进度：复用 recordDiceRoll 路径埋点（card_enabled 开才累计）
-    bumpDailyTask(useGlobalSettingsStore(), 'judge');
-    // v62 卡牌落库（真正应用后才走）：扣触发卡耐久、按结局收支行动币、幸运命中产开卡包
-    // offer。就地重掷两步流的预览（rollOptionDice）不 commit，只有这次确认应用才提交。
+    // v62 卡牌落库（真正应用后才走）：按结局收支行动币、幸运命中产开卡包 offer。
+    // 就地重掷两步流的预览（rollOptionDice）不 commit，只有这次确认应用才提交。
     // v63 防刷：只有首次结算带 cards（该楼层走卡路径）；首次提交前标记楼层已结算，
     // 此后同一层判定 cards 为空、天然不落经济——「单层最多结算一次」。
     if (diceResult.cards) {

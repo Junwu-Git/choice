@@ -1,18 +1,14 @@
 /**
- * 卡牌系统三层约束与常量（单一事实来源，防逆天 / 防 AI 瞎写）。
+ * 卡牌系统约束与常量（单一事实来源，防逆天 / 防 AI 瞎写）。
  *
- * 三层约束：
+ * 约束：
  *  ① 每项效果硬设上下限（骰值修正 / 需求修正 / 彩蛋窗口 / 叙事字数）；
  *  ② AI 角色卡生成超限或字段非法 → validateCard 拒绝（调用方提示修改/重生成）；
  * ③ 每个 config 卡组星级预算（高星卡限装：3星≤2 / 4星≤1 / 5星≤1），checkDeckBudget 校验装备位。
  *
- * 耐久度（攒卡乐趣）：`耐久 = round(功能基础值 × 星级系数 × 等级成长)`——功能基础值
- * 区分效果定位（武器/骰值·重掷最短、法术/需求·转化中等、祝福/彩蛋·叙事最长、
- * 试炼/综合强卡最短但最强），星级系数 1星1 / 2星1.2 / 3星1.4 / 4星1.6 / 5星1.8。
- * 同类「越强越脆」与「越稀有越耐」并存；重复卡 = 升级 + 修复耐久到满。
- *
- * 货币「行动币」：结局收支 + 分解重复高级卡 + 商店定价全部收敛在这张表，量级与
- * 「每次只给几个」匹配——攒几次判定才够买一张。
+ * 货币「行动币」：结局收支 + 重复卡折算 + 卡包定价全部收敛在这张表，量级与
+ * 「每次只给几个」匹配——攒几次判定才够开一包。卡为永久收藏（无耐久/等级），
+ * 重复获得折算 CARD_DUPLICATE_VALUE 行动币。
  */
 
 import type { Card, CardEffect, CardStar, CardType } from '@/type/settings';
@@ -30,8 +26,6 @@ export const CARD_CRIT_WINDOW_LIMIT = 5;
 export const CARD_NARRATIVE_CHARS_LIMIT = 40;
 /** 强制重掷 / 结局转化次数恒为 1（效果集里单次语义，不做可累加次数） */
 export const CARD_EFFECT_COUNT_LIMIT = 1;
-/** 卡最高等级（满级后重复卡随机折回其他未满级卡） */
-export const CARD_MAX_LEVEL = 5;
 
 // ── 等级预算（装备格内强卡上限，防叠爆） ────────────────────────────────
 
@@ -46,41 +40,8 @@ export const CARD_STAR_BUDGET: Readonly<Partial<Record<CardStar, number>>> = {
  *  CardDeck.slots 恒定按此顺序规整为 4 条（card_id='' 表示空槽）。 */
 export const CARD_SLOT_TYPES: readonly CardType[] = ['weapon', 'spell', 'blessing', 'trial'];
 
-// ── 耐久公式（功能基础值 × 星级系数 × 等级成长） ──────────────────────
-
-/** 功能基础值（按类型）：武器最短 / 法术中等 / 祝福最长 / 试炼最短但最强 */
-export const CARD_DURABILITY_BASE: Readonly<Record<CardType, number>> = {
-  weapon: 3,
-  spell: 5,
-  blessing: 8,
-  trial: 2,
-};
-
-/** 星级系数：1星1 / 2星1.2 / 3星1.4 / 4星1.6 / 5星1.8（越稀有越耐） */
-export const CARD_STAR_COEF: Readonly<Record<CardStar, number>> = {
-  '1': 1,
-  '2': 1.2,
-  '3': 1.4,
-  '4': 1.6,
-  '5': 1.8,
-};
-
-/** 星级 → 耐久上限公式 */
-export function cardMaxDurability(type: CardType, star: CardStar, level: number): number {
-  const base = CARD_DURABILITY_BASE[type];
-  const coef = CARD_STAR_COEF[star];
-  const lv = Math.max(1, Math.round(level));
-  const levelMult = 1 + (lv - 1) * CARD_LEVEL_DURABILITY_GROWTH;
-  return Math.max(1, Math.round(base * coef * levelMult));
-}
-
-/** 每升一级耐久上限的成长比例（1 + (level-1)*成长） */
-export const CARD_LEVEL_DURABILITY_GROWTH = 0.2;
-
-// ── 连抽保底 ─────────────────────────────────────────────────────────────
-
-/** 连续抽卡未出 3 星+ 的保底阈值（抽次），达阈值保底轮必含 3 星+ */
-export const CARD_PITY_SOFT = 30;
+// ── 耐久公式（v66 已删除） ─────────────────────────────────────────────
+// 卡为永久收藏：无耐久/等级机制。保留本节注释锚点说明语义变更，防误回填。
 
 // ── 行动币收支表（量级稀有，每次只给几个） ───────────────────────────────
 
@@ -92,23 +53,16 @@ export const CARD_OUTCOME_CURRENCY: Readonly<Record<DiceOutcome, number>> = {
   crit_fail: -3,
 };
 
-/** 分解收益（v64 起任意卡可分解，整卡移除换行动币）：按星级定价，低星小额、高星高额。 */
-export const CARD_DISMANTLE: Readonly<Record<CardStar, number>> = {
+/** 重复获得折算行动币（开卡包 3 选 1 选到已拥有卡时发放；低于原分解价防刷） */
+export const CARD_DUPLICATE_VALUE: Readonly<Record<CardStar, number>> = {
   '1': 1,
   '2': 2,
-  '3': 6,
-  '4': 10,
-  '5': 18,
+  '3': 3,
+  '4': 5,
+  '5': 8,
 };
 
-/** 商店定向内置卡定价（已拥有 → 升级+修耐久）；卡包恒定 5 行动币 */
-export const CARD_PRICE: Readonly<Record<CardStar, number>> = {
-  '1': 2,
-  '2': 4,
-  '3': 8,
-  '4': 15,
-  '5': 25,
-};
+/** 卡包恒定 5 行动币 */
 export const CARD_PACK_PRICE = 5;
 
 /** 幸运数（固定彩蛋，非玩家参数）：判定 D100 恰中本数 → 触发「开卡包」3 选 1。
@@ -136,17 +90,6 @@ export const isHighStar = (star: CardStar): boolean => Number(star) >= 3;
 export const CARD_TYPE_FULL_STARS: CardStar[] = ['1', '2', '3', '4', '5'];
 /** 收藏总数里程碑：累计拥有达到该数即一性触发庆祝（键 = `collect_<n>`）。 */
 export const CARD_TROPHY_COLLECT_MILESTONES: readonly number[] = [10, 20];
-
-// ── 每日任务达标阈值（生成/判定/点选） ───────────────────────────────────
-
-/** 每日任务键 → 当日达标计数。键固定，bumpDailyTask 钩子按键累计 */
-export const CARD_DAILY_KEYS = ['generate', 'judge', 'select'] as const;
-export type CardDailyKey = (typeof CARD_DAILY_KEYS)[number];
-export const CARD_DAILY_TARGETS: Readonly<Record<CardDailyKey, number>> = {
-  generate: 1,
-  judge: 10,
-  select: 8,
-};
 
 // ── 效果 clamp（数值先经这里再进判定，防越权） ───────────────────────────
 

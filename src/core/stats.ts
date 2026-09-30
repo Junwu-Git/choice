@@ -339,24 +339,8 @@ export function recordCardsObtained(): void {
   s.updated_at = Date.now();
 }
 
-/** 记录一次保底命中（抽到史诗/传说并重置保底）。 */
-export function recordPityHit(): void {
-  if (!useGlobalSettingsStore().settings.stats_enabled) return;
-  const s = cardStats();
-  s.pity_epicplus_hits += 1;
-  s.updated_at = Date.now();
-}
-
-/** 记录行动币获得（分解收益等，不在骰子结局收支内）。 */
-export function recordCurrencyEarned(amount: number): void {
-  if (!useGlobalSettingsStore().settings.stats_enabled || amount <= 0) return;
-  const s = cardStats();
-  s.currency_earned += amount;
-  s.updated_at = Date.now();
-}
-
 /** 记录骰子结局收支（大成功+5/成功+2/失败-1/大失败-3）：正向记入 earned 与 by_outcome；
- *  负向（损失）只体现在余额，不在 stats 记支出（支出专指商店消费）。 */
+ *  负向（损失）只体现在余额，不在 stats 记支出（支出专指开卡包消费）。 */
 export function recordCurrencyOutcome(delta: number): void {
   if (!useGlobalSettingsStore().settings.stats_enabled || delta <= 0) return;
   const s = cardStats();
@@ -366,19 +350,11 @@ export function recordCurrencyOutcome(delta: number): void {
   s.updated_at = Date.now();
 }
 
-/** 记录行动币消费（商店定向卡/卡包）。 */
+/** 记录行动币消费（开卡包）。 */
 export function recordCurrencySpent(amount: number): void {
   if (!useGlobalSettingsStore().settings.stats_enabled || amount <= 0) return;
   const s = cardStats();
   s.currency_spent += amount;
-  s.updated_at = Date.now();
-}
-
-/** 记录每日任务领奖次数。 */
-export function recordDailyReward(): void {
-  if (!useGlobalSettingsStore().settings.stats_enabled) return;
-  const s = cardStats();
-  s.daily_rewards_claimed += 1;
   s.updated_at = Date.now();
 }
 

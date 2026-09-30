@@ -28,7 +28,6 @@ import {
   type ChoiceOption,
 } from '@/core/options-store';
 import { recordOptionsGenerated, NONE_SCOPE } from '@/core/stats';
-import { bumpDailyTask } from '@/core/cards';
 import { enqueueAttributionAnalysis } from '@/core/ai-attribution';
 import type {
   ChatSettings,
@@ -1100,8 +1099,6 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // gid 写入窗口记录供命中回写 hit，count 由 options.length 推导期望基线；
     // scopeId 传入生成时维度（与 generation.scopeId 同源），统计层不再二次解析
     recordOptionsGenerated(options, poolEntryIds, gid, scopeId);
-    // v62 每日任务「生成一次选项」进度：复用生成成功路径埋点（card_enabled 开才累计）
-    bumpDailyTask(useGlobalSettingsStore(), 'generate');
     // L1 AI 归因增强：生成成功后异步入队（fire-and-forget，不进关键路径）。开关关/无 API
     // 时 enqueue 内部 no-op；失败静默保留 Dice 结果——主体功能对 AI 零依赖。
     // allPrefixMatched=true 时整轮前缀高置信命中，enqueue 直接跳过（省一次外部请求）。

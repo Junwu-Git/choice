@@ -23,5 +23,8 @@ screenshot_verify.png
 .kilo/
 .zcode/
 .vscode/
+
+# Mimosa 安全扫描插件的运行时 hook 状态（基线快照），非项目产物
+.mimosa/
 tailwind.config.js
 postcss.config.js

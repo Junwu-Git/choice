@@ -410,6 +410,8 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     generationId: panelStore.currentGeneration?.id,
     matchedEntryId: option.matchedEntryId,
     scopeId: panelStore.currentGeneration?.scopeId,
+    messageId: panelStore.messageId ?? undefined,
+    swipeId: panelStore.swipeId,
     ...(preRolled ? { preRolled } : {}),
   });
   // 行内判定 chip（v57 骰子结果：结局+差值，返回值非 null = 本次真的掷了骰）
@@ -469,7 +471,9 @@ const popoverX = computed(() => {
   if (right + popoverWidth.value <= window.innerWidth) {
     return right;
   }
-  return Math.max(8, bubbleX.value - popoverWidth.value - POPOVER_GAP);
+  // 视口缩窄（旋转屏幕/改窗口）后气泡可能是越界旧位置，左翻后还要钳上界，否则右缘出屏
+  const left = Math.max(8, bubbleX.value - popoverWidth.value - POPOVER_GAP);
+  return Math.min(left, Math.max(8, window.innerWidth - popoverWidth.value - POPOVER_GAP));
 });
 
 const popoverY = computed(() => {

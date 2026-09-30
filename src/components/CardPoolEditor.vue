@@ -20,7 +20,6 @@
     <CardLibrary v-if="area === 'library'" />
     <CardCollection v-else-if="area === 'collection'" />
     <CardDeckEditor v-else-if="area === 'deck'" />
-    <CardShop v-else-if="area === 'shop'" />
   </div>
 </template>
 
@@ -30,9 +29,8 @@ import { ensureStarterCards } from '@/core/cards';
 import CardLibrary from '@/components/CardLibrary.vue';
 import CardCollection from '@/components/CardCollection.vue';
 import CardDeckEditor from '@/components/CardDeckEditor.vue';
-import CardShop from '@/components/CardShop.vue';
 
-defineProps<{ area: 'library' | 'deck' | 'shop' | 'collection' }>();
+defineProps<{ area: 'library' | 'deck' | 'collection' }>();
 
 const gs = useGlobalSettingsStore();
 

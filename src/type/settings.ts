@@ -1075,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 65;
+export const SCHEMA_VERSION = 66;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1545,24 +1545,19 @@ export const Card = z
   .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
 export type Card = z.infer<typeof Card>;
 
-/** 收藏条目（键 = card_id）：level 升级成长、durability/max_durability 按功能×星级公式；
- *  损坏 = durability<=0；抽中已拥有卡 = level++ + 修复到满（内置与角色卡都适用）。 */
+/** 收藏条目（键 = card_id）：卡为永久收藏（v66 起无耐久/等级），条目记录持有与触发计数。 */
 export const CardOwned = z
   .object({
     card_id: z.string().default(''),
-    level: z.number().min(1).default(1).catch(1),
     obtained_at: z.number().default(0),
     trigger_count: z.number().min(0).default(0).catch(0),
-    durability: z.number().min(0).default(0).catch(0),
-    max_durability: z.number().min(0).default(0).catch(0),
     source: z.enum(CARD_SOURCES).default('builtin'),
   })
   .prefault({});
 export type CardOwned = z.infer<typeof CardOwned>;
 
 /** 历史获得记录（键 = card_id）：与 card_collection（当前持有）分离，记录"曾经获得过"，
- *  分解只移除持有、不删本记录——收藏进度/成就/套装基于它永久保留。
- *  count 为累计获得次数（含重复抽中/兑换/升级）；分解不影响。 */
+ *  收藏进度/成就/套装基于它永久保留。count 为累计获得次数（含重复抽中折算）。 */
 export const CardObtained = z
   .object({
     card_id: z.string().default(''),
@@ -1582,7 +1577,7 @@ export const CardDeck = z
   .prefault({});
 export type CardDeck = z.infer<typeof CardDeck>;
 
-/** 角色 AI 主题卡池：首次幸运掉落需要时懒生成并固定（generated=true）；池内卡反复掉落供升级/修耐久。 */
+/** 角色 AI 主题卡池：首次幸运掉落需要时懒生成并固定（generated=true）；池内卡反复掉落（重复获得折算）。 */
 export const CardCharacterPool = z
   .object({
     character_id: z.string().default(''),
@@ -1592,41 +1587,17 @@ export const CardCharacterPool = z
   .prefault({});
 export type CardCharacterPool = z.infer<typeof CardCharacterPool>;
 
-/** 每日任务进度（v62，游戏进度层）：键 = 本地日期 YYYY-MM-DD，每天 0 点按 date 重置。
- *  任务键集固定（generate=生成一次选项 / judge=做一次判定 / select=点选一个选项），
- *  各任务达标阈值集中 cards-constraints.ts 的 CARD_DAILY_TARGETS（生成1/判定10/点选8）；
- *  count 为当日累计进度，done=达标可领，claimed=已领取（各奖 1 次免费 3 选 1 开包）。
- *  进度复用既有生成/判定/选择埋点（bumpDailyTask 钩子），不建独立计数器。 */
-export const CardDaily = z
-  .object({
-    date: z.string().default(''),
-    tasks: z
-      .record(
-        z.string(),
-        z.object({
-          count: z.number().min(0).default(0).catch(0),
-          done: z.boolean().default(false),
-          claimed: z.boolean().default(false),
-        }),
-      )
-      .prefault({}),
-  })
-  .prefault({});
-export type CardDaily = z.infer<typeof CardDaily>;
-
 /** 卡牌统计（stats.card，统计层）：随 stats_enabled 采集、clearStats 清。
- *  游戏进度（货币余额/保底/每日/收藏/角色池）放 GlobalSettings，不被清空。 */
+ *  游戏进度（货币余额/收藏/角色池）放 GlobalSettings，不被清空。 */
 export const CardStats = z
   .object({
     lucky_hits: z.number().min(0).default(0).catch(0),
     packs_opened: z.number().min(0).default(0).catch(0),
     cards_obtained: z.number().min(0).default(0).catch(0),
     per_card: z.record(z.string(), z.object({ triggers: z.number().default(0) })).prefault({}),
-    pity_epicplus_hits: z.number().min(0).default(0).catch(0),
     currency_earned_by_outcome: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
     currency_earned: z.number().min(0).default(0).catch(0),
     currency_spent: z.number().min(0).default(0).catch(0),
-    daily_rewards_claimed: z.number().min(0).default(0).catch(0),
     updated_at: z.number().default(0),
   })
   .prefault({});
@@ -1651,8 +1622,8 @@ export const StatsSettings = z
      *  不参与条目建议/权重/AI 分析；清空统计时一并清除。 */
     dice: DiceStats.prefault({}),
     /** 卡牌系统统计（统计层，随 stats_enabled 采集、clearStats 清）。游戏进度
-     *  （card_currency/card_pity/card_daily/card_collection/card_character_pools）
-     *  放 GlobalSettings，不被清空——防「清统计把玩家攒的货币/保底进度抹了」。 */
+     *  （card_currency/card_collection/card_character_pools）放 GlobalSettings，
+     *  不被清空——防「清统计把玩家攒的货币抹了」。 */
     card: CardStats.prefault({}),
     updated_at: z.number().default(0),
   })
@@ -1660,18 +1631,16 @@ export const StatsSettings = z
 export type StatsSettings = z.infer<typeof StatsSettings>;
 
 /** 构造一份空白卡牌统计（纯数据构造，不依赖任何 store）。统计层随 stats_enabled 采集、
- *  清空统计一并清；游戏进度（卡币/保底/每日/收藏/角色池）放 GlobalSettings 不被清。 */
+ *  清空统计一并清；游戏进度（卡币/收藏/角色池）放 GlobalSettings 不被清。 */
 export function createEmptyCardStats(): CardStats {
   return {
     lucky_hits: 0,
     packs_opened: 0,
     cards_obtained: 0,
     per_card: {},
-    pity_epicplus_hits: 0,
     currency_earned_by_outcome: {},
     currency_earned: 0,
     currency_spent: 0,
-    daily_rewards_claimed: 0,
     updated_at: 0,
   };
 }
@@ -1892,8 +1861,8 @@ export const GlobalSettings = z
     /** 卡牌总开关（默认关）：关 = 判定管线不读卡、无卡触发/无幸运开包/无行动币收支，
      *  存量升级零行为变化；收藏库/卡库展示常驻不受开关影响。 */
     card_enabled: z.boolean().default(false),
-    /** 收藏库（键 = card_id）：每张当前持有的卡；耐久扣到 0 = 损坏（条目仍在），
-     *  分解移除条目。持有 ≠ 曾获得：图鉴/成就以 card_obtained 为准。 */
+    /** 收藏库（键 = card_id）：每张当前持有的卡（永久收藏，v66 起无耐久/等级）。
+     *  持有 ≠ 曾获得：图鉴/成就以 card_obtained 为准。 */
     card_collection: z.record(z.string(), CardOwned).prefault({}),
     /** 历史获得记录（键 = card_id，v61）：记录"曾经获得过"的卡，独立于当前持有。
      *  分解只删 card_collection、不删这里，故收藏进度/套装/成就永久保留；v61 迁移把存量收藏补种进来。 */
@@ -1905,16 +1874,12 @@ export const GlobalSettings = z
      *  本记录 + 内置常量解析卡定义。 */
     card_definitions: z.record(z.string(), Card).prefault({}),
     /** 角色 AI 主题卡池（键 = character id）：首次幸运掉落需要时懒生成并固定；
-     *  generated=true 后不再重生成，池内卡反复掉落供升级/修耐久。 */
+     *  generated=true 后不再重生成，池内卡反复掉落（重复获得折算）。 */
     card_character_pools: z.record(z.string(), CardCharacterPool).prefault({}),
-    /** 连抽保底计数（键 = config.id）：连续未出 3 星+ 累计，达 CARD_PITY_SOFT 时保底轮必含 3 星+，出后重置。 */
-    card_pity: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
-    /** 行动币余额（全局唯一货币，量级稀有）：骰子结局收支 + 分解重复高级卡获得；≥0 不扣穿。 */
+    /** 行动币余额（全局唯一货币，量级稀有）：骰子结局收支 + 重复卡折算获得；≥0 不扣穿。 */
     card_currency: z.number().min(0).default(0).catch(0),
-    /** 每日任务进度（3 个小任务，各奖 1 次免费开包）：本地日期键，每天 0 点重置。 */
-    card_daily: CardDaily.prefault({}),
-    /** 自动编组（默认开）：从已拥有未损坏卡自动填满 4 槽（守星级预算），玩家零编组负担；
-     *  关 = 手动编辑存储卡组（现状）。仅影响"谁在槽里"，不改判定语义。 */
+    /** 自动编组（默认开）：从已拥有卡自动填满 4 槽（守星级预算），玩家零编组负担；
+     *  关 = 手动编辑存储卡组。仅影响"谁在槽里"，不改判定语义。 */
     auto_deck_enabled: z.boolean().default(true),
     /** 新手 starter 是否已发放（一次性）：首次启用卡牌且收藏为空时赠 4 张 1★，auto-deck 立即满编。 */
     card_starter_granted: z.boolean().default(false),

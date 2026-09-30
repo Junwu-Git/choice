@@ -17,7 +17,7 @@ export type TabId =
   | 'stats'
   | 'library'
   | 'deck'
-  | 'shop'
+  | 'collection'
   | 'appearance'
   | 'debug';
 
@@ -67,9 +67,9 @@ export const PAGES: PageDefinition[] = [
     label: '卡牌',
     icon: 'fa-solid fa-chess-knight',
     subAreas: [
-      { id: 'library', label: '卡库', icon: 'fa-solid fa-layer-group' },
       { id: 'deck', label: '卡组', icon: 'fa-solid fa-table-cells' },
-      { id: 'shop', label: '兑换与任务', icon: 'fa-solid fa-coins' },
+      { id: 'library', label: '卡库', icon: 'fa-solid fa-layer-group' },
+      { id: 'collection', label: '收藏', icon: 'fa-solid fa-box-archive' },
     ],
   },
   {

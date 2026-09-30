@@ -775,6 +775,8 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     generationId: gen?.id,
     matchedEntryId: option.matchedEntryId,
     scopeId: gen?.scopeId,
+    messageId: panelStore.messageId ?? undefined,
+    swipeId: panelStore.swipeId,
     ...(preRolled ? { preRolled } : {}),
   });
   // 行内判定 chip（v57 骰子结果：结局+差值；润色视图恒返回 null，不标记）

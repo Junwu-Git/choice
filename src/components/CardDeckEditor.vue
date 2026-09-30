@@ -34,7 +34,7 @@
           class="choice-doll-slot"
           :class="[
             `choice-doll-slot--${slotPos[slot.type]}`,
-            { 'choice-doll-slot--empty': !slot.card, 'choice-doll-slot--broken': slot.card && brokenOf(slot.card_id) },
+            { 'choice-doll-slot--empty': !slot.card },
           ]"
           :style="slot.card ? { borderColor: CARD_STAR_COLOR[slot.card.star] } : undefined"
           :title="slot.card ? t`${slot.card.name}：点击更换` : t`点击装备 ${CARD_TYPE_LABEL[slot.type]}卡`"
@@ -44,13 +44,6 @@
 
             <template v-if="slot.card">
               <span class="choice-doll-slot__name">{{ slot.card.name }}</span>
-              <span class="choice-doll-slot__meta">
-                <span class="choice-doll-slot__lv">Lv.{{ ownedMap[slot.card_id]?.level }}</span>
-                <span class="choice-doll-slot__dur"
-                  ><i class="fa-solid fa-shield-halved"></i>{{ ownedMap[slot.card_id]?.durability }}/{{ ownedMap[slot.card_id]?.max_durability }}</span
-                >
-              </span>
-              <span v-if="brokenOf(slot.card_id)" class="choice-doll-slot__broken">{{ t`损坏` }}</span>
             </template>
             <template v-else>
               <span class="choice-doll-slot__label">{{ CARD_TYPE_LABEL[slot.type] }}</span>
@@ -78,14 +71,13 @@
 <script setup lang="ts">
 import CardSlotPicker from '@/components/CardSlotPicker.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { cardDefById, isCardBroken, currentCardConfigId, unequipCard, resolveDeckSlots, autoDeckCards } from '@/core/cards';
+import { cardDefById, currentCardConfigId, unequipCard, resolveDeckSlots, autoDeckCards } from '@/core/cards';
 import { CARD_STAR_COLOR, CARD_TYPE_ICON, CARD_TYPE_LABEL } from '@/core/cards-meta';
 import type { CardType } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 
 const configId = computed(() => currentCardConfigId());
-const ownedMap = computed(() => gs.settings.card_collection);
 
 /** 固定槽（按 CARD_SLOT_TYPES 权威顺序规整），card_id='' 为空槽 */
 const fixedSlots = computed(() => resolveDeckSlots(configId.value));
@@ -103,8 +95,6 @@ const slotPos: Record<CardType, 'top' | 'left' | 'right' | 'bottom'> = {
   spell: 'right',
   trial: 'bottom',
 };
-
-const brokenOf = (cardId: string) => isCardBroken(ownedMap.value[cardId]);
 
 /** 当前要挑选的槽类型；非 null 时挂载 CardSlotPicker */
 const activeSlotType = ref<CardType | null>(null);
@@ -289,23 +279,6 @@ const onUnequip = (cardId: string) => {
   -webkit-box-orient: vertical;
 }
 
-.choice-doll-slot__meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.choice-doll-slot__dur {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
-}
-
 .choice-doll-slot__label {
   font-size: var(--choice-text-sm);
   font-weight: bold;
@@ -326,17 +299,6 @@ const onUnequip = (cardId: string) => {
   border-style: solid;
   border-color: var(--choice-border-active);
   color: var(--choice-text);
-}
-
-.choice-doll-slot--broken {
-  filter: grayscale(0.85);
-  opacity: 0.72;
-}
-
-.choice-doll-slot__broken {
-  font-size: var(--choice-text-xs);
-  font-weight: bold;
-  color: var(--choice-color-error);
 }
 
 /* 卸下按钮：右上角小 X */

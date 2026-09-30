@@ -107,6 +107,21 @@
   --choice-rate-mid: var(--choice-primary);
   --choice-rate-low: var(--choice-color-success);
 
+  /* 卡牌星级专用色板（v62 卡面 + 判定行内 chip 共用）：1★灰 / 2★绿 / 3★蓝 / 4★紫 / 5★金。
+     gacha 式固定识别色，星级语义稳定、不随主题主色漂移；亮极性主题（light/sakura/honey）
+     与 st 在下方按对比度覆盖，暗极性主题（dusk/celadon）继承本暗色默认。
+     --choice-star-N-soft 为对应柔和底/辉光（rgba）。 */
+  --choice-star-1: #9aa2ad;
+  --choice-star-2: #4caf50;
+  --choice-star-3: #4a90d9;
+  --choice-star-4: #a97cf0;
+  --choice-star-5: #e8b13a;
+  --choice-star-1-soft: rgba(154, 162, 173, 0.16);
+  --choice-star-2-soft: rgba(76, 175, 80, 0.16);
+  --choice-star-3-soft: rgba(74, 144, 217, 0.16);
+  --choice-star-4-soft: rgba(169, 124, 240, 0.18);
+  --choice-star-5-soft: rgba(232, 177, 58, 0.18);
+
   /* 基准行高与等宽字体栈：散落各组件的裸 line-height/等宽字体统一收敛于此 */
   --choice-line-height: 1.5;
   --choice-font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, 'Courier New', monospace;
@@ -155,6 +170,18 @@
 
   --choice-bg-hover: rgba(84, 72, 52, 0.08);
   --choice-bg-active: rgba(56, 114, 180, 0.1);
+
+  /* 星级专用色板·亮极性覆盖：加深颜色（尤其金）确保浅底对比与辨识 */
+  --choice-star-1: #616b76;
+  --choice-star-2: #2f8f47;
+  --choice-star-3: #2563c9;
+  --choice-star-4: #7c3aed;
+  --choice-star-5: #c0770a;
+  --choice-star-1-soft: rgba(97, 107, 118, 0.11);
+  --choice-star-2-soft: rgba(47, 143, 71, 0.11);
+  --choice-star-3-soft: rgba(37, 99, 201, 0.11);
+  --choice-star-4-soft: rgba(124, 58, 237, 0.11);
+  --choice-star-5-soft: rgba(192, 119, 10, 0.11);
 }
 
 /* ===== 预设主题（独立完整 token 块，与 dark/light 同构） =====
@@ -251,6 +278,17 @@
 
   --choice-bg-hover: rgba(120, 70, 85, 0.08);
   --choice-bg-active: rgba(184, 79, 119, 0.1);
+
+  --choice-star-1: #616b76;
+  --choice-star-2: #2f8f47;
+  --choice-star-3: #2563c9;
+  --choice-star-4: #7c3aed;
+  --choice-star-5: #c0770a;
+  --choice-star-1-soft: rgba(97, 107, 118, 0.11);
+  --choice-star-2-soft: rgba(47, 143, 71, 0.11);
+  --choice-star-3-soft: rgba(37, 99, 201, 0.11);
+  --choice-star-4-soft: rgba(124, 58, 237, 0.11);
+  --choice-star-5-soft: rgba(192, 119, 10, 0.11);
 }
 
 /* 青瓷 celadon — 暗极性：墨绿釉底 + 青瓷主色 */
@@ -342,6 +380,17 @@
 
   --choice-bg-hover: rgba(110, 88, 50, 0.08);
   --choice-bg-active: rgba(150, 96, 15, 0.1);
+
+  --choice-star-1: #616b76;
+  --choice-star-2: #2f8f47;
+  --choice-star-3: #2563c9;
+  --choice-star-4: #7c3aed;
+  --choice-star-5: #c0770a;
+  --choice-star-1-soft: rgba(97, 107, 118, 0.11);
+  --choice-star-2-soft: rgba(47, 143, 71, 0.11);
+  --choice-star-3-soft: rgba(37, 99, 201, 0.11);
+  --choice-star-4-soft: rgba(124, 58, 237, 0.11);
+  --choice-star-5-soft: rgba(192, 119, 10, 0.11);
 }
 
 /* ===== ST 跟随主题 — 极性无关派生 =====
@@ -405,6 +454,18 @@
 
   --choice-bg-hover: color-mix(in srgb, var(--SmartThemeBodyColor, #000) 8%, transparent 92%);
   --choice-bg-active: color-mix(in srgb, var(--SmartThemeQuoteColor, #3872b4) 12%, transparent 88%);
+
+  /* 星级专用色板·st 极性无关覆盖：取明暗都能辨识的中饱和值（金取偏深琥珀） */
+  --choice-star-1: #7c8590;
+  --choice-star-2: #2f9e4f;
+  --choice-star-3: #2f72d0;
+  --choice-star-4: #8a5be8;
+  --choice-star-5: #cf8f15;
+  --choice-star-1-soft: rgba(124, 133, 144, 0.12);
+  --choice-star-2-soft: rgba(47, 158, 79, 0.12);
+  --choice-star-3-soft: rgba(47, 114, 208, 0.12);
+  --choice-star-4-soft: rgba(138, 91, 232, 0.12);
+  --choice-star-5-soft: rgba(207, 143, 21, 0.12);
 }
 
 /* ===== 手机（窄触屏）全局压缩块 =====

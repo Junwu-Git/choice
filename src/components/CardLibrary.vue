@@ -2,7 +2,7 @@
   <div class="choice-card-library">
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-layer-group"></i> {{ t`我的卡` }}</h4>
-      <p class="choice-lib-hint">{{ t`你拥有的卡（含内置/套装/角色主题卡），可装备到卡组；不需要的可直接分解换行动币。` }}</p>
+      <p class="choice-lib-hint">{{ t`你拥有的卡（含内置/套装/角色主题卡），可装备到卡组；重复抽到的卡在开卡包时自动折算行动币。` }}</p>
       <div class="choice-lib-balance">
         <span class="choice-shop-coins"><i class="fa-solid fa-coins"></i>{{ gs.settings.card_currency }}</span>
         <span class="choice-shop-balance-hint">{{ t`行动币` }}</span>
@@ -10,27 +10,11 @@
     </div>
 
     <div v-if="ownedCards.length" class="choice-lib-cards">
-      <CardFace
-        v-for="c in ownedCards"
-        :key="c.card.id"
-        :card="c.card"
-        :owned="c.owned"
-        :state="isCardBroken(c.owned) ? 'broken' : 'normal'"
-      >
-        <template #footer>
-          <button
-            class="choice-btn-sm"
-            :title="t`分解得 +${dismantleGain(c.card)} 行动币（分解后卡从收藏移除）`"
-            @click="onDismantle(c.card.id)"
-          >
-            <i class="fa-solid fa-scissors"></i> +{{ dismantleGain(c.card) }}
-          </button>
-        </template>
-      </CardFace>
+      <CardFace v-for="c in ownedCards" :key="c.card.id" :card="c.card" :owned="c.owned" />
     </div>
     <div v-else class="choice-empty">
       <i class="fa-solid fa-coins"></i>
-      <div>{{ t`还没有卡——到收藏页购买或游玩中开卡包/幸运掉落获得。` }}</div>
+      <div>{{ t`还没有卡——到收藏页开卡包或游玩中幸运掉落获得。` }}</div>
     </div>
   </div>
 </template>
@@ -38,10 +22,8 @@
 <script setup lang="ts">
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { cardDefById, dismantleCard, isCardBroken } from '@/core/cards';
-import { CARD_DISMANTLE } from '@/core/cards-constraints';
-import toastr from 'toastr';
-import type { Card, CardOwned, CardStar } from '@/type/settings';
+import { cardDefById } from '@/core/cards';
+import type { Card, CardOwned } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 const ownedMap = computed(() => gs.settings.card_collection);
@@ -53,14 +35,6 @@ const ownedCards = computed<Array<{ card: Card; owned: CardOwned }>>(() =>
     .filter((x): x is { card: Card; o: CardOwned } => !!x.card)
     .map(({ card, o }) => ({ card, owned: o })),
 );
-
-/** 分解收益（按星级定价，所有星级可分解）。 */
-const dismantleGain = (c: Card): number => CARD_DISMANTLE[c.star as CardStar];
-
-const onDismantle = (cardId: string) => {
-  const r = dismantleCard(cardId);
-  if (!r.ok) toastr.error(r.errors.join('；'));
-};
 </script>
 
 <style scoped>

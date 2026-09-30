@@ -2089,6 +2089,35 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     validated.card_obtained = obtained;
   }
 
+  // v66 卡牌瘦身：删除血战/副本、诅咒、每日任务、保底与耐久/等级。zod 解析会 strip 新 schema
+  // 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象——旧键会残留在运行时对象里
+  // 并被 deep watch 继续落盘，必须在此显式 delete 才算清干净。card_collection 条目内的
+  // level/durability/max_durability 与 stats.card 的废弃计数字段同理。
+  if ((validated.schema_version ?? 0) < 66) {
+    const legacyKeys = [
+      'battle_enabled',
+      'battle_player_hp',
+      'battle_player_max_hp',
+      'battle_monster_hp',
+      'battle_monster_id',
+      'battle_dungeon_index',
+      'battle_boss_index',
+      'battle_statuses',
+      'battle_weak_recover_at',
+      'card_debuffs',
+      'card_pity',
+      'card_daily',
+    ];
+    for (const key of legacyKeys) delete (validated as Record<string, unknown>)[key];
+    for (const owned of Object.values(validated.card_collection ?? {})) {
+      delete (owned as Record<string, unknown>).level;
+      delete (owned as Record<string, unknown>).durability;
+      delete (owned as Record<string, unknown>).max_durability;
+    }
+    const legacyStatKeys = ['pity_epicplus_hits', 'daily_rewards_claimed'] as const;
+    for (const key of legacyStatKeys) delete (validated.stats.card as Record<string, unknown>)[key];
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 

@@ -3,29 +3,29 @@
     <div v-if="cardPack" class="choice-cardpack-overlay" @click.self="closeCardPack()">
       <div class="choice-cardpack-dialog">
         <div class="choice-cardpack-header">
-          <span class="choice-cardpack-title"> <i class="fa-solid fa-gift"></i> {{ t`开卡包` }} </span>
-          <span v-if="cardPack.offer.pityGuaranteed" class="choice-cardpack-pity">
-            <i class="fa-solid fa-shield-halved"></i>{{ t`保底已触发` }}
+          <span class="choice-cardpack-title">
+            <i class="fa-solid fa-gift"></i> {{ t`开卡包` }}
           </span>
           <button class="choice-cardpack-close" :title="t`关闭`" @click="closeCardPack()">&times;</button>
         </div>
-        <p class="choice-cardpack-tip">{{ t`选 1 张纳入收藏；抽中已拥有/损坏卡将升级并修复耐久。` }}</p>
+        <p class="choice-cardpack-tip">
+          <template v-if="hasRare"><i class="fa-solid fa-star"></i> {{ t`稀有卡出没——抓住它！` }}</template>
+          <template v-else>{{ t`选 1 张纳入收藏；选到已拥有的卡会自动折算行动币。` }}</template>
+        </p>
         <div class="choice-cardpack-cards">
-          <button
-            v-for="(opt, i) in cardPack?.offer.options ?? []"
+          <div
+            v-for="(opt, i) in (cardPack?.offer.options ?? [])"
             :key="opt.card.id"
-            class="choice-cardpack-card"
-            :class="`choice-card-star--${opt.card.star}`"
-            @click="onPick(i)"
+            class="choice-cardpack-slot"
+            :class="{ 'choice-cardpack-slot--rare': isHighStar(opt.card.star) }"
           >
-            <span class="choice-cardpack-card-star">{{ CARD_STAR_LABEL[opt.card.star] }}</span>
-            <span class="choice-cardpack-card-type">{{ CARD_TYPE_LABEL[opt.card.type] }}</span>
-            <strong class="choice-cardpack-card-name">{{ opt.card.name }}</strong>
-            <span class="choice-cardpack-card-line">{{ cardLine(opt.card) }}</span>
-            <span v-if="opt.upgrade" class="choice-cardpack-card-upgrade">
-              <i class="fa-solid fa-arrow-up"></i>{{ t`已拥有·升级+修复` }}
-            </span>
-          </button>
+            <CardFace
+              :card="opt.card"
+              :selectable="true"
+              :title="cardLine(opt.card)"
+              @select="onPick(i)"
+            />
+          </div>
         </div>
         <div class="choice-cardpack-footer">
           <button class="menu_button" @click="closeCardPack()">{{ t`稍后再选` }}</button>
@@ -36,9 +36,14 @@
 </template>
 
 <script setup lang="ts">
+import CardFace from '@/components/CardFace.vue';
 import { cardPack, closeCardPack } from '@/core/card-pack-state';
 import { applyPackSelection } from '@/core/cards';
-import { CARD_STAR_LABEL, CARD_TYPE_LABEL, cardLine } from '@/core/cards-meta';
+import { cardLine } from '@/core/cards-meta';
+import { isHighStar } from '@/core/cards-constraints';
+
+/** 本次 offer 是否含 4/5 星稀有卡（用于「稀有出没」提示 + 闪光动画）。 */
+const hasRare = computed(() => cardPack.value?.offer.options.some(o => isHighStar(o.card.star)) ?? false);
 
 const onPick = (idx: number) => {
   const p = cardPack.value;
@@ -64,7 +69,7 @@ const onPick = (idx: number) => {
 }
 
 .choice-cardpack-dialog {
-  width: 520px;
+  width: 560px;
   max-width: 94vw;
   max-height: 86dvh;
   overflow: auto;
@@ -92,17 +97,6 @@ const onPick = (idx: number) => {
   align-items: center;
   gap: var(--choice-space-2);
   flex: 1;
-}
-
-.choice-cardpack-pity {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-warning);
-  border: 1px solid var(--choice-warning);
-  border-radius: 999px;
-  padding: 2px var(--choice-space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .choice-cardpack-close {
@@ -133,66 +127,62 @@ const onPick = (idx: number) => {
 
 .choice-cardpack-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--choice-space-2);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--choice-space-4);
+  align-items: start;
 }
 
-.choice-cardpack-card {
-  border: 1px solid var(--choice-border-strong);
-  border-radius: var(--choice-radius-md);
-  background: var(--choice-bg-card);
-  padding: var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  align-items: flex-start;
-  text-align: left;
-  cursor: pointer;
+/* 卡槽包装：让 CardFace 撑满格 + 相对定位挂稀有闪光 */
+.choice-cardpack-slot {
   position: relative;
-  transition:
-    transform var(--choice-transition),
-    border-color var(--choice-transition),
-    box-shadow var(--choice-transition);
+  display: flex;
+  min-width: 0;
 }
 
-.choice-cardpack-card:hover {
-  transform: translateY(-2px);
+/* 稀有卡开出：轻微脉冲 + 一道亮光扫过（纯视觉彩蛋，零操作） */
+.choice-cardpack-slot--rare {
+  animation: choice-pack-burst 0.9s ease-out;
 }
-
-.choice-cardpack-card-star {
-  font-size: var(--choice-text-xs);
-  font-weight: bold;
-  padding: 1px var(--choice-space-2);
-  border-radius: 999px;
+.choice-cardpack-slot--rare::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.35) 50%, transparent 58%);
+  transform: translateX(-130%);
+  animation: choice-pack-shine 0.9s ease-in forwards;
 }
-
-.choice-cardpack-card-type {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
+@keyframes choice-pack-burst {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.06);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
-
-.choice-cardpack-card-name {
-  font-size: var(--choice-text-base);
-  color: var(--choice-text);
-}
-
-.choice-cardpack-card-line {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-  line-height: 1.4;
-}
-
-.choice-cardpack-card-upgrade {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-primary);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: auto;
+@keyframes choice-pack-shine {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(130%);
+  }
 }
 
 .choice-cardpack-footer {
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 480px) {
+  /* 窄屏 3 列挤爆高度：退成 1 列流式，保留卡面可读 */
+  .choice-cardpack-cards {
+    grid-template-columns: 1fr;
+    gap: var(--choice-space-3);
+  }
 }
 </style>

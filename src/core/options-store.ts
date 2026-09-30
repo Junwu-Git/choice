@@ -29,6 +29,9 @@ type MessageChoiceData = {
   currentIndex: number;
   enrichGenerations: ChoiceGeneration[];
   enrichCurrentIndex: number;
+  /** v63 防刷：该楼层（message+swipe）是否已结算过卡牌经济。同一层只结算一次
+   *  （行动币/幸运开包/扣耐/套装/成就都只在首次判定发生），防「单层反复判定」刷卡。 */
+  cardSettled?: boolean;
 };
 
 const getMessage = (messageId: number): StChatMessage | undefined => chat[messageId] as StChatMessage | undefined;
@@ -79,5 +82,18 @@ export function storeEnrichGeneration(messageId: number, swipeId: number, genera
   data.enrichGenerations = data.enrichGenerations ?? [];
   data.enrichGenerations.push(generation);
   data.enrichCurrentIndex = data.enrichGenerations.length - 1;
+  setMessageChoiceData(messageId, swipeId, data);
+}
+
+/** 该楼层是否已结算过卡牌经济（防刷「同一层最多结算一次」）。 */
+export function isCardSettled(messageId: number, swipeId: number): boolean {
+  return !!getMessageChoiceData(messageId, swipeId)?.cardSettled;
+}
+
+/** 标记该楼层已结算卡牌经济（首次判定结算后调用；幂等）。 */
+export function markCardSettled(messageId: number, swipeId: number): void {
+  const data = getMessageChoiceData(messageId, swipeId);
+  if (!data || data.cardSettled) return;
+  data.cardSettled = true;
   setMessageChoiceData(messageId, swipeId, data);
 }
