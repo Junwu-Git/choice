@@ -202,7 +202,18 @@
           >
           <span class="choice-option-content"
             >{{ parseOptionContent(option.text)
-            }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
+            }}<template v-if="!rollOf(index) && previewOf(index).length"
+              ><span class="choice-card-tag-row"
+                ><span
+                  v-for="pc in previewOf(index)"
+                  :key="pc.id"
+                  class="choice-card-tag choice-card-tag--preview"
+                  :class="`choice-card-star--${pc.star}`"
+                  :title="`${pc.name}：${t`判定可触发`} · ${pc.effects.map(effectSummary).join('·')}`"
+                  ><i class="fa-solid fa-bolt"></i>{{ pc.name }}</span
+                ></span
+              ></template
+            ><i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
               rollChipText(rollOf(index)!)
             }}</i
             ><template v-if="rollOf(index)?.cards?.triggered?.length"
@@ -270,7 +281,8 @@ import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice 
 import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { openCardPack } from '@/core/card-pack-state';
-import type { CardResolution } from '@/core/cards';
+import { effectSummary, previewTriggeredCards, type CardResolution } from '@/core/cards';
+import type { Card } from '@/type/settings';
 import { getStCharacter } from '@/core/st-character';
 import type { DiceOutcome } from '@/core/dice';
 import { OPTION_FONT_SCALE } from '@/core/constants';
@@ -454,6 +466,22 @@ const formulaOf = (option: ChoiceOption): string | null =>
 // 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*（配色反转见 theme.css）
 const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
+
+// v66 点选前触发预览：card_enabled 开时对每个选项预匹配掷前可知触发（type/grade/demand），
+// 行内显示空心「可触发」卡 chip；roll/outcome 类触发需掷后结果，不预告。整表算一次缓存，
+// 避免每行重复 attr 解析。点选判定后由判定 chip 与已触发实心 chip 接管，两者不同时出现。
+// 仅选项视图（润色视图不掷骰、口径与判定分支一致）。主面板与悬浮球两处同构（并行模式）。
+const cardPreviews = computed<Card[][]>(() =>
+  gs.settings.card_enabled && activeView.value === 'options'
+    ? visibleOptions.value.map(o =>
+        previewTriggeredCards(o.text, currentChar.value, {
+          attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
+          low_roll: gs.settings.dice.low_roll,
+        }),
+      )
+    : [],
+);
+const previewOf = (index: number): Card[] => cardPreviews.value[index] ?? [];
 
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代/翻页自然失效（同 selectedKeys 机制）。

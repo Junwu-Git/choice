@@ -245,6 +245,29 @@ export function buildCardContext(
   return { type: parseOptionType(optionText), grade: parseOptionStyle(optionText), rate };
 }
 
+/** 点选前触发预览（选项行提示用）：只匹配掷前可知的触发（type/grade/demand）——
+ *  roll/outcome 两类需掷后结果，天然不命中（matchTrigger 的 null 守卫）。纯读不改状态
+ *  （不发放 starter、不落库）。供主面板与悬浮球选项行共用；措辞按「可触发」，
+ *  因 demand 区间依赖最终 attr 解析口径，非 100% 保证触发。 */
+export function previewTriggeredCards(
+  optionText: string,
+  character: { data?: unknown } | undefined,
+  dice: { attr_dc_enabled: boolean; low_roll: boolean },
+): Card[] {
+  const gs = useGlobalSettingsStore();
+  if (!gs.settings.card_enabled) return [];
+  const equipped = resolveEquippedCards(currentCardConfigId());
+  if (equipped.length === 0) return [];
+  const ctx = buildCardContext(optionText, character, dice.attr_dc_enabled, dice.low_roll);
+  if (ctx === null) return [];
+  return equipped
+    .filter(eq => {
+      const t = eq.card.trigger;
+      return (t.kind === 'type' || t.kind === 'grade' || t.kind === 'demand') && matchTrigger(t, ctx, null, null);
+    })
+    .map(eq => eq.card);
+}
+
 /** 抽卡随机：按星级权重取 1 张（CARD_DROP_WEIGHT）。 */
 function pickWeighted(pool: Card[]): Card {
   const total = pool.reduce((s, c) => s + CARD_DROP_WEIGHT[c.star], 0);
@@ -641,7 +664,8 @@ export function canEquipInDeck(configId: string, card: Card): { ok: boolean; err
   return checkDeckBudget(projected);
 }
 
-/** 装备一张卡到其类型对应的固定槽位（替换该槽旧卡 + 全组星级预算校验）。返回 { ok, errors[] }。 */
+/** 装备一张卡到其类型对应的固定槽位（替换该槽旧卡 + 全组星级预算校验）。返回 { ok, errors[] }。
+ *  首次手动装备会自动关掉 auto_deck_enabled：auto 只做无感起步兜底，玩家一旦配卡即接管。 */
 export function equipCard(configId: string, cardId: string): { ok: boolean; errors: string[] } {
   const gs = useGlobalSettingsStore();
   const card = cardDefById(cardId);
@@ -655,6 +679,11 @@ export function equipCard(configId: string, cardId: string): { ok: boolean; erro
   if (!budget.ok) return budget;
   const slot = deck.slots.find(s => s.type === card.type);
   if (slot) slot.card_id = cardId;
+  // 手动装备即接管：关掉自动编组（可在卡组页重新打开），否则手动结果会被 auto 覆盖
+  if (gs.settings.auto_deck_enabled) {
+    gs.settings.auto_deck_enabled = false;
+    toastr.info('已切换为手动卡组（可在卡组页重新开启自动编组）');
+  }
   return { ok: true, errors: [] };
 }
 
