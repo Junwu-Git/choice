@@ -5,9 +5,10 @@
  * 判定管线集成（option-action.ts 调用）：
  *   resolveCardRoll 在既有 D100 判定路径上叠加卡效果——预掷效果（roll_bonus 改骰值、
  *   demand_mod 改需求、crit_window 改彩蛋窗口，数值经 cards-constraints clamp）在掷骰前
- *   施加；后置效果（outcome_convert 结局转化、reroll 强制重掷、narrative 注入演绎指令）
- *   在掷骰后按最终结局施加。触发条件（type/grade/demand 前置可知，roll/outcome 掷后可知）
- *   决定卡是否触发。
+ *   施加（掷前触发卡）；后置分两遍：掷后触发卡的修正型效果先补算到已掷骰值/需求/窗口上
+ *   并重判结局（武器系「roll 触发 + 骰值加成」的低骰补力即此语义），再按最终结局施加
+ *   outcome_convert 结局转化、reroll 强制重掷、narrative 注入演绎指令。触发条件
+ *  （type/grade/demand 前置可知，roll/outcome 掷后可知）决定卡是否触发。
  *
  * 关键分层：卡效果**只走 card_enabled=true 分支**；card_enabled=false（默认）时本模块
  * 的判定集成完全跳过，option-action 走与现状一致的路径——存量升级零行为变化。
@@ -18,7 +19,8 @@
  */
 
 import { BUILTIN_CARDS } from '@/core/cards-builtin';
-import { CARD_OUTCOME_LABEL, CARD_TYPE_LABEL, CARD_SETS, cardSetById } from '@/core/cards-meta';
+import { CARD_TYPE_LABEL, CARD_SETS, cardSetById, effectSummary } from '@/core/cards-meta';
+import { getStCharacter } from '@/core/st-character';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import toastr from 'toastr';
 import { usePoolSelectorStore } from '@/store/pool-selector';
@@ -38,6 +40,7 @@ import {
   CARD_STAR_BUDGET,
   CARD_SLOT_TYPES,
   CARD_LUCKY_NUMBER,
+  CARD_LUCKY_NUMBER_LOW,
   CARD_PACK_OFFER,
   CARD_TYPE_FULL_STARS,
   CARD_TROPHY_COLLECT_MILESTONES,
@@ -46,7 +49,6 @@ import { diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@
 import type {
   Card,
   CardDeck,
-  CardEffect,
   CardOwned,
   CardStar,
   CardTrigger,
@@ -62,8 +64,9 @@ export type CardContext = { type: string; grade: OptionStyleGrade | null; rate: 
 /** 已触发卡（chip 展示 + 扣耐久 + 统计共用） */
 export type CardTriggeredInfo = { card: Card; summary: string };
 
-/** 一次开卡包的单个候选（3 选 1 之一）：upgrade = 已拥有 → 选它=重复折算行动币 */
-export type CardOfferOption = { card: Card; upgrade: boolean };
+/** 一次开卡包的单个候选（3 选 1 之一）：upgrade = 已拥有 → 选它=重复折算行动币；
+ *  owned = 采样时的持有条目（供弹窗角标显示「已拥有」而非「未拥有」）。 */
+export type CardOfferOption = { card: Card; upgrade: boolean; owned?: CardOwned };
 
 /** 一次开卡包 offer（混合池按星级权重固定抽 CARD_PACK_OFFER 张）。
  *  configId 供选择落库时记统计维度。 */
@@ -93,22 +96,11 @@ export function currentCardConfigId(): string {
   return usePoolSelectorStore().effectiveConfig?.id ?? '__none__';
 }
 
-/** 按 config id 解析生效卡组（chat > character > default）。独立于条目池 configs——
- *  卡组用独立 card_decks record，不写进 PoolConfig.entries（保持「config 是纯条目引用清单」）。
- *  返回前把槽规整为固定 CARD_SLOT_TYPES 个（兼容旧动态 ≤5 张存量），变化则写回供 deep watch 落盘。 */
-export function deckForConfig(configId: string): CardDeck | null {
-  const gs = useGlobalSettingsStore();
-  const deck = gs.settings.card_decks[configId];
-  if (!deck) return null;
-  const normalized = normalizeDeckSlots(deck.slots);
-  const changed = normalized.some((s, i) => s.type !== deck.slots[i]?.type || s.card_id !== deck.slots[i]?.card_id);
-  if (changed) deck.slots = normalized;
-  return deck;
-}
+// ── 卡定义与持有解析 ─────────────────────────────────────────────────────
 
 /** 把卡组槽规整为固定 CARD_SLOT_TYPES 个（按权威顺序）：每类型只保留首个非空卡、缺的类型补空槽
  *  （card_id=''）。兼容旧版动态 ≤5 张、同类 ≤1 的存量数据；幂等。 */
-export function normalizeDeckSlots(slots: CardDeck['slots']): CardDeck['slots'] {
+function normalizeDeckSlots(slots: CardDeck['slots']): CardDeck['slots'] {
   const used = new Set<string>();
   return CARD_SLOT_TYPES.map(type => {
     const hit = slots.find(s => s.type === type && s.card_id && !used.has(s.card_id));
@@ -120,15 +112,32 @@ export function normalizeDeckSlots(slots: CardDeck['slots']): CardDeck['slots'] 
   });
 }
 
-// ── 卡定义与持有解析 ─────────────────────────────────────────────────────
-
 /** 按 card_id 取卡定义：内置卡来自 BUILTIN_CARDS，角色主题卡来自 card_definitions。
- *  找不到返回 undefined（已删除/异常 id）。 */
+ *  找不到返回 undefined（已删除/异常 id）。旧主题卡（character_name 为空，生成于
+ *  归属字段引入前）在此幂等回填 character_id/name——从 card_character_pools 反查归属池，
+ *  名字经 st-character 解析；回填后由 store deep watch 落盘，后续不再算。 */
 export function cardDefById(id: string): Card | undefined {
   if (!id) return undefined;
   const b = BUILTIN_CARDS.find(c => c.id === id);
   if (b) return b;
-  return useGlobalSettingsStore().settings.card_definitions[id];
+  const gs = useGlobalSettingsStore();
+  const def = gs.settings.card_definitions[id];
+  if (def && def.source === 'character' && !def.character_name) {
+    backfillCharacterAttribution(gs.settings, def);
+  }
+  return def;
+}
+
+/** 旧主题卡无归属字段时从角色池反查 character_id + 名字回填（幂等：仅补空字段）。 */
+function backfillCharacterAttribution(s: GlobalSettings, def: Card): void {
+  for (const pool of Object.values(s.card_character_pools)) {
+    if (pool.card_ids.includes(def.id)) {
+      def.character_id = pool.character_id;
+      const ch = pool.character_id ? getStCharacter(pool.character_id) : undefined;
+      def.character_name = ch?.name ?? '';
+      return;
+    }
+  }
 }
 
 /** 历史获得 id 集合：card_obtained（曾获得）∪ card_collection（当前持有）的并集。
@@ -209,24 +218,6 @@ export function matchTrigger(
   }
 }
 
-/** 生成效果的人类可读摘要（chip/卡库展示用）。数值取 clamp 后最终值。 */
-export function effectSummary(e: CardEffect): string {
-  switch (e.kind) {
-    case 'roll_bonus':
-      return `骰值${e.amount >= 0 ? '+' : ''}${e.amount}`;
-    case 'demand_mod':
-      return `需求${e.amount >= 0 ? '+' : ''}${e.amount}`;
-    case 'crit_window':
-      return `彩蛋 ±${e.success_delta}/${e.fail_delta}`;
-    case 'outcome_convert':
-      return `${CARD_OUTCOME_LABEL[e.from] ?? e.from}→${CARD_OUTCOME_LABEL[e.to] ?? e.to}`;
-    case 'reroll':
-      return `${CARD_OUTCOME_LABEL[e.on] ?? e.on}重掷`;
-    case 'narrative':
-      return '叙事注入';
-  }
-}
-
 // ── 判定管线集成（resolveCardRoll） ──────────────────────────────────────
 
 const clamp0100 = (v: number): number => Math.min(100, Math.max(1, Math.round(v)));
@@ -248,7 +239,9 @@ export function buildCardContext(
 /** 点选前触发预览（选项行提示用）：只匹配掷前可知的触发（type/grade/demand）——
  *  roll/outcome 两类需掷后结果，天然不命中（matchTrigger 的 null 守卫）。纯读不改状态
  *  （不发放 starter、不落库）。供主面板与悬浮球选项行共用；措辞按「可触发」，
- *  因 demand 区间依赖最终 attr 解析口径，非 100% 保证触发。 */
+ *  因 demand 区间依赖最终 attr 解析口径，非 100% 保证触发。
+ *  与判定路径同门控：骰子关闭或骰式（allow_formula）时点选不走卡判定，
+ *  此时预告即为永不触发的谎言，直接返回空。楼层已结算由调用方把守（需 message 标识）。 */
 export function previewTriggeredCards(
   optionText: string,
   character: { data?: unknown } | undefined,
@@ -256,6 +249,7 @@ export function previewTriggeredCards(
 ): Card[] {
   const gs = useGlobalSettingsStore();
   if (!gs.settings.card_enabled) return [];
+  if (!gs.settings.dice.enabled || gs.settings.dice.allow_formula) return [];
   const equipped = resolveEquippedCards(currentCardConfigId());
   if (equipped.length === 0) return [];
   const ctx = buildCardContext(optionText, character, dice.attr_dc_enabled, dice.low_roll);
@@ -298,14 +292,16 @@ export function samplePackOffer(configId: string): CardOffer {
     const c = pickDistinct(pool, exclude);
     if (!c) break;
     exclude.add(c.id);
-    options.push({ card: c, upgrade: !!gs.settings.card_collection[c.id] });
+    const owned = gs.settings.card_collection[c.id];
+    options.push({ card: c, upgrade: !!owned, owned });
   }
   return { options, configId };
 }
 
 /** 判定主入口（card_enabled=true 分支）：叠加卡效果完成一次 D100 判定并返回扩展结果。
- *  不改任何持久状态（货币/开包都在 commitCardRun 统一落库）——使就地重掷两步流的
- *  「预览」不记账，只有真正应用时才 commit。返回 null 表示无需求值（与既有判定一致，不掷骰）。 */
+ *  除开头 ensureStarterCards 的一次性幂等发放（预览路径同样会触发，无害）外不改持久状态
+ *  （货币/开包都在 commitCardRun 统一落库）——使就地重掷两步流的「预览」不记账，
+ *  只有真正应用时才 commit。返回 null 表示无需求值（与既有判定一致，不掷骰）。 */
 export function resolveCardRoll(
   optionText: string,
   character: { data?: unknown } | undefined,
@@ -350,6 +346,7 @@ export function resolveCardRoll(
       preFired.push(eq);
       for (const raw of eq.card.effects) {
         const eff = clampEffect(raw);
+        if (!eff) continue;
         if (eff.kind === 'roll_bonus') rollBonus += eff.amount;
         else if (eff.kind === 'demand_mod') rate = clamp0100(rate + eff.amount);
         else if (eff.kind === 'crit_window') {
@@ -365,25 +362,57 @@ export function resolveCardRoll(
   let roll = clamp0100(rawRoll + rollBonus);
   let outcome = judgeOutcome(roll, rate, critS, critF, mode);
 
-  // ── 后置效果（触发条件掷后可知：roll/outcome + 预掷卡也带的后置） ─────
-  const fired = [...preFired];
+  // ── 后置触发卡收集（按初始骰值/结局匹配，不因后续补算重匹配） ─────────
+  const postFired: EquippedCard[] = [];
   for (const eq of equipped) {
     if (preFired.includes(eq)) continue;
     const t = eq.card.trigger;
     if ((t.kind === 'roll' || t.kind === 'outcome') && matchTrigger(t, ctx, roll, outcome)) {
-      fired.push(eq);
+      postFired.push(eq);
     }
   }
+  const fired = [...preFired, ...postFired];
+
+  // ── 后置一遍：掷后触发卡的修正型效果补算重判（武器系「低骰补力」语义） ─
+  // roll_bonus/demand_mod/crit_window 在掷后补到已掷结果上再判一次；无补算则不重判，
+  // 避免无意义重算。
+  let postRollBonus = 0;
+  let postModified = false;
+  for (const eq of postFired) {
+    for (const raw of eq.card.effects) {
+      const eff = clampEffect(raw);
+      if (!eff) continue;
+      if (eff.kind === 'roll_bonus') {
+        postRollBonus += eff.amount;
+        roll = clamp0100(roll + eff.amount);
+        postModified = true;
+      } else if (eff.kind === 'demand_mod') {
+        rate = clamp0100(rate + eff.amount);
+        postModified = true;
+      } else if (eff.kind === 'crit_window') {
+        critS = clamp0100(critS + eff.success_delta);
+        critF = clamp0100(critF + eff.fail_delta);
+        postModified = true;
+      }
+    }
+  }
+  if (postModified) outcome = judgeOutcome(roll, rate, critS, critF, mode);
+
+  // ── 后置二遍：转化/重掷/叙事（按槽序、按当时结局匹配；上面的重判可能已
+  //  改变 outcome，outcome 触发卡的转化条件沿此顺序依赖，与既有语义一致） ─
   const narrativeLines: string[] = [];
   let rerolled = false;
+  let rerollRaw: number | null = null;
   for (const eq of fired) {
     for (const raw of eq.card.effects) {
       const eff = clampEffect(raw);
+      if (!eff) continue;
       if (eff.kind === 'outcome_convert' && eff.from === outcome) {
         outcome = eff.to;
       } else if (eff.kind === 'reroll' && eff.on === outcome && !rerolled) {
         rerolled = true;
-        const rr = clamp0100(rollD100() + rollBonus);
+        rerollRaw = rollD100();
+        const rr = clamp0100(rerollRaw + rollBonus + postRollBonus);
         outcome = judgeOutcome(rr, rate, critS, critF, mode);
         roll = rr;
       } else if (eff.kind === 'narrative' && eff.text) {
@@ -416,7 +445,12 @@ export function resolveCardRoll(
   }
 
   const margin = diceMargin(mode, roll, rate);
-  const luckyHit = cardEnabled && isLuckyHit(roll, CARD_LUCKY_NUMBER);
+  // 幸运命中判原骰（不含卡牌加成，roll_bonus 不推高开包率）；low 模式取对偶极值，
+  // 消除「加成凑 100」通胀与「大失败开包」两种口径失真。重掷的原骰命中同样计。
+  const luckyNumber = mode === 'low' ? CARD_LUCKY_NUMBER_LOW : CARD_LUCKY_NUMBER;
+  const luckyHit =
+    cardEnabled &&
+    (isLuckyHit(rawRoll, luckyNumber) || (rerollRaw !== null && isLuckyHit(rerollRaw, luckyNumber)));
   const packOffer = luckyHit ? samplePackOffer(configId) : undefined;
   const currencyDelta = (cardEnabled ? CARD_OUTCOME_CURRENCY[outcome] : 0) + setBonus;
 
@@ -437,7 +471,7 @@ export function resolveCardRoll(
   };
 }
 
-/** 幸运数命中：D100 恰好掷中固定幸运数 CARD_LUCKY_NUMBER（比普通大成功更难）。 */
+/** 幸运数命中：原骰恰好掷中当前模式的幸运数（high=100 / low=1，见 cards-constraints）。 */
 export function isLuckyHit(roll: number, luckyNumber: number): boolean {
   return roll === luckyNumber;
 }
@@ -463,7 +497,7 @@ export function commitCardRun(resolution: CardResolution): CardOffer | undefined
     } else if (gs.settings.card_currency > 0) {
       gs.settings.card_currency = Math.max(0, gs.settings.card_currency + resolution.currencyDelta);
     }
-    recordCurrencyOutcome(resolution.currencyDelta);
+    recordCurrencyOutcome(resolution.currencyDelta, resolution.outcome);
   }
   // 幸运命中 → 开卡包：开包统计，返回 offer 供组件弹窗
   if (resolution.luckyHit && resolution.packOffer) {
@@ -673,25 +707,28 @@ export function equipCard(configId: string, cardId: string): { ok: boolean; erro
   if (!card || !owned) return { ok: false, errors: ['卡不存在或未拥有'] };
   if (!CARD_SLOT_TYPES.includes(card.type)) return { ok: false, errors: ['该类型卡没有对应槽位'] };
   const deck = (gs.settings.card_decks[configId] ??= { config_id: configId, slots: [] });
+  // 手动装备即接管：先快照 auto 编组并关开关（与卡组页 snapshotFromAuto 同语义），
+  // 后续预算校验才以「即将生效的手动卡组」为基数，否则 auto 态下校验用错投影
+  if (gs.settings.auto_deck_enabled) {
+    deck.slots = autoDeckCards();
+    gs.settings.auto_deck_enabled = false;
+    toastr.info('已切换为手动卡组（可在卡组页重新开启自动编组）');
+  }
   deck.slots = normalizeDeckSlots(deck.slots);
   if (deck.slots.some(s => s.card_id === cardId)) return { ok: false, errors: ['该卡已装备'] };
   const budget = canEquipInDeck(configId, card);
   if (!budget.ok) return budget;
   const slot = deck.slots.find(s => s.type === card.type);
   if (slot) slot.card_id = cardId;
-  // 手动装备即接管：关掉自动编组（可在卡组页重新打开），否则手动结果会被 auto 覆盖
-  if (gs.settings.auto_deck_enabled) {
-    gs.settings.auto_deck_enabled = false;
-    toastr.info('已切换为手动卡组（可在卡组页重新开启自动编组）');
-  }
   return { ok: true, errors: [] };
 }
 
-/** 卸下一张卡：清空其所在固定槽位。 */
+/** 卸下一张卡：先规整槽位（历史脏数据下原始 slots 与展示口径可能不一致），再清空其所在固定槽。 */
 export function unequipCard(configId: string, cardId: string): void {
   const gs = useGlobalSettingsStore();
   const deck = gs.settings.card_decks[configId];
   if (!deck) return;
+  deck.slots = normalizeDeckSlots(deck.slots);
   const slot = deck.slots.find(s => s.card_id === cardId);
   if (slot) slot.card_id = '';
 }
@@ -706,10 +743,29 @@ export function buyPack(configId: string): { ok: boolean; errors: string[]; offe
   }
   gs.settings.card_currency -= CARD_PACK_PRICE;
   recordCurrencySpent(CARD_PACK_PRICE);
+  // 购买开包同样计一次「开包次数」（与幸运命中开包同口径），否则统计页三数字互相矛盾
+  recordPackOpened();
+  // 购买开包同样触发角色主题池懒生成（幂等）：不依赖幸运数命中，本次 offer 仍用现有池，
+  // 生成后进后续混合池
+  ensureCharacterPool();
   return { ok: true, errors: [], offer: samplePackOffer(configId) };
 }
 
 // ── 角色主题池懒生成（§6，见 cards-ai.ts） ───────────────────────────────
+
+/** 清空某角色的主题池及其关联卡数据（定义/收藏/历史获得）——供「重新生成」测试/换新风格用。
+ *  破坏性：会删除已收集的该角色主题卡；调用方须先确认。 */
+export function clearCharacterPool(charId: string): void {
+  const gs = useGlobalSettingsStore();
+  const pool = gs.settings.card_character_pools[charId];
+  if (!pool) return;
+  for (const id of pool.card_ids) {
+    delete gs.settings.card_definitions[id];
+    delete gs.settings.card_collection[id];
+    delete gs.settings.card_obtained[id];
+  }
+  delete gs.settings.card_character_pools[charId];
+}
 
 let poolGenRunning = false;
 let poolGenPending = false;

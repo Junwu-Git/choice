@@ -25,7 +25,7 @@
 
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { ensureStarterCards } from '@/core/cards';
+import { ensureStarterCards, ensureCharacterPool } from '@/core/cards';
 import CardLibrary from '@/components/CardLibrary.vue';
 import CardCollection from '@/components/CardCollection.vue';
 import CardDeckEditor from '@/components/CardDeckEditor.vue';
@@ -34,9 +34,13 @@ defineProps<{ area: 'library' | 'deck' | 'collection' }>();
 
 const gs = useGlobalSettingsStore();
 
-/** 启用卡牌时发放新手 starter（判定入口也有双保险，这里用于开启开关的即时反馈）。 */
+/** 启用卡牌时发放新手 starter + 触发角色主题池懒生成（判定/购买入口也有双保险，
+ *  这里让启用即开始后台生成，无需等幸运命中）。 */
 const onEnableToggle = () => {
-  if (gs.settings.card_enabled) ensureStarterCards();
+  if (gs.settings.card_enabled) {
+    ensureStarterCards();
+    ensureCharacterPool();
+  }
 };
 </script>
 

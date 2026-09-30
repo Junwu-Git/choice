@@ -21,6 +21,7 @@
           >
             <CardFace
               :card="opt.card"
+              :owned="opt.owned"
               :selectable="true"
               :title="cardLine(opt.card)"
               @select="onPick(i)"

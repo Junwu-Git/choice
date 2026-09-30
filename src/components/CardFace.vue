@@ -34,6 +34,7 @@
       <!-- 效果区：套装徽标（如有）+ 触发行 + 效果行 + 可选叙事行 -->
       <div class="choice-card-face__meta">
         <div v-if="setName" class="choice-card-face__set"><i class="fa-solid fa-layer-group"></i>{{ t`套装` }}·{{ setName }}</div>
+        <div v-else-if="characterName" class="choice-card-face__character" :title="t`${characterName} 主题池`"><i class="fa-solid fa-user"></i>{{ characterName }}</div>
         <div class="choice-card-face__line">触发：{{ triggerLabel(card.trigger) }}</div>
         <div class="choice-card-face__line">效果：{{ effectsLabel(card.effects) }}</div>
         <div v-if="card.narrative" class="choice-card-face__narrative">{{ card.narrative }}</div>
@@ -92,6 +93,8 @@ const starN = computed(() => Number(props.card.star) || 0);
 const isRare = computed(() => isHighStar(props.card.star));
 /** 套装名（card.set 对应 CARD_SETS；空套装不显示徽标） */
 const setName = computed(() => cardSetById(props.card.set)?.name);
+/** 角色主题卡归属名（source='character' 且 character_name 非空时显示，与套装徽标互斥） */
+const characterName = computed(() => props.card.character_name || '');
 
 const onSelect = () => {
   if (props.selectable) emit('select');
@@ -287,6 +290,18 @@ const starVars = computed(() => ({
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 角色主题徽标：与套装徽标同位、互斥，区分主题卡归属哪个角色（多池混排时认得出） */
+.choice-card-face__character {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-text-secondary);
+  font-weight: 600;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.85;
 }
 
 /* 页脚 */

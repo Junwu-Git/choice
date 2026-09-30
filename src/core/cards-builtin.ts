@@ -32,6 +32,8 @@ const builtin = (spec: BuiltinSpec): Card => ({
   narrative: spec.narrative ?? '',
   source: 'builtin',
   set: spec.set ?? '',
+  character_id: '', // 内置卡无角色归属
+  character_name: '',
 });
 
 const R = (kind: Card['trigger']['kind'], value: Partial<Card['trigger']> = {}): Card['trigger'] => ({
@@ -214,11 +216,8 @@ export const BUILTIN_CARDS: readonly Card[] = [
     type: 'spell',
     star: '5',
     name: '万象归元',
-    trigger: R('outcome', { outcome: 'fail' }),
-    effects: [
-      { kind: 'outcome_convert', from: 'fail', to: 'crit_success' },
-      { kind: 'demand_mod', amount: -30 },
-    ],
+    trigger: R('outcome', { outcome: 'crit_fail' }),
+    effects: [{ kind: 'outcome_convert', from: 'crit_fail', to: 'crit_success' }],
     narrative: '万象归于一元，败局在瞬间被重写为神迹。',
   }),
   builtin({

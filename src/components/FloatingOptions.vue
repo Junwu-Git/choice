@@ -200,7 +200,7 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
-import { storeGeneration } from '@/core/options-store';
+import { storeGeneration, isCardSettled } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -209,7 +209,8 @@ import { openSettings, closeBubbleOptions, isSettingsOpen, bubbleX, bubbleY, bub
 import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
 import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { openCardPack } from '@/core/card-pack-state';
-import { effectSummary, previewTriggeredCards, type CardResolution } from '@/core/cards';
+import { previewTriggeredCards, type CardResolution } from '@/core/cards';
+import { effectSummary } from '@/core/cards-meta';
 import type { Card } from '@/type/settings';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { getStCharacter } from '@/core/st-character';
@@ -323,17 +324,19 @@ const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
 // v66 点选前触发预览：与主面板 ActionOptionsPanel 同构（并行模式，两处需同步改动）。
-// 弹窗只有选项视图、无润色概念，故不做 activeView 门控。整表算一次缓存。
-const cardPreviews = computed<Card[][]>(() =>
-  gs.settings.card_enabled
-    ? options.value.map(o =>
-        previewTriggeredCards(o.text, currentChar.value, {
-          attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
-          low_roll: gs.settings.dice.low_roll,
-        }),
-      )
-    : [],
-);
+// 弹窗只有选项视图、无润色概念，故不做 activeView 门控；骰子可用性/楼层结算门控与主面板一致
+// （结算态非响应式，借 rollResults 的点选更新触发重算）。整表算一次缓存。
+const cardPreviews = computed<Card[][]>(() => {
+  void rollResults.value.size;
+  if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
+  if (panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId)) return [];
+  return options.value.map(o =>
+    previewTriggeredCards(o.text, currentChar.value, {
+      attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
+      low_roll: gs.settings.dice.low_roll,
+    }),
+  );
+});
 const previewOf = (index: number): Card[] => cardPreviews.value[index] ?? [];
 
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），

@@ -72,7 +72,12 @@
     <!-- 当前角色主题池 -->
     <ChoiceSectionCard title="当前角色主题池" icon="fa-solid fa-user">
       <template v-if="currentPoolDefs.length">
-        <p class="choice-lib-hint">{{ t`已懒生成并固定此角色的主题卡池；池内卡随开卡包反复掉落。` }}</p>
+        <div class="choice-lib-pool-actions">
+          <p class="choice-lib-hint">{{ t`已懒生成并固定此角色的主题卡池；池内卡随开卡包反复掉落。` }}</p>
+          <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onRegeneratePool">
+            <i class="fa-solid fa-rotate"></i>{{ generating ? t`生成中…` : t`重新生成` }}
+          </button>
+        </div>
         <div class="choice-lib-cards">
           <CardFace
             v-for="c in currentPoolDefs"
@@ -80,12 +85,17 @@
             :card="c"
             :owned="ownedMap[c.id]"
             :state="cardState(c)"
+            :obscured="!isCollected(c)"
+            :previously-owned="isDismantled(c)"
           />
         </div>
       </template>
       <div v-else class="choice-empty">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
-        <div>{{ t`当前角色主题池尚未生成——游玩中幸运数开卡包时会按角色世界观懒生成并固定。` }}</div>
+        <div>{{ t`当前角色主题池尚未生成。可手动立即生成，或游玩中幸运数/购买开卡包时按角色世界观懒生成并固定。` }}</div>
+        <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onGeneratePool">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`立即生成主题卡` }}
+        </button>
       </div>
     </ChoiceSectionCard>
 
@@ -97,10 +107,12 @@
           <CardFace
             v-for="c in poolDefs(pool)"
             :key="c.id"
-:card="c"
-          :owned="ownedMap[c.id]"
-          :state="cardState(c)"
-        />
+            :card="c"
+            :owned="ownedMap[c.id]"
+            :state="cardState(c)"
+            :obscured="!isCollected(c)"
+            :previously-owned="isDismantled(c)"
+          />
         </div>
       </div>
     </ChoiceSectionCard>
@@ -113,13 +125,49 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
-import { collectedCardIds, cardTrophyList, cardSetProgress, buyPack, currentCardConfigId } from '@/core/cards';
+import { collectedCardIds, cardTrophyList, cardSetProgress, buyPack, currentCardConfigId, clearCharacterPool } from '@/core/cards';
+import { generateCharacterPool } from '@/core/cards-ai';
+import { getStCharacter } from '@/core/st-character';
 import { openCardPack } from '@/core/card-pack-state';
 import { CARD_PACK_PRICE } from '@/core/cards-constraints';
 import toastr from 'toastr';
 import type { Card, CardStar } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
+
+/** 主题池生成中（防连点/防「立即生成」与「重新生成」互撞） */
+const generating = ref(false);
+
+/** 手动生成当前角色主题池（测试/手动获取用）：await 到 AI 返回并 toastr 反馈张数或失败原因。 */
+const onGeneratePool = async () => {
+  const cid = gs.currentCharacterId;
+  if (cid == null) {
+    toastr.warning('请先打开一个角色的聊天再生成主题卡。');
+    return;
+  }
+  if (generating.value) return;
+  generating.value = true;
+  try {
+    const n = await generateCharacterPool(String(cid));
+    if (n > 0) {
+      const name = getStCharacter(String(cid))?.name ?? '';
+      toastr.success(`已生成 ${n} 张「${name}」主题卡：${n} 张（收集完毕，卡面已标注角色归属）。`);
+    } else {
+      toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且本次生成结果有效。');
+    }
+  } finally {
+    generating.value = false;
+  }
+};
+
+/** 重新生成当前角色主题池：先清空现有池（删除已收集的该角色主题卡）再重出，供测试/换新风格。 */
+const onRegeneratePool = async () => {
+  const cid = gs.currentCharacterId;
+  if (cid == null || generating.value) return;
+  if (!confirm(`将清空当前角色主题池并重新生成（已收集的 ${currentPoolDefs.value.length} 张该角色主题卡会被删除），确定继续？`)) return;
+  clearCharacterPool(String(cid));
+  await onGeneratePool();
+};
 
 /** 行动币开卡包（原「兑换与任务」页收编到页顶）：不足额按钮置灰。 */
 const onBuyPack = () => {
@@ -237,6 +285,28 @@ const otherPools = computed(() =>
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   margin: 0 0 var(--choice-space-2);
+}
+
+/* 主题池区操作行：提示文案 + 生成/重新生成按钮横向排布 */
+.choice-lib-pool-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  flex-wrap: wrap;
+}
+.choice-lib-pool-actions .choice-lib-hint {
+  margin: 0;
+  flex: 1 1 auto;
+}
+.choice-lib-gen-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.choice-lib-gen-btn[disabled] {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .choice-lib-cards {

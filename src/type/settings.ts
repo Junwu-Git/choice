@@ -1520,7 +1520,8 @@ export const CardEffect = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('outcome_convert'),
-    from: z.enum(['fail', 'crit_success']),
+    /** from 含 crit_fail（v66 后扩）：大失败→大成功为 5★ 专属强力转化 */
+    from: z.enum(['fail', 'crit_fail', 'crit_success']),
     to: z.enum(['success', 'crit_success']),
   }),
   z.object({ kind: z.literal('reroll'), on: z.enum(['fail', 'crit_fail']).default('fail') }),
@@ -1541,6 +1542,10 @@ export const Card = z
     source: z.enum(CARD_SOURCES),
     /** 套装/系列 id（''=通用无套装，如西游/三国等背景套组卡）。见 cards-meta CARD_SETS。 */
     set: z.string().default(''),
+    /** 角色主题卡归属：source='character' 时填生成它的角色 id/名（内置卡为空），
+     *  供卡面角标区分「这张主题卡属于哪个角色」，避免多池混排时认不出。 */
+    character_id: z.string().default(''),
+    character_name: z.string().default(''),
   })
   .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
 export type Card = z.infer<typeof Card>;

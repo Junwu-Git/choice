@@ -611,6 +611,9 @@
             </div>
           </div>
         </div>
+        <p v-if="earnedByOutcome" class="choice-stats-sub">
+          {{ t`收支构成` }}：{{ earnedByOutcome }}{{ t`（失败/大失败为负向，只扣余额）` }}
+        </p>
         <!-- 每卡触发次数（join 卡定义，按触发次数降序） -->
         <div class="choice-stats-sub-block">
           <div class="choice-stats-sub-block-head">
@@ -1246,6 +1249,15 @@ const cardTopTriggers = computed(() => {
     .sort((a, b) => b.triggers - a.triggers)
     .slice(0, 20);
 });
+
+// 行动币获得构成（按结局键记录的 earned 分布；fail/crit_fail 为负向不入 earned，无行）
+const earnedByOutcome = computed(() =>
+  (['crit_success', 'success'] as const)
+    .map(k => ({ label: rollLabelHist(k), v: cardStats.value.currency_earned_by_outcome[k] ?? 0 }))
+    .filter(e => e.v > 0)
+    .map(e => `${e.label} +${e.v}`)
+    .join(' · '),
+);
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));

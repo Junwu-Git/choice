@@ -269,7 +269,7 @@
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { cancelEnrich } from '@/core/enrich-input';
-import { storeGeneration } from '@/core/options-store';
+import { storeGeneration, isCardSettled } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -281,7 +281,8 @@ import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice 
 import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { openCardPack } from '@/core/card-pack-state';
-import { effectSummary, previewTriggeredCards, type CardResolution } from '@/core/cards';
+import { previewTriggeredCards, type CardResolution } from '@/core/cards';
+import { effectSummary } from '@/core/cards-meta';
 import type { Card } from '@/type/settings';
 import { getStCharacter } from '@/core/st-character';
 import type { DiceOutcome } from '@/core/dice';
@@ -467,20 +468,24 @@ const formulaOf = (option: ChoiceOption): string | null =>
 const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
-// v66 点选前触发预览：card_enabled 开时对每个选项预匹配掷前可知触发（type/grade/demand），
-// 行内显示空心「可触发」卡 chip；roll/outcome 类触发需掷后结果，不预告。整表算一次缓存，
-// 避免每行重复 attr 解析。点选判定后由判定 chip 与已触发实心 chip 接管，两者不同时出现。
-// 仅选项视图（润色视图不掷骰、口径与判定分支一致）。主面板与悬浮球两处同构（并行模式）。
-const cardPreviews = computed<Card[][]>(() =>
-  gs.settings.card_enabled && activeView.value === 'options'
-    ? visibleOptions.value.map(o =>
-        previewTriggeredCards(o.text, currentChar.value, {
-          attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
-          low_roll: gs.settings.dice.low_roll,
-        }),
-      )
-    : [],
-);
+// v66 点选前触发预览：card_enabled 开且骰子判定可用（enabled、非骰式）时对每个选项预匹配
+// 掷前可知触发（type/grade/demand），行内显示空心「可触发」卡 chip；roll/outcome 类触发需
+// 掷后结果，不预告。整表算一次缓存，避免每行重复 attr 解析。点选判定后由判定 chip 与已触发
+// 实心 chip 接管，两者不同时出现。仅选项视图（润色视图不掷骰、口径与判定分支一致）。
+// 楼层已结算（cardSettled）后点选不再走卡路径——同层其余行的预告同样撤下；
+// 结算态挂在消息数据上非响应式，借 rollResults 的点选更新触发重算。主面板与悬浮球两处同构（并行模式）。
+const cardPreviews = computed<Card[][]>(() => {
+  void rollResults.value.size;
+  if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
+  if (activeView.value !== 'options') return [];
+  if (panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId)) return [];
+  return visibleOptions.value.map(o =>
+    previewTriggeredCards(o.text, currentChar.value, {
+      attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
+      low_roll: gs.settings.dice.low_roll,
+    }),
+  );
+});
 const previewOf = (index: number): Card[] => cardPreviews.value[index] ?? [];
 
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），

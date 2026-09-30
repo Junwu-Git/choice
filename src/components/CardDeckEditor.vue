@@ -9,15 +9,21 @@
         <span v-if="autoDeck" class="choice-deck-auto" :title="t`自动从已拥有卡填满 4 槽，省去手动编组`">
           <i class="fa-solid fa-wand-magic-sparkles"></i>{{ t`自动编组中` }}
         </span>
-        <span class="choice-deck-count">{{ t`已装备` }} {{ filledCount }}/{{ fixedSlots.length }}</span>
+        <span class="choice-deck-count">
+          {{ t`已装备` }} {{ filledCount }}/{{ fixedSlots.length }}<template v-if="budgetText"> · {{ budgetText }}</template>
+        </span>
       </p>
-      <p class="choice-deck-hint">{{ t`角色装备区：4 个类型槽位环绕，各装对应类型 1 张；整组受星级预算（3★≤2/4★≤1/5★≤1）约束。` }}</p>
+      <p class="choice-deck-hint">{{ t`角色装备区：4 个类型槽位环绕，各装对应类型 1 张；整组受星级预算（${budgetHint}）约束。` }}</p>
       <label class="choice-toggle">
         <input type="checkbox" :checked="autoDeck" @change="onAutoToggle" />
         <span class="choice-toggle-custom"></span>
         <span class="choice-toggle-label">
           <strong>{{ t`自动编组` }}</strong>
-          <small>{{ autoDeck ? t`已自动填满 4 槽——点任意槽位可改为手动调整` : t`手动编辑卡组（自动编组已关）` }}</small>
+          <small>{{
+            autoDeck
+              ? t`已自动填满 4 槽（全局开关）——点任意槽位可改为手动调整`
+              : t`手动编辑卡组（自动编组已关）`
+          }}</small>
         </span>
       </label>
 
@@ -73,7 +79,8 @@ import CardSlotPicker from '@/components/CardSlotPicker.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { cardDefById, currentCardConfigId, unequipCard, resolveDeckSlots, autoDeckCards } from '@/core/cards';
 import { CARD_STAR_COLOR, CARD_TYPE_ICON, CARD_TYPE_LABEL } from '@/core/cards-meta';
-import type { CardType } from '@/type/settings';
+import { CARD_STAR_BUDGET } from '@/core/cards-constraints';
+import type { CardStar, CardType } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 
@@ -82,6 +89,21 @@ const configId = computed(() => currentCardConfigId());
 /** 固定槽（按 CARD_SLOT_TYPES 权威顺序规整），card_id='' 为空槽 */
 const fixedSlots = computed(() => resolveDeckSlots(configId.value));
 const filledCount = computed(() => fixedSlots.value.filter(s => s.card_id).length);
+
+/** 预算约束文案（从 CARD_STAR_BUDGET 派生，勿在模板硬编码，改常量即脱节） */
+const budgetEntries = computed(() => Object.entries(CARD_STAR_BUDGET) as [CardStar, number][]);
+const budgetHint = computed(() => budgetEntries.value.map(([star, max]) => `${star}★≤${max}`).join('/'));
+
+/** 当前卡组的预算占用读数（仅列受限星级），如「3★ 1/2 · 5★ 0/1」；无高星卡时为空 */
+const budgetText = computed(() => {
+  const counts: Partial<Record<CardStar, number>> = {};
+  for (const s of fixedSlots.value) {
+    const star = cardDefById(s.card_id)?.star;
+    if (star && CARD_STAR_BUDGET[star] !== undefined) counts[star] = (counts[star] ?? 0) + 1;
+  }
+  const text = budgetEntries.value.map(([star, max]) => `${star}★ ${counts[star] ?? 0}/${max}`).join(' · ');
+  return Object.keys(counts).length > 0 ? text : '';
+});
 
 /** 供渲染的槽视图：把卡已装但定义缺失的异常一并归为占位 */
 const slotViews = computed(() =>

@@ -74,42 +74,44 @@ export const CARD_OUTCOME_LABEL: Readonly<Record<string, string>> = {
 };
 
 /** 触发条件人类可读文案（供卡预览/卡组摘要） */
-export function triggerLabel(t: CardTrigger): string {
-  switch (t.kind) {
+export function triggerLabel(tr: CardTrigger): string {
+  switch (tr.kind) {
     case 'type':
-      return `类型·${t.typeValue}`;
+      return t`类型·${tr.typeValue}`;
     case 'grade': {
-      const g = t.grade === 'conservative' ? '保守' : t.grade === 'balanced' ? '平衡' : '大胆';
-      return `档位·${g}`;
+      const g = tr.grade === 'conservative' ? t`保守` : tr.grade === 'balanced' ? t`平衡` : t`大胆`;
+      return t`档位·${g}`;
     }
     case 'demand':
-      return `需求 ${t.min}–${t.max}`;
+      return t`需求 ${tr.min}–${tr.max}`;
     case 'roll':
-      return `骰值 ${t.min}–${t.max}`;
+      return t`骰值 ${tr.min}–${tr.max}`;
     case 'outcome':
-      return `结局·${CARD_OUTCOME_LABEL[t.outcome ?? ''] ?? t.outcome}`;
+      return t`结局·${CARD_OUTCOME_LABEL[tr.outcome ?? ''] ?? tr.outcome}`;
   }
 }
 
 /** 效果集人类可读摘要（多个效果顿号连接） */
 export function effectsLabel(effects: CardEffect[]): string {
-  return (effects ?? []).map(effectLabel).join('、');
+  return (effects ?? []).map(effectSummary).join('、');
 }
 
-function effectLabel(e: CardEffect): string {
+/** 单个效果人类可读摘要（单一事实源：判定 chip 的 title 与卡面「效果」行共用此实现，
+ *  勿在别处再写一份导致措辞漂移） */
+export function effectSummary(e: CardEffect): string {
   switch (e.kind) {
     case 'roll_bonus':
-      return `骰值${e.amount >= 0 ? '+' : ''}${e.amount}`;
+      return t`骰值${e.amount >= 0 ? '+' : ''}${e.amount}`;
     case 'demand_mod':
-      return `需求${e.amount >= 0 ? '+' : ''}${e.amount}`;
+      return t`需求${e.amount >= 0 ? '+' : ''}${e.amount}`;
     case 'crit_window':
-      return `彩蛋±${e.success_delta}/${e.fail_delta}`;
+      return t`彩蛋 ±${e.success_delta}/${e.fail_delta}`;
     case 'outcome_convert':
-      return `${CARD_OUTCOME_LABEL[e.from] ?? e.from}→${CARD_OUTCOME_LABEL[e.to] ?? e.to}`;
+      return t`${CARD_OUTCOME_LABEL[e.from] ?? e.from}→${CARD_OUTCOME_LABEL[e.to] ?? e.to}`;
     case 'reroll':
-      return `${CARD_OUTCOME_LABEL[e.on] ?? e.on}时重掷`;
+      return t`${CARD_OUTCOME_LABEL[e.on] ?? e.on}重掷`;
     case 'narrative':
-      return '叙事';
+      return t`叙事注入`;
   }
 }
 

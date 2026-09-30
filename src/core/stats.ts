@@ -339,13 +339,13 @@ export function recordCardsObtained(): void {
   s.updated_at = Date.now();
 }
 
-/** 记录骰子结局收支（大成功+5/成功+2/失败-1/大失败-3）：正向记入 earned 与 by_outcome；
+/** 记录骰子结局收支（大成功+5/成功+2/失败-1/大失败-3）：正向按调用方显式传入的结局键记入
+ *  earned 与 by_outcome（delta 可能叠加套装加成，无法反查结局，必须传 outcome）；
  *  负向（损失）只体现在余额，不在 stats 记支出（支出专指开卡包消费）。 */
-export function recordCurrencyOutcome(delta: number): void {
+export function recordCurrencyOutcome(delta: number, outcome: DiceOutcome): void {
   if (!useGlobalSettingsStore().settings.stats_enabled || delta <= 0) return;
   const s = cardStats();
-  const key = outcomeKeyFor(delta);
-  if (key) s.currency_earned_by_outcome[key] = (s.currency_earned_by_outcome[key] ?? 0) + delta;
+  s.currency_earned_by_outcome[outcome] = (s.currency_earned_by_outcome[outcome] ?? 0) + delta;
   s.currency_earned += delta;
   s.updated_at = Date.now();
 }
@@ -356,15 +356,6 @@ export function recordCurrencySpent(amount: number): void {
   const s = cardStats();
   s.currency_spent += amount;
   s.updated_at = Date.now();
-}
-
-/** 依据收益来源反推结局键（仅用于 by_outcome 展示；负向不记录，故仅正向映射）。 */
-const OUTCOME_CURRENCY = { crit_success: 5, success: 2 } as const;
-function outcomeKeyFor(delta: number): keyof typeof OUTCOME_CURRENCY | null {
-  for (const [k, v] of Object.entries(OUTCOME_CURRENCY)) {
-    if (v === delta) return k as keyof typeof OUTCOME_CURRENCY;
-  }
-  return null;
 }
 
 /** AI 归因结果与本地 Dice 归因的对称修正（纯函数，L1 归因队列成功后调用）。
