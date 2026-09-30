@@ -17,3 +17,21 @@ export function getStCharacter(id: string | number | null | undefined): StCharac
   if (Number.isNaN(idx)) return undefined;
   return characters[idx] as StCharacter | undefined;
 }
+
+/** 角色卡背景/性格/场景的非空字段集合。 */
+export type CharacterContextFields = {
+  description?: string;
+  personality?: string;
+  scenario?: string;
+};
+
+/** 读角色卡的背景/性格/场景：V2 `data.*` 优先，缺失或空时兜底顶层 `ch.*`（V1/浅卡）。
+ *  只返回非空字段，供 generator 组装提示词模块与卡片 AI 生成注入复用同一套读取逻辑。 */
+export function readCharacterFields(ch: StCharacter | undefined): CharacterContextFields {
+  const pick = (k: 'description' | 'personality' | 'scenario') => ch?.data?.[k] || ch?.[k] || undefined;
+  return {
+    description: pick('description'),
+    personality: pick('personality'),
+    scenario: pick('scenario'),
+  };
+}

@@ -1,5 +1,5 @@
 import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
-import { getStCharacter } from '@/core/st-character';
+import { getStCharacter, readCharacterFields } from '@/core/st-character';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
@@ -208,19 +208,19 @@ export const buildMessages = async (
       }
       case 'char_description': {
         const ch = getStCharacter(this_chid);
-        const desc = ch?.data?.description;
+        const desc = readCharacterFields(ch).description;
         if (desc) msgs.push({ role: 'system', content: substituteParams(desc) });
         break;
       }
       case 'char_personality': {
         const ch = getStCharacter(this_chid);
-        const personality = ch?.data?.personality;
+        const personality = readCharacterFields(ch).personality;
         if (personality) msgs.push({ role: 'system', content: substituteParams(personality) });
         break;
       }
       case 'char_scenario': {
         const ch = getStCharacter(this_chid);
-        const scenario = ch?.data?.scenario;
+        const scenario = readCharacterFields(ch).scenario;
         if (scenario) msgs.push({ role: 'system', content: substituteParams(scenario) });
         break;
       }
@@ -326,7 +326,7 @@ export const buildMessages = async (
   return merged;
 };
 
-const buildChatHistory = (contextRounds: number): ChatMsg[] => {
+export const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -437,7 +437,7 @@ const extractTagContents = (content: string, rules: Array<{ tag_name: string }>)
   return out;
 };
 
-type WIBuckets = {
+export type WIBuckets = {
   before: string;
   after: string;
   anBefore: string;
@@ -471,7 +471,7 @@ const renderWIBuckets = async (buckets: WIBuckets): Promise<WIBuckets> => {
   return { before, after, anBefore, anAfter, em, depthBefore, depthAfter };
 };
 
-const buildWI = async (): Promise<WIBuckets> => {
+export const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
   const empty: WIBuckets = {
     before: '',
@@ -1405,11 +1405,10 @@ export async function generatePoolEntries(params: {
       poolGenKindBlock(params.kind) +
       (forceType ? `\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。` : '');
     const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }];
-    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
-    const ch = getStCharacter(this_chid);
-    if (ch?.data?.description) messages.push({ role: 'system', content: substituteParams(ch.data.description) });
-    if (ch?.data?.personality) messages.push({ role: 'system', content: substituteParams(ch.data.personality) });
-    if (ch?.data?.scenario) messages.push({ role: 'system', content: substituteParams(ch.data.scenario) });
+    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams；V1/浅卡走 readCharacterFields 兜底）
+    for (const field of Object.values(readCharacterFields(getStCharacter(this_chid)))) {
+      if (field) messages.push({ role: 'system', content: substituteParams(field) });
+    }
     if (params.includeContext) {
       for (const m of buildChatHistory(gs.settings.prompt_rules.context_rounds)) messages.push(m);
     }
