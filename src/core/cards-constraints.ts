@@ -42,7 +42,11 @@ export const CARD_STAR_BUDGET: Readonly<Partial<Record<CardStar, number>>> = {
   '5': 1,
 };
 
-// ── 耐久公式（功能基础值 × 稀有度系数 × 等级成长） ──────────────────────
+/** 卡组固定类型槽位顺序（唯一权威来源，组件不得另写顺序）：每槽绑定一种类型、只可装该类型 1 张。
+ *  CardDeck.slots 恒定按此顺序规整为 4 条（card_id='' 表示空槽）。 */
+export const CARD_SLOT_TYPES: readonly CardType[] = ['weapon', 'spell', 'blessing', 'trial'];
+
+// ── 耐久公式（功能基础值 × 星级系数 × 等级成长） ──────────────────────
 
 /** 功能基础值（按类型）：武器最短 / 法术中等 / 祝福最长 / 试炼最短但最强 */
 export const CARD_DURABILITY_BASE: Readonly<Record<CardType, number>> = {
@@ -75,7 +79,7 @@ export const CARD_LEVEL_DURABILITY_GROWTH = 0.2;
 
 // ── 连抽保底 ─────────────────────────────────────────────────────────────
 
-/** 连续抽卡未出史诗+ 的保底阈值（抽次），达阈值保底轮必含史诗/传说 */
+/** 连续抽卡未出 3 星+ 的保底阈值（抽次），达阈值保底轮必含 3 星+ */
 export const CARD_PITY_SOFT = 30;
 
 // ── 行动币收支表（量级稀有，每次只给几个） ───────────────────────────────
@@ -88,8 +92,10 @@ export const CARD_OUTCOME_CURRENCY: Readonly<Record<DiceOutcome, number>> = {
   crit_fail: -3,
 };
 
-/** 分解重复高级卡（第 2 张及以上 3 星+，保底留 1）的收益 */
-export const CARD_DISMANTLE: Readonly<Partial<Record<CardStar, number>>> = {
+/** 分解收益（v64 起任意卡可分解，整卡移除换行动币）：按星级定价，低星小额、高星高额。 */
+export const CARD_DISMANTLE: Readonly<Record<CardStar, number>> = {
+  '1': 1,
+  '2': 2,
   '3': 6,
   '4': 10,
   '5': 18,
@@ -105,6 +111,13 @@ export const CARD_PRICE: Readonly<Record<CardStar, number>> = {
 };
 export const CARD_PACK_PRICE = 5;
 
+/** 幸运数（固定彩蛋，非玩家参数）：判定 D100 恰中本数 → 触发「开卡包」3 选 1。
+ *  取 100 = 普通大成功更难，不需要配置入口，卡池不允许用户自定义。 */
+export const CARD_LUCKY_NUMBER = 100;
+
+/** 每次开卡包固定展示张数（3 选 1）。卡池不允许用户自定义，无需配置入口。 */
+export const CARD_PACK_OFFER = 3;
+
 /** 抽卡星级权重（低星多 / 高星少，掉率递减） */
 export const CARD_DROP_WEIGHT: Readonly<Record<CardStar, number>> = {
   '1': 50,
@@ -116,6 +129,13 @@ export const CARD_DROP_WEIGHT: Readonly<Record<CardStar, number>> = {
 
 /** 是否保底/分解口径的「高级卡」（3 星及以上）。pity 强制注入、分解、出卡重置保底均用此判定。 */
 export const isHighStar = (star: CardStar): boolean => Number(star) >= 3;
+
+// ── 收藏成就（趣味彩蛋，零操作） ─────────────────────────────────────────
+
+/** 单类型集齐 1–5 星（一套内置卡）即成一枚「全收集」成就；键 = `set_<type>`。 */
+export const CARD_TYPE_FULL_STARS: CardStar[] = ['1', '2', '3', '4', '5'];
+/** 收藏总数里程碑：累计拥有达到该数即一性触发庆祝（键 = `collect_<n>`）。 */
+export const CARD_TROPHY_COLLECT_MILESTONES: readonly number[] = [10, 20];
 
 // ── 每日任务达标阈值（生成/判定/点选） ───────────────────────────────────
 

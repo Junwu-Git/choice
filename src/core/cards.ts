@@ -18,7 +18,9 @@
  */
 
 import { BUILTIN_CARDS } from '@/core/cards-builtin';
+import { CARD_OUTCOME_LABEL, CARD_TYPE_LABEL, CARD_SETS, cardSetById } from '@/core/cards-meta';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import toastr from 'toastr';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import { parseOptionStyle, parseOptionType, type OptionStyleGrade } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
@@ -34,9 +36,14 @@ import {
   CARD_PITY_SOFT,
   CARD_PRICE,
   CARD_STAR_BUDGET,
+  CARD_SLOT_TYPES,
+  CARD_LUCKY_NUMBER,
+  CARD_PACK_OFFER,
   isHighStar,
   CARD_DAILY_KEYS,
   CARD_DAILY_TARGETS,
+  CARD_TYPE_FULL_STARS,
+  CARD_TROPHY_COLLECT_MILESTONES,
   type CardDailyKey,
 } from '@/core/cards-constraints';
 import { diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@/core/dice';
@@ -54,8 +61,8 @@ export type CardTriggeredInfo = { card: Card; summary: string };
 /** 一次开卡包的单个候选（3 选 1 之一）：upgrade = 已拥有 → 选它=升级+修耐久 */
 export type CardOfferOption = { card: Card; upgrade: boolean };
 
-/** 开卡包 offer（混合池稀有度加权抽 card_pack_offer 张）：pityGuaranteed = 保底轮
- *  （必含史诗+）。configId 供选择落库时记保底维度。 */
+/** 开卡包 offer（混合池按星级权重固定抽 CARD_PACK_OFFER 张）：pityGuaranteed = 保底轮
+ *  （必含 3 星+）。configId 供选择落库时记保底维度。 */
 export type CardOffer = {
   options: CardOfferOption[];
   pityGuaranteed: boolean;
@@ -69,6 +76,8 @@ export type CardResolution = {
   packOffer?: CardOffer;
   currencyDelta: number;
   narrativeLines: string[];
+  /** 最终结局：commitCardRun 用其在失败分支触发"判定中招诅咒" */
+  outcome: DiceOutcome;
 };
 
 /** 装备位解析结果（装备 + 持有态） */
@@ -82,10 +91,30 @@ export function currentCardConfigId(): string {
 }
 
 /** 按 config id 解析生效卡组（chat > character > default）。独立于条目池 configs——
- *  卡组用独立 card_decks record，不写进 PoolConfig.entries（保持「config 是纯条目引用清单」）。 */
+ *  卡组用独立 card_decks record，不写进 PoolConfig.entries（保持「config 是纯条目引用清单」）。
+ *  返回前把槽规整为固定 CARD_SLOT_TYPES 个（兼容旧动态 ≤5 张存量），变化则写回供 deep watch 落盘。 */
 export function deckForConfig(configId: string): CardDeck | null {
   const gs = useGlobalSettingsStore();
-  return gs.settings.card_decks[configId] ?? null;
+  const deck = gs.settings.card_decks[configId];
+  if (!deck) return null;
+  const normalized = normalizeDeckSlots(deck.slots);
+  const changed = normalized.some((s, i) => s.type !== deck.slots[i]?.type || s.card_id !== deck.slots[i]?.card_id);
+  if (changed) deck.slots = normalized;
+  return deck;
+}
+
+/** 把卡组槽规整为固定 CARD_SLOT_TYPES 个（按权威顺序）：每类型只保留首个非空卡、缺的类型补空槽
+ *  （card_id=''）。兼容旧版动态 ≤5 张、同类 ≤1 的存量数据；幂等。 */
+export function normalizeDeckSlots(slots: CardDeck['slots']): CardDeck['slots'] {
+  const used = new Set<string>();
+  return CARD_SLOT_TYPES.map(type => {
+    const hit = slots.find(s => s.type === type && s.card_id && !used.has(s.card_id));
+    if (hit) {
+      used.add(hit.card_id);
+      return { type, card_id: hit.card_id };
+    }
+    return { type, card_id: '' };
+  });
 }
 
 // ── 卡定义与持有解析 ─────────────────────────────────────────────────────
@@ -101,6 +130,13 @@ export function cardDefById(id: string): Card | undefined {
 
 /** 卡是否损坏（耐久 ≤ 0）：损坏卡不可装备/触发，靠重复获得/兑换/分解修复 */
 export const isCardBroken = (owned: CardOwned | undefined): boolean => !owned || owned.durability <= 0;
+
+/** 历史获得 id 集合：card_obtained（曾获得，含已分解）∪ card_collection（当前持有）的并集。
+ *  收藏进度/成就/套装基于它——分解只移除持有、不抹掉图鉴与成就。 */
+export function collectedCardIds(): Set<string> {
+  const s = useGlobalSettingsStore().settings;
+  return new Set([...Object.keys(s.card_obtained), ...Object.keys(s.card_collection)]);
+}
 
 /** 混合卡池（抽卡用）：内置全量 + 当前角色已生成主题池全量。返回去重后的完整卡定义数组。 */
 export function mixedPoolCards(): Card[] {
@@ -118,13 +154,13 @@ export function mixedPoolCards(): Card[] {
   return [...byId.values()];
 }
 
-/** 解析某 config 已装备的卡（过滤损坏 + 超等级预算，防御历史脏数据）。 */
+/** 解析某 config 已装备的卡（遍历规整后的固定槽，跳过空槽/损坏/超星级预算，防御历史脏数据）。
+ *  auto 模式自动编组，手动模式读存储 slots。 */
 export function resolveEquippedCards(configId: string): EquippedCard[] {
   const gs = useGlobalSettingsStore();
-  const deck = gs.settings.card_decks[configId];
-  if (!deck) return [];
   const equipped: EquippedCard[] = [];
-  for (const slot of deck.slots) {
+  for (const slot of effectiveDeckSlots(configId)) {
+    if (!slot.card_id) continue;
     const card = cardDefById(slot.card_id);
     const owned = gs.settings.card_collection[slot.card_id];
     if (!card || !owned || isCardBroken(owned)) continue;
@@ -183,9 +219,9 @@ export function effectSummary(e: CardEffect): string {
     case 'crit_window':
       return `彩蛋 ±${e.success_delta}/${e.fail_delta}`;
     case 'outcome_convert':
-      return `${e.from}→${e.to}`;
+      return `${CARD_OUTCOME_LABEL[e.from] ?? e.from}→${CARD_OUTCOME_LABEL[e.to] ?? e.to}`;
     case 'reroll':
-      return `${e.on}重掷`;
+      return `${CARD_OUTCOME_LABEL[e.on] ?? e.on}重掷`;
     case 'narrative':
       return '叙事注入';
   }
@@ -241,13 +277,13 @@ function enforcePity(offer: CardOfferOption[], pool: Card[]): boolean {
   return true;
 }
 
-/** 混合池 3 选 1 开卡包：按稀有度权重抽 card_pack_offer 张不重复候选；应用连抽保底
- *  （card_pity[configId] ≥ CARD_PITY_SOFT 时本轮必含史诗+）；已拥有/损坏卡转「升级+修复」。
+/** 混合池 3 选 1 开卡包：按星级权重抽固定 CARD_PACK_OFFER 张不重复候选；应用连抽保底
+ *  （card_pity[configId] ≥ CARD_PITY_SOFT 时本轮必含 3 星+）；已拥有/损坏卡转「升级+修复」。
  *  纯采样不改状态——实际落库由 applyPackSelection 完成。 */
 export function samplePackOffer(configId: string): CardOffer {
   const gs = useGlobalSettingsStore();
   const pool = mixedPoolCards();
-  const n = Math.max(2, Math.min(5, gs.settings.card_pack_offer || 3));
+  const n = CARD_PACK_OFFER;
   const options: CardOfferOption[] = [];
   const exclude = new Set<string>();
   for (let i = 0; i < n; i++) {
@@ -287,8 +323,8 @@ export function resolveCardRoll(
   mode: DiceRollMode;
   cards?: CardResolution;
 } | null {
-  const gs = useGlobalSettingsStore();
   const configId = currentCardConfigId();
+  if (cardEnabled) ensureStarterCards();
   const equipped = cardEnabled ? resolveEquippedCards(configId) : [];
   const mode: DiceRollMode = dice.low_roll ? 'low' : 'high';
   const crits = dice.low_roll
@@ -354,10 +390,32 @@ export function resolveCardRoll(
     if (eq.card.narrative) narrativeLines.push(eq.card.narrative);
   }
 
+  // 满编齐整套装联动：4 槽全装且至少有卡触发 → 注入套装修辞 + 小额奖励（鼓励凑满一套）
+  let setBonus = 0;
+  if (cardEnabled && equipped.length === CARD_SLOT_TYPES.length && fired.length > 0) {
+    narrativeLines.push('整套卡牌同频共鸣，攻防一体，气势一时无两。');
+    setBonus = 1;
+  }
+  // 套装共鸣（v64）：装备 ≥2 张「已集齐」套装的卡且本次有卡触发 → 注入该套装特殊叙事 + 小额奖励。
+  // 激励收集：成套才解锁，装备成套才在判定中显现。两套封顶 +2。
+  if (cardEnabled && fired.length > 0) {
+    const equippedSetCounts = new Map<string, number>();
+    for (const eq of equipped) {
+      if (eq.card.set) equippedSetCounts.set(eq.card.set, (equippedSetCounts.get(eq.card.set) ?? 0) + 1);
+    }
+    for (const [setId, n] of equippedSetCounts) {
+      if (n >= 2 && isSetComplete(setId)) {
+        const def = cardSetById(setId);
+        if (def?.resonance) narrativeLines.push(def.resonance);
+        setBonus += 1;
+      }
+    }
+  }
+
   const margin = diceMargin(mode, roll, rate);
-  const luckyHit = cardEnabled && isLuckyHit(roll, gs.settings.card_lucky_number);
+  const luckyHit = cardEnabled && isLuckyHit(roll, CARD_LUCKY_NUMBER);
   const packOffer = luckyHit ? samplePackOffer(configId) : undefined;
-  const currencyDelta = cardEnabled ? CARD_OUTCOME_CURRENCY[outcome] : 0;
+  const currencyDelta = (cardEnabled ? CARD_OUTCOME_CURRENCY[outcome] : 0) + setBonus;
 
   return {
     outcome,
@@ -371,11 +429,12 @@ export function resolveCardRoll(
       packOffer,
       currencyDelta,
       narrativeLines,
+      outcome,
     },
   };
 }
 
-/** 幸运数命中：D100 恰好掷中 card_lucky_number（默认 100，比普通大成功更难）。 */
+/** 幸运数命中：D100 恰好掷中固定幸运数 CARD_LUCKY_NUMBER（比普通大成功更难）。 */
 export function isLuckyHit(roll: number, luckyNumber: number): boolean {
   return roll === luckyNumber;
 }
@@ -424,13 +483,14 @@ export function commitCardRun(resolution: CardResolution): CardOffer | undefined
 // ── 开卡包选择（幸运 / 每日 / 商店卡包共用） ────────────────────────────
 
 /** 应用一次 3 选 1 的选择：抽中已拥有/损坏 → 升级 + 修复到满（level++ 后重算耐久上限）；
- *  新卡 → 建 CardOwned（耐久按功能×稀有度初始化）。出史诗+ → 重置保底计数。
+ *  新卡 → 建 CardOwned（耐久按功能×星级初始化）。出 3 星+ → 重置保底计数。
  *  via：'lucky'|'daily'|'shop'（shop 已扣币，仅影响统计埋点）。 */
 export function applyPackSelection(offer: CardOffer, chosenIdx: number, via: 'lucky' | 'daily' | 'shop'): void {
   const gs = useGlobalSettingsStore();
   const opt = offer.options[chosenIdx];
   if (!opt) return;
   const configId = offer.configId;
+  const before = achievedTrophyKeys(); // 快照：区分「本次促成」与「历史积压」的成就
   upgradeOrAcquire(gs.settings, opt.card, opt.upgrade);
   if (isHighStar(opt.card.star)) {
     gs.settings.card_pity[configId] = 0;
@@ -438,11 +498,18 @@ export function applyPackSelection(offer: CardOffer, chosenIdx: number, via: 'lu
   }
   recordCardsObtained();
   if (via === 'daily') recordDailyReward();
+  maybeGrantTrophy(before);
 }
 
 /** 升级或新得一张卡（商店定向 / 开卡包共用）：已拥有 → level++（满级后随机折回其他未满级卡）
  *  + 修复到满；新卡 → 建持有条目。 */
 function upgradeOrAcquire(s: GlobalSettings, card: Card, ownedBefore: boolean): void {
+  // 历史获得记录：新得/重复抽中/定向兑换都累计（分解只删持有、不删本记录 → 图鉴/成就永久保留）
+  const rec = s.card_obtained[card.id] ?? { card_id: card.id, obtained_at: Date.now(), count: 0 };
+  rec.count += 1;
+  if (!rec.obtained_at) rec.obtained_at = Date.now();
+  s.card_obtained[card.id] = rec;
+
   const existing = s.card_collection[card.id];
   if (existing) {
     if (existing.level < CARD_MAX_LEVEL) {
@@ -473,36 +540,184 @@ function upgradeOrAcquire(s: GlobalSettings, card: Card, ownedBefore: boolean): 
   void ownedBefore;
 }
 
+// ── 收藏成就（趣味彩蛋，零操作）：单类型全收集 + 总数里程碑 + 套装集齐 ─────
+
+/** 各套装的收藏进度（供卡库套装区 + 套装共鸣 + 套装成就共用）。 */
+export type CardSetProgress = {
+  id: string;
+  name: string;
+  theme: string;
+  owned: number;
+  total: number;
+  complete: boolean;
+};
+
+export function cardSetProgress(): CardSetProgress[] {
+  const owned = collectedCardIds();
+  return CARD_SETS.map(set => {
+    const setCards = BUILTIN_CARDS.filter(c => c.set === set.id);
+    const ownedN = setCards.filter(c => owned.has(c.id)).length;
+    return {
+      id: set.id,
+      name: set.name,
+      theme: set.theme,
+      owned: ownedN,
+      total: setCards.length,
+      complete: setCards.length > 0 && ownedN === setCards.length,
+    };
+  });
+}
+
+/** 该套装是否已集齐（全部内置套卡已拥有）。 */
+export const isSetComplete = (setId: string): boolean => cardSetProgress().find(s => s.id === setId)?.complete ?? false;
+
+/** 全部可达成成就及当前达成态（条件即达成，不论是否庆祝过）。供收藏页展示 + 庆祝触发共用。 */
+export function cardTrophyList(): Array<{ key: string; label: string; achieved: boolean }> {
+  const owned = collectedCardIds();
+  const out: Array<{ key: string; label: string; achieved: boolean }> = [];
+  for (const type of CARD_SLOT_TYPES) {
+    const full = CARD_TYPE_FULL_STARS.every(s => owned.has(`builtin_${type}_${s}`));
+    out.push({ key: `set_${type}`, label: `${CARD_TYPE_LABEL[type]}卡全收集（1–5 星）`, achieved: full });
+  }
+  for (const set of cardSetProgress()) {
+    out.push({ key: `set_full_${set.id}`, label: `「${set.name}」集齐`, achieved: set.complete });
+  }
+  const count = owned.size;
+  for (const n of CARD_TROPHY_COLLECT_MILESTONES) {
+    out.push({ key: `collect_${n}`, label: `收藏 ${n} 张卡`, achieved: count >= n });
+  }
+  return out;
+}
+
+/** 当前已达成成就 key 集合（供获得动作前后对比，判断哪项是「本次真正促成」而非历史积压）。 */
+export function achievedTrophyKeys(): Set<string> {
+  return new Set(cardTrophyList().filter(t => t.achieved).map(t => t.key));
+}
+
+/** 达成且未庆祝过的成就 → 标记 + 庆祝 toast。获得卡后（applyPackSelection/buyCard）调用。
+ *  before 为获得动作前的已达成 key 快照（achievedTrophyKeys）：历史已满足的成就只静默标记不弹，
+ *  只对「本次获得把它从未达成推向达成」的项弹 toast；多项合并为一条，避免刷屏/补弹历史积压。 */
+export function maybeGrantTrophy(before: Set<string>): void {
+  const gs = useGlobalSettingsStore();
+  if (!gs.settings.card_enabled) return;
+  const newly: string[] = [];
+  for (const t of cardTrophyList()) {
+    if (gs.settings.card_achievements[t.key]) continue;
+    gs.settings.card_achievements[t.key] = true;
+    if (!before.has(t.key)) newly.push(t.label);
+  }
+  if (newly.length === 1) {
+    toastr.success(`🏆 达成成就：${newly[0]}`);
+  } else if (newly.length > 1) {
+    toastr.success(`🏆 达成 ${newly.length} 项成就：${newly.join('、')}`);
+  }
+}
+
 // ── 卡组编辑（CardDeckEditor 用） ────────────────────────────────────────
 
-/** 装备一张卡到某 config 卡组（同类 ≤1 + 等级预算校验）。返回 { ok, errors[] }。 */
+/** 生效卡组槽（auto 时取自动编组，否则取存储 slots 规整版）——判定与 UI 显示共用同一口径。 */
+function effectiveDeckSlots(configId: string): CardDeck['slots'] {
+  const gs = useGlobalSettingsStore();
+  if (gs.settings.auto_deck_enabled) return autoDeckCards();
+  return normalizeDeckSlots(gs.settings.card_decks[configId]?.slots ?? []);
+}
+
+/** 自动编组：从已拥有未损坏卡里按类型各选最优填满 4 槽（星最高、平手看耐久），
+ *  守星级预算（3★≤2/4★≤1/5★≤1）；预算冲突时退而取更低星或留空。确定性、纯投影不改状态。 */
+export function autoDeckCards(): CardDeck['slots'] {
+  const gs = useGlobalSettingsStore();
+  const budgetCount: Partial<Record<CardStar, number>> = {};
+  return CARD_SLOT_TYPES.map(type => {
+    // 该类型已拥有未损坏卡，星降序（平手耐久降序）
+    const cands = Object.entries(gs.settings.card_collection)
+      .filter(([id, o]) => !isCardBroken(o) && cardDefById(id)?.type === type)
+      .sort((a, b) => {
+        const sa = Number(cardDefById(a[0])!.star);
+        const sb = Number(cardDefById(b[0])!.star);
+        if (sa !== sb) return sb - sa;
+        return b[1].durability - a[1].durability;
+      })
+      .map(([id]) => id);
+    for (const id of cands) {
+      const star = cardDefById(id)!.star;
+      const max = CARD_STAR_BUDGET[star];
+      if (max !== undefined && (budgetCount[star] ?? 0) >= max) continue;
+      if (max !== undefined) budgetCount[star] = (budgetCount[star] ?? 0) + 1;
+      return { type, card_id: id };
+    }
+    return { type, card_id: '' };
+  });
+}
+
+/** 某 config 的固定槽（规整版，按 CARD_SLOT_TYPES 顺序），供卡组编辑按槽位有序渲染。 */
+export function resolveDeckSlots(configId: string): CardDeck['slots'] {
+  return effectiveDeckSlots(configId);
+}
+
+/** 新手 starter（一次性）：启用卡牌且收藏为空时赠 4 张 1★（每类型一张），auto-deck 立即满编、
+ *  让首次使用即刻有卡可触发。幂等：已发放或已有收藏则跳过。
+ *  在 resolveCardRoll（判定真正接入卡）与 CardPoolEditor 开启开关时调用，作为双保险。 */
+export function ensureStarterCards(): void {
+  const gs = useGlobalSettingsStore();
+  if (!gs.settings.card_enabled || gs.settings.card_starter_granted) return;
+  gs.settings.card_starter_granted = true;
+  if (Object.keys(gs.settings.card_collection).length > 0) return; // 已有收藏，跳过发放
+  const starterIds = ['builtin_weapon_1', 'builtin_spell_1', 'builtin_blessing_1', 'builtin_trial_1'];
+  for (const id of starterIds) {
+    const def = cardDefById(id);
+    if (!def) continue;
+    const max = cardMaxDurability(def.type, def.star, 1);
+    gs.settings.card_collection[id] = {
+      card_id: id,
+      level: 1,
+      obtained_at: Date.now(),
+      trigger_count: 0,
+      durability: max,
+      max_durability: max,
+      source: 'builtin',
+    };
+    // 首次发放同样计入历史获得，保证套装/成就进度完整
+    const rec = gs.settings.card_obtained[id] ?? { card_id: id, obtained_at: Date.now(), count: 0 };
+    rec.count += 1;
+    rec.obtained_at = rec.obtained_at || Date.now();
+    gs.settings.card_obtained[id] = rec;
+  }
+}
+
+/** 把一张卡装进其类型槽后，整组星级预算是否通过（纯投影，不落库）。 */
+export function canEquipInDeck(configId: string, card: Card): { ok: boolean; errors: string[] } {
+  const slots = resolveDeckSlots(configId);
+  const projected = slots
+    .map(s => (s.type === card.type ? card : cardDefById(s.card_id)))
+    .filter((c): c is Card => !!c);
+  return checkDeckBudget(projected);
+}
+
+/** 装备一张卡到其类型对应的固定槽位（替换该槽旧卡 + 全组星级预算校验）。返回 { ok, errors[] }。 */
 export function equipCard(configId: string, cardId: string): { ok: boolean; errors: string[] } {
   const gs = useGlobalSettingsStore();
   const card = cardDefById(cardId);
   const owned = gs.settings.card_collection[cardId];
   if (!card || !owned) return { ok: false, errors: ['卡不存在或未拥有'] };
   if (isCardBroken(owned)) return { ok: false, errors: ['卡已损坏，请先修复'] };
+  if (!CARD_SLOT_TYPES.includes(card.type)) return { ok: false, errors: ['该类型卡没有对应槽位'] };
   const deck = (gs.settings.card_decks[configId] ??= { config_id: configId, slots: [] });
-  if (deck.slots.length >= 5) return { ok: false, errors: ['装备位已满（≤5）'] };
-  if (deck.slots.some(s => s.type === card.type)) return { ok: false, errors: ['同类卡最多装备 1 张'] };
+  deck.slots = normalizeDeckSlots(deck.slots);
   if (deck.slots.some(s => s.card_id === cardId)) return { ok: false, errors: ['该卡已装备'] };
-  // 等级预算校验（预演：加上本卡后须通过）
-  const projected = deck.slots
-    .map(s => cardDefById(s.card_id))
-    .filter((c): c is Card => !!c)
-    .concat(card);
-  const budget = checkDeckBudget(projected);
+  const budget = canEquipInDeck(configId, card);
   if (!budget.ok) return budget;
-  deck.slots.push({ card_id: cardId, type: card.type });
+  const slot = deck.slots.find(s => s.type === card.type);
+  if (slot) slot.card_id = cardId;
   return { ok: true, errors: [] };
 }
 
-/** 卸下一张卡。 */
+/** 卸下一张卡：清空其所在固定槽位。 */
 export function unequipCard(configId: string, cardId: string): void {
   const gs = useGlobalSettingsStore();
   const deck = gs.settings.card_decks[configId];
   if (!deck) return;
-  deck.slots = deck.slots.filter(s => s.card_id !== cardId);
+  const slot = deck.slots.find(s => s.card_id === cardId);
+  if (slot) slot.card_id = '';
 }
 
 // ── 商店 / 分解 / 每日任务 ───────────────────────────────────────────────
@@ -516,7 +731,9 @@ export function buyCard(cardId: string): { ok: boolean; errors: string[] } {
   if (gs.settings.card_currency < price) return { ok: false, errors: [`行动币不足（需 ${price}）`] };
   gs.settings.card_currency -= price;
   recordCurrencySpent(price);
+  const before = achievedTrophyKeys(); // 快照：区分「本次促成」与「历史积压」的成就
   upgradeOrAcquire(gs.settings, card, !!gs.settings.card_collection[cardId]);
+  maybeGrantTrophy(before);
   return { ok: true, errors: [] };
 }
 
@@ -531,21 +748,22 @@ export function buyPack(configId: string): { ok: boolean; errors: string[]; offe
   return { ok: true, errors: [], offer: samplePackOffer(configId) };
 }
 
-/** 分解重复高级卡（第 2 张及以上史诗/传说，保底留 1 = 降到 Lv.1 不再分解）：按
- *  CARD_DISMANTLE 得行动币。收藏按 card_id 单槽持有，「重复」体现在等级（level = 获得次数）——
- *  分解消耗 1 级（降到最低 1 级），卡保留、耐久上限按新等级重算。 */
+/** 分解（v64 起任意卡可分解，整卡移除换行动币）：按 CARD_DISMANTLE 定价（1★=1/2★=2/3★=6/4★=10/5★=18）。
+ *  分解后该卡从收藏移除，若正装备在任一卡组则自动卸下（避免残留空引用）。 */
 export function dismantleCard(cardId: string): { ok: boolean; errors: string[]; gain?: number } {
   const gs = useGlobalSettingsStore();
   const owned = gs.settings.card_collection[cardId];
   const def = cardDefById(cardId);
   if (!owned || !def) return { ok: false, errors: ['卡不存在'] };
   const gain = CARD_DISMANTLE[def.star];
-  if (!gain || gain <= 0) return { ok: false, errors: ['只有 3 星及以上可分解'] };
-  if (owned.level < 2) return { ok: false, errors: ['需第 2 张及以上（保底留 1）'] };
-  owned.level -= 1;
-  // 分解后按新等级修复耐久上限（卡保留，不降当前可修）
-  owned.max_durability = cardMaxDurability(def.type, def.star, owned.level);
-  owned.durability = owned.max_durability;
+  if (!gain || gain <= 0) return { ok: false, errors: ['该卡无分解收益'] };
+  // 整卡移除换行动币；正装备的卡组槽位一并卸下
+  delete gs.settings.card_collection[cardId];
+  for (const deck of Object.values(gs.settings.card_decks)) {
+    if (deck.slots.some(s => s.card_id === cardId)) {
+      deck.slots = deck.slots.filter(s => s.card_id !== cardId);
+    }
+  }
   gs.settings.card_currency += gain;
   recordCurrencyEarned(gain);
   return { ok: true, errors: [], gain };

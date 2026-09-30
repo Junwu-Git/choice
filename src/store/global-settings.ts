@@ -2076,6 +2076,19 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v61：新增 card_obtained（历史获得记录，独立于当前持有 card_collection）。收藏进度/成就/套装
+  // 改以其为准，分解只删持有、不抹掉图鉴。老存档无此字段：把存量收藏补种为历史（obtained_at 沿用
+  // CardOwned 里已有的 obtained_at，count=1），这样已持有的卡立即计入；已分解的卡历史无法回溯，
+  // 从升级起对未来获得生效（zod prefault 保证 card_obtained 恒为对象）。
+  if ((validated.schema_version ?? 0) < 61) {
+    const obtained = validated.card_obtained ?? {};
+    for (const [id, owned] of Object.entries(validated.card_collection ?? {})) {
+      if (obtained[id]) continue;
+      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at ?? Date.now(), count: 1 };
+    }
+    validated.card_obtained = obtained;
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 

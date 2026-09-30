@@ -1,4 +1,5 @@
 import type { ChoiceOption } from '@/core/options-store';
+import { isCardSettled, markCardSettled } from '@/core/options-store';
 import toastr from 'toastr';
 import { sendTextareaMessage } from '@sillytavern/script';
 import { parseOptionContent, parseOptionDice } from '@/util/option-format';
@@ -79,12 +80,18 @@ const wrapCardNarratives = (lines: string[]): string => (lines.length ? `<!--${l
  *  供 applyOptionBehavior 与 v61 就地重掷（rollOptionDice → stage → 确认应用）共用。
  *  v62 卡牌：card_enabled 开且未走骰式路径时，改走 cards.ts 的 resolveCardRoll 叠加卡效果
  *  （预掷/后置修正 + 扣耐预留 + 幸运开包 offer），cards 字段随结果返回；关则走现状路径零回归。 */
-function rollForOption(text: string, d: DiceSettings, char: StCharacter | undefined): DiceRollResult | null {
+function rollForOption(
+  text: string,
+  d: DiceSettings,
+  char: StCharacter | undefined,
+  opts?: { cardDisabled?: boolean },
+): DiceRollResult | null {
   const gs = useGlobalSettingsStore();
   // 卡牌路径：仅当总开关开且不使用骰式表达式（卡效果作用于 D100 需求/骰值/彩蛋，与骰式
   // 值域映射不兼容，保持该路径零行为变化）。未装备卡也走这里——纯判定结果带 cards 空决议，
   // 但 currencyDelta 仍按结局计（卡系统开启时点选项判定即有行动币收支）。
-  if (gs.settings.card_enabled && !d.allow_formula) {
+  // v63 防刷：cardDisabled（该楼层已结算）时走非卡路径，无卡决议/无幸运开包/无行动币，零经济。
+  if (gs.settings.card_enabled && !d.allow_formula && !opts?.cardDisabled) {
     return resolveCardRoll(text, char, d, true);
   }
   const mode: DiceRollMode = d.low_roll ? 'low' : 'high';
@@ -132,6 +139,9 @@ export async function applyOptionBehavior(
     generationId?: string;
     matchedEntryId?: string | null;
     scopeId?: string;
+    /** v63 防刷：楼层标识（message+swipe），用于「同一层只结算一次卡牌经济」。 */
+    messageId?: number;
+    swipeId?: number;
     /** v61：调用方已 stage 的判定结果（就地重掷两步流），提供则不再内部掷骰 */
     preRolled?: DiceRollResult | null;
   },
@@ -141,13 +151,20 @@ export async function applyOptionBehavior(
   // 随后确认不可用，选项不应用、统计不计，行内 chip 仍展示本次判定）
   let diceResult: DiceRollResult | null = opts?.preRolled ?? null;
   let appliedContent = content;
+  // v63 防刷：该楼层（message+swipe）是否已结算过卡牌经济——已结算则本次判定走非卡路径
+  // （无行动币/无幸运包/无扣耐/无套装），防「单层反复判定」刷卡。
+  const layerSettled = opts?.messageId != null && opts?.swipeId != null && isCardSettled(opts.messageId, opts.swipeId);
   if ((opts?.view ?? 'options') === 'options') {
     const gs = useGlobalSettingsStore();
     const d = gs.settings.dice;
     // 未提供 preRolled（常规点击）才在此掷骰；就地重掷路径由组件先 rollOptionDice stage
     if (d.enabled && !opts?.preRolled) {
       const char = gs.currentCharacterId != null ? getStCharacter(gs.currentCharacterId) : undefined;
-      diceResult = rollForOption(option.text, d, char);
+      diceResult = rollForOption(option.text, d, char, { cardDisabled: layerSettled });
+    }
+    // 已结算楼层的 preRolled（就地重掷二次确认）也不带卡决议，杜绝 packOffer 二次开窗
+    if (layerSettled && diceResult?.cards) {
+      diceResult = { ...diceResult, cards: undefined };
     }
     if (diceResult) {
       // 隐形演绎注释随所有行为拼接（v57 起成功也注入）：send 直接发送（AI 读到注释）、
@@ -275,7 +292,12 @@ export async function applyOptionBehavior(
     bumpDailyTask(useGlobalSettingsStore(), 'judge');
     // v62 卡牌落库（真正应用后才走）：扣触发卡耐久、按结局收支行动币、幸运命中产开卡包
     // offer。就地重掷两步流的预览（rollOptionDice）不 commit，只有这次确认应用才提交。
-    if (diceResult.cards) commitCardRun(diceResult.cards);
+    // v63 防刷：只有首次结算带 cards（该楼层走卡路径）；首次提交前标记楼层已结算，
+    // 此后同一层判定 cards 为空、天然不落经济——「单层最多结算一次」。
+    if (diceResult.cards) {
+      if (opts?.messageId != null && opts?.swipeId != null) markCardSettled(opts.messageId, opts.swipeId);
+      commitCardRun(diceResult.cards);
+    }
   }
   return diceResult;
 }

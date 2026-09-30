@@ -1075,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 65;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1539,6 +1539,8 @@ export const Card = z
     effects: z.array(CardEffect).prefault([]),
     narrative: z.string().default(''),
     source: z.enum(CARD_SOURCES),
+    /** 套装/系列 id（''=通用无套装，如西游/三国等背景套组卡）。见 cards-meta CARD_SETS。 */
+    set: z.string().default(''),
   })
   .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
 export type Card = z.infer<typeof Card>;
@@ -1558,11 +1560,24 @@ export const CardOwned = z
   .prefault({});
 export type CardOwned = z.infer<typeof CardOwned>;
 
-/** 某 config 的卡组（≤5 格、同类 ≤1、受等级预算约束）。独立 record，不写进 PoolConfig.entries。 */
+/** 历史获得记录（键 = card_id）：与 card_collection（当前持有）分离，记录"曾经获得过"，
+ *  分解只移除持有、不删本记录——收藏进度/成就/套装基于它永久保留。
+ *  count 为累计获得次数（含重复抽中/兑换/升级）；分解不影响。 */
+export const CardObtained = z
+  .object({
+    card_id: z.string().default(''),
+    obtained_at: z.number().default(0),
+    count: z.number().min(1).default(1).catch(1),
+  })
+  .prefault({});
+export type CardObtained = z.infer<typeof CardObtained>;
+
+/** 某 config 的卡组（固定 4 个类型槽，顺序见 CARD_SLOT_TYPES；每槽绑一种类型、只装该类型 1 张，
+ *  card_id='' 表示空槽；整组受星级预算约束）。独立 record，不写进 PoolConfig.entries。 */
 export const CardDeck = z
   .object({
     config_id: z.string().default(''),
-    slots: z.array(z.object({ card_id: z.string(), type: z.enum(CARD_TYPES) })).prefault([]),
+    slots: z.array(z.object({ type: z.enum(CARD_TYPES), card_id: z.string().default('') })).prefault([]),
   })
   .prefault({});
 export type CardDeck = z.infer<typeof CardDeck>;
@@ -1877,14 +1892,13 @@ export const GlobalSettings = z
     /** 卡牌总开关（默认关）：关 = 判定管线不读卡、无卡触发/无幸运开包/无行动币收支，
      *  存量升级零行为变化；收藏库/卡库展示常驻不受开关影响。 */
     card_enabled: z.boolean().default(false),
-    /** 幸运数（默认 100，1–100）：点选项判定时 D100 恰好掷中本数 → 触发「开卡包」3 选 1。
-     *  比普通大成功更难，可配置制造验证场景。 */
-    card_lucky_number: z.number().min(1).max(100).default(100).catch(100),
-    /** 每次开卡包展示张数（默认 3）：混合池按稀有度权重抽出后 3 选 1。 */
-    card_pack_offer: z.number().min(2).max(5).default(3).catch(3),
-    /** 收藏库（键 = card_id）：每张已拥有的卡；耐久扣到 0 = 损坏，重复获得/兑换/分解可修。 */
+    /** 收藏库（键 = card_id）：每张当前持有的卡；耐久扣到 0 = 损坏（条目仍在），
+     *  分解移除条目。持有 ≠ 曾获得：图鉴/成就以 card_obtained 为准。 */
     card_collection: z.record(z.string(), CardOwned).prefault({}),
-    /** 卡组（键 = config.id）：每个 config 一套卡组，固定 ≤5 格、同类 ≤1、受等级预算约束。 */
+    /** 历史获得记录（键 = card_id，v61）：记录"曾经获得过"的卡，独立于当前持有。
+     *  分解只删 card_collection、不删这里，故收藏进度/套装/成就永久保留；v61 迁移把存量收藏补种进来。 */
+    card_obtained: z.record(z.string(), CardObtained).prefault({}),
+    /** 卡组（键 = config.id）：每个 config 一套卡组，固定 4 个类型槽、同类 ≤1、受星级预算约束。 */
     card_decks: z.record(z.string(), CardDeck).prefault({}),
     /** 全量卡定义（键 = card_id）：内置卡定义在 BUILTIN_CARDS 常量，角色主题卡由 AI 生成后
      *  存这里（card_collection 只记持有/耐久/等级，不冗余卡效果）。抽卡/装备/展示统一从
@@ -1893,12 +1907,19 @@ export const GlobalSettings = z
     /** 角色 AI 主题卡池（键 = character id）：首次幸运掉落需要时懒生成并固定；
      *  generated=true 后不再重生成，池内卡反复掉落供升级/修耐久。 */
     card_character_pools: z.record(z.string(), CardCharacterPool).prefault({}),
-    /** 连抽保底计数（键 = config.id）：连续未出史诗+ 累计，达 CARD_PITY_SOFT 时保底轮必含史诗+，出后重置。 */
+    /** 连抽保底计数（键 = config.id）：连续未出 3 星+ 累计，达 CARD_PITY_SOFT 时保底轮必含 3 星+，出后重置。 */
     card_pity: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
     /** 行动币余额（全局唯一货币，量级稀有）：骰子结局收支 + 分解重复高级卡获得；≥0 不扣穿。 */
     card_currency: z.number().min(0).default(0).catch(0),
     /** 每日任务进度（3 个小任务，各奖 1 次免费开包）：本地日期键，每天 0 点重置。 */
     card_daily: CardDaily.prefault({}),
+    /** 自动编组（默认开）：从已拥有未损坏卡自动填满 4 槽（守星级预算），玩家零编组负担；
+     *  关 = 手动编辑存储卡组（现状）。仅影响"谁在槽里"，不改判定语义。 */
+    auto_deck_enabled: z.boolean().default(true),
+    /** 新手 starter 是否已发放（一次性）：首次启用卡牌且收藏为空时赠 4 张 1★，auto-deck 立即满编。 */
+    card_starter_granted: z.boolean().default(false),
+    /** 收藏成就已触发标记（键 = 成就 key，一次性）：达成即置 true，重复达成不再庆祝。 */
+    card_achievements: z.record(z.string(), z.boolean()).prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——
