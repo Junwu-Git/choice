@@ -10,19 +10,20 @@
           <i class="fa-solid fa-wand-magic-sparkles"></i>{{ t`自动编组中` }}
         </span>
         <span class="choice-deck-count">
-          {{ t`已装备` }} {{ filledCount }}/{{ fixedSlots.length }}<template v-if="budgetText"> · {{ budgetText }}</template>
+          {{ t`已装备` }} {{ filledCount }}/{{ fixedSlots.length
+          }}<template v-if="budgetText"> · {{ budgetText }}</template>
         </span>
       </p>
-      <p class="choice-deck-hint">{{ t`角色装备区：4 个类型槽位环绕，各装对应类型 1 张；整组受星级预算（${budgetHint}）约束。` }}</p>
+      <p class="choice-deck-hint">
+        {{ t`角色装备区：4 个类型槽位环绕，各装对应类型 1 张；整组受星级预算（${budgetHint}）约束。` }}
+      </p>
       <label class="choice-toggle">
         <input type="checkbox" :checked="autoDeck" @change="onAutoToggle" />
         <span class="choice-toggle-custom"></span>
         <span class="choice-toggle-label">
           <strong>{{ t`自动编组` }}</strong>
           <small>{{
-            autoDeck
-              ? t`已自动填满 4 槽（全局开关）——点任意槽位可改为手动调整`
-              : t`手动编辑卡组（自动编组已关）`
+            autoDeck ? t`已自动填满 4 槽（全局开关）——点任意槽位可改为手动调整` : t`手动编辑卡组（自动编组已关）`
           }}</small>
         </span>
       </label>
@@ -38,10 +39,7 @@
           v-for="slot in slotViews"
           :key="slot.type"
           class="choice-doll-slot"
-          :class="[
-            `choice-doll-slot--${slotPos[slot.type]}`,
-            { 'choice-doll-slot--empty': !slot.card },
-          ]"
+          :class="[`choice-doll-slot--${slotPos[slot.type]}`, { 'choice-doll-slot--empty': !slot.card }]"
           :style="slot.card ? { borderColor: CARD_STAR_COLOR[slot.card.star] } : undefined"
           :title="slot.card ? t`${slot.card.name}：点击更换` : t`点击装备 ${CARD_TYPE_LABEL[slot.type]}卡`"
         >
@@ -58,19 +56,19 @@
           </button>
 
           <!-- 已装槽的卸下 -->
-          <button v-if="slot.card" class="choice-doll-slot__unequip" :title="t`卸下`" @click.stop="onUnequip(slot.card_id)">
+          <button
+            v-if="slot.card"
+            class="choice-doll-slot__unequip"
+            :title="t`卸下`"
+            @click.stop="onUnequip(slot.card_id)"
+          >
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
       </div>
     </div>
 
-    <CardSlotPicker
-      v-if="activeSlotType"
-      :type="activeSlotType"
-      :config-id="configId"
-      @close="activeSlotType = null"
-    />
+    <CardSlotPicker v-if="activeSlotType" :type="activeSlotType" :config-id="configId" @close="activeSlotType = null" />
   </div>
 </template>
 
@@ -107,7 +105,11 @@ const budgetText = computed(() => {
 
 /** 供渲染的槽视图：把卡已装但定义缺失的异常一并归为占位 */
 const slotViews = computed(() =>
-  fixedSlots.value.map(s => ({ type: s.type, card_id: s.card_id, card: s.card_id ? cardDefById(s.card_id) : undefined })),
+  fixedSlots.value.map(s => ({
+    type: s.type,
+    card_id: s.card_id,
+    card: s.card_id ? cardDefById(s.card_id) : undefined,
+  })),
 );
 
 /** 类型 → 纸娃娃环绕方位（仅展示映射；数据顺序仍以 CARD_SLOT_TYPES 为准） */

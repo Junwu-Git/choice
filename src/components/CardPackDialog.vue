@@ -3,9 +3,7 @@
     <div v-if="cardPack" class="choice-cardpack-overlay" @click.self="closeCardPack()">
       <div class="choice-cardpack-dialog">
         <div class="choice-cardpack-header">
-          <span class="choice-cardpack-title">
-            <i class="fa-solid fa-gift"></i> {{ t`开卡包` }}
-          </span>
+          <span class="choice-cardpack-title"> <i class="fa-solid fa-gift"></i> {{ t`开卡包` }} </span>
           <button class="choice-cardpack-close" :title="t`关闭`" @click="closeCardPack()">&times;</button>
         </div>
         <p class="choice-cardpack-tip">
@@ -14,7 +12,7 @@
         </p>
         <div class="choice-cardpack-cards">
           <div
-            v-for="(opt, i) in (cardPack?.offer.options ?? [])"
+            v-for="(opt, i) in cardPack?.offer.options ?? []"
             :key="opt.card.id"
             class="choice-cardpack-slot"
             :class="{ 'choice-cardpack-slot--rare': isHighStar(opt.card.star) }"

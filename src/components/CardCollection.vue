@@ -4,12 +4,20 @@
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-box-open"></i> {{ t`收藏进度` }}</h4>
       <div class="choice-lib-progress">
-        <span class="choice-lib-stat">{{ t`已收集` }} <b>{{ ownedCount }}/{{ ownableCount }}</b></span>
+        <span class="choice-lib-stat"
+          >{{ t`已收集` }} <b>{{ ownedCount }}/{{ ownableCount }}</b></span
+        >
         <span v-for="r in CARD_STAR_ORDER" :key="r" class="choice-lib-stat" :title="CARD_STAR_LABEL[r]">
           <i class="fa-solid fa-sort-down" :style="{ color: CARD_STAR_COLOR[r] }"></i>{{ starCounts[r] }}
         </span>
-        <span class="choice-lib-stat choice-lib-coins"><i class="fa-solid fa-coins"></i><b>{{ gs.settings.card_currency }}</b></span>
-        <button class="choice-btn-sm choice-pack-buy" :disabled="gs.settings.card_currency < CARD_PACK_PRICE" @click="onBuyPack">
+        <span class="choice-lib-stat choice-lib-coins"
+          ><i class="fa-solid fa-coins"></i><b>{{ gs.settings.card_currency }}</b></span
+        >
+        <button
+          class="choice-btn-sm choice-pack-buy"
+          :disabled="gs.settings.card_currency < CARD_PACK_PRICE"
+          @click="onBuyPack"
+        >
           <i class="fa-solid fa-box"></i>{{ t`开卡包（${CARD_PACK_PRICE} 币）` }}
         </button>
       </div>
@@ -35,7 +43,12 @@
     <ChoiceSectionCard title="套装收藏" icon="fa-solid fa-layer-group">
       <p class="choice-lib-hint">{{ t`集齐某套装的卡解锁其特殊效果；装备 ≥2 张成套卡时判定触发。` }}</p>
       <div class="choice-lib-sets">
-        <div v-for="s in setProgress" :key="s.id" class="choice-lib-set" :class="{ 'choice-lib-set--done': s.complete }">
+        <div
+          v-for="s in setProgress"
+          :key="s.id"
+          class="choice-lib-set"
+          :class="{ 'choice-lib-set--done': s.complete }"
+        >
           <div class="choice-lib-set-head">
             <span class="choice-lib-set-name"><i class="fa-solid fa-layer-group"></i>{{ s.name }}</span>
             <span class="choice-lib-set-count">{{ s.owned }}/{{ s.total }}</span>
@@ -48,7 +61,9 @@
 
     <!-- 内置卡库（不可编辑，只可收集/装备；未获得卡模糊遮盖） -->
     <ChoiceSectionCard title="内置卡库" icon="fa-solid fa-database">
-      <p class="choice-lib-hint">{{ t`内置卡全球通用、可反复掉落；未获得的卡模糊遮盖，靠开卡包/幸运掉落随机获得（重复获得自动折算行动币）。` }}</p>
+      <p class="choice-lib-hint">
+        {{ t`内置卡全球通用、可反复掉落；未获得的卡模糊遮盖，靠开卡包/幸运掉落随机获得（重复获得自动折算行动币）。` }}
+      </p>
       <div class="choice-lib-cards">
         <CardFace
           v-for="c in builtinCards"
@@ -92,7 +107,9 @@
       </template>
       <div v-else class="choice-empty">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
-        <div>{{ t`当前角色主题池尚未生成。可手动立即生成，或游玩中幸运数/购买开卡包时按角色世界观懒生成并固定。` }}</div>
+        <div>
+          {{ t`当前角色主题池尚未生成。可手动立即生成，或游玩中幸运数/购买开卡包时按角色世界观懒生成并固定。` }}
+        </div>
         <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onGeneratePool">
           <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`立即生成主题卡` }}
         </button>
@@ -125,7 +142,14 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
-import { collectedCardIds, cardTrophyList, cardSetProgress, buyPack, currentCardConfigId, clearCharacterPool } from '@/core/cards';
+import {
+  collectedCardIds,
+  cardTrophyList,
+  cardSetProgress,
+  buyPack,
+  currentCardConfigId,
+  clearCharacterPool,
+} from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
 import { openCardPack } from '@/core/card-pack-state';
@@ -164,7 +188,12 @@ const onGeneratePool = async () => {
 const onRegeneratePool = async () => {
   const cid = gs.currentCharacterId;
   if (cid == null || generating.value) return;
-  if (!confirm(`将清空当前角色主题池并重新生成（已收集的 ${currentPoolDefs.value.length} 张该角色主题卡会被删除），确定继续？`)) return;
+  if (
+    !confirm(
+      `将清空当前角色主题池并重新生成（已收集的 ${currentPoolDefs.value.length} 张该角色主题卡会被删除），确定继续？`,
+    )
+  )
+    return;
   clearCharacterPool(String(cid));
   await onGeneratePool();
 };
@@ -187,7 +216,8 @@ const trophies = computed(() => cardTrophyList());
 const setProgress = computed(() => cardSetProgress());
 
 /** 套装收集进度百分比（卡库套装收藏区进度条）。 */
-const setPct = (s: { owned: number; total: number }): string => (s.total ? `${Math.round((s.owned / s.total) * 100)}%` : '0%');
+const setPct = (s: { owned: number; total: number }): string =>
+  s.total ? `${Math.round((s.owned / s.total) * 100)}%` : '0%';
 
 /** 卡面状态：未拥有置灰 disabled；其余 normal。 */
 const cardState = (c: Card): 'normal' | 'disabled' => {

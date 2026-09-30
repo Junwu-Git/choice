@@ -2,9 +2,7 @@
   <div class="choice-card-editor">
     <!-- 页壳顶部：总开关只在默认的「卡组」子区显示，避免每个卡牌子区重复 -->
     <div v-if="area === 'deck'" class="choice-section">
-      <h4 class="choice-section-title">
-        <i class="fa-solid fa-chess-knight"></i> {{ t`卡牌系统` }}
-      </h4>
+      <h4 class="choice-section-title"><i class="fa-solid fa-chess-knight"></i> {{ t`卡牌系统` }}</h4>
       <div class="choice-behavior-grid">
         <label class="choice-toggle">
           <input v-model="gs.settings.card_enabled" type="checkbox" @change="onEnableToggle" />

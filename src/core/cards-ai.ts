@@ -116,7 +116,8 @@ export async function generateCharacterPool(charId: string): Promise<number> {
         /* 单张作废 */
       }
     }
-    if (legal.length === 0) { // 全作废：不置位，下次掉落重试
+    if (legal.length === 0) {
+      // 全作废：不置位，下次掉落重试
       return 0;
     }
     // 合法的角色主题卡入册：定义 + 持有 + 历史获得（source=character、按角色池归组）；

@@ -24,11 +24,7 @@ import { getStCharacter } from '@/core/st-character';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import toastr from 'toastr';
 import { usePoolSelectorStore } from '@/store/pool-selector';
-import {
-  parseOptionStyle,
-  parseOptionType,
-  type OptionStyleGrade,
-} from '@/util/option-format';
+import { parseOptionStyle, parseOptionType, type OptionStyleGrade } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import {
   clampEffect,
@@ -46,14 +42,7 @@ import {
   CARD_TROPHY_COLLECT_MILESTONES,
 } from '@/core/cards-constraints';
 import { diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@/core/dice';
-import type {
-  Card,
-  CardDeck,
-  CardOwned,
-  CardStar,
-  CardTrigger,
-  GlobalSettings,
-} from '@/type/settings';
+import type { Card, CardDeck, CardOwned, CardStar, CardTrigger, GlobalSettings } from '@/type/settings';
 
 // ── 领域类型 ─────────────────────────────────────────────────────────────
 
@@ -449,8 +438,7 @@ export function resolveCardRoll(
   // 消除「加成凑 100」通胀与「大失败开包」两种口径失真。重掷的原骰命中同样计。
   const luckyNumber = mode === 'low' ? CARD_LUCKY_NUMBER_LOW : CARD_LUCKY_NUMBER;
   const luckyHit =
-    cardEnabled &&
-    (isLuckyHit(rawRoll, luckyNumber) || (rerollRaw !== null && isLuckyHit(rerollRaw, luckyNumber)));
+    cardEnabled && (isLuckyHit(rawRoll, luckyNumber) || (rerollRaw !== null && isLuckyHit(rerollRaw, luckyNumber)));
   const packOffer = luckyHit ? samplePackOffer(configId) : undefined;
   const currencyDelta = (cardEnabled ? CARD_OUTCOME_CURRENCY[outcome] : 0) + setBonus;
 
@@ -600,7 +588,11 @@ export function cardTrophyList(): Array<{ key: string; label: string; achieved: 
 
 /** 当前已达成成就 key 集合（供获得动作前后对比，判断哪项是「本次真正促成」而非历史积压）。 */
 export function achievedTrophyKeys(): Set<string> {
-  return new Set(cardTrophyList().filter(t => t.achieved).map(t => t.key));
+  return new Set(
+    cardTrophyList()
+      .filter(t => t.achieved)
+      .map(t => t.key),
+  );
 }
 
 /** 达成且未庆祝过的成就 → 标记 + 庆祝 toast。获得卡后（applyPackSelection/buyCard）调用。

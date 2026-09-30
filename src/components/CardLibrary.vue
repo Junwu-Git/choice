@@ -2,7 +2,9 @@
   <div class="choice-card-library">
     <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-layer-group"></i> {{ t`我的卡` }}</h4>
-      <p class="choice-lib-hint">{{ t`你拥有的卡（含内置/套装/角色主题卡），可装备到卡组；重复抽到的卡在开卡包时自动折算行动币。` }}</p>
+      <p class="choice-lib-hint">
+        {{ t`你拥有的卡（含内置/套装/角色主题卡），可装备到卡组；重复抽到的卡在开卡包时自动折算行动币。` }}
+      </p>
       <div class="choice-lib-balance">
         <span class="choice-shop-coins"><i class="fa-solid fa-coins"></i>{{ gs.settings.card_currency }}</span>
         <span class="choice-shop-balance-hint">{{ t`行动币` }}</span>

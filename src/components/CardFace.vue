@@ -26,15 +26,24 @@
       <div class="choice-card-face__illu" :title="CARD_STAR_LABEL[card.star]">
         <i class="choice-card-face__illu-icon" :class="CARD_TYPE_ICON[card.type]"></i>
         <div class="choice-card-face__name">{{ card.name }}</div>
-        <span v-if="!owned" class="choice-card-face__unowned-badge" :class="{ 'choice-card-face__unowned-badge--dismantled': previouslyOwned }">
-          <i :class="previouslyOwned ? 'fa-solid fa-scissors' : 'fa-solid fa-lock'"></i>{{ previouslyOwned ? t`曾获得` : t`未拥有` }}
+        <span
+          v-if="!owned"
+          class="choice-card-face__unowned-badge"
+          :class="{ 'choice-card-face__unowned-badge--dismantled': previouslyOwned }"
+        >
+          <i :class="previouslyOwned ? 'fa-solid fa-scissors' : 'fa-solid fa-lock'"></i
+          >{{ previouslyOwned ? t`曾获得` : t`未拥有` }}
         </span>
       </div>
 
       <!-- 效果区：套装徽标（如有）+ 触发行 + 效果行 + 可选叙事行 -->
       <div class="choice-card-face__meta">
-        <div v-if="setName" class="choice-card-face__set"><i class="fa-solid fa-layer-group"></i>{{ t`套装` }}·{{ setName }}</div>
-        <div v-else-if="characterName" class="choice-card-face__character" :title="t`${characterName} 主题池`"><i class="fa-solid fa-user"></i>{{ characterName }}</div>
+        <div v-if="setName" class="choice-card-face__set">
+          <i class="fa-solid fa-layer-group"></i>{{ t`套装` }}·{{ setName }}
+        </div>
+        <div v-else-if="characterName" class="choice-card-face__character" :title="t`${characterName} 主题池`">
+          <i class="fa-solid fa-user"></i>{{ characterName }}
+        </div>
         <div class="choice-card-face__line">触发：{{ triggerLabel(card.trigger) }}</div>
         <div class="choice-card-face__line">效果：{{ effectsLabel(card.effects) }}</div>
         <div v-if="card.narrative" class="choice-card-face__narrative">{{ card.narrative }}</div>
@@ -181,7 +190,11 @@ const starVars = computed(() => ({
   gap: var(--choice-space-1);
   padding: var(--choice-space-1) var(--choice-space-2);
   border-radius: var(--choice-radius-sm);
-  background: linear-gradient(180deg, var(--choice-card-star-soft), color-mix(in srgb, var(--choice-card-star-soft) 40%, transparent 60%));
+  background: linear-gradient(
+    180deg,
+    var(--choice-card-star-soft),
+    color-mix(in srgb, var(--choice-card-star-soft) 40%, transparent 60%)
+  );
   color: var(--choice-card-star);
   font-size: var(--choice-text-2xs);
 }
@@ -208,8 +221,13 @@ const starVars = computed(() => ({
   align-items: center;
   justify-content: center;
   border-radius: var(--choice-radius-sm);
-  background: radial-gradient(circle at 30% 20%, var(--choice-card-star-soft), transparent 70%),
-    linear-gradient(135deg, var(--choice-card-star-soft), color-mix(in srgb, var(--choice-card-star-soft) 25%, transparent 75%));
+  background:
+    radial-gradient(circle at 30% 20%, var(--choice-card-star-soft), transparent 70%),
+    linear-gradient(
+      135deg,
+      var(--choice-card-star-soft),
+      color-mix(in srgb, var(--choice-card-star-soft) 25%, transparent 75%)
+    );
   overflow: hidden;
 }
 

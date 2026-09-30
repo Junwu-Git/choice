@@ -178,8 +178,7 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
           errors.push(`彩蛋窗口修正超过 ±${CARD_CRIT_WINDOW_LIMIT}`);
         break;
       case 'outcome_convert':
-        if (!CONVERT_FROM.includes(e.from) || !CONVERT_TO.includes(e.to))
-          errors.push('结局转化方向非法');
+        if (!CONVERT_FROM.includes(e.from) || !CONVERT_TO.includes(e.to)) errors.push('结局转化方向非法');
         break;
       case 'reroll':
         if (!['fail', 'crit_fail'].includes(e.on)) errors.push('重掷触发结局非法');

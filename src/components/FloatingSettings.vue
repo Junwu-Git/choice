@@ -80,13 +80,9 @@
           <FilterEditor v-else-if="activeSubArea === 'filter'" />
           <Statistics v-else-if="activeSubArea === 'stats'" />
           <CardPoolEditor
-              v-else-if="
-                activeSubArea === 'library' ||
-                activeSubArea === 'deck' ||
-                activeSubArea === 'collection'
-              "
-              :area="cardArea"
-            />
+            v-else-if="activeSubArea === 'library' || activeSubArea === 'deck' || activeSubArea === 'collection'"
+            :area="cardArea"
+          />
           <AppearanceSettings v-else-if="activeSubArea === 'appearance'" />
           <DebugSettings v-else-if="activeSubArea === 'debug'" />
         </div>

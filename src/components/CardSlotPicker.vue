@@ -12,7 +12,11 @@
 
         <div v-if="candidates.length" class="choice-slotpicker-cards">
           <div v-for="c in candidates" :key="c.id" class="choice-slotpicker-card">
-            <CardFace :card="c" :owned="ownedMap[c.id]" :state="isCurrent(c) ? 'disabled' : canEquip(c) ? 'normal' : 'disabled'">
+            <CardFace
+              :card="c"
+              :owned="ownedMap[c.id]"
+              :state="isCurrent(c) ? 'disabled' : canEquip(c) ? 'normal' : 'disabled'"
+            >
               <template #footer>
                 <span v-if="isCurrent(c)" class="choice-slotpicker-current">{{ t`已装备` }}</span>
                 <button

@@ -566,18 +566,14 @@
       <template v-else>
         <div class="choice-stats-cards">
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--warning"
-              ><i class="fa-solid fa-star"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--warning"><i class="fa-solid fa-star"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`幸运命中` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.lucky_hits }}</div>
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--info"
-              ><i class="fa-solid fa-gift"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--info"><i class="fa-solid fa-gift"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`开包次数` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.packs_opened }}</div>
@@ -602,9 +598,7 @@
             </div>
           </div>
           <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--danger"
-              ><i class="fa-solid fa-minus"></i
-            ></span>
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-minus"></i></span>
             <div class="choice-stats-card-body">
               <div class="choice-stats-card-label">{{ t`行动币支出` }}</div>
               <div class="choice-stats-card-value">{{ cardStats.currency_spent }}</div>
@@ -626,9 +620,9 @@
               <span class="choice-dice-history-text" :title="t.name">{{ t.name }}</span>
               <span class="choice-dice-history-nums"
                 ><b>{{ t.triggers }}</b
-                 ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
-                   CARD_STAR_LABEL[t.star]
-                 }}</span></span
+                ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
+                  CARD_STAR_LABEL[t.star]
+                }}</span></span
               >
             </li>
           </ol>
