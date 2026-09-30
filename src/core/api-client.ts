@@ -8,16 +8,21 @@ export type ChatMsg = { role: 'system' | 'user' | 'assistant'; content: string }
 
 const GENERATE_URL = '/api/backends/chat-completions/generate';
 
-/** 规范化 OpenAI 兼容 API 地址：缺少 /v1 后缀时自动补全。
- *  已有版本路径（/v1, /v2...）或端点路径（/chat/completions...）时跳过。 */
+/** 规范化 OpenAI 兼容 API 地址，交给酒馆后端作为 base，酒馆后端总会再拼一次 /chat/completions。
+ *  规则（对既有配置向后兼容）：
+ *  1) 去尾部斜杠；
+ *  2) 剥尾部 /chat/completions（不区分大小写）——用户填完整端点时剥掉，防止酒馆二次拼接造成双拼；
+ *  3) 已有路径段（scheme://host/xxx，含 /v2、/v1beta/openai、/api/paas/v4 等）则尊重所填、不补版本；
+ *  4) 仅裸域名/host（无路径段，如 https://api.deepseek.com）补 OpenAI 默认 /v1。 */
 export function normalizeApiUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
-  const clean = trimmed.replace(/\/+$/, '');
-  if (/\/v\d+$/i.test(clean) || /\/chat\/completions$/i.test(clean)) {
-    return clean;
-  }
-  return clean + '/v1';
+  let clean = trimmed.replace(/\/+$/, '');
+  // 酒馆后端总会再拼一次 /chat/completions：用户填完整端点时剥掉，避免双拼
+  clean = clean.replace(/\/chat\/completions$/i, '').replace(/\/+$/, '');
+  // 已含路径段（scheme://host/xxx）则尊重之；仅裸域名/host 补 OpenAI 默认 /v1
+  const hasPath = /^[a-z][a-z0-9+.-]*:\/\/[^/]+(\/.+)$/i.test(clean);
+  return hasPath ? clean : `${clean}/v1`;
 }
 
 /** 统一副 API 调用入口：行动选项生成与条目池生成共用。

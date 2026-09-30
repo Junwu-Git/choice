@@ -1075,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 59;
+export const SCHEMA_VERSION = 60;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1083,15 +1083,19 @@ export const STATS_WINDOW_SIZE = 50;
 /** 建议最少样本轮次：窗口长度（或全量参与轮次）≥ 此值才出建议，样本不足只标「样本不足」 */
 export const SUGGEST_MIN_SAMPLES = 10;
 /** 建议阈值（超额命中率 = 实际命中率 - 期望命中率，期望 = Σ(matched/count) 平均）：
- *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）；
- *  低于期望 30pp 且无一次命中 → 建议停用。启发式常量，随数据积累调参。 */
+ *  低于期望 20pp → 候选降权；高于期望 15pp → 表现良好（可提权）。
+ *  建议引擎永不产生「停用」动作（只改权重）：极端条目最多降到 SUGGEST_WEIGHT_MIN，绝不置 enabled=false。
+ *  启发式常量，随数据积累调参。 */
 export const SUGGEST_DOWNGRADE_EXCESS = -0.2;
 export const SUGGEST_UPGRADE_EXCESS = 0.15;
-export const SUGGEST_DISABLE_EXCESS = -0.3;
 /** 建议写入的权重边界：降权减半（下限 0.2）、提权按 SUGGEST_UPGRADE_MULTIPLIER
  *  （上限 5），防反复提权/降权失控。这是自动化改写逻辑，不是对用户输入值的 clamp。 */
 export const SUGGEST_WEIGHT_MIN = 0.2;
 export const SUGGEST_WEIGHT_MAX = 5;
+/** 回捞（恢复）目标权重：低于此值的条目在中性带（excess 未到降权阈值）且冷却期结束后，
+ *  按 SUGGEST_UPGRADE_MULTIPLIER 逐步向本值回升，防止池子收敛成少数固定选项、保住多选项多样性。
+ *  与条目默认权重 1 对齐。 */
+export const SUGGEST_WEIGHT_DEFAULT = 1;
 /** 建议提权幅度：表现良好条目 × 此倍率（保守化 1.5，非翻倍）——
  *  提权不改变期望基线（期望只依赖输出条数与匹配），高权重条目曝光更多匹配机会、
  *  稳定采用时易持续提权；放缓幅度让权重向 MAX 收敛变慢，缓解权重分散度劣化。
@@ -1509,9 +1513,10 @@ export function createEmptyStats(): StatsSettings {
  *  演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
  *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。模板占位符
  *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
- *  成功侧勉强得手/顺利达成/漂亮完胜、失败侧差点成功/事与愿违/彻底落败、彩蛋固定
+ *  成功侧勉强得手/险胜/顺利达成/漂亮完胜/势如破竹、失败侧差点成功/功亏一篑/事与愿违/溃败/
+ *  彻底落败、彩蛋固定
  *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
- *  send 模板（success_/fail_send_{low,mid,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
+ *  send 模板（success_/fail_send_{low,mid_low,mid,mid_high,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
  *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。 */
 export const DiceSettings = z
   .object({
@@ -1531,34 +1536,55 @@ export const DiceSettings = z
     success_template: z.string().default('【判定成功】'),
     /** 隐形演绎指令（按程度档位拆分，v58）：实际包在 HTML 注释中随消息发送/填入，
      *  聊天界面不可见；所有点击行为共用（send 直接发送、fill/insert/append 填入输入框
-     *  可编辑）。成功侧三档 = 勉强得手（low）/顺利达成（mid）/漂亮完胜（high），
-     *  失败侧三档 = 差点成功（low）/事与愿违（mid）/彻底落败（high），按 margin
-     *  命中档位取对应模板。某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
+     *  可编辑）。成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/
+     *  漂亮完胜（mid_high）/势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/
+     *  事与愿违（mid）/溃败（mid_high）/彻底落败（high），按 margin 命中档位取对应模板。
+     *  某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
      *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
     success_send_low_template: z
       .string()
       .default(
         '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
       ),
+    success_send_mid_low_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，险胜）。行动刚刚越过了达标线、优势微弱，请描写略带惊险、险中取胜的完成，过程不算从容但结果成立。',
+      ),
     success_send_mid_template: z
       .string()
       .default(
         '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
       ),
-    success_send_high_template: z
+    success_send_mid_high_template: z
       .string()
       .default(
         '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+      ),
+    success_send_high_template: z
+      .string()
+      .default(
+        '骰子判定：成功（点数 {roll}，需求 {rate}，势如破竹）。行动以碾压般的气势一举拿下，请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
       ),
     fail_send_low_template: z
       .string()
       .default(
         '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
       ),
+    fail_send_mid_low_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，功亏一篑）。行动在半途受阻、差口气没能拿下，请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
+      ),
     fail_send_mid_template: z
       .string()
       .default(
         '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+      ),
+    fail_send_mid_high_template: z
+      .string()
+      .default(
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，溃败）。行动明显失守、局面被动，请描写节节败退、落了下风的处境，以及随之扩大的损失。',
       ),
     fail_send_high_template: z
       .string()

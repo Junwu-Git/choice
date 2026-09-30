@@ -4,7 +4,7 @@
  * 「掷 ≤ 率 = 成功」概率制已废弃）。rollDice 掷 1–100 判定成败，
  * buildDiceMarker 按结局渲染隐形演绎注释（HTML 注释，AI 可见、聊天渲染不可见）。
  * v57 起：成功也注入注释；所有结局模板均可用 {rate}/{roll}/{margin}/{degree}，
- * margin = 点数 − 需求，degree 按口语化程度词（成功侧/失败侧各三档，见 marginDegree）。
+ * margin = 点数 − 需求，degree 按口语化程度词（成功侧/失败侧各五档，见 marginDegree）。
  * UI 徽标与判定入口统一走 option-format.ts 的 resolveOptionSuccessRate 解析需求值
  * （档位兜底也在解析层），本模块只负责随机判定、程度词与注释渲染，不持有任何 UI/统计依赖。
  */
@@ -38,13 +38,18 @@ export function rollDice(
   return { roll, outcome };
 }
 
-/** 程度词断点（v57 固定常量，D100 下 margin ≈ −99…+99 按三等分对称；如需可配置
- *  再上移 schema——勿在两处各写一份）。成功侧 [0,+33) 勉强得手 / [+33,+66) 顺利达成 /
- *  [≥+66) 漂亮完胜；失败侧 (−33,0] 差点成功 / (−66,−33] 事与愿违 / [≤−66] 彻底落败。 */
-export const DEGREE_SUCCESS_HIGH = 66;
-export const DEGREE_SUCCESS_LOW = 33;
-export const DEGREE_FAIL_HIGH = -33;
-export const DEGREE_FAIL_LOW = -66;
+/** 程度词断点（固定常量，D100 下 margin ≈ −99…+99 按五等分对称；如需可配置
+ *  再上移 schema——勿在两处各写一份）。成功侧 [0,20) 勉强得手 / [20,40) 险胜 /
+ *  [40,60) 顺利达成 / [60,80) 漂亮完胜 / [≥80) 势如破竹；失败侧 (−20,0] 差点成功 /
+ *  (−40,−20] 功亏一篑 / (−60,−40] 事与愿违 / (−80,−60] 溃败 / [≤−80] 彻底落败。 */
+export const DEGREE_SUCCESS_HIGH = 80;
+export const DEGREE_SUCCESS_MID_HIGH = 60;
+export const DEGREE_SUCCESS_MID = 40;
+export const DEGREE_SUCCESS_LOW = 20;
+export const DEGREE_FAIL_LOW = -80;
+export const DEGREE_FAIL_MID_LOW = -60;
+export const DEGREE_FAIL_MID = -40;
+export const DEGREE_FAIL_HIGH = -20;
 
 /** 按「点数 − 需求」差值给出程度词（纯函数，注释与组件 chip 共用同一口径）。
  *  margin ≥ 0 归成功侧、< 0 归失败侧；margin=0（恰好达标）归「勉强得手」。
@@ -53,18 +58,24 @@ export const DEGREE_FAIL_LOW = -66;
 export function marginDegree(outcome: DiceOutcome, margin: number): string {
   if (outcome === 'crit_success') return '惊艳无比';
   if (outcome === 'crit_fail') return '灾难性失败';
-  if (margin >= DEGREE_SUCCESS_HIGH) return '漂亮完胜';
-  if (margin >= DEGREE_SUCCESS_LOW) return '顺利达成';
+  if (margin >= DEGREE_SUCCESS_HIGH) return '势如破竹';
+  if (margin >= DEGREE_SUCCESS_MID_HIGH) return '漂亮完胜';
+  if (margin >= DEGREE_SUCCESS_MID) return '顺利达成';
+  if (margin >= DEGREE_SUCCESS_LOW) return '险胜';
   if (margin >= 0) return '勉强得手';
   if (margin > DEGREE_FAIL_HIGH) return '差点成功';
-  if (margin > DEGREE_FAIL_LOW) return '事与愿违';
+  if (margin > DEGREE_FAIL_MID) return '功亏一篑';
+  if (margin > DEGREE_FAIL_MID_LOW) return '事与愿违';
+  if (margin > DEGREE_FAIL_LOW) return '溃败';
   return '彻底落败';
 }
 
 /** 程度档位（成功/失败按 margin 分段，彩蛋为单条不落档）。
- *  success：low [0,+33) 勉强得手 / mid [+33,+66) 顺利达成 / high [≥+66) 漂亮完胜；
- *  fail：low (−33,0] 差点成功 / mid (−66,−33] 事与愿违 / high [≤−66] 彻底落败。 */
-export type DiceDegreeTier = 'low' | 'mid' | 'high';
+ *  success：low [0,20) 勉强得手 / mid_low [20,40) 险胜 / mid [40,60) 顺利达成 /
+ *  mid_high [60,80) 漂亮完胜 / high [≥80) 势如破竹；
+ *  fail：low (−20,0] 差点成功 / mid_low (−40,−20] 功亏一篑 / mid (−60,−40] 事与愿违 /
+ *  mid_high (−80,−60] 溃败 / high [≤−80] 彻底落败。 */
+export type DiceDegreeTier = 'low' | 'mid_low' | 'mid' | 'mid_high' | 'high';
 
 /** 按结局 + margin 选择程度档位；彩蛋结局返回 null（单条模板，不走分档）。
  *  供 buildDiceMarker 取对应档位模板，与 marginDegree 共用断点常量、口径一致。 */
@@ -72,19 +83,23 @@ export function degreeTierFor(outcome: DiceOutcome, margin: number): DiceDegreeT
   if (outcome === 'crit_success' || outcome === 'crit_fail') return null;
   if (outcome === 'success') {
     if (margin >= DEGREE_SUCCESS_HIGH) return 'high';
-    if (margin >= DEGREE_SUCCESS_LOW) return 'mid';
+    if (margin >= DEGREE_SUCCESS_MID_HIGH) return 'mid_high';
+    if (margin >= DEGREE_SUCCESS_MID) return 'mid';
+    if (margin >= DEGREE_SUCCESS_LOW) return 'mid_low';
     return 'low';
   }
   if (margin <= DEGREE_FAIL_LOW) return 'high';
-  if (margin <= DEGREE_FAIL_HIGH) return 'mid';
+  if (margin <= DEGREE_FAIL_MID_LOW) return 'mid_high';
+  if (margin <= DEGREE_FAIL_MID) return 'mid';
+  if (margin <= DEGREE_FAIL_HIGH) return 'mid_low';
   return 'low';
 }
 
 export type DiceTemplates = {
-  /** 成功侧三档独立演绎指令（v58：按 margin 命中取对应档，空 = 该档回退 fallback） */
-  success: { low: string; mid: string; high: string };
-  /** 失败侧三档独立演绎指令（v58） */
-  fail: { low: string; mid: string; high: string };
+  /** 成功侧五档独立演绎指令（v58：按 margin 命中取对应档，空 = 该档回退 fallback） */
+  success: { low: string; mid_low: string; mid: string; mid_high: string; high: string };
+  /** 失败侧五档独立演绎指令（v58） */
+  fail: { low: string; mid_low: string; mid: string; mid_high: string; high: string };
   critSuccess: string;
   critFail: string;
 };

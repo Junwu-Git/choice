@@ -136,6 +136,16 @@
               <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
             </label>
           </div>
+          <div class="choice-api-preset-row">
+            <label class="choice-field" style="flex: 1; min-width: 0">
+              <span>{{ t`服务商` }}</span>
+              <select v-model="selectedPresetId" class="choice-select" @change="onSelectPreset">
+                <option value="">{{ t`自定义（手动填写）` }}</option>
+                <option v-for="preset in API_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+              </select>
+            </label>
+          </div>
+          <span v-if="selectedPreset" class="choice-field-hint">{{ selectedPreset.keyHint }}</span>
           <div class="choice-api-bottom-row">
             <div class="choice-api-checks">
               <label class="choice-check">
@@ -168,6 +178,7 @@ import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { SecondaryApi } from '@/type/settings';
 import { normalizeApiUrl } from '@/core/api-client';
+import { API_PRESETS, presetForApiUrl } from '@/core/api-presets';
 
 const globalStore = useGlobalSettingsStore();
 
@@ -196,6 +207,23 @@ const modelList = ref<string[]>([]);
 const fetching = ref(false);
 const modelDropdownOpen = ref(false);
 
+// 服务商预设：仅表单级 UI 状态，不持久化（保存只存 apiurl，刷新后按地址经 presetForApiUrl 反显）
+const selectedPresetId = ref<string>(presetForApiUrl(draftForm.value.apiurl)?.id ?? '');
+const selectedPreset = computed(() => API_PRESETS.find(p => p.id === selectedPresetId.value) ?? null);
+
+const syncPresetFromUrl = () => {
+  selectedPresetId.value = presetForApiUrl(draftForm.value.apiurl)?.id ?? '';
+};
+
+const onSelectPreset = () => {
+  const preset = selectedPreset.value;
+  if (!preset) return; // 自定义：不预填地址
+  const next = { ...draftForm.value, apiurl: preset.baseUrl };
+  // 原模型名若不在该服务商示例中则清空，让用户从示例 placeholder 重选
+  if (!preset.modelExamples.includes(next.model)) next.model = '';
+  draftForm.value = next;
+};
+
 const onModelBlur = () => {
   setTimeout(() => {
     modelDropdownOpen.value = false;
@@ -209,6 +237,7 @@ const selectApi = (id: string) => {
   globalStore.settings.active_api_id = id;
   const api = globalStore.settings.apis.find(a => a.id === id);
   draftForm.value = api ? klona(api) : EMPTY_API();
+  syncPresetFromUrl();
   modelDropdownOpen.value = false;
 };
 
@@ -216,6 +245,7 @@ const createApi = () => {
   selectedApiId.value = '';
   modelList.value = [];
   modelDropdownOpen.value = false;
+  syncPresetFromUrl();
 };
 
 const fetchModels = async () => {
@@ -258,6 +288,7 @@ const removeApi = () => {
   selectedApiId.value = nextId;
   const api = newApis.find(a => a.id === nextId);
   draftForm.value = api ? klona(api) : EMPTY_API();
+  syncPresetFromUrl();
   modelList.value = [];
   modelDropdownOpen.value = false;
   toastr.success(t`已删除`);
@@ -291,6 +322,7 @@ const save = () => {
 const reset = () => {
   selectedApiId.value = globalStore.settings.active_api_id;
   draftForm.value = initForm();
+  syncPresetFromUrl();
   modelList.value = [];
   modelDropdownOpen.value = false;
 };
@@ -405,6 +437,17 @@ const reset = () => {
 }
 
 .choice-api-row .choice-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.choice-api-preset-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--choice-space-2);
+}
+
+.choice-api-preset-row .choice-field {
   flex: 1;
   min-width: 0;
 }

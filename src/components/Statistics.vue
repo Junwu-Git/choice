@@ -715,9 +715,33 @@
       </div>
     </ChoiceSectionCard>
 
-    <ConfirmDialog :open="clearOpen" @confirm="confirmClear" @cancel="cancelClear" />
-    <ConfirmDialog :open="applyOpen" @confirm="confirmApply" @cancel="cancelApply" />
-    <ConfirmDialog :open="rosterOpen" @confirm="confirmRoster" @cancel="cancelRoster" />
+    <ConfirmDialog
+      :open="clearOpen"
+      :title="clearTitle"
+      :message="clearMessage"
+      :confirm-text="clearConfirmText"
+      :cancel-text="clearCancelText"
+      @confirm="confirmClear"
+      @cancel="cancelClear"
+    />
+    <ConfirmDialog
+      :open="applyOpen"
+      :title="applyTitle"
+      :message="applyMessage"
+      :confirm-text="applyConfirmText"
+      :cancel-text="applyCancelText"
+      @confirm="confirmApply"
+      @cancel="cancelApply"
+    />
+    <ConfirmDialog
+      :open="rosterOpen"
+      :title="rosterTitle"
+      :message="rosterMessage"
+      :confirm-text="rosterConfirmText"
+      :cancel-text="rosterCancelText"
+      @confirm="confirmRoster"
+      @cancel="cancelRoster"
+    />
   </div>
 </template>
 
@@ -877,7 +901,7 @@ const automationEnabled = computed({
   },
 });
 /** 控制簇四开关说明（统计采集 / 自动化建议 / AI 归因 / AI 建议理由；常驻可见） */
-const controlHelp = t`统计采集：开启后记录行动选项的生成/选择数据（仅行动选项视图），驱动下方报表与建议引擎；关闭期间零记录，既有历史保留。自动化建议：在统计数据基础上启用建议引擎（提权/降权/停用）、阵容计划与 AI 增强；只想看统计报表的用户保持关闭即可。自动化依赖统计采集，统计关闭时自动化不可用。AI 归因：每轮行动选项生成后，后台异步调 AI 把选项语义匹配到候选条目，结果与本地 Dice 归因 diff 后对称修正统计（默认关：每次生成会多一次 API 请求，且将条目内容送往模型）。AI 建议理由：为当前维度有统计建议的条目生成自然语言解释（打开统计页/切维度按需触发，默认开；仅展示，不改变建议动作与写入链路）。两个 AI 功能均需已配置 API，未配置时静默降级为纯统计。`;
+const controlHelp = t`统计采集：开启后记录行动选项的生成/选择数据（仅行动选项视图），驱动下方报表与建议引擎；关闭期间零记录，既有历史保留。自动化建议：在统计数据基础上启用建议引擎（提权/降权/回捞，只调权重、永不自动停用条目）、阵容计划与 AI 增强；只想看统计报表的用户保持关闭即可。自动化依赖统计采集，统计关闭时自动化不可用。AI 归因：每轮行动选项生成后，后台异步调 AI 把选项语义匹配到候选条目，结果与本地 Dice 归因 diff 后对称修正统计（默认关：每次生成会多一次 API 请求，且将条目内容送往模型）。AI 建议理由：为当前维度有统计建议的条目生成自然语言解释（打开统计页/切维度按需触发，默认开；仅展示，不改变建议动作与写入链路）。两个 AI 功能均需已配置 API，未配置时静默降级为纯统计。`;
 const canApply = computed(() => {
   if (!statsEnabled.value || !automationEnabled.value) return false;
   const scoped = scopeId.value;
@@ -1255,7 +1279,7 @@ type RowMeta = {
 type InsightBadge = { text: string; cls: string; title: string };
 
 /** 洞察徽标（展示层派生，经 rowMeta 每行只算一次）：标签文案/样式类/tooltip 单一
- *  真相源——6 种标签（候选降权/建议停用/表现良好/样本不足/已停用/冷却中）的文案与
+ *  真相源——6 种标签（候选降权/权重回捞/表现良好/样本不足/已停用/冷却中）的文案与
  *  语义色映射集中在此，模板只渲染不重复 if/else，防止两处漂移。建议类标签 tooltip
  *  复用 suggestionTitle 附依据。 */
 const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null): InsightBadge | null => {
@@ -1263,8 +1287,8 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
   switch (insight) {
     case 'downgrade':
       return { text: t`候选降权`, cls: 'choice-stats-insight--bad', title: suggestionTitle(suggestion) };
-    case 'disable':
-      return { text: t`建议停用`, cls: 'choice-stats-insight--disable', title: suggestionTitle(suggestion) };
+    case 'recover':
+      return { text: t`权重回捞`, cls: 'choice-stats-insight--good', title: suggestionTitle(suggestion) };
     case 'good':
       return { text: t`表现良好`, cls: 'choice-stats-insight--good', title: suggestionTitle(suggestion) };
     case 'insufficient':
@@ -1277,7 +1301,7 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
       return {
         text: t`已停用`,
         cls: 'choice-stats-insight--disabled',
-        title: t`该条目已停用（建议停用或阵容落出），不再参与生成；可在条目池页手动重新启用`,
+        title: t`该条目已停用（阵容落出），不再参与生成；可在条目池页手动重新启用`,
       };
     case 'cooldown':
       return {
@@ -1290,11 +1314,15 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
   }
 };
 
+/** 建议动作 → 文案（单一真相源，`suggestionTitle` 与 `applyConfirmMessage` 共用，防两处漂移） */
+const actionLabel = (s: Suggestion): string =>
+  s.action === 'down' ? t`降权` : s.reason === 'recover' ? t`回捞` : t`提权`;
+
 /** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额） */
 const suggestionTitle = (s: Suggestion | null): string => {
   if (!s) return t`基于近 ${sampleMin} 轮或全量样本的统计建议`;
   const newWeightText = s.newWeight !== undefined ? ` → ${s.newWeight}` : '';
-  const act = s.action === 'down' ? t`降权` : s.action === 'disable' ? t`停用` : t`提权`;
+  const act = actionLabel(s);
   return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}`;
 };
 
@@ -1339,7 +1367,16 @@ const applyableCount = computed(() =>
 );
 
 const pending = ref<Suggestion[] | null>(null);
-const { open: applyOpen, show: showApplyConfirm, confirm: confirmApply, cancel: cancelApply } = useConfirm();
+const {
+  open: applyOpen,
+  show: showApplyConfirm,
+  confirm: confirmApply,
+  cancel: cancelApply,
+  title: applyTitle,
+  message: applyMessage,
+  confirmText: applyConfirmText,
+  cancelText: applyCancelText,
+} = useConfirm();
 
 /** 当前维度可撤销的批次计数（持久历史派生，切维度/刷新后仍正确）。
  *  只数「目标 config 仍存活」的历史槽——config 已删除的槽点击撤销会静默失败
@@ -1375,9 +1412,6 @@ const undoHistoryEntry = (entryId: string) => {
   }
 };
 
-const actionLabel = (s: Suggestion): string =>
-  s.action === 'down' ? t`降权` : s.action === 'disable' ? t`停用` : t`提权`;
-
 const applyConfirmMessage = computed(() => {
   const list = pending.value ?? [];
   if (list.length === 0) return '';
@@ -1385,12 +1419,12 @@ const applyConfirmMessage = computed(() => {
     .map(s => {
       const row = groups.value.flatMap(g => g.rows).find(r => r.entryId === s.entryId);
       const name = (row?.content || s.entryId).slice(0, 24);
-      const change = s.action === 'disable' ? t`启用 → 停用` : `${t`权重`} ${s.currentWeight} → ${s.newWeight}`;
+      const change = `${t`权重`} ${s.currentWeight} → ${s.newWeight}`;
       const basis = s.basis === '窗口' ? t`近 ${s.samples} 轮` : t`全量 ${s.samples} 轮`;
       return `· ${name}：${actionLabel(s)}（${change}；${basis}命中 ${rateText(s.rate)}，期望 ${rateText(s.expected)}）`;
     })
     .join('\n');
-  return t`将应用到当前配置：\n${lines}\n\n停用后该条目不再参与生成，不会自动恢复（可在条目池页手动重新启用）。`;
+  return t`将应用到当前配置：\n${lines}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
 });
 
 /** 应用一批建议：设 pending → 弹确认 → 确认后写入。取消/外层守卫失败则只复位 pending。
@@ -1423,7 +1457,7 @@ const applySuggestion = (row: EntryRankRow) => {
   if (s) applyOne(s);
 };
 
-/** 行内「重新启用」：建议停用/阵容落出的条目就地恢复（写入 config，不记历史、不刷冷却） */
+/** 行内「重新启用」：阵容落出（enabled=false）的条目就地恢复（写入 config，不记历史、不刷冷却） */
 const reEnable = (row: EntryRankRow) => {
   if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
   if (reEnableEntry(scopeId.value, row.entryId)) {
@@ -1535,7 +1569,16 @@ const rosterEmptyText = computed(() => {
 });
 
 const pendingRoster = ref<RosterPlan | null>(null);
-const { open: rosterOpen, show: showRosterConfirm, confirm: confirmRoster, cancel: cancelRoster } = useConfirm();
+const {
+  open: rosterOpen,
+  show: showRosterConfirm,
+  confirm: confirmRoster,
+  cancel: cancelRoster,
+  title: rosterTitle,
+  message: rosterMessage,
+  confirmText: rosterConfirmText,
+  cancelText: rosterCancelText,
+} = useConfirm();
 
 const rosterConfirmMessage = computed(() => {
   const p = pendingRoster.value;
@@ -1632,7 +1675,16 @@ const exportStats = () => {
   toastr.success(t`已导出统计 JSON`);
 };
 
-const { open: clearOpen, show: showClearConfirm, confirm: confirmClear, cancel: cancelClear } = useConfirm();
+const {
+  open: clearOpen,
+  show: showClearConfirm,
+  confirm: confirmClear,
+  cancel: cancelClear,
+  title: clearTitle,
+  message: clearMessage,
+  confirmText: clearConfirmText,
+  cancelText: clearCancelText,
+} = useConfirm();
 /** 清空统计：弹确认 → 确认后清空。取消只关闭弹窗（无 pending 状态） */
 const onClearStats = async () => {
   const ok = await showClearConfirm({
@@ -2065,11 +2117,6 @@ const onClearStats = async () => {
 .choice-stats-insight--bad {
   background: var(--choice-color-warning-bg);
   color: var(--choice-color-warning);
-}
-
-.choice-stats-insight--disable {
-  background: var(--choice-color-error-bg);
-  color: var(--choice-color-error);
 }
 
 .choice-stats-insight--good {

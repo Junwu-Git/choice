@@ -94,9 +94,9 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   全局搜索定位，最后回退当前生效维度。 `by_entry` 记录含 `last_selected_text`（最近命中选项正文，parse 后去标头）与
   `last_included_at` （最近参与时间戳）——单槽近似（非历史 log），供条目榜 tooltip 与命中榜展示。
   **命中榜纯函数**（`hitLeaderboard`）：只列精确命中 >0 的条目，按命中次数降序 → 最近选中时间倒序，replace 了早期按 type 聚合的类型榜（type 在此扩展中多为条目标题、与条目榜重复）。
-  **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、否则全量）：超额 ≤−0.2
+  **建议引擎**（`entrySuggestion` 纯函数，`SUGGEST_MIN_SAMPLES`=10 样本门槛，数据源优先窗口、否则全量）；**永不停用——建议动作只有 down/up 两种（纯权重改写），绝不置 enabled=false**（enabled 翻转仅来自阵容落出/手动重新启用）：超额 ≤−0.2
   → 降权（`SUGGEST_WEIGHT_MIN`=0.2 下限，减半）；超额 ≥+0.15
-  → 提权（上限 5，`SUGGEST_UPGRADE_MULTIPLIER`=1.5 保守倍率——提权不改变期望、翻倍会加速权重向上限收敛，放缓幅度缓解权重分散度劣化）；超额 ≤−0.3 且 0 命中，或样本充足且期望=0（输出中从未被采纳）→ 停用（`enabled=false`，停用后不再进 effectivePool 无新数据、不会自动恢复）；pinned 跳过（固定必发，权重无意义）；**已停用条目跳过**（`effectiveEnabled=false`
+  → 提权（`reason:'upgrade'`，上限 5，`SUGGEST_UPGRADE_MULTIPLIER`=1.5 保守倍率——提权不改变期望、翻倍会加速权重向上限收敛，放缓幅度缓解权重分散度劣化）；落在中性带（未到降/提权阈值）且当前权重低于默认 `SUGGEST_WEIGHT_DEFAULT`(=1) → **回捞** `up`（`reason:'recover'`，`newWeight = min(默认, 当前×1.5)` 逐步向默认回升——防止「低权重→抽不到→不被选→继续低」的收敛死循环让池子只剩少数固定选项，保住多选项多样性；冷却（`entryMetrics` 返回 null）会拦住回捞防高频振荡）；pinned 跳过（固定必发，权重无意义）；**已停用条目跳过**（`effectiveEnabled=false`
   不再重复建议，行内标「已停用」，杜绝「停用后标签永远挂着」的口径不自洽）；
   **已删除条目跳过**（`deleted=true`，master_pool 已无此 id，建议与写入均无意义，含展示标签一并屏蔽）；config 维度下未被当前 config 引用但保留历史统计的条目只展示洞察，不进入可应用建议集合，避免
   `applySuggestions` 找不到覆盖层引用而产生「永远无法应用」的幻影建议；
@@ -106,7 +106,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   `SUGGEST_MIN_SAMPLES`
   轮新数据返回 null（「冷却中」不评级不落出），全量兜底此时禁用（含变更前数据）——保证建议基于新权重下的真实表现、防止 1↔2↔4 权重颠簸。从未调整（=0）的条目行为与旧版一致。**应用走 config 覆盖层**：
   `applySuggestions(scopeId, list)` 直写目标 config 的
-  `PoolConfigEntry`（weight/enabled），应用前存受影响条目的局部快照（`snapshotEntryRefs`，只含本批改写的条目 id，非
+  `PoolConfigEntry`（只写 weight；enabled 翻转仅由 `applyRosterPlan` 阵容落出/补入改写，建议路径不再触碰 enabled），应用前存受影响条目的局部快照（`snapshotEntryRefs`，只含本批改写的条目 id，非
   `config.entries`
   全量——撤销/摘要只依赖受影响集，避免大池下历史体积随条目数膨胀）+ 受影响条目冷却标记，批次连同局部快照入 **持久撤销槽
   `apply_history`**（`GlobalSettings` 顶层字段，上限
@@ -141,7 +141,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   随维度）、条目榜搜索/排序/「只看有数据」（`applyEntryFilters` 纯函数，组件只渲染；勾选持久化在
   `ui.stats_only_with_data`，切页/刷新不丢）、命中率/期望/近 10 轮窗口命中率读数与洞察徽标并入 meta 行（主行只留类型徽标 + 内容 + 右侧操作按钮，meta 行数字列 `tabular-nums` 对齐；洞察徽标由组件内 `buildInsightBadge` 单一映射文案/语义色/tooltip，模板不再散落 if/else）、洞察标签（`entryInsight`
   由 `entrySuggestion`
-  派生：候选降权/建议停用/表现良好/样本不足/ 已停用（`effectiveEnabled=false`）/冷却中（调整后新数据不足）；
+  派生：候选降权/权重回捞/表现良好/样本不足/ 已停用（`effectiveEnabled=false`）/冷却中（调整后新数据不足）；
   **只提示不改权重**，需用户点行内对勾或「应用全部建议」经确认框写入，写入入持久撤销槽可撤销；组件侧 `rowMeta`
   每行一次性计算 suggestion+insight+badge 供标签/按钮/批量应用复用（`entryInsight`
   接受可选预计算 suggestion 参数），已停用条目行内另有「重新启用」就地恢复（`reEnableEntry`，置 config 引用 enabled=true，不记历史不刷冷却）、阵容计划区（`planRoster`
@@ -158,6 +158,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
   等设置决定读取范围，不再维护“聊天内模式 / 全局模式”两套生成模式的说法。`enrich`
   模块必须排在 assistant 相关模块之前；人称和字数可配置，当前默认选项/润色范围为 10–60 个字符，不要把它写死成第三人称或 30–80 字。
 - **认知边界（非全知）模块**：`knowledge_boundary`（`option_only`、默认启用、`order: 13.5` 浮点插值，排序在 `wi_depth_after`(13) 与 `core_rules`(14) 之间）。用于缓解“选项太过全知”（用了角色不该知道的信息 / 对看不到的事物做反应），内容独立成块声明“信息分层 / 禁止越界 / 逐条自检”，不改动 `core_rules`、`thinking_prompt` 等用户可编辑模块。开关 = 提示词编辑器里该模块的启用复选框；v59 迁移向 `prompt_rules.modules` 与各 `prompt_configs[].modules` 补建（仿 v24 reward_prompt 先例）。
+- **难度判定细则模块**：`difficulty_rules`（`option_only`、默认启用、`order: 13.7` 浮点插值，排序在 `knowledge_boundary`(13.5) 与 `core_rules`(14) 之间）。用于给 AI 判定选项难度（档位 保守/平衡/大胆 与需求值 0-100 两条轴）提供结构化规则——需求值分段量表、判定因子、档位与需求值可发散、整批需求值拉开落差，缓解此前提示词只有一句“行动越难标得越高”导致的需求值随意简陋。不改动 `core_rules`、`thinking_prompt` 等用户可编辑模块。开关 = 提示词编辑器里该模块的启用复选框；v60 迁移向 `prompt_rules.modules` 与各 `prompt_configs[].modules` 补建（仿 v59 knowledge_boundary 先例）。
 
 ## UI 设计系统与约定
 
@@ -169,7 +170,7 @@ Zod + Vite；发布产物是 `dist/index.js` 与 `dist/index.css`，production �
 - 移动端优先：新组件先在约 380px 容器宽度验证，再扩展到桌面宽度。
 - 当前走克制的卡片化、清晰层级、无玻璃拟态/强动效（仅现状；如你要求玻璃拟态或更强动效，照做即可）。
 - **选项 HUD 化**（`ui.hud_enabled`，默认开）：**保留的行为不变量**——选项行本体（`.choice-option-btn`、`.choice-option-type`、`.choice-option-rate`、`.choice-roll-chip`）在 global.css 单一来源维护，主面板与悬浮球弹窗共用同一套规则（两处不再各自维护，避免判定/选中态行为漂移）；行内判定 chip 状态（选中打勾、判定结果显示与淡出）是组件内存态、不持久化；`prefers-reduced-motion` 下关闭动画。**当前视觉（可改，以用户示例为准）**——左缘 3px 风险档位色条（保守/平衡/大胆，当前惰性引用各主题语义色：保守=成功、平衡=info、大胆=警告）、`--choice-rate-*` 高/低档当前复用警告/成功、悬停加深浮起 + 色条加宽 + 行尾箭头、生成后逐条滑入（当前 staggered 60ms/条，v-for key 含 generation id 保证切代重放）、同代已选打勾（✓ + 半透明虚线）。
-- **选项骰子判定**（v57 难度制，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注需求值（`[标题|档位|70]`，见 option-format 描述），未标注时按风险档位兜底（保守 35 / 平衡 60 / 大胆 85，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≥ `crit_success_min`（默认 96）大成功 → roll ≤ `crit_fail_max`（默认 5）大失败 → roll ≥ 需求值 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效；**掷出 ≥ 需求值才算成功、点数越大越好**——v55「掷 ≤ 率 = 成功」概率制已废弃，用户直觉与正文 AI 均按高点数=成功理解）。**判定影响随所有点击行为生效**：成功/失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，v57 起成功也注入；支持 `{rate}`/`{roll}`/`{margin}`/`{degree}` 占位符——`margin` = 点数−需求、`degree` = 口语化程度词（成功侧勉强得手/顺利达成/漂亮完胜、失败侧差点成功/事与愿违/彻底落败、彩蛋固定惊艳无比/灾难性失败，断点 ±33/±66 固定常量 `DEGREE_*` 放 dice.ts）。**v58 起成功/失败模板按程度档位拆分**：`success_/fail_send_{low,mid,high}_template` 各档独立演绎指令，`buildDiceMarker` 经 `degreeTierFor(outcome, margin)`（`src/core/dice.ts`，彩蛋返回 null 走单条）命中档位取模板，某档为空回退该结局单条回退文案（`success_template`/`fail_template`，铺到三档兜底）、两者皆空不注入；彩蛋 `crit_success/crit_fail` 各保持单条）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带。需求值徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；当前按需求高低分档着色 ≥70 橙 / 40-69 蓝 / <40 绿，高=难，v56 相对 v55 已反转配色，配色随改版可调）与行内判定 chip（**结局+差值**如「成功 +18」「惨败 −38」，差值=点数−需求带符号，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现；**判定结果不再弹酒馆 toastr**（v55 失败走 toastr.error 红得像插件报错，v56 起仅真实错误如「发送框不可用」才 toastr，判定只走行内 chip）。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无需求值选项（AI 自由发挥）不掷骰。**判定 chip 的组件内存态逻辑（rollResults/rollOf/fmtMargin/rollChipText，type RollResult）在主面板与悬浮球各自实现，属既定并行模式**（解析/判定/行为共享层在 option-format/option-action/dice，chip 状态是视图私有展示态），改动需两处同步，勿只改一处。
+- **选项骰子判定**（v57 难度制，`GlobalSettings.dice`，`dice.enabled` 默认关）：AI 生成时在标题标注需求值（`[标题|档位|70]`，见 option-format 描述），未标注时按风险档位兜底（保守 35 / 平衡 60 / 大胆 85，`GRADE_FALLBACK_RATE` 放 option-format.ts 解析层）；点击选项时 `applyOptionBehavior` 掷 D100 判定（`rollDice`，`src/core/dice.ts`，判定序固定：roll ≥ `crit_success_min`（默认 96）大成功 → roll ≤ `crit_fail_max`（默认 5）大失败 → roll ≥ 需求值 成功 → 失败，彩蛋优先于成败且阈值交叉时彩蛋失效；**掷出 ≥ 需求值才算成功、点数越大越好**——v55「掷 ≤ 率 = 成功」概率制已废弃，用户直觉与正文 AI 均按高点数=成功理解）。**判定影响随所有点击行为生效**：成功/失败/大成功/大失败时 `buildDiceMarker` 把演绎指令包成 **HTML 注释**（`<!--...-->`，v57 起成功也注入；支持 `{rate}`/`{roll}`/`{margin}`/`{degree}` 占位符——`margin` = 点数−需求、`degree` = 口语化程度词（成功侧勉强得手/险胜/顺利达成/漂亮完胜/势如破竹、失败侧差点成功/功亏一篑/事与愿违/溃败/彻底落败、彩蛋固定惊艳无比/灾难性失败，断点 ±20/±40/±60/±80 固定常量 `DEGREE_*` 放 dice.ts）。**v58 起成功/失败模板按程度档位拆分**：`success_/fail_send_{low,mid_low,mid,mid_high,high}_template` 各档独立演绎指令，`buildDiceMarker` 经 `degreeTierFor(outcome, margin)`（`src/core/dice.ts`，彩蛋返回 null 走单条）命中档位取模板，某档为空回退该结局单条回退文案（`success_template`/`fail_template`，铺到五档兜底）、两者皆空不注入；彩蛋 `crit_success/crit_fail` 各保持单条）拼入应用文本——send 直接发送（输入框只在发送瞬间短暂中转、发送失败/取消立即恢复纯正文），fill/insert/append 填入输入框（注释可见、可编辑删除，用户手动发送后 AI 同样读取，不拦截酒馆发送事件）；聊天界面默认隐藏注释、AI 请求原样携带。需求值徽标（`resolveOptionSuccessRate` 非 null 时显示，骰子开关开启即显示、独立于 HUD 开关；当前按需求高低分档着色 ≥70 橙 / 40-69 蓝 / <40 绿，高=难，v56 相对 v55 已反转配色，配色随改版可调）与行内判定 chip（**结局+差值**如「成功 +18」「惨败 −38」，差值=点数−需求带符号，行尾 absolute，3s 淡出滞留，组件内存态不持久化）同步在主面板与悬浮球实现；**判定结果不再弹酒馆 toastr**（v55 失败走 toastr.error 红得像插件报错，v56 起仅真实错误如「发送框不可用」才 toastr，判定只走行内 chip）。**判定战绩进 `stats.dice`（全局维度、不随 config；随 `stats_enabled` 采集，`recordDiceRoll` 关 = 早退零写入；仅计数不参与条目建议/权重/AI 分析；清空统计一并清除；不 bump schema_version——zod default/prefault 补齐）**，统计页「骰子战绩」折叠分区展示（总掷数/四档计数/胜率 `diceWinRate`/近 7 天判定次数）；`last_selected_text` 保持 parse 后原始正文不受注释污染。润色视图（`view='enrich'`）与无需求值选项（AI 自由发挥）不掷骰。**判定 chip 的组件内存态逻辑（rollResults/rollOf/fmtMargin/rollChipText，type RollResult）在主面板与悬浮球各自实现，属既定并行模式**（解析/判定/行为共享层在 option-format/option-action/dice，chip 状态是视图私有展示态），改动需两处同步，勿只改一处。
 - `src/theme.css` 提供颜色、间距、字号、圆角、阴影、层级和状态色 token；间距用
   `--choice-space-1`~`--choice-space-6`，字号用 `--choice-text-xs/sm/base/lg/xl`（现状；新增样式可沿用，改版换体系亦可）。
 - 当前层级 token 的实际值为：`--choice-z-panel: 10`、`--choice-z-floating: 30000`、`--choice-z-dialog: 30100`、`--choice-z-dropdown: 30200`、`--choice-z-popover: 30300`。（功能提示：遮罩/浮层 z 序需可预测，改版另立体系时请先与用户确认或复用现有 token，避免弹窗被遮。）
@@ -278,11 +279,11 @@ compact 档在 FloatingBubble 只削弱内环保留度/放慢呼吸（`.choice-f
 ## 目录与职责（按当前源码，不把早期规划稿当标准）
 
 - `src/core/`：`generator.ts`（结构化 role
-  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v57/v58 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker、程度档位模板）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量 + 选项字号缩放 `OPTION_FONT_SCALE`，聊天面板与悬浮球弹窗共用），以及
+  prompt、选项/条目池生成、取消、API 解析）、`pool-resolver.ts`（effectivePool 的分组加权抽取纯函数）、`option-dedup.ts`（候选选项去重）、`options-store.ts`（消息 extra、swipe、翻页和润色结果）、`stats.ts`（行动选项统计：scope 化记录、全局聚合视图、建议引擎与撤销、AI 归因对称修正 reconcileAttribution、骰子战绩 recordDiceRoll/diceWinRate）、`ai-attribution.ts`（L1 AI 归因异步队列：入队（含前缀快检/队列上限）/prompt/解析/统计修正/消息写回/状态暴露）、`ai-analysis.ts`（L2 AI 建议理由：维度级失效判定/增量复用指纹/单飞分批分析/取消/进度状态/缓存写入）、`dice.ts`（v57/v58 骰子判定：D100 rollDice、隐形演绎注释渲染 buildDiceMarker、程度档位模板）、`floating-state.ts`、`entry-points.ts`、`enrich-input.ts`、`api-client.ts`（副 API 请求唯一装配入口：`normalizeApiUrl` 规范化地址——去尾斜杠→剥尾部 `/chat/completions` 防酒馆后端双拼→仅裸域名/host 补 `/v1`、已有路径段则尊重所填（覆盖 `/v2`、`/v1beta/openai`、`/api/paas/v4`）；`callSecondaryApi` 以 `chat_completion_source:'openai'` + `reverse_proxy` + Bearer 密钥装配，单一入口供选项/润色/条目池/AI 归因/AI 理由共用）、`api-presets.ts`（常见 OpenAI 兼容服务商预设表 `API_PRESETS` + `presetForApiUrl` 按地址反显，供 API 页「服务商」下拉快捷填充 base URL 与密钥/模型指引，不新增持久化字段）、`panel-mount.ts`、`theme-detector.ts`、`theme-presets.ts`、`wand-menu.ts`、`onboarding.ts`、`guide-content.ts`、`bindings.ts`（配置绑定切换：聊天级/角色卡级，PoolEditor/PromptEditor 共用）、`constants.ts`（跨模块共享的分组语义/展示占位常量 + 选项字号缩放 `OPTION_FONT_SCALE`，聊天面板与悬浮球弹窗共用），以及
   `baibai-bridge.ts`、`ejs-bridge.ts`、`shujuku-bridge.ts`、`st-character.ts`、`st-regex-source.ts`
   等可选桥接和酒馆数据适配模块。
 - `src/store/`：`global-settings.ts`、`character-settings.ts`、`chat-settings.ts`、`pool-selector.ts`、`prompt-config-selector.ts`、`panel-state.ts`。设置 schema 的唯一来源是
-  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 59。
+  `src/type/settings.ts`，当前 `SCHEMA_VERSION` 为 60。
 - `src/components/`：主面板 `ActionOptionsPanel.vue`；悬浮形态
   `FloatingBubble.vue`、`FloatingRoot.vue`、`FloatingSettings.vue`、`FloatingContextMenu.vue`、`FloatingOptions.vue`；9 个设置编辑器（作为二级子区挂在 4 个一级页下：内容=条目池/提示词/世界书/过滤、生成=生成/API、统计=统计、系统=外观/调试）`PoolEditor.vue`、`GenerationSettings.vue`、`PromptEditor.vue`、`ApiEditor.vue`、`WorldInfoEditor.vue`、`FilterEditor.vue`、`Statistics.vue`、`AppearanceSettings.vue`、`DebugSettings.vue`；条目池和导入相关组件：`EntryPoolDialog.vue`、`PoolGenDialog.vue`、`SelectEntriesDialog.vue`、`ImportPoolDialog.vue`、`PromptImportDialog.vue`、`StRegexImportDialog.vue`、`FilterGroupPanel.vue`；引导相关组件：`OnboardingWizard.vue`、`WelcomeCard.vue`、`GuidePopover.vue`；通用弹窗包括
   `ConfirmDialog.vue`、`CreateConfigDialog.vue`、`RegexLibraryDialog.vue`。
