@@ -14,12 +14,13 @@ function parseRGB(color: string): [number, number, number] | null {
   if (match) return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
   const hex = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (hex) {
-    const full = hex[1].length === 3
-      ? hex[1]
-          .split('')
-          .map(c => c + c)
-          .join('')
-      : hex[1];
+    const full =
+      hex[1].length === 3
+        ? hex[1]
+            .split('')
+            .map(c => c + c)
+            .join('')
+        : hex[1];
     return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
   }
   return null;

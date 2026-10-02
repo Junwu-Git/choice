@@ -156,7 +156,8 @@ export function equippedCardsPromptLine(): string | null {
   const equipped = resolveEquippedCards(currentCardConfigId());
   if (equipped.length === 0) return null;
   const items = equipped.map(
-    eq => `「${eq.card.name}」（${CARD_TYPE_LABEL[eq.card.type]}｜${triggerLabel(eq.card.trigger)}｜${effectsLabel(eq.card.effects)}）`,
+    eq =>
+      `「${eq.card.name}」（${CARD_TYPE_LABEL[eq.card.type]}｜${triggerLabel(eq.card.trigger)}｜${effectsLabel(eq.card.effects)}）`,
   );
   return [
     `玩家当前装备卡牌：${items.join('、')}。与卡牌的配合手法（仅贴合场景时使用，不必每条选项都用，也不必提及卡名）：`,

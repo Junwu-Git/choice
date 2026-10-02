@@ -31,7 +31,13 @@
  * 通道，全部收敛在本模块，开关/清空即置空撤销。
  */
 
-import { chat, extension_prompt_roles, extension_prompt_types, saveChatDebounced, setExtensionPrompt } from '@sillytavern/script';
+import {
+  chat,
+  extension_prompt_roles,
+  extension_prompt_types,
+  saveChatDebounced,
+  setExtensionPrompt,
+} from '@sillytavern/script';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { DICE_OUTCOME_LABEL, type DiceOutcome } from '@/core/dice';
 
@@ -76,7 +82,14 @@ export function armDiceTurnPrompt(outcome: DiceOutcome, degree: string, cardName
     const text =
       `【跑团辅助·choice】玩家刚发送的行动已由骰子判定：${DICE_OUTCOME_LABEL[outcome]}（程度 ${degree}）${cards}。` +
       '请按此结局与程度演绎本回合；正文中不得提及骰子、点数、需求值或判定字样。';
-    setExtensionPrompt(TURN_KEY, text, extension_prompt_types.IN_CHAT, TURN_DEPTH, false, extension_prompt_roles.SYSTEM);
+    setExtensionPrompt(
+      TURN_KEY,
+      text,
+      extension_prompt_types.IN_CHAT,
+      TURN_DEPTH,
+      false,
+      extension_prompt_roles.SYSTEM,
+    );
   } catch (error) {
     console.warn('[Choice] 判定回合注入失败', error);
   }
@@ -129,7 +142,14 @@ export function flushPendingTurnMarker(chatId: number): void {
     }
     const gs = useGlobalSettingsStore();
     if (gs.settings.dice.enabled && gs.settings.dice.main_ai_awareness) {
-      setExtensionPrompt(TURN_KEY, pending.marker, extension_prompt_types.IN_CHAT, TURN_DEPTH, false, extension_prompt_roles.SYSTEM);
+      setExtensionPrompt(
+        TURN_KEY,
+        pending.marker,
+        extension_prompt_types.IN_CHAT,
+        TURN_DEPTH,
+        false,
+        extension_prompt_roles.SYSTEM,
+      );
     }
   } catch (error) {
     console.warn('[Choice] 判定注释回写失败', error);

@@ -6,7 +6,16 @@ import { parseOptionContent, parseOptionDice, parseOptionType } from '@/util/opt
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import { getStCharacter } from '@/core/st-character';
 import { recordOptionSelected, recordDiceRoll } from '@/core/stats';
-import { rollDice, buildDiceMarker, diceMargin, judgeOutcome, marginDegree, DICE_MARKER_TAIL, type DiceOutcome, type DiceRollMode } from '@/core/dice';
+import {
+  rollDice,
+  buildDiceMarker,
+  diceMargin,
+  judgeOutcome,
+  marginDegree,
+  DICE_MARKER_TAIL,
+  type DiceOutcome,
+  type DiceRollMode,
+} from '@/core/dice';
 import { armDiceTurnPrompt, clearDiceTurnPrompt, stagePendingTurn } from '@/core/dice-contract';
 import { rollDiceExpression, mapProxyToRange } from '@/core/dice-expression';
 import { sanitizeNarrative } from '@/core/cards-constraints';
@@ -167,10 +176,7 @@ const layerBusy = new Set<string>();
 
 /** 同楼层点击是否处理中（send 往返窗口）：调用方在触发副作用（选中打勾/收起/emit）前查询，
  *  被拒时整次点击跳过——applyOptionBehavior 内部互斥只挡重复应用，调用方 UI 态需自行规避 */
-export function isOptionApplyBusy(
-  messageId: number | null | undefined,
-  swipeId: number | null | undefined,
-): boolean {
+export function isOptionApplyBusy(messageId: number | null | undefined, swipeId: number | null | undefined): boolean {
   if (messageId == null || swipeId == null) return false;
   return layerBusy.has(`${messageId}:${swipeId}`);
 }

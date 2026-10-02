@@ -59,9 +59,7 @@ export function judgeOutcome(
   }
   // high（默认）：大点数=大成功（掷 ≥ critSuccessThreshold），小点数=大失败（掷 ≤ critFailThreshold）
   const low = bounds ? clampInt(critFailThreshold, bounds.min, bounds.max) : clampInt(critFailThreshold, 1, 99);
-  const high = bounds
-    ? clampInt(critSuccessThreshold, bounds.min, bounds.max)
-    : clampInt(critSuccessThreshold, 2, 100);
+  const high = bounds ? clampInt(critSuccessThreshold, bounds.min, bounds.max) : clampInt(critSuccessThreshold, 2, 100);
   const critsActive = low < high;
   if (critsActive && value >= high) return 'crit_success';
   if (critsActive && value <= low) return 'crit_fail';

@@ -594,9 +594,7 @@ const critOverlapWarning = computed(() => {
     ? Math.min(100, Math.max(2, Math.round(Number(d.low_roll_crit_fail_min))))
     : Math.min(99, Math.max(1, Math.round(Number(d.crit_fail_max))));
   const critsActive = d.low_roll ? critS < critF : critF < critS;
-  return d.enabled && !critsActive
-    ? t`大成功与大失败阈值区间重叠，彩蛋判定已失效（按纯成败处理）——请把两阈值拉开`
-    : '';
+  return d.enabled && !critsActive ? t`大成功与大失败阈值区间重叠，彩蛋判定已失效（按纯成败处理）——请把两阈值拉开` : '';
 });
 </script>
 

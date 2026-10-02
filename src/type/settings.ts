@@ -1699,24 +1699,17 @@ export function createEmptyStats(): StatsSettings {
 export const SEND_TEMPLATE_DEFAULTS = {
   success_send_low_template:
     '行动只是勉强够到了达标线：请描写略显吃力、磕磕绊绊的勉强达成，可留下一点小代价或遗憾，切勿渲染成轻松完胜。',
-  success_send_mid_low_template:
-    '行动刚刚越过达标线、优势微弱：请描写略带惊险、险中取胜的过程，结果成立但谈不上从容。',
-  success_send_mid_template:
-    '行动干净利落、顺理成章地完成：请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+  success_send_mid_low_template: '行动刚刚越过达标线、优势微弱：请描写略带惊险、险中取胜的过程，结果成立但谈不上从容。',
+  success_send_mid_template: '行动干净利落、顺理成章地完成：请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
   success_send_mid_high_template:
     '行动以出彩的姿态漂亮完成：请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
-  success_send_high_template:
-    '行动以碾压般的气势一举拿下：请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
-  fail_send_low_template:
-    '行动几乎就要成了：请描写功亏一篑、与成功失之交臂的落差，以及那一线之差带来的懊恼与遗憾。',
+  success_send_high_template: '行动以碾压般的气势一举拿下：请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
+  fail_send_low_template: '行动几乎就要成了：请描写功亏一篑、与成功失之交臂的落差，以及那一线之差带来的懊恼与遗憾。',
   fail_send_mid_low_template:
     '行动在半途受阻、差口气没能拿下：请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
-  fail_send_mid_template:
-    '结果与预期相左：请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
-  fail_send_mid_high_template:
-    '行动明显失守、局面被动：请描写节节败退、落了下风的处境，以及随之扩大的损失。',
-  fail_send_high_template:
-    '行动一败涂地：请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+  fail_send_mid_template: '结果与预期相左：请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+  fail_send_mid_high_template: '行动明显失守、局面被动：请描写节节败退、落了下风的处境，以及随之扩大的损失。',
+  fail_send_high_template: '行动一败涂地：请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
   crit_success_send_template:
     '行动以远超预期的完美方式达成：请着重描写惊艳的发挥、他人的赞叹，以及随之而来的额外好处。',
   crit_fail_send_template:

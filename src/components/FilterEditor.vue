@@ -493,7 +493,11 @@ function createSortable(el: HTMLElement) {
         groups.splice(groups.findIndex(g => g.id === last.id) + 1, 0, moved);
         return;
       }
-      groups.splice(groups.findIndex(g => g.id === anchor.id), 0, moved);
+      groups.splice(
+        groups.findIndex(g => g.id === anchor.id),
+        0,
+        moved,
+      );
     },
   });
 }

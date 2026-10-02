@@ -60,14 +60,7 @@ import type { Card, CardOwned, CardTrigger, GlobalSettings } from '@/type/settin
 
 // 公开面透传：解析簇的既有导出名由本模块继续提供（EquippedCard 类型不透传——无外部
 // 消费方，knip 会报死导出；需要时从 cards-deck 导入）
-export {
-  autoDeckCards,
-  cardDefById,
-  currentCardConfigId,
-  normalizeDeckSlots,
-  resolveDeckSlots,
-  resolveEquippedCards,
-};
+export { autoDeckCards, cardDefById, currentCardConfigId, normalizeDeckSlots, resolveDeckSlots, resolveEquippedCards };
 
 // ── 领域类型 ─────────────────────────────────────────────────────────────
 

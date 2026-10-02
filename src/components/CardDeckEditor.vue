@@ -23,7 +23,9 @@
         <span class="choice-toggle-label">
           <strong>{{ t`自动编组` }}</strong>
           <small>{{
-            autoDeck ? t`已自动填满 4 槽（全局开关）——卸下卡或成功装备卡后切换为手动调整` : t`手动编辑卡组（自动编组已关）`
+            autoDeck
+              ? t`已自动填满 4 槽（全局开关）——卸下卡或成功装备卡后切换为手动调整`
+              : t`手动编辑卡组（自动编组已关）`
           }}</small>
         </span>
       </label>

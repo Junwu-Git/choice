@@ -3,7 +3,12 @@ import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
 import { initWandMenu } from '@/core/wand-menu';
-import { syncDiceContractPrompt, clearDiceTurnPrompt, clearPendingTurn, flushPendingTurnMarker } from '@/core/dice-contract';
+import {
+  syncDiceContractPrompt,
+  clearDiceTurnPrompt,
+  clearPendingTurn,
+  flushPendingTurnMarker,
+} from '@/core/dice-contract';
 import { pinia } from '@/pinia';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
