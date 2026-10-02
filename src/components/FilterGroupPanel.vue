@@ -10,7 +10,7 @@
         v-model="renameText"
         class="choice-input choice-filter-rename-input"
         @keydown.enter="finishRename"
-        @keydown.escape="cancelRename"
+        @keydown.escape.stop="cancelRename"
         @click.stop
       />
       <button

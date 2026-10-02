@@ -230,7 +230,11 @@ const ui = computed(() => store.settings.ui);
 // 入口开关：v-model 直绑会绕过「至少保留一个入口」保底（可全关后插件无从找回），
 // 改走 setEntryVisible 护栏——关掉最后一个时被拒绝并 toastr 提示
 const onEntryToggle = (key: EntryKey, e: Event) => {
-  setEntryVisible(key, (e.target as HTMLInputElement).checked);
+  const input = e.target as HTMLInputElement;
+  // 被护栏拒绝（关最后一个入口）时 store 不变、checkbox DOM 已翻转——回写对齐防视觉脱节
+  if (!setEntryVisible(key, input.checked)) {
+    input.checked = !input.checked;
+  }
 };
 
 // 预设主题按钮数据源：与面板循环按钮共用注册表，按 kind 过滤——

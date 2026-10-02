@@ -14,11 +14,11 @@
  */
 
 import {
+  parseOptionContent,
   parseOptionDice,
   parseOptionRate,
   parseOptionStyle,
-  resolveOptionSuccessRate,
-  GRADE_FALLBACK_RATE,
+  gradeFallbackRate,
 } from '@/util/option-format';
 
 /** 从选项正文提取可能的属性名引用（启发式）。返回规范化名或 null。
@@ -125,27 +125,29 @@ function resolveAttributeDc(character: { data?: unknown } | undefined, ref: stri
 }
 
 /** 统一带属性的需求值解析：AI 标注优先，无标注且 attr_dc_enabled 时尝试属性，最后档位兜底。
- *  resolveOptionSuccessRate 是唯一权威底层解析；本函数只是在其「档位兜底」之前插入属性级，
- *  不回绕既有解析逻辑。返回值 = D100 目标需求值（null = 不掷骰）。
- *  v61 low_roll：只有「属性来源」的 DC 随模式反向——DND（lowRoll=false）DC = 100 − 属性值
+ *  返回值 = D100 目标需求值（null = 不掷骰）。
+ *  v61 low_roll：属性来源的 DC 随模式反向——DND（lowRoll=false）DC = 100 − 属性值
  *  （roll ≥ DC 成功），COC（lowRoll=true）DC = 属性值（roll ≤ DC 成功）；两模式成功率都 =
- *  属性%；AI 显式标注与档位兜底仍按模式无关的难度 DC 处理（不反向）。 */
+ *  属性%。
+ *  v67：档位兜底改走 gradeFallbackRate 模式感知对偶（COC 65/40/15，成功率与 high 对齐）。
+ *  旧版「档位兜底不随模式反向」在 low 模式下会把保守档变成最难、大胆档变成最易，与本意
+ *  相悖——本函数不再委托模式盲的 resolveOptionSuccessRate，显式标注/兜底/属性三级全部
+ *  在此收敛。 */
 export function resolveOptionSuccessRateWithAttr(
   text: string,
   character: { data?: unknown } | undefined,
   attrEnabled: boolean,
   lowRoll = false,
 ): number | null {
-  if (!attrEnabled) {
-    return resolveOptionSuccessRate(text);
-  }
   // AI 显式标注（rate 或档位）始终优先——属性只替换档位兜底
   const explicitRate = parseOptionRate(text);
   if (explicitRate !== null) return explicitRate;
   const style = parseOptionStyle(text);
-  if (style !== null) return GRADE_FALLBACK_RATE[style];
-  // 无显式标注：尝试属性
-  const ref = detectAttributeRef(text);
+  if (style !== null) return gradeFallbackRate(style, lowRoll);
+  if (!attrEnabled) return null;
+  // 无显式标注：尝试属性。在正文（剥掉标题括号）上检测——括号形态选项的标题括号恒在
+  // 最前，整条文本匹配会拿标题当属性名、正文里的【力量】永远轮不到
+  const ref = detectAttributeRef(parseOptionContent(text));
   if (ref) {
     const dc = resolveAttributeDc(character, ref);
     if (dc !== null) {
@@ -165,7 +167,7 @@ export function resolveRateForDisplay(
   dice: { allow_formula: boolean; attr_dc_enabled: boolean; low_roll: boolean },
 ): number | null {
   if (dice.allow_formula) {
-    const parsed = parseOptionDice(text);
+    const parsed = parseOptionDice(text, dice.low_roll);
     if (parsed) return parsed.rate;
   }
   return resolveOptionSuccessRateWithAttr(text, character, dice.attr_dc_enabled, dice.low_roll);

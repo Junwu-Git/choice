@@ -5,6 +5,7 @@
  */
 
 import type { Card, CardStar, CardTrigger, CardType, CardEffect } from '@/type/settings';
+import { DICE_OUTCOME_LABEL } from '@/core/dice';
 
 /** 星级 → 中文名 + 语义色 class（scoped 样式按此上色，见 global.css .choice-card-star--*） */
 export const CARD_STAR_LABEL: Readonly<Record<CardStar, string>> = {
@@ -27,7 +28,7 @@ export const CARD_STAR_COLOR: Readonly<Record<CardStar, string>> = {
   '5': 'var(--choice-star-5)',
 };
 
-/** 类型 → 中文名（与功能基础耐久定位一致：武器最短/法术中/祝福最长/试炼最短而强） */
+/** 类型 → 中文名（效果定位见 cards-builtin.ts：武器=骰值/重掷、法术=需求/转化、祝福=彩蛋/叙事、试炼=综合强卡） */
 export const CARD_TYPE_LABEL: Readonly<Record<CardType, string>> = {
   weapon: '武器',
   spell: '法术',
@@ -65,13 +66,9 @@ export const CARD_SETS: Readonly<Array<{ id: string; name: string; theme: string
 /** 按 id 取套装定义（无则 undefined）。 */
 export const cardSetById = (id: string): (typeof CARD_SETS)[number] | undefined => CARD_SETS.find(s => s.id === id);
 
-/** 判定结局 → 中文（卡面触发/效果标签共用；带兜底，未知值原样回退） */
-export const CARD_OUTCOME_LABEL: Readonly<Record<string, string>> = {
-  success: '成功',
-  fail: '失败',
-  crit_success: '大成功',
-  crit_fail: '大失败',
-};
+/** 判定结局 → 中文（卡面触发/效果标签共用；带兜底，未知值原样回退）。
+ *  映射单一来源在 core/dice.ts 的 DICE_OUTCOME_LABEL（判定注释头部「结局」键共用）。 */
+export const CARD_OUTCOME_LABEL: Readonly<Record<string, string>> = { ...DICE_OUTCOME_LABEL };
 
 /** 触发条件人类可读文案（供卡预览/卡组摘要） */
 export function triggerLabel(tr: CardTrigger): string {

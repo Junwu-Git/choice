@@ -2,7 +2,7 @@ import { openSettings } from '@/core/floating-state';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 
-const MAX_POLLS = 30;
+const MAX_POLLS = 150; // 150×200ms ≈ 30s：与 panel-mount 的注入重试口径一致，慢设备不静默缺席
 const POLL_INTERVAL = 200;
 
 /** 按 ui.wand_menu_enabled 同步魔棒入口显隐。容器可能尚未注入（订阅先于

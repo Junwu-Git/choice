@@ -18,7 +18,14 @@ import { substituteParams } from '@sillytavern/script';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { getStCharacter, readCharacterFields } from '@/core/st-character';
-import { buildWI, buildChatHistory, applyWIExcl, resolveWIParticipation, type WIBuckets } from '@/core/generator';
+import {
+  buildWI,
+  buildChatHistory,
+  applyWIExcl,
+  resolveWIParticipation,
+  runWIExclWindow,
+  type WIBuckets,
+} from '@/core/generator';
 import { clampEffect, validateCard } from '@/core/cards-constraints';
 import { recordCardsObtained } from '@/core/stats';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -132,19 +139,25 @@ export async function generateCharacterPool(charId: string): Promise<number> {
   const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
   if (!api) return 0;
 
-  // 世界书激活（对齐 generateOptions）：临时改写激活范围（含用户配的排除/off/force/custom），
-  // 组装消息后 finally restore。buildWI 内部已对解析失败兜底返回空 buckets，不阻断卡片生成。
+  // 世界书激活（对齐 generateOptions）：WI 排他窗口（互斥 + 即用即还，见 generator.runWIExclWindow）
+  // ——仅 buildWI 读取酒馆世界书，构建完立即还原，不再持有到请求结束。buildWI 内部已对解析失败
+  // 兜底返回空 buckets，不阻断卡片生成。
   const gwi = gs.settings.world_info;
   const cwi = useChatSettingsStore().settings.world_info;
-  let restore: { restore: () => void } | null = null;
   let wiBuckets: WIBuckets | null = null;
   if (gwi.enabled) {
     try {
-      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-      restore = await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides);
-      wiBuckets = await buildWI();
+      wiBuckets = await runWIExclWindow(async () => {
+        const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
+        const restore = await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides);
+        try {
+          return await buildWI();
+        } finally {
+          restore?.restore();
+        }
+      });
     } catch {
-      /* 世界书激活失败：buildWI 已兜底；restore 保持 null 避免污染酒馆状态 */
+      /* 世界书激活失败：buildWI 已兜底；wiBuckets 保持 null 避免污染酒馆状态 */
     }
   }
 
@@ -240,7 +253,5 @@ export async function generateCharacterPool(charId: string): Promise<number> {
   } catch {
     /* 静默回退：任何失败都不 toastr，不影响内置抽卡；next 掉落重试 */
     return 0;
-  } finally {
-    restore?.restore();
   }
 }

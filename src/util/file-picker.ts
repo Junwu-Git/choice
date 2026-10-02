@@ -42,9 +42,20 @@ export async function pickJsonFile(): Promise<File | null> {
       input.remove();
       resolve(file);
     };
+    // 用户取消（Esc/关闭选择器）：change 不触发，部分内核派发 cancel 事件——不监听会让
+    // Promise 永不 resolve、导入流程挂死（Firefox/Safari）
+    input.oncancel = () => {
+      input.remove();
+      resolve(null);
+    };
     document.body.appendChild(input);
     input.click();
-    // 用户取消时 change 不触发：延时清理挂载的 input，避免残留
-    setTimeout(() => input.remove(), 60_000);
+    // cancel 事件缺失的内核兜底：超时清理挂载的 input 并以 null 结束（重复 resolve 无害）
+    setTimeout(() => {
+      if (input.isConnected) {
+        input.remove();
+        resolve(null);
+      }
+    }, 60_000);
   });
 }

@@ -323,7 +323,7 @@ export function recordCardLuckyHit(): void {
   s.updated_at = Date.now();
 }
 
-/** 记录一次开卡包（幸运触发开包）。 */
+/** 记录一次开包（幸运命中与购买开包同口径，防统计页三数字互相矛盾）。 */
 export function recordPackOpened(): void {
   if (!useGlobalSettingsStore().settings.stats_enabled) return;
   const s = cardStats();
@@ -369,7 +369,7 @@ export function recordCurrencySpent(amount: number): void {
  *    （matched==1 时命中必来自这条唯一被匹配的选项，迁移无歧义）；matched>1 属歧义
  *    不迁移（宁缺勿错）。迁移连带 rounds_with_selection 与最近选中单槽。
  *  aiAttribution 缺 index 的选项视为保持 Dice 结果（解析层已校验，此处防御）。
- *  不修改消息层（写回由调用方 setMessageChoiceData 完成）。 */
+ *  不修改消息层（写回由调用方经 options-store 的 writeBackOptionAttribution 完成）。 */
 export function reconcileAttribution(
   scope: ScopeStats,
   gid: string,
@@ -1061,7 +1061,8 @@ function pushApplyHistory(gs: ReturnType<typeof useGlobalSettingsStore>, entry: 
  *  手动编辑改动）时才回滚为应用前值；被后续改动干扰的字段跳过、保留现状。
  *  本批新增的引用（roster promote）仅当当前引用整体仍等于 after 时删除；
  *  被实际回滚的条目连带恢复冷却标记（markers_before，可能为 0）。
- *  config 已删除则返回 false（失效）。 */
+ *  config 已删除、或零实际回滚（该批字段已被后续批次/手动编辑全部覆盖）返回 false——
+ *  调用方据此保留撤销槽：撤销更近批次后字段可能重新匹配 before/after，届时仍可回滚。 */
 function restoreApplyEntry(gs: ReturnType<typeof useGlobalSettingsStore>, entry: ApplyHistoryEntry): boolean {
   const config = gs.settings.configs.find(c => c.id === entry.scope_id);
   if (!config) return false;
@@ -1116,11 +1117,15 @@ function restoreApplyEntry(gs: ReturnType<typeof useGlobalSettingsStore>, entry:
       if (e) e.last_weight_changed_at = marker;
     }
   }
-  return true;
+  // 按实际回滚数判定成败：零回滚（全字段被后续改动覆盖）报 true 会让用户看到「已撤销」
+  // 提示但配置毫无变化，且撤销槽被无谓消耗
+  return rolledBackIds.size > 0;
 }
 
 /** 撤销最近一次应用（多槽）：从持久历史末尾向前找最后一条匹配 scopeId（省略则任意）
- *  且目标 config 仍存在的条目并恢复；config 已删除的历史条目跳过（视为失效移除）。
+ *  且目标 config 仍存在的条目并恢复；config 已删除或零实际回滚（该批字段已被后续
+ *  改动/手动编辑全覆盖）的条目视为死记录移除后继续向前找——否则死记录永远挡在队首
+ *  （最新批之上无更近批次可撤销来恢复字段匹配），本 scope 的「撤销最近一次」永久失效。
  *  成功返回 true。 */
 export function undoLastApply(scopeId?: string): boolean {
   const gs = useGlobalSettingsStore();
@@ -1134,14 +1139,20 @@ export function undoLastApply(scopeId?: string): boolean {
       history.splice(i, 1);
       continue;
     }
-    if (restoreApplyEntry(gs, entry)) history.splice(i, 1);
+    if (!restoreApplyEntry(gs, entry)) {
+      // 零实际回滚 = 死记录（理由见函数头注释）：移除后继续向前找
+      history.splice(i, 1);
+      continue;
+    }
+    history.splice(i, 1);
     return true;
   }
   return false;
 }
 
 /** 撤销指定的历史批次（应用历史面板逐条撤销）：按 id 定位并恢复，成功返回 true。
- *  目标 config 已删除（restore 返回 false）时该槽永久失效，一并移除（与
+ *  零实际回滚返回 false 且槽保留（撤销更近批次后字段可能重新匹配，届时仍可回滚）；
+ *  config 已删除（restore 返回 false 的另一成因）时槽已无意义，一并移除（与
  *  undoLastApply 的死槽清理对齐），避免失效批次长期残留在历史里。 */
 export function undoApply(entryId: string): boolean {
   const gs = useGlobalSettingsStore();
@@ -1149,7 +1160,9 @@ export function undoApply(entryId: string): boolean {
   if (idx < 0) return false;
   const entry = gs.settings.apply_history[idx];
   const ok = restoreApplyEntry(gs, entry);
-  gs.settings.apply_history.splice(idx, 1);
+  // 零回滚但 config 仍在 → 槽保留；config 已删 → 死槽一并清理
+  const configGone = !gs.settings.configs.some(c => c.id === entry.scope_id);
+  if (ok || configGone) gs.settings.apply_history.splice(idx, 1);
   return ok;
 }
 

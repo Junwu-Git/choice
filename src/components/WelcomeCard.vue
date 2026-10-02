@@ -88,11 +88,13 @@ useEventListener('resize', () => {
   if (visible.value) computePosition();
 });
 
+let welcomeTimer: number | undefined;
+
 onMounted(() => {
   // 延迟 ~3s：等悬浮球/选项面板挂载稳定、酒馆首屏渲染完，避免加载瞬间弹卡被
   // 布局变化带着跳；打开设置面板会触发 maybeAutoOpenOnboarding（向导），那时
   // 欢迎卡不再叠加——onboarding_done 已被向导置位，下面的检查会拦住
-  window.setTimeout(() => {
+  welcomeTimer = window.setTimeout(() => {
     if (gs.settings.ui.onboarding_done) return;
     if (onboardingVisible.value || onboardingMenuVisible.value) return;
     // 弹出瞬间即置 done（与 maybeAutoOpenOnboarding 同一哲学）：中途刷新/杀进程
@@ -101,6 +103,11 @@ onMounted(() => {
     visible.value = true;
     nextTick(computePosition);
   }, 3000);
+});
+
+onUnmounted(() => {
+  // 3s 内卸载（切页/禁用扩展）时回调不再置 onboarding_done，防欢迎卡永久缺席
+  if (welcomeTimer !== undefined) clearTimeout(welcomeTimer);
 });
 
 watch(visible, v => {

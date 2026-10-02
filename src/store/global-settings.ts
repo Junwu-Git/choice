@@ -8,6 +8,7 @@ import {
   SCHEMA_VERSION,
   setting_field,
   DEFAULT_MODULES,
+  SEND_TEMPLATE_DEFAULTS,
   SIMPLE_MODULE_CONTENTS,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
@@ -36,6 +37,7 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
+import { scheduleCharacterPersist } from '@/util/character-bindings';
 
 /**
  * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
@@ -714,7 +716,8 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
 };
 
 /** v33 全向去重自愈的回写工具：把指向"被删重复份"的 chat/character 绑定重指到保留份。
- *  照 v9 迁移范式：chat_metadata + getStCharacter(this_chid) + save*Debounced。
+ *  手法：chat_metadata + getStCharacter(this_chid) 直改内存 + save*Debounced（受控例外，
+ *  见下方「例外说明」；v9 块「新写入」的 config_id 已改走 scheduleCharacterPersist）。
  *  局限：仅愈合当前已加载的 chat/character 绑定（迁移在 store init 期跑，此时只有当前
  *  会话的 chat_metadata/角色可用）；其余 chat/character 的悬空绑定在加载该会话时由
  *  effectiveConfig 解析落空→回退默认（不崩溃），且 v31 幂等守卫已杜绝新增悬空。
@@ -844,7 +847,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           _.set(ch, ['data', 'extensions', setting_field, 'config_id'], charConfigId);
           // 旧 pool 字段被 config 体系取代，删除残留；extensions 可能在异常卡上缺失
           delete ch.data?.extensions?.[setting_field]?.pool;
-          saveCharacterDebounced();
+          // scheduleCharacterPersist（直 POST /api/characters/edit，json_data 取最新 data）而非
+          // saveCharacterDebounced——v8 存档旧 json_data 快照里没有 config_id，后者会把刚写的
+          // 绑定覆盖回快照态（迁移静默丢失）。与 v33/v44 的受控例外不同：那两处回写的字段在
+          // 旧快照中早已存在，本处是「新写入」扩展字段，必须走单一落盘通道
+          scheduleCharacterPersist(ch);
         }
       } catch {
         // 角色绑定失败时静默跳过
@@ -2118,6 +2125,65 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const key of legacyStatKeys) delete (validated.stats.card as Record<string, unknown>)[key];
   }
 
+  // v67：判定注释改版——结构化头部（点数/需求/差值/程度）与纪律尾注改由代码层固定拼装
+  // （core/dice.ts buildDiceMarker），12 条 send 模板默认重写为纯演绎指令（去掉与头部重复的
+  // 「骰子判定：…（点数/需求）」数字前缀）。exact-match（内容 === 旧默认字面量才换，同
+  // v53-v56 模式）保证用户自定义过的模板不动；to 取自 DiceSettings schema 默认（单一事实
+  // 源，迁移终态与 schema 零漂移）。fail_send_mid_template 额外接受 v56 时代旧单条
+  // fail_send_template 的默认文本——v57 迁移把该文本搬进了 mid 档，与 v58 mid 默认不同，
+  // 这批「从未自定义」的存量档也应换新。新增 main_ai_awareness 布尔由 zod prefault 补齐，
+  // 无需内容迁移。
+  if ((validated.schema_version ?? 0) < 67) {
+    const dice = validated.dice as Record<string, unknown>;
+    // from = 本版之前的默认原文（与 v67 前的 settings.ts 默认逐字一致）；
+    // to 取 SEND_TEMPLATE_DEFAULTS（schema 默认同一来源，迁移终态与 schema 零漂移）
+    const V66_DICE_TEMPLATE_DEFAULTS: Readonly<Record<string, readonly string[]>> = {
+      success_send_low_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+      ],
+      success_send_mid_low_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，险胜）。行动刚刚越过了达标线、优势微弱，请描写略带惊险、险中取胜的完成，过程不算从容但结果成立。',
+      ],
+      success_send_mid_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+      ],
+      success_send_mid_high_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+      ],
+      success_send_high_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，势如破竹）。行动以碾压般的气势一举拿下，请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
+      ],
+      fail_send_low_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
+      ],
+      fail_send_mid_low_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，功亏一篑）。行动在半途受阻、差口气没能拿下，请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
+      ],
+      fail_send_mid_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+        // v57 自旧单条 fail_send_template 迁入的默认（v56 档），同样视为「未自定义」
+        '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
+      ],
+      fail_send_mid_high_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，溃败）。行动明显失守、局面被动，请描写节节败退、落了下风的处境，以及随之扩大的损失。',
+      ],
+      fail_send_high_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+      ],
+      crit_success_send_template: [
+        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
+      ],
+      crit_fail_send_template: [
+        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+      ],
+    };
+    for (const [field, froms] of Object.entries(V66_DICE_TEMPLATE_DEFAULTS)) {
+      const current = dice[field];
+      if (typeof current !== 'string' || !froms.includes(current)) continue;
+      dice[field] = SEND_TEMPLATE_DEFAULTS[field as keyof typeof SEND_TEMPLATE_DEFAULTS];
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2245,16 +2311,36 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // 导致所有消费方 settings.configs/master_pool 等变 any[]，回调参数全变隐式 any
   const settings = ref<GlobalSettingsType>(validated);
 
+  // 落盘 watch 防抖（nextTick 级合并）：deep watch 对每次变更同步 klona 整个 settings（现含
+  // 卡池/统计/条目池大对象），PromptEditor 文本框每敲一键会触发两次全量深拷贝（modules 回写
+  // watch + 本 watch）。同一 burst 的多次变更合并为最后一次快照，只拷贝/落盘一次；
+  // saveSettingsDebounced 本身已防抖，此处省的是 klona 的同步开销
+  let pendingSnapshot: GlobalSettingsType | null = null;
+  let snapshotFlushScheduled = false;
   watch(
     settings,
     new_settings => {
-      // 落盘前 sanitize：把 prompt_rules 字数钳到合法区间，堵住任何路径写入的非法值
-      // （前端 v-model 直写 store 引用、外部编辑 settings.json、历史存档残留），
-      // 保证落盘值必合法——与加载预迁移 clamp + schema .catch 构成纵深防御。
-      const snapshot = klona(new_settings);
-      sanitizePromptRulesChars(snapshot.prompt_rules);
-      _.set(extension_settings, setting_field, snapshot);
-      saveSettingsDebounced();
+      pendingSnapshot = new_settings;
+      if (snapshotFlushScheduled) return;
+      snapshotFlushScheduled = true;
+      nextTick(() => {
+        snapshotFlushScheduled = false;
+        const source = pendingSnapshot;
+        pendingSnapshot = null;
+        if (!source) return;
+        try {
+          // 落盘前 sanitize：把 prompt_rules 字数钳到合法区间，堵住任何路径写入的非法值
+          // （前端 v-model 直写 store 引用、外部编辑 settings.json、历史存档残留），
+          // 保证落盘值必合法——与加载预迁移 clamp + schema .catch 构成纵深防御。
+          const snapshot = klona(source);
+          sanitizePromptRulesChars(snapshot.prompt_rules);
+          _.set(extension_settings, setting_field, snapshot);
+          saveSettingsDebounced();
+        } catch (e) {
+          // 快照/落盘抛错不静默丢变更：留痕（下一次变更会重走本 flush）
+          console.error('[Choice] settings 落盘失败', e);
+        }
+      });
     },
     { deep: true },
   );

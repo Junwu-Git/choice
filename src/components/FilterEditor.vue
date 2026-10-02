@@ -221,7 +221,7 @@ import RegexLibraryDialog from '@/components/RegexLibraryDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import FilterGroupPanel from '@/components/FilterGroupPanel.vue';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
-import { this_chid } from '@sillytavern/script';
+import { this_chid } from '@/core/st-world-info';
 import { getStCharacter } from '@/core/st-character';
 import { DRAG_HANDLE_GROUP_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import type { FilterGroup } from '@/type/settings';
@@ -251,13 +251,10 @@ const globalGroups = computed(() =>
   // 会被当成又一条过滤规则；快速区是提取规则的唯一管理入口（启停/增删都在那里）
   filterGroups.value.filter(g => g.preset_name === null && g.character_id === null && g.id !== gs.extractGroupId),
 );
-const globalGroupsSorted = computed(() => {
-  const groups = [...globalGroups.value];
-  return groups.sort((a, b) => {
-    if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-    return 0;
-  });
-});
+// 显示序必须与 store 序严格一致：Sortable 的 onEnd 按 DOM 位置回写 store，computed 里
+// 任何重排（enabled 置顶/按名排序）都会把拖拽写入的顺序在下一帧渲染中回滚——此前
+// preset/char 区拖拽完全无效、global 区有禁用分组时错位即此因。启停/当前态用样式区分
+const globalGroupsSorted = computed(() => globalGroups.value);
 const presetGroups = computed(() => filterGroups.value.filter(g => g.preset_name !== null));
 const charGroups = computed(() => filterGroups.value.filter(g => g.character_id !== null));
 
@@ -269,28 +266,9 @@ const charActiveCount = computed(
   () => charGroups.value.filter(g => g.character_id === gs.currentCharacterId && g.enabled).length,
 );
 
-const presetGroupsSorted = computed(() => {
-  const current = gs.currentPresetName;
-  const groups = [...presetGroups.value];
-  return groups.sort((a, b) => {
-    const aActive = a.preset_name === current ? 0 : 1;
-    const bActive = b.preset_name === current ? 0 : 1;
-    if (aActive !== bActive) return aActive - bActive;
-    return (a.preset_name ?? '').localeCompare(b.preset_name ?? '');
-  });
-});
+const presetGroupsSorted = computed(() => presetGroups.value);
 
-const charGroupsSorted = computed(() => {
-  const current = gs.currentCharacterId;
-  const groups = [...charGroups.value];
-  return groups.sort((a, b) => {
-    const aActive = a.character_id === current ? 0 : 1;
-    const bActive = b.character_id === current ? 0 : 1;
-    if (aActive !== bActive) return aActive - bActive;
-    // character_id 归一化为字符串后需显式转数值排序（字符串相减会得到 NaN）
-    return Number(a.character_id ?? 0) - Number(b.character_id ?? 0);
-  });
-});
+const charGroupsSorted = computed(() => charGroups.value);
 
 const isPresetActive = (group: FilterGroup) => group.preset_name === gs.currentPresetName;
 const isCharActive = (group: FilterGroup) => group.character_id === gs.currentCharacterId;
@@ -476,28 +454,13 @@ function createSortable(el: HTMLElement) {
     },
     onEnd: evt => {
       if (evt.oldIndex === undefined || evt.newIndex === undefined) return;
-      const fromArea = evt.from.dataset.area;
       const toArea = (evt.to as HTMLElement).dataset.area;
       const groupId = evt.item.dataset.groupId;
       if (!groupId) return;
       const group = gs.settings.filter_settings.groups.find(g => g.id === groupId);
       if (!group) return;
-      if (fromArea === toArea) {
-        const groups = gs.settings.filter_settings.groups;
-        const fromIdx = groups.findIndex(g => g.id === groupId);
-        if (fromIdx === -1) return;
-        const [moved] = groups.splice(fromIdx, 1);
-        const toIdx = groups.findIndex(g => {
-          if (toArea === 'global') return g.preset_name === null && g.character_id === null;
-          if (toArea === 'preset') return g.preset_name !== null;
-          return g.character_id !== null;
-        });
-        if (toIdx === -1) {
-          groups.push(moved);
-        } else {
-          groups.splice(toIdx + (evt.newIndex > evt.oldIndex ? 1 : 0), 0, moved);
-        }
-      } else if (toArea === 'global') {
+      // 跨区先改归属：改后 moved 才脱离原区成员集、进入目标区成员集
+      if (toArea === 'global') {
         group.preset_name = null;
         group.character_id = null;
       } else if (toArea === 'preset') {
@@ -507,6 +470,30 @@ function createSortable(el: HTMLElement) {
         group.preset_name = null;
         group.character_id = gs.currentCharacterId ?? null;
       }
+      const groups = gs.settings.filter_settings.groups;
+      const fromIdx = groups.findIndex(g => g.id === groupId);
+      if (fromIdx === -1) return;
+      const [moved] = groups.splice(fromIdx, 1);
+      // 插入点按「目标区在 store 中的成员序（moved 已移出）」计算：evt.newIndex 是拖拽后
+      // moved 在目标 DOM 列表的位置，插到同位成员之前即与 DOM 一致。此前实现取「区谓词
+      // 命中的第一个成员」下标再 ±1：向下拖多格只会落到原位下一格、向上拖非顶部位置直接跳顶部
+      const areaMembers = groups.filter(g => {
+        if (toArea === 'global') return g.preset_name === null && g.character_id === null && g.id !== gs.extractGroupId;
+        if (toArea === 'preset') return g.preset_name !== null;
+        return g.character_id !== null;
+      });
+      const anchor = areaMembers[evt.newIndex];
+      if (!anchor) {
+        // 拖到区末尾（或目标区仅剩 moved 自己）：跟在该区最后一个成员之后；区为空则尾插
+        const last = areaMembers[areaMembers.length - 1];
+        if (!last) {
+          groups.push(moved);
+          return;
+        }
+        groups.splice(groups.findIndex(g => g.id === last.id) + 1, 0, moved);
+        return;
+      }
+      groups.splice(groups.findIndex(g => g.id === anchor.id), 0, moved);
     },
   });
 }

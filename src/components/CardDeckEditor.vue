@@ -23,7 +23,7 @@
         <span class="choice-toggle-label">
           <strong>{{ t`自动编组` }}</strong>
           <small>{{
-            autoDeck ? t`已自动填满 4 槽（全局开关）——点任意槽位可改为手动调整` : t`手动编辑卡组（自动编组已关）`
+            autoDeck ? t`已自动填满 4 槽（全局开关）——卸下卡或成功装备卡后切换为手动调整` : t`手动编辑卡组（自动编组已关）`
           }}</small>
         </span>
       </label>
@@ -143,10 +143,10 @@ const onAutoToggle = (e: Event) => {
   }
 };
 
-/** 点槽位：auto 下先切到手动（快照当前自动结果）再选卡，避免「手动改了 auto 无视」的困惑。 */
+/** 点槽位打开选择器。不预先切手动：equipCard 已改为校验通过后才快照+接管，
+ *  失败/取消路径不留「auto 被静默关闭」的副作用；auto 态下候选与预算校验按
+ *  自动编组投影解析（resolveDeckSlots 模式感知，投影即接管后的卡组内容）。 */
 const openPicker = (type: CardType) => {
-  snapshotFromAuto();
-  gs.settings.auto_deck_enabled = false;
   activeSlotType.value = type;
 };
 

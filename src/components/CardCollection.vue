@@ -20,6 +20,14 @@
         >
           <i class="fa-solid fa-box"></i>{{ t`开卡包（${CARD_PACK_PRICE} 币）` }}
         </button>
+        <button
+          v-if="parked"
+          class="choice-btn-sm choice-pack-parked"
+          :title="t`稍后再选的卡包已保留，点击重新打开`"
+          @click="onReopenParked"
+        >
+          <i class="fa-solid fa-envelope-open-text"></i>{{ t`待开启卡包` }}
+        </button>
       </div>
     </div>
 
@@ -119,7 +127,7 @@
     <!-- 其余角色主题池（浏览） -->
     <ChoiceSectionCard v-if="otherPools.length" title="其他角色主题池" icon="fa-solid fa-users">
       <div v-for="pool in otherPools" :key="pool.character_id" class="choice-lib-pool-group">
-        <h5 class="choice-lib-pool-title">{{ t`角色主题池 · ${pool.character_id}` }}</h5>
+        <h5 class="choice-lib-pool-title">{{ t`角色主题池 · ${charName(pool.character_id)}` }}</h5>
         <div class="choice-lib-cards">
           <CardFace
             v-for="c in poolDefs(pool)"
@@ -152,7 +160,7 @@ import {
 } from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
-import { openCardPack } from '@/core/card-pack-state';
+import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
 import { CARD_PACK_PRICE } from '@/core/cards-constraints';
 import toastr from 'toastr';
 import type { Card, CardStar } from '@/type/settings';
@@ -175,7 +183,7 @@ const onGeneratePool = async () => {
     const n = await generateCharacterPool(String(cid));
     if (n > 0) {
       const name = getStCharacter(String(cid))?.name ?? '';
-      toastr.success(`已生成 ${n} 张「${name}」主题卡：${n} 张（收集完毕，卡面已标注角色归属）。`);
+      toastr.success(`已生成 ${n} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
     } else {
       toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且本次生成结果有效。');
     }
@@ -208,9 +216,18 @@ const onBuyPack = () => {
   openCardPack(r.offer!, 'shop');
 };
 
+/** 稍后再选挂起的卡包（null = 无）。 */
+const parked = computed(() => parkedCardPack.value);
+const onReopenParked = () => {
+  reopenParkedPack();
+};
+
+/** 角色显示名（其他角色池标题用）：解析不到时回退原始 id。 */
+const charName = (id: string): string => getStCharacter(id)?.name ?? id;
+
 const builtinCards = computed<Card[]>(() => [...BUILTIN_CARDS]);
 const ownedMap = computed(() => gs.settings.card_collection);
-/** 历史获得集合（曾获得 ∪ 当前持有）：进度/成就/内置卡库基于它——分解只移除持有、不抹掉图鉴。 */
+/** 历史获得集合（曾获得 ∪ 当前持有）：进度/成就/内置卡库基于它——旧版分解（v66 已裁撤）只移除持有、不抹掉图鉴。 */
 const collected = computed(() => collectedCardIds());
 const trophies = computed(() => cardTrophyList());
 const setProgress = computed(() => cardSetProgress());
@@ -309,6 +326,17 @@ const otherPools = computed(() =>
 .choice-pack-buy:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* 稍后再选挂起的卡包重开入口：与购买按钮同排，绿色提示有待选机会 */
+.choice-pack-parked {
+  color: var(--choice-color-success);
+  background: color-mix(in srgb, var(--choice-color-success) 12%, transparent 88%);
+}
+
+.choice-pack-parked:hover {
+  color: var(--choice-color-success);
+  background: color-mix(in srgb, var(--choice-color-success) 22%, transparent 78%);
 }
 
 .choice-lib-hint {

@@ -197,7 +197,7 @@
             v-if="activeView === 'options' && (rateOf(option) !== null || formulaOf(option))"
             class="choice-option-rate"
             :class="formulaOf(option) ? 'choice-option-rate--formula' : rateClass(rateOf(option)!)"
-            :title="formulaOf(option) ? `${t`骰式`} ${formulaOf(option)}（${t`难度`} ${rateOf(option)}）` : ''"
+            :title="rateTitle(option)"
             >{{ formulaOf(option) || rateOf(option) }}</span
           >
           <span class="choice-option-content"
@@ -269,7 +269,7 @@
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { cancelEnrich } from '@/core/enrich-input';
-import { storeGeneration, isCardSettled } from '@/core/options-store';
+import { storeGeneration, isCardSettled, cardSettleEpoch } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -278,7 +278,7 @@ import { openSettings } from '@/core/floating-state';
 import { useCompactLayout } from '@/components/shared/useCompactLayout';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
-import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
+import { applyOptionBehavior, isOptionApplyBusy, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { openCardPack } from '@/core/card-pack-state';
 import { previewTriggeredCards, type CardResolution } from '@/core/cards';
@@ -463,22 +463,34 @@ const rateOf = (option: ChoiceOption): number | null =>
 // v61 骰式表达式：选项是否骰式标注，返回骰式文本（如 2d6+3）；allow_formula 关或非骰式返回 null
 const formulaOf = (option: ChoiceOption): string | null =>
   gs.settings.dice.allow_formula ? (parseOptionDice(option.text)?.formula ?? null) : null;
+// v67 徽标 tooltip：骰式标骰式+难度代理；普通徽标按判定方向说明成功条件（COC 与 DND 语义相反）
+const rateTitle = (option: ChoiceOption): string => {
+  const formula = formulaOf(option);
+  if (formula) return `${t`骰式`} ${formula}（${t`难度`} ${rateOf(option)}）`;
+  if (gs.settings.dice.low_roll) return t`COC：掷出 ≤ 该值才算成功`;
+  return t`DND：掷出 ≥ 该值才算成功`;
+};
 // 徽标语义色按需求值分档（v56 难度制）：高需求（≥70）难=橙 / 中（40-69）蓝 / 低（<40）易=绿——
 // 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*（配色反转见 theme.css）
 const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
+// 楼层是否已结算卡牌经济（预掷/重掷与判定路径同门控）。结算态非响应式，
+// 依赖追踪靠 cardSettleEpoch（markCardSettled 自增，跨组件结算也会触发重算）。
+const layerSettled = (): boolean =>
+  panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId);
+
 // v66 点选前触发预览：card_enabled 开且骰子判定可用（enabled、非骰式）时对每个选项预匹配
 // 掷前可知触发（type/grade/demand），行内显示空心「可触发」卡 chip；roll/outcome 类触发需
 // 掷后结果，不预告。整表算一次缓存，避免每行重复 attr 解析。点选判定后由判定 chip 与已触发
 // 实心 chip 接管，两者不同时出现。仅选项视图（润色视图不掷骰、口径与判定分支一致）。
-// 楼层已结算（cardSettled）后点选不再走卡路径——同层其余行的预告同样撤下；
-// 结算态挂在消息数据上非响应式，借 rollResults 的点选更新触发重算。主面板与悬浮球两处同构（并行模式）。
+// 楼层已结算（cardSettled）后点选不再走卡路径——同层其余行的预告同样撤下。
+// 主面板与悬浮球两处同构（并行模式）。
 const cardPreviews = computed<Card[][]>(() => {
-  void rollResults.value.size;
+  void cardSettleEpoch.value;
   if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
   if (activeView.value !== 'options') return [];
-  if (panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId)) return [];
+  if (layerSettled()) return [];
   return visibleOptions.value.map(o =>
     previewTriggeredCards(o.text, currentChar.value, {
       attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
@@ -778,6 +790,8 @@ const onEnrichNext = () => {
 };
 
 const onSelect = async (option: ChoiceOption, index: number) => {
+  // 同楼层点击处理中（上一击 send 往返窗口）：整次忽略，防重复应用与误留选中态
+  if (isOptionApplyBusy(panelStore.messageId, panelStore.swipeId)) return;
   // view 标记来源：统计口径仅行动选项视图计入，润色视图的选择不计数（见 option-action.ts）；
   // poolEntryIds/generationId 取被点选项所在代（currentGeneration=generations[currentIndex]，
   // 翻页后正确；generationId 用于同代重复点击的命中去重）
@@ -789,7 +803,8 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 再次点击 = 用已 stage 结果应用。正常流程（reroll 关）保持原「点击即掷+应用」。
   const willRoll = !isEnrich && d.enabled && resolveRateForDisplay(option.text, currentChar.value, d) !== null;
   if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
-    const staged = rollOptionDice(option.text);
+    // 预掷与判定路径同结算门控：已结算楼层走非卡路径，防预告的卡触发在实际应用时被剥除
+    const staged = rollOptionDice(option.text, { cardDisabled: layerSettled() });
     if (staged) {
       rollResults.value = new Map(rollResults.value).set(key, {
         outcome: staged.outcome,
@@ -840,9 +855,9 @@ const onSelect = async (option: ChoiceOption, index: number) => {
 };
 
 // v61 就地重掷：重掷当前选项（重新掷骰并更新 chip 与 stage 结果），不应用不发送。
-// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）。
+// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）；与判定路径同结算门控。
 const onReroll = (option: ChoiceOption, index: number) => {
-  const full = rollOptionDice(option.text);
+  const full = rollOptionDice(option.text, { cardDisabled: layerSettled() });
   if (!full) return;
   const key = keyOf(index);
   rollResults.value = new Map(rollResults.value).set(key, {

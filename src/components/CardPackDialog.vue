@@ -1,10 +1,10 @@
 <template>
   <Teleport to="body">
-    <div v-if="cardPack" class="choice-cardpack-overlay" @click.self="closeCardPack()">
+    <div v-if="cardPack" class="choice-cardpack-overlay" @click.self="onPark()">
       <div class="choice-cardpack-dialog">
         <div class="choice-cardpack-header">
           <span class="choice-cardpack-title"> <i class="fa-solid fa-gift"></i> {{ t`开卡包` }} </span>
-          <button class="choice-cardpack-close" :title="t`关闭`" @click="closeCardPack()">&times;</button>
+          <button class="choice-cardpack-close" :title="t`稍后再选`" @click="onPark()">&times;</button>
         </div>
         <p class="choice-cardpack-tip">
           <template v-if="hasRare"><i class="fa-solid fa-star"></i> {{ t`稀有卡出没——抓住它！` }}</template>
@@ -27,7 +27,9 @@
           </div>
         </div>
         <div class="choice-cardpack-footer">
-          <button class="menu_button" @click="closeCardPack()">{{ t`稍后再选` }}</button>
+          <button class="menu_button" :title="t`本次卡包会保留在收藏页，稍后可重新打开`" @click="onPark()">
+            {{ t`稍后再选` }}
+          </button>
         </div>
       </div>
     </div>
@@ -35,8 +37,9 @@
 </template>
 
 <script setup lang="ts">
+import toastr from 'toastr';
 import CardFace from '@/components/CardFace.vue';
-import { cardPack, closeCardPack } from '@/core/card-pack-state';
+import { cardPack, closeCardPack, parkCardPack } from '@/core/card-pack-state';
 import { applyPackSelection } from '@/core/cards';
 import { cardLine } from '@/core/cards-meta';
 import { isHighStar } from '@/core/cards-constraints';
@@ -49,6 +52,13 @@ const onPick = (idx: number) => {
   if (!p) return;
   applyPackSelection(p.offer, idx, p.via);
   closeCardPack();
+};
+
+/** 关闭不选：已有挂起时先挂起的保留、本次关闭的被丢弃——购买已扣币的白扣损失必须明示 */
+const onPark = () => {
+  if (parkCardPack() === 'discarded') {
+    toastr.warning(t`已有待开启卡包，本次关闭的卡包未保留（若为购买已扣的行动币不予退还）`);
+  }
 };
 </script>
 

@@ -45,6 +45,9 @@ export function normalizeApiUrl(url: string): string {
  *  复查锚点：若脚本改掉该契约（fetch wrapper 标记 __keminiAntiTruncation__、函数
  *  callerControlsTools），从这段注释重新核实。 */
 async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?: AbortSignal): Promise<string> {
+  // 空 apiurl 会以 reverse_proxy:'' 静默落到酒馆主 OpenAI 配置（主 key/额度被副功能消耗、
+  // 报错无指向）——入口拦截，与 ApiEditor 保存校验双保险
+  if (!api.apiurl.trim()) throw new Error('副 API 地址为空，请先在 API 设置中填写 API 地址');
   const body: Record<string, unknown> = {
     chat_completion_source: 'openai',
     reverse_proxy: normalizeApiUrl(api.apiurl),
@@ -89,6 +92,22 @@ async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?:
     const decoder = new TextDecoder();
     let full = '';
     let buffer = '';
+    // SSE 行消费：`data:` 兼容带空格与无空格两种前缀变体（部分代理不发空格）；
+    // JSON.parse 失败的行静默忽略，json.error 作为 API 错误向上抛（走重试判定）
+    const consumeLine = (line: string): void => {
+      const m = line.match(/^data:\s?(.*)$/);
+      if (!m) return;
+      const data = m[1].trim();
+      if (!data || data === '[DONE]') return;
+      let json: any;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        return;
+      }
+      if (json?.error) throw new Error(json.error.message || 'API 流式返回错误');
+      full += json?.choices?.[0]?.delta?.content ?? json?.choices?.[0]?.message?.content ?? '';
+    };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -97,29 +116,26 @@ async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?:
       const lines = buffer.split('\n');
       // 最后一行可能不完整（跨 chunk 边界），保留到下次再拼接
       buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') continue;
-        try {
-          const json = JSON.parse(data);
-          const delta = json?.choices?.[0]?.delta?.content ?? '';
-          full += delta;
-        } catch {
-          /* 忽略解析失败的行 */
-        }
-      }
+      for (const line of lines) consumeLine(line);
     }
+    // 残余 buffer：无尾换行的最后一行（部分代理不发送结束换行），不消费会丢最后一段正文
+    if (buffer) consumeLine(buffer);
     return full;
   }
 
-  const data = await resp.json();
+  let data: any;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error('API 返回非 JSON 响应（请检查 API 地址是否指向 OpenAI 兼容接口）');
+  }
   if (data?.error) throw new Error(data.error.message || 'API 返回错误');
   return data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? '';
 }
 
-/** 判断 API 调用错误是否可重试：网络错误（TypeError）和 5xx 服务端错误可重试；
- *  4xx 客户端错误、AbortError、API 级错误（data.error）不重试。
+/** 判断 API 调用错误是否可重试：网络错误（TypeError）、5xx 服务端错误与 429 限速可重试
+ *  （429 是副 API 最典型的瞬态错误；Retry-After 语义由重试间隔近似承担）；
+ *  其余 4xx 客户端错误、AbortError、API 级错误（data.error）不重试。
  *  注意：单次尝试的 api.timeout 超时同样经 attemptController.abort() 抛 AbortError，
  *  与用户取消共用同一信号无法区分——按既有设计，超时与用户取消均不重试，
  *  仅 TypeError/5xx 进入重试路径。 */
@@ -130,7 +146,7 @@ function isRetryableError(e: unknown): boolean {
     const m = e.message.match(/^API 请求失败 \((\d{3})\)/);
     if (m) {
       const status = parseInt(m[1], 10);
-      return status >= 500;
+      return status >= 500 || status === 429;
     }
   }
   return false;
@@ -153,6 +169,8 @@ export async function callSecondaryApiWithRetry(
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // 已 aborted 的信号再挂 abort 监听永不触发：入口快速失败，防首轮请求照发
+    if (externalSignal?.aborted) throw new DOMException('已取消', 'AbortError');
     const attemptController = new AbortController();
 
     const onExternalAbort = () => attemptController.abort();

@@ -11,6 +11,7 @@
             min="0"
             max="10"
             placeholder="0"
+            @change="globalStore.settings.retry_count = clampNum($event, 0, 10, 0)"
           />
         </label>
         <label class="choice-field">
@@ -22,6 +23,7 @@
             min="0"
             max="60"
             placeholder="1"
+            @change="globalStore.settings.retry_interval = clampNum($event, 0, 60, 1)"
           />
         </label>
       </div>
@@ -125,15 +127,29 @@
                 min="0"
                 max="2"
                 step="0.1"
+                @change="draftForm.temperature = clampNum($event, 0, 2, 1)"
               />
             </label>
             <label class="choice-field">
               <span>{{ t`最大 Token` }}</span>
-              <input v-model.number="draftForm.max_tokens" type="number" class="choice-input" min="1" />
+              <input
+                v-model.number="draftForm.max_tokens"
+                type="number"
+                class="choice-input"
+                min="1"
+                @change="draftForm.max_tokens = clampNum($event, 1, 1000000, 4096)"
+              />
             </label>
             <label class="choice-field">
               <span>{{ t`超时(秒)` }}</span>
-              <input v-model.number="draftForm.timeout" type="number" class="choice-input" min="0" placeholder="0" />
+              <input
+                v-model.number="draftForm.timeout"
+                type="number"
+                class="choice-input"
+                min="0"
+                placeholder="0"
+                @change="draftForm.timeout = clampNum($event, 0, 7200, 180)"
+              />
             </label>
           </div>
           <div class="choice-api-preset-row">
@@ -294,8 +310,20 @@ const removeApi = () => {
   toastr.success(t`已删除`);
 };
 
+// 数字输入失焦钳制：v-model.number 对清空/负值不设防——retry_count 负数会让 api-client
+// 的尝试循环一次都不执行（throw undefined）；temperature 越界直接 400
+const clampNum = (e: Event, min: number, max: number, fallback: number): number => {
+  const n = Number((e.target as HTMLInputElement).value);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
 const save = () => {
   const normalized = { ...draftForm.value, apiurl: normalizeApiUrl(draftForm.value.apiurl) };
+  // 空 apiurl 会静默落到酒馆主 OpenAI 配置（主 key 被副功能消耗）、空 model 发出无模型请求
+  if (!normalized.apiurl.trim() || !normalized.model.trim()) {
+    toastr.warning(t`请先填写 API 地址与模型名`);
+    return;
+  }
   const dupName = normalized.name.trim();
   if (dupName) {
     const duplicate = globalStore.settings.apis.find(a => a.id !== selectedApiId.value && a.name.trim() === dupName);

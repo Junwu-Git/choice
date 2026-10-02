@@ -393,13 +393,16 @@ const refreshAll = async () => {
   // 档"无视酒馆关闭条目"会被自动复制的旧数据破坏）
 };
 
+let lateRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+
 onMounted(() => {
   refreshAll();
-  if (this_chid === undefined) setTimeout(refreshAll, 500);
+  if (this_chid === undefined) lateRefreshTimer = setTimeout(refreshAll, 500);
   eventSource.on(event_types.CHAT_CHANGED, refreshAll);
 });
 onActivated(refreshAll);
 onUnmounted(() => {
+  if (lateRefreshTimer !== undefined) clearTimeout(lateRefreshTimer);
   eventSource.removeListener(event_types.CHAT_CHANGED, refreshAll);
 });
 </script>

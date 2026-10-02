@@ -1,7 +1,7 @@
 import { reactive } from 'vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
-import { getMessageChoiceData, setMessageChoiceData, type ChoiceGeneration } from '@/core/options-store';
+import { writeBackOptionAttribution, type ChoiceGeneration } from '@/core/options-store';
 import { reconcileAttribution } from '@/core/stats';
 import { AI_ATTRIBUTION_QUEUE_MAX } from '@/type/settings';
 import type { PoolEntry, ScopeStats, SecondaryApi } from '@/type/settings';
@@ -251,18 +251,16 @@ function scopeHasGid(scope: ScopeStats, gid: string, candidateIds: Set<string>):
 }
 
 /** 写回消息 extra：按 gid 定位 generations（仅行动选项视图，enrich 不归因），覆盖 matchedEntryId。
- *  消息/代已不存在（用户删楼层/重新生成顶掉了旧代）→ 静默跳过。 */
+ *  写回收敛进 options-store 单一入口（read-modify-write；store 外禁止构造 MessageChoiceData
+ *  字面量）。消息/代已不存在（用户删楼层/重新生成顶掉了旧代）→ 入口返回 false，静默跳过。 */
 function writeBackAttribution(job: AttributionJob, result: AttributionResult): void {
-  const data = getMessageChoiceData(job.messageId, job.swipeId);
-  if (!data) return;
-  const gen = data.generations.find(g => g.id === job.generation.id);
-  if (!gen?.options) return;
-  for (const r of result) {
-    if (r.index >= 0 && r.index < gen.options.length) {
-      gen.options[r.index].matchedEntryId = r.entryId;
-    }
-  }
-  setMessageChoiceData(job.messageId, job.swipeId, data);
+  const written = writeBackOptionAttribution(
+    job.messageId,
+    job.swipeId,
+    job.generation.id,
+    result.map(r => ({ index: r.index, entryId: r.entryId })),
+  );
+  if (!written) return;
   // 同步刷新面板持有的当前 generation 副本：写回只改了消息 extra，面板的 generations ref 是
   // 另一份克隆（非响应式源自 chat），不刷新则点击会读到旧 Dice matchedEntryId、而统计已按
   // AI 修正——期望/命中来源分裂（同进同出设计的第三源缺口）。面板未显示该消息时钩子 no-op

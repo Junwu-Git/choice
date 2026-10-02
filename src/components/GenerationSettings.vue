@@ -118,8 +118,8 @@
       </div>
       <small class="choice-field-hint">{{
         gs.settings.dice.low_roll
-          ? t`COC：点数 ≤ 需求值=成功，点数越小越好（大成功看点数最小、大失败看点数最大）`
-          : t`DND：点数 ≥ 需求值=成功，点数越大越好（大成功看点数最大、大失败看点数最小）`
+          ? t`COC：点数 ≤ 需求值=成功，点数越小越好（大成功看点数最小、大失败看点数最大）。需求值按「能力值」标注：越有把握标得越高；无标注时档位兜底为 保守 65 / 平衡 40 / 大胆 15`
+          : t`DND：点数 ≥ 需求值=成功，点数越大越好（大成功看点数最大、大失败看点数最小）。无标注时档位兜底为 保守 35 / 平衡 60 / 大胆 85`
       }}</small>
       <!-- 彩蛋阈值：随判定模式切换字段组（DND 用高值大成功/低值大失败，COC 反之） -->
       <div class="choice-count-row">
@@ -132,6 +132,7 @@
             min="2"
             max="100"
             :title="t`DND：掷出 ≥ 此值判为大成功（默认 96）`"
+            @change="gs.settings.dice.crit_success_min = clampDiceThreshold($event, 2, 100)"
           />
         </label>
         <label v-if="!gs.settings.dice.low_roll" class="choice-count-item">
@@ -143,6 +144,7 @@
             min="1"
             max="99"
             :title="t`DND：掷出 ≤ 此值判为大失败（默认 5）`"
+            @change="gs.settings.dice.crit_fail_max = clampDiceThreshold($event, 1, 99)"
           />
         </label>
         <label v-if="gs.settings.dice.low_roll" class="choice-count-item">
@@ -154,6 +156,7 @@
             min="1"
             max="99"
             :title="t`COC：掷出 ≤ 此值判为大成功（默认 5）`"
+            @change="gs.settings.dice.low_roll_crit_success_max = clampDiceThreshold($event, 1, 99)"
           />
         </label>
         <label v-if="gs.settings.dice.low_roll" class="choice-count-item">
@@ -165,9 +168,14 @@
             min="2"
             max="100"
             :title="t`COC：掷出 ≥ 此值判为大失败（默认 96）`"
+            @change="gs.settings.dice.low_roll_crit_fail_min = clampDiceThreshold($event, 2, 100)"
           />
         </label>
       </div>
+      <!-- 彩蛋失效警示：两阈值 clamp 后重叠时 judgeOutcome 会双双关彩蛋，提前说明防困惑 -->
+      <small v-if="critOverlapWarning" class="choice-field-hint choice-dice-crit-warn">
+        <i class="fa-solid fa-triangle-exclamation"></i>{{ critOverlapWarning }}
+      </small>
       <!-- 附加玩法：卡片式开关行（标题 + 一行说明，替代无说明裸复选框） -->
       <div class="choice-dice-toggle-list">
         <label class="choice-toggle" :title="t`点选项先掷骰出示 ↻，重掷满意后再次点击才应用发送`">
@@ -199,11 +207,24 @@
             <small>{{ t`选项无显式需求值时，从当前角色卡解析属性做需求值` }}</small>
           </span>
         </label>
+        <label
+          class="choice-toggle"
+          :title="t`向正文生成请求常驻注入一段系统说明，解释消息开头的判定注释并要求遵守；关闭则仅靠注释自解释`"
+        >
+          <input v-model="gs.settings.dice.main_ai_awareness" type="checkbox" />
+          <span class="choice-toggle-custom"></span>
+          <span class="choice-toggle-label">
+            <strong>{{ t`正文 AI 感知判定注释` }}</strong>
+            <small>{{
+              t`向正文生成请求常驻注入一段系统说明，让正文 AI 理解并遵守消息开头的判定注释；关闭则仅靠注释自解释`
+            }}</small>
+          </span>
+        </label>
       </div>
       <!-- 演绎文案模板：收进可折叠「高级」区，减轻主体卡片负担 -->
       <ChoiceSectionCard title="演绎文案模板（高级）" icon="fa-solid fa-comment">
         <small class="choice-field-hint">{{
-          t`成功/失败按点数与需求值的差距（margin）分档，每档独立演绎指令；大成功/大失败为单条。指令以 HTML 注释注入（AI 可见、聊天界面不可见；填入输入框可见可编辑删除），模板支持 {rate} {roll} {margin} {degree}；某档留空回退该结局回退文案、两者皆空则不注入`
+          t`成功/失败按点数与需求值的差距（margin）分档，每档独立演绎指令；大成功/大失败为单条。指令以 HTML 注释随玩家消息隐形注入（AI 可见、聊天界面与输入框均不可见，用户全程看不到）。插件会自动在注释开头拼结构化结论（结局/裁定对象/点数/需求/差值/程度）、结尾拼纪律尾注，模板只需写演绎要求；仍支持 {rate} {roll} {margin} {degree}；某档留空回退该结局回退文案、两者皆空则不注入`
         }}</small>
         <div class="choice-dice-template-list">
           <div class="choice-dice-template-row">
@@ -385,7 +406,7 @@
         </div>
       </ChoiceSectionCard>
       <small class="choice-field-hint">{{
-        t`开启后点击选项时掷骰判定：AI 标注需求值优先，未标注按风险档位兜底（保守 35 / 平衡 60 / 大胆 85）。润色视图与无需求值选项不参与判定；判定方向见上方 DND / COC 模式。`
+        t`开启后点击选项时掷骰判定：AI 标注需求值优先，未标注按风险档位兜底（DND：保守 35 / 平衡 60 / 大胆 85；COC：保守 65 / 平衡 40 / 大胆 15）。润色视图与无需求值选项不参与判定；判定方向见上方 DND / COC 模式。`
       }}</small>
     </ChoiceSectionCard>
 
@@ -425,11 +446,11 @@
         <label class="choice-count-item">
           <span>{{ t`阈值` }}</span>
           <input
-            v-model.number="gs.settings.generation.dedup_threshold"
+            v-model.number="dedupThreshold"
             class="choice-input choice-input-w-md"
             type="number"
             step="0.05"
-            :title="t`0-1 的 bigram Jaccard 阈值；NaN 兜底 0.75；不 clamp 用户输入`"
+            :title="t`0-1 的 bigram Jaccard 阈值；越界/非法输入自动钳回 0-1，空值兜底 0.75`"
           />
         </label>
       </div>
@@ -526,6 +547,16 @@ const oversamplePct = computed({
   },
 });
 
+// 去重阈值：v-model.number 直绑时清空输入框得 ''（threshold-0.35=-0.35 → titleGate=0 且
+// score>=0 恒真）会让去重「全杀」并空转两轮补齐请求——钳到 0-1、非法值兜底 0.75
+const dedupThreshold = computed({
+  get: () => gs.settings.generation.dedup_threshold,
+  set: v => {
+    const n = Number(v);
+    gs.settings.generation.dedup_threshold = Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.75;
+  },
+});
+
 // 字数输入失焦钳制：用户键入 <10/>500 或非法值时自动钳到合法边界
 // （min 输 1→10、max 输 10000000000→500），并保证 min<=max。
 // 用 @change（失焦/回车）而非 @input：实时钳会破坏多位数输入（输 "100" 时 "1" 被钳成 10 跳变）。
@@ -542,6 +573,31 @@ const clampEnrichChars = () => {
   rules.enrich_min_chars = lo;
   rules.enrich_max_chars = lo > hi ? lo : hi;
 };
+
+// 彩蛋阈值失焦钳制（与字数输入同 idiom，@change 防「输 100 时 1 被钳成 10」跳变）：
+// HTML min/max 挡不住手输越界（150/负数/清空）。运行时判定层另有 clamp 防御，但越界值
+// 会让彩蛋窗口重叠静默失效（见 critOverlapWarning），故输入层就夹回 schema 界限。
+const clampDiceThreshold = (e: Event, lo: number, hi: number): number => {
+  const v = Math.round(Number((e.target as HTMLInputElement).value));
+  return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo;
+};
+
+// 彩蛋窗口有效性警示：两阈值经 judgeOutcome 的 clamp 后重叠（DND：大失败上限≥大成功下限；
+// COC：大成功上限≥大失败下限）→ 大成功/大失败双双失效退化为纯成败判定。提前警示，
+// 避免「设了极端阈值/装了扩窗卡却再无彩蛋」的无感知困惑。
+const critOverlapWarning = computed(() => {
+  const d = gs.settings.dice;
+  const critS = d.low_roll
+    ? Math.min(99, Math.max(1, Math.round(Number(d.low_roll_crit_success_max))))
+    : Math.min(100, Math.max(2, Math.round(Number(d.crit_success_min))));
+  const critF = d.low_roll
+    ? Math.min(100, Math.max(2, Math.round(Number(d.low_roll_crit_fail_min))))
+    : Math.min(99, Math.max(1, Math.round(Number(d.crit_fail_max))));
+  const critsActive = d.low_roll ? critS < critF : critF < critS;
+  return d.enabled && !critsActive
+    ? t`大成功与大失败阈值区间重叠，彩蛋判定已失效（按纯成败处理）——请把两阈值拉开`
+    : '';
+});
 </script>
 
 <style scoped>
@@ -579,6 +635,14 @@ const clampEnrichChars = () => {
   gap: var(--choice-space-2);
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
+}
+
+/* 彩蛋失效警示行：阈值重叠时显示在阈值行下方 */
+.choice-dice-crit-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--choice-color-warning, var(--choice-color-error));
 }
 
 /* 骰子结局模板列表：每档一行（结局名 + 隐形演绎输入 + 回退输入），

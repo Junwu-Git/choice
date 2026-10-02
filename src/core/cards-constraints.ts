@@ -24,8 +24,6 @@ export const CARD_DEMAND_MOD_LIMIT = 40;
 export const CARD_CRIT_WINDOW_LIMIT = 5;
 /** 叙事注入字数上限（narrative 正文，占位符不计入） */
 export const CARD_NARRATIVE_CHARS_LIMIT = 40;
-/** 强制重掷 / 结局转化次数恒为 1（效果集里单次语义，不做可累加次数） */
-export const CARD_EFFECT_COUNT_LIMIT = 1;
 
 // ── 等级预算（装备格内强卡上限，防叠爆） ────────────────────────────────
 
@@ -53,7 +51,7 @@ export const CARD_OUTCOME_CURRENCY: Readonly<Record<DiceOutcome, number>> = {
   crit_fail: -3,
 };
 
-/** 重复获得折算行动币（开卡包 3 选 1 选到已拥有卡时发放；低于原分解价防刷） */
+/** 重复获得折算行动币（开卡包 3 选 1 选到已拥有卡时发放；低于对应星级价值防刷包） */
 export const CARD_DUPLICATE_VALUE: Readonly<Record<CardStar, number>> = {
   '1': 1,
   '2': 2,
@@ -85,7 +83,7 @@ export const CARD_DROP_WEIGHT: Readonly<Record<CardStar, number>> = {
   '5': 4,
 };
 
-/** 是否保底/分解口径的「高级卡」（3 星及以上）。pity 强制注入、分解、出卡重置保底均用此判定。 */
+/** 是否「稀有卡」（3 星及以上）：开包弹窗稀有提示与卡面高亮用此判定（v66 起保底/分解已裁撤）。 */
 export const isHighStar = (star: CardStar): boolean => Number(star) >= 3;
 
 // ── 收藏成就（趣味彩蛋，零操作） ─────────────────────────────────────────
@@ -98,6 +96,11 @@ export const CARD_TROPHY_COLLECT_MILESTONES: readonly number[] = [10, 20];
 // ── 效果 clamp（数值先经这里再进判定，防越权） ───────────────────────────
 
 const clamp = (v: number, lim: number): number => Math.min(lim, Math.max(-lim, Math.round(Number.isFinite(v) ? v : 0)));
+
+/** 叙事文本并入判定 HTML 注释（option-action mergeCardNarratives/wrapCardNarratives）前的安全化：
+ *  连续连字符（如 AI 写出 `-->`）会提前闭合注释、使后续判定正文泄漏为聊天可见文本——
+ *  统一替换为全角破折号（替换后长度不增，先替换再截断不会复活连续连字符）。 */
+export const sanitizeNarrative = (text: string): string => text.replace(/-{2,}/g, '－');
 
 /** 对单个效果做硬限钳制（就地返回新对象，不改入参）。narrative 超长则截断；
  *  kind 不在六类枚举（AI 瞎写/旧脏数据）返回 null——调用方必须过滤，
@@ -149,8 +152,10 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
         break;
       case 'demand':
       case 'roll':
-        if (!isRateRange(trigger.min) || !isRateRange(trigger.max) || trigger.min > trigger.max)
-          errors.push(`${trigger.kind === 'demand' ? '需求' : '骰值'}区间非法（需 0-100 且 min≤max）`);
+        // max≥1：[0,0] 退化区间永不命中（rate/roll 恒 ≥1）——AI 漏填 min/max 时
+        // schema 补默认 0/0，不拒会产出死卡占池
+        if (!isRateRange(trigger.min) || !isRateRange(trigger.max) || trigger.min > trigger.max || trigger.max < 1)
+          errors.push(`${trigger.kind === 'demand' ? '需求' : '骰值'}区间非法（需 0-100、min≤max 且 max≥1）`);
         break;
       case 'outcome':
         if (!['success', 'fail', 'crit_success', 'crit_fail'].includes(trigger.outcome as string))

@@ -15,8 +15,7 @@
 </template>
 
 <script setup lang="ts">
-import { eventSource, event_types } from '@sillytavern/scripts/events';
-import { this_chid } from '@sillytavern/script';
+import { eventSource, event_types, this_chid } from '@/core/st-world-info';
 import toastr from 'toastr';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { getStCharacter } from '@/core/st-character';

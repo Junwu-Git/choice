@@ -21,10 +21,15 @@ type RollFn = (n: number, m: number, kd: KeepDrop, amt: number) => number;
 /** 骰子段正则（大小写容忍）：`NdM`，可选保留/丢弃后缀 `kH`/`kl`/`dh`/`dl` + 数量。
  *  例：`4d6`、`2d6kH3`、`3d10dl1`。 */
 const DICE_SEGMENT_RE = /(\d+)d(\d+)(?:([kKdD])([hHlL])(\d+)?)?/g;
-/** 去除骰子段后的运算串白名单：仅允许数字、`+ - * / ( ) .` 与空白。 */
+/** 去除骰子段后的运算串白名单：仅允许数字、`+ - * / ( ) .` 与空白。
+ *  校验前先把受控生成的 `__d(...)` 占位标记替换为数字（见 compile），
+ *  否则占位标记里的字母会让每次校验都失败、所有骰式被误拒。 */
 const EXPR_SAFE_RE = /^(?:[\d\s+\-*/().])+$/;
 
-/** 判定一段文本是否为合法骰式（供选项标注识别；不含骰子段的纯算术不算）。 */
+/** 判定一段文本是否为合法骰式（供选项标注识别；不含骰子段的纯算术不算）。
+ *  与 compile 同口径：剥掉全部骰子段后不允许残留 k/d/h/l——如 `2d6k3`（k 后缺 h/l）
+ *  能过字符集白名单但 compile 必拒，若此处放行会出现「徽标显示骰式、实际掷 D100」的
+ *  静默不一致（宁可不拆不错拆，见 option-format 的整体回退哲学）。 */
 export function isDiceFormula(text: string): boolean {
   if (!text || text.length > 40) return false;
   const t = text.replace(/\s+/g, '');
@@ -32,6 +37,8 @@ export function isDiceFormula(text: string): boolean {
   // 骰子段之外只允许数字与运算符号（k/d/h/l 已被骰子段正则消耗，见下）
   if (!/^[\d+\-*/().dkhl]+$/i.test(t)) return false;
   if (!/\d+d\d+/i.test(t)) return false;
+  // 残留检查只拒字母 k/d/h/l（如 2d6k3 段外残留 k）；残留数字是算术常量（2d6+3 的 +3），必须放行
+  if (/[dkhl]/i.test(t.replace(DICE_SEGMENT_RE, ''))) return false;
   return true;
 }
 
@@ -63,7 +70,9 @@ const compile = (formula: string): ((d: RollFn) => number) | null => {
     const amount = kd ? (amt ? Math.min(parseInt(amt, 10) || 1, n2) : 1) : 0;
     return `__d(${n2},${m2},${kdFull ? `'${kdFull}'` : 'null'},${amount})`;
   });
-  if (!EXPR_SAFE_RE.test(expr)) return null;
+  // 白名单只校验算术骨架：受控生成的 __d(...) 占位标记替换为数字 0 后再测，
+  // 其余仅数字/运算符/括号（注入面只来自 __d 的数字参数），杜绝任意代码注入。
+  if (!EXPR_SAFE_RE.test(expr.replace(/__d\([^)]*\)/g, '0'))) return null;
   try {
     const fn = new Function('__d', `return (${expr})`);
     return fn as (d: RollFn) => number;
@@ -77,10 +86,13 @@ export function rollDiceExpression(formula: string): { total: number; min: numbe
   const fn = compile(formula);
   if (!fn) return null;
   try {
-    const total = Math.round(fn(buildDiceFn('random')) ?? 0);
-    const min = Math.round(fn(buildDiceFn('min')) ?? 0);
-    const max = Math.round(fn(buildDiceFn('max')) ?? 0);
-    return { total, min, max };
+    const total = fn(buildDiceFn('random'));
+    const min = fn(buildDiceFn('min'));
+    const max = fn(buildDiceFn('max'));
+    // 除零（如 2d6/0）会产生 ±Infinity、0/0 会产生 NaN：Infinity 恒过彩蛋阈值判大成功、
+    // NaN 恒判失败且 chip 显示「NaN」——非法结果整体作废，调用方静默回退 D100。
+    if (!Number.isFinite(total) || !Number.isFinite(min) || !Number.isFinite(max)) return null;
+    return { total: Math.round(total), min: Math.round(min), max: Math.round(max) };
   } catch {
     return null;
   }

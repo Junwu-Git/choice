@@ -268,7 +268,7 @@ const starVars = computed(() => ({
   gap: 3px;
 }
 
-/* 已分解角标：与"未拥有"区分的次级色，提醒这是曾拥有过、分解了的卡 */
+/* 曾获得角标（旧版分解遗留数据的展示区分，v66 起无分解）：与「未拥有」区分的次级色 */
 .choice-card-face__unowned-badge--dismantled {
   color: var(--choice-text-secondary);
   border: 1px dashed var(--choice-border-strong);

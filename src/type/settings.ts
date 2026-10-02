@@ -1075,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 66;
+export const SCHEMA_VERSION = 67;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1480,18 +1480,18 @@ export type DiceStats = z.infer<typeof DiceStats>;
 // ── 卡牌系统（v62 增量字段，全走 zod default/prefault 补齐，不 bump schema_version）────────
 // 每张卡是可装备的效果卡：触发条件（选项类型/档位/需求区间/骰值区间/结局）+ 效果
 // （骰值/需求/彩蛋窗口修正、结局转化、强制重掷、叙事注入）。收藏全局 + 按 config 装备。
-// 耐久 = 功能基础值 × 星级系数（见 core/cards-constraints.ts）；角色主题池由 AI 按
-// 角色卡世界观懒生成、可重复掉落。货币「行动币」由骰子结局收支 + 分解重复高级卡获得。
+// 卡为永久收藏（v66 起无耐久/等级）；角色主题池由 AI 按
+// 角色卡世界观懒生成、可重复掉落。货币「行动币」由骰子结局收支 + 重复卡折算获得。
 
-/** 星级：1星至5星（抽卡权重递减，耐久系数递增，装备等级预算受限） */
+/** 星级：1星至5星（抽卡权重递减，高星装备数量受预算限制） */
 export const CARD_STARS = ['1', '2', '3', '4', '5'] as const;
 export type CardStar = (typeof CARD_STARS)[number];
-/** 卡类型：武器/法术/祝福/试炼（装备位同类最多 1 张；功能基础耐久区分） */
+/** 卡类型：武器/法术/祝福/试炼（装备位同类最多 1 张，效果定位见 cards-builtin.ts） */
 export const CARD_TYPES = ['weapon', 'spell', 'blessing', 'trial'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
-/** 卡来源：builtin = 内置（全球反复掉落）；character = 角色主题池（懒生成、可重复掉落） */
+/** 卡来源：builtin = 内置（全球反复掉落）；character = 角色主题池（懒生成、可重复掉落）。
+ *  联合类型由 z.enum(CARD_SOURCES) 经 z.infer 推导，不另立别名。 */
 export const CARD_SOURCES = ['builtin', 'character'] as const;
-export type CardSource = (typeof CARD_SOURCES)[number];
 
 /** 卡触发条件：单对象含可选字段，按 kind 取值匹配。kind 语义：
  *  type = 选项类型（parseOptionType 命中 typeValue）；grade = 风险档位（conservative/balanced/bold）；
@@ -1509,7 +1509,8 @@ export const CardTrigger = z
 export type CardTrigger = z.infer<typeof CardTrigger>;
 
 /** 卡效果（六类）：roll_bonus 掷骰前 ±；demand_mod ±DC；crit_window 扩/收彩蛋区间；
- *  outcome_convert 结局转化；reroll 强制重掷；narrative 注入演绎指令（支持 {rate}/{roll}/{margin}/{degree}）。 */
+ *  outcome_convert 结局转化；reroll 强制重掷；narrative 注入演绎指令（原文并入判定注释，
+ *  不做 {rate} 等占位符替换——那是骰子结局模板的机制）。 */
 export const CardEffect = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('roll_bonus'), amount: z.number().default(0) }),
   z.object({ kind: z.literal('demand_mod'), amount: z.number().default(0) }),
@@ -1678,19 +1679,58 @@ export function createEmptyStats(): StatsSettings {
 
 /** 骰子判定设置（v57，难度制）：选项点击时掷 D100 判定成败——AI 标注/档位兜底的数字是
  *  「需求值」，掷出 ≥ 需求才算成功（点数越大越好，与正文 AI 直觉一致；v55 的
- *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给发送文本带隐形
- *  演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
- *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。模板占位符
+ *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给隐形
+ *  演绎指令（包在 HTML 注释中对用户全程隐形注入：四种行为输入框只放纯正文，玩家消息
+ *  真正发出时由 MESSAGE_SENT 回写进该消息，AI 可见、聊天界面不可见、随消息持久化）。
+ *  模板占位符
  *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
  *  成功侧勉强得手/险胜/顺利达成/漂亮完胜/势如破竹、失败侧差点成功/功亏一篑/事与愿违/溃败/
  *  彻底落败、彩蛋固定
  *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
  *  send 模板（success_/fail_send_{low,mid_low,mid,mid_high,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
- *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。 */
+ *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。
+ *  v67：注释改三段结构——代码固定拼结构化头部（结局/裁定对象/点数/需求/差值/程度）+ 模板正文 + 固定纪律
+ *  尾注（见 core/dice.ts buildDiceMarker）；12 条 send 模板默认重写为纯演绎指令（数字由头部
+ *  承载，默认文案不再重复），存量未自定义的默认经 v67 迁移换新；新增 main_ai_awareness
+ *  （正文 AI 常驻契约注入，见 core/dice-contract.ts）。 */
+
+/** v67 起的 12 条 send 模板默认文案（纯演绎指令，数字由代码固定的结构化头部承载）。
+ *  schema 默认与 v67 迁移的 to 值共用这一份，防两处字面量漂移。 */
+export const SEND_TEMPLATE_DEFAULTS = {
+  success_send_low_template:
+    '行动只是勉强够到了达标线：请描写略显吃力、磕磕绊绊的勉强达成，可留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+  success_send_mid_low_template:
+    '行动刚刚越过达标线、优势微弱：请描写略带惊险、险中取胜的过程，结果成立但谈不上从容。',
+  success_send_mid_template:
+    '行动干净利落、顺理成章地完成：请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+  success_send_mid_high_template:
+    '行动以出彩的姿态漂亮完成：请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+  success_send_high_template:
+    '行动以碾压般的气势一举拿下：请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
+  fail_send_low_template:
+    '行动几乎就要成了：请描写功亏一篑、与成功失之交臂的落差，以及那一线之差带来的懊恼与遗憾。',
+  fail_send_mid_low_template:
+    '行动在半途受阻、差口气没能拿下：请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
+  fail_send_mid_template:
+    '结果与预期相左：请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+  fail_send_mid_high_template:
+    '行动明显失守、局面被动：请描写节节败退、落了下风的处境，以及随之扩大的损失。',
+  fail_send_high_template:
+    '行动一败涂地：请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+  crit_success_send_template:
+    '行动以远超预期的完美方式达成：请着重描写惊艳的发挥、他人的赞叹，以及随之而来的额外好处。',
+  crit_fail_send_template:
+    '行动不仅失败，还引发了严重的事故或连锁反应：请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+} as const;
+
 export const DiceSettings = z
   .object({
     /** 总开关：关 = 不掷骰、不显示需求值徽标、选项行为与 v54 完全一致 */
     enabled: z.boolean().default(false),
+    /** 正文 AI 感知判定注释（v67，默认开）：向正文生成请求常驻注入一段系统说明，
+     *  解释玩家消息开头的判定注释并要求遵守（见 core/dice-contract.ts）。关 = 仅靠注释
+     *  自解释。仅 dice.enabled 开时生效。 */
+    main_ai_awareness: z.boolean().default(true),
     /** 大成功阈值（下限）：掷出 ≥ 本值 → 大成功（默认 96，即顶部 5%，2–100） */
     crit_success_min: z.number().min(2).max(100).default(96).catch(96),
     /** 大失败阈值（上限）：掷出 ≤ 本值 → 大失败（默认 5，即底部 5%，1–99） */
@@ -1703,73 +1743,27 @@ export const DiceSettings = z
     crit_fail_template: z.string().default('【大失败】'),
     /** 成功后回退文案（v57：成功也注入演绎指令），同样支持占位符。 */
     success_template: z.string().default('【判定成功】'),
-    /** 隐形演绎指令（按程度档位拆分，v58）：实际包在 HTML 注释中随消息发送/填入，
-     *  聊天界面不可见；所有点击行为共用（send 直接发送、fill/insert/append 填入输入框
-     *  可编辑）。成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/
-     *  漂亮完胜（mid_high）/势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/
-     *  事与愿违（mid）/溃败（mid_high）/彻底落败（high），按 margin 命中档位取对应模板。
+    /** 隐形演绎指令（按程度档位拆分，v58；v67 起默认为纯演绎指令——结局/裁定对象/点数/需求/差值/程度
+     *  由代码固定的结构化头部承载，纪律由固定尾注承载，模板只写演绎要求）：
+     *  实际包在 HTML 注释中随消息发送/填入，聊天界面不可见；所有点击行为共用
+     *  （send 直接发送、fill/insert/append 填入输入框可编辑）。
+     *  成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/漂亮完胜（mid_high）/
+     *  势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/事与愿违（mid）/
+     *  溃败（mid_high）/彻底落败（high），按 margin 命中档位取对应模板。
      *  某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
      *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
-    success_send_low_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
-      ),
-    success_send_mid_low_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，险胜）。行动刚刚越过了达标线、优势微弱，请描写略带惊险、险中取胜的完成，过程不算从容但结果成立。',
-      ),
-    success_send_mid_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
-      ),
-    success_send_mid_high_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
-      ),
-    success_send_high_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，势如破竹）。行动以碾压般的气势一举拿下，请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
-      ),
-    fail_send_low_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
-      ),
-    fail_send_mid_low_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，功亏一篑）。行动在半途受阻、差口气没能拿下，请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
-      ),
-    fail_send_mid_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
-      ),
-    fail_send_mid_high_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，溃败）。行动明显失守、局面被动，请描写节节败退、落了下风的处境，以及随之扩大的损失。',
-      ),
-    fail_send_high_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
-      ),
-    crit_success_send_template: z
-      .string()
-      .default(
-        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
-      ),
-    crit_fail_send_template: z
-      .string()
-      .default(
-        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
-      ),
+    success_send_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_low_template),
+    success_send_mid_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_low_template),
+    success_send_mid_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_template),
+    success_send_mid_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_high_template),
+    success_send_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_high_template),
+    fail_send_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_low_template),
+    fail_send_mid_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_low_template),
+    fail_send_mid_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_template),
+    fail_send_mid_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_high_template),
+    fail_send_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_high_template),
+    crit_success_send_template: z.string().default(SEND_TEMPLATE_DEFAULTS.crit_success_send_template),
+    crit_fail_send_template: z.string().default(SEND_TEMPLATE_DEFAULTS.crit_fail_send_template),
     /** 判定方向（v61）：high = 点数越大越好（默认，难度制原语义）；low = 点数 ≤ 需求=成功
      *  （COC 百分位）。low 开启时大成功/大失败彩蛋阈值改用 low_roll_crit_success_max /
      *  low_roll_crit_fail_min（见下）。默认关保持既有判定不变。 */
@@ -1875,7 +1869,7 @@ export const GlobalSettings = z
     /** 卡组（键 = config.id）：每个 config 一套卡组，固定 4 个类型槽、同类 ≤1、受星级预算约束。 */
     card_decks: z.record(z.string(), CardDeck).prefault({}),
     /** 全量卡定义（键 = card_id）：内置卡定义在 BUILTIN_CARDS 常量，角色主题卡由 AI 生成后
-     *  存这里（card_collection 只记持有/耐久/等级，不冗余卡效果）。抽卡/装备/展示统一从
+     *  存这里（card_collection 只记持有与触发计数，不冗余卡效果）。抽卡/装备/展示统一从
      *  本记录 + 内置常量解析卡定义。 */
     card_definitions: z.record(z.string(), Card).prefault({}),
     /** 角色 AI 主题卡池（键 = character id）：首次幸运掉落需要时懒生成并固定；

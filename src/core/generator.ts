@@ -12,6 +12,7 @@ import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensio
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
+import { equippedCardsPromptLine } from '@/core/cards-deck';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
@@ -673,6 +674,24 @@ export const applyWIExcl = async (
   };
 };
 
+/** 世界书排他窗口互斥（模块级队列）：applyWIExcl 是对酒馆全局 WI 状态（selected_world_info/
+ *  角色绑定书/chat_metadata/缓存条目 disable）的 save/restore，选项生成/润色/卡牌池三条链路
+ *  并发时窗口交错——后者的 restore 会基于前者已改写的快照回滚，把临时排除永久留在酒馆状态。
+ *  排队串行化消除交错；窗口已收窄到「消息构建完成即还原」（副 API 直连不再读酒馆世界书），
+ *  排队等待为毫秒级。 */
+let wiWindowTail: Promise<void> = Promise.resolve();
+export async function runWIExclWindow<T>(task: () => Promise<T>): Promise<T> {
+  const prev = wiWindowTail;
+  let release!: () => void;
+  wiWindowTail = new Promise<void>(resolve => (release = resolve));
+  await prev;
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+}
+
 /** 思维链标签块剥离正则：parseOptions 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
@@ -703,9 +722,9 @@ const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200
  *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
 const parseJsonOptionArray = (c: string): string[] | null => {
   try {
-    // 处理 JSON 尾随逗号（LLM 常见错误）
-    const fc = c.replace(/,(\s*[\]}])/g, '$1');
-    const p = JSON.parse(fc);
+    // 处理 JSON 尾随逗号（LLM 常见错误）：复用条目池路径的字符串感知版本——全局正则
+    // `,(\s*[\]}])` 会命中字符串值内部的 ",]"/",}" 字面量，静默篡改选项正文
+    const p = JSON.parse(stripTrailingCommas(c));
     if (!Array.isArray(p)) return null;
     const items = p
       .map(x => {
@@ -865,10 +884,6 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   generatorState.generationId = gid;
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-  const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-    : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
     // 抽取参数读全局 settings.generation（v35 起从 per-pool-config 收归全局）：条目池配置
@@ -954,19 +969,57 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     if (!enabledModules || enabledModules.length === 0) {
       enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
-    const messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+    // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
+    // 副 API 直连不再读——构建完成立即还原，不再持有到请求结束。此前 applyWIExcl 悬在 try 外
+    // （抛错绕过 finally、loading 永久卡死），且排他态持有整个生成期（酒馆 WI 面板读到临时改写态）
+    const messages = await runWIExclWindow(async () => {
+      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
+      const wiRestore = gwi.enabled
+        ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
+        : null;
+      try {
+        return await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+      } finally {
+        wiRestore?.restore();
+      }
+    });
 
-    // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
-    // 指令（运行时多 token，不改用户提示词），让 AI 在相关选项上输出真实骰式。
-    // 追加到末条 user 消息，避免「system 紧随 user」的次序噪音；末条非 user 才另起 system。
-    if (gs.settings.dice.allow_formula && messages.length > 0) {
-      const line = t`可选进阶：若某条选项涉及具体骰子检定，可在标题标注真实骰式与需求值，格式 [标题|骰式|需求值]（如 [攻击|2d6+3|70]）；不涉及的选项保持原有格式即可。`;
+    // 运行时追加指令统一出口（v61 骰式行先例）：追加到末条 user 消息，避免「system 紧随
+    // user」的次序噪音；末条非 user 才另起 system。骰式标注/COC 教学行/装备卡上下文共用。
+    const appendRuntimeLine = (line: string): void => {
+      if (messages.length === 0) return;
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.role === 'user') {
         lastMsg.content += `\n\n${line}`;
       } else {
         messages.push({ role: 'system', content: line });
       }
+    };
+
+    // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
+    // 指令（运行时多 token，不改用户提示词），让 AI 在相关选项上输出真实骰式。
+    if (gs.settings.dice.allow_formula) {
+      appendRuntimeLine(
+        t`可选进阶：若某条选项涉及具体骰子检定，可在标题标注真实骰式与需求值，格式 [标题|骰式|需求值]（如 [攻击|2d6+3|70]）；不涉及的选项保持原有格式即可。`,
+      );
+    }
+
+    // v67 COC 判定方向教学（dice.low_roll）：core_rules 默认教的是难度制「越难标得越高」，
+    // low 模式语义相反（第三段=能力值，越有把握标得越高；掷 ≤ 需求值成功），且档位兜底已按
+    // 100−v 对偶（见 option-format.gradeFallbackRate）——不追加这句 AI 会按难度制标注，
+    // low 模式下难度整体反转。同骰式行：运行时追加，不改用户提示词。
+    if (gs.settings.dice.enabled && gs.settings.dice.low_roll) {
+      appendRuntimeLine(
+        t`判定方向（COC 百分位，覆盖前文「越难标得越高」的说明）：标题第三段的需求值代表达成该行动所需的能力/技艺水平（0-100），掷出 ≤ 需求值才算成功——行动对能力要求越高标得越低，越有把握标得越高。`,
+      );
+    }
+
+    // v67 卡牌上下文告知（card_enabled + 骰子开且非骰式，口径与卡判定路径一致）：让生成端
+    // 知道玩家装备了什么卡、卡的发动面长什么样，AI 可在候选的题材/难度上自然呼应——卡与
+    // 选项从单向触发（卡等选项）变为双向配合。只告知不强制，防纯对话轮逼出不自然选项。
+    if (gs.settings.card_enabled && gs.settings.dice.enabled && !gs.settings.dice.allow_formula) {
+      const cardLine = equippedCardsPromptLine();
+      if (cardLine) appendRuntimeLine(cardLine);
     }
 
     const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
@@ -1110,7 +1163,6 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     toastr.error(t`选项生成失败:${e instanceof Error ? e.message : String(e)}`);
     return null;
   } finally {
-    if (restore) restore.restore();
     cancelled = false;
     genController = null;
     generatorState.loading = false;

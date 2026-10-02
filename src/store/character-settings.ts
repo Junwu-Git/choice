@@ -21,14 +21,32 @@ const readCharacterSettings = () => {
 
 export const useCharacterSettingsStore = defineStore('character-settings', () => {
   let reloading = false;
-  const settings = ref(validateInplace(CharacterSettings, readCharacterSettings()));
+
+  /** 解析失败（坏角色卡，extensions 被外部工具写坏）回退默认值：保留上一角色的旧 settings
+   *  会在 watch 恢复后把旧配置误写到新角色卡上，默认值是最安全的落点；toastr 明示不静默 */
+  const parseSettingsOrDefault = () => {
+    try {
+      return validateInplace(CharacterSettings, readCharacterSettings());
+    } catch (e) {
+      console.error('[Choice] 角色设置解析失败，使用默认值', e);
+      toastr.error(t`角色设置数据损坏，已使用默认值`);
+      return CharacterSettings.parse({});
+    }
+  };
+
+  const settings = ref(parseSettingsOrDefault());
 
   const reload = () => {
     reloading = true;
-    settings.value = validateInplace(CharacterSettings, readCharacterSettings());
-    nextTick(() => {
-      reloading = false;
-    });
+    try {
+      settings.value = parseSettingsOrDefault();
+    } finally {
+      // finally 复位不可省：若解析路径抛错（理论已被 parseSettingsOrDefault 兜住），
+      // reloading 卡 true 会让 deep watch 永久静默、绑定改动不再落盘
+      nextTick(() => {
+        reloading = false;
+      });
+    }
   };
 
   const setBinding = (kind: CharacterBindingKind, value: string | null) => {

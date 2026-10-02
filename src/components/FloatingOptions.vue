@@ -32,7 +32,7 @@
               v-if="rateOf(option) !== null || formulaOf(option)"
               class="choice-option-rate"
               :class="formulaOf(option) ? 'choice-option-rate--formula' : rateClass(rateOf(option)!)"
-              :title="formulaOf(option) ? `${t`骰式`} ${formulaOf(option)}（${t`难度`} ${rateOf(option)}）` : ''"
+              :title="rateTitle(option)"
               >{{ formulaOf(option) || rateOf(option) }}</span
             ><!--
             -->
@@ -200,14 +200,14 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
-import { storeGeneration, isCardSettled } from '@/core/options-store';
+import { storeGeneration, isCardSettled, cardSettleEpoch } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
 import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { openSettings, closeBubbleOptions, isSettingsOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
 import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
-import { applyOptionBehavior, rollOptionDice, type DiceRollResult } from '@/util/option-action';
+import { applyOptionBehavior, isOptionApplyBusy, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { openCardPack } from '@/core/card-pack-state';
 import { previewTriggeredCards, type CardResolution } from '@/core/cards';
 import { effectSummary } from '@/core/cards-meta';
@@ -234,9 +234,14 @@ const POPOVER_WIDTH_AUTO = 320;
 // 与气泡之间的固定间隙（与 FloatingContextMenu 的 8px 一致）
 const POPOVER_GAP = 8;
 
+// 视口尺寸走 useWindowSize 响应式：computed 里裸读 window.innerWidth/innerHeight 不被
+// 依赖追踪，旋转屏幕/缩放窗口后按旧视口定位，弹窗可部分出屏（外壳 max-width 只兜宽度
+// 不兜位置；FloatingContextMenu 同款修复）
+const { width: winWidth, height: winHeight } = useWindowSize();
+
 const popoverWidth = computed(() => {
   const w = gs.settings.ui.floating_popover_width;
-  return w > 0 ? w : Math.min(POPOVER_WIDTH_AUTO, window.innerWidth - 16);
+  return w > 0 ? w : Math.min(POPOVER_WIDTH_AUTO, winWidth.value - 16);
 });
 // 选项区限高（floating_popover_height > 0 用该值，0 = 自动 55dvh）：分态——
 // 调整态用固定 height（内容不足时下方露留白、随拖动实时变化，让设定高度可感知，
@@ -318,18 +323,31 @@ const rateOf = (option: ChoiceOption): number | null =>
 // v61 骰式表达式：选项是否骰式标注，返回骰式文本（如 2d6+3）；allow_formula 关或非骰式返回 null
 const formulaOf = (option: ChoiceOption): string | null =>
   gs.settings.dice.allow_formula ? (parseOptionDice(option.text)?.formula ?? null) : null;
+// v67 徽标 tooltip：骰式标骰式+难度代理；普通徽标按判定方向说明成功条件（COC 与 DND 语义相反）。
+// 与主面板 ActionOptionsPanel 同构（并行模式，两处需同步改动）
+const rateTitle = (option: ChoiceOption): string => {
+  const formula = formulaOf(option);
+  if (formula) return `${t`骰式`} ${formula}（${t`难度`} ${rateOf(option)}）`;
+  if (gs.settings.dice.low_roll) return t`COC：掷出 ≤ 该值才算成功`;
+  return t`DND：掷出 ≥ 该值才算成功`;
+};
 // 徽标语义色按需求值分档（v56 难度制）：高需求（≥70）难=橙 / 中（40-69）青 / 低（<40）易=绿；
 // 分档色走 --choice-rate-*（中档 = 主色），与 risk 档位色条语义区分（同主面板，配色反转见 theme.css）
 const rateClass = (rate: number): string =>
   rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 
+// 楼层是否已结算卡牌经济（预掷/重掷与判定路径同门控）。结算态非响应式，
+// 依赖追踪靠 cardSettleEpoch（markCardSettled 自增，跨组件结算也会触发重算）
+const layerSettled = (): boolean =>
+  panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId);
+
 // v66 点选前触发预览：与主面板 ActionOptionsPanel 同构（并行模式，两处需同步改动）。
-// 弹窗只有选项视图、无润色概念，故不做 activeView 门控；骰子可用性/楼层结算门控与主面板一致
-// （结算态非响应式，借 rollResults 的点选更新触发重算）。整表算一次缓存。
+// 弹窗只有选项视图、无润色概念，故不做 activeView 门控；骰子可用性门控与主面板一致。
+// 整表算一次缓存。
 const cardPreviews = computed<Card[][]>(() => {
-  void rollResults.value.size;
+  void cardSettleEpoch.value;
   if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
-  if (panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId)) return [];
+  if (layerSettled()) return [];
   return options.value.map(o =>
     previewTriggeredCards(o.text, currentChar.value, {
       attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
@@ -411,6 +429,8 @@ const onNext = () => {
 };
 
 const onSelect = async (option: ChoiceOption, index: number) => {
+  // 同楼层点击处理中（上一击 send 往返窗口）：整次忽略，防重复应用与误留选中态
+  if (isOptionApplyBusy(panelStore.messageId, panelStore.swipeId)) return;
   // 弹窗是纯行动选项速选菜单（无润色视图），view 恒为 'options'，明确传入计价口径；
   // poolEntryIds/generationId 取被点选项所在代，供统计整轮归因与同代去重
   // （见 option-action.ts / core/stats.ts）
@@ -420,7 +440,8 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 再次点击 = 用已 stage 结果应用。正常流程（reroll 关）保持原「点击即掷+应用」。
   const willRoll = d.enabled && resolveRateForDisplay(option.text, currentChar.value, d) !== null;
   if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
-    const staged = rollOptionDice(option.text);
+    // 预掷与判定路径同结算门控：已结算楼层走非卡路径，防预告的卡触发在实际应用时被剥除
+    const staged = rollOptionDice(option.text, { cardDisabled: layerSettled() });
     if (staged) {
       rollResults.value = new Map(rollResults.value).set(key, {
         outcome: staged.outcome,
@@ -472,9 +493,9 @@ const onSelect = async (option: ChoiceOption, index: number) => {
 };
 
 // v61 就地重掷：重掷当前选项（重新掷骰并更新 chip 与 stage 结果），不应用不发送。
-// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）。
+// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）；与判定路径同结算门控。
 const onReroll = (option: ChoiceOption, index: number) => {
-  const full = rollOptionDice(option.text);
+  const full = rollOptionDice(option.text, { cardDisabled: layerSettled() });
   if (!full) return;
   const key = keyOf(index);
   rollResults.value = new Map(rollResults.value).set(key, {
@@ -497,20 +518,20 @@ const popoverX = computed(() => {
   if (adjustPos.value) return adjustPos.value.x;
   const size = bubbleSize.value;
   const right = bubbleX.value + size + POPOVER_GAP;
-  if (right + popoverWidth.value <= window.innerWidth) {
+  if (right + popoverWidth.value <= winWidth.value) {
     return right;
   }
   // 视口缩窄（旋转屏幕/改窗口）后气泡可能是越界旧位置，左翻后还要钳上界，否则右缘出屏
   const left = Math.max(8, bubbleX.value - popoverWidth.value - POPOVER_GAP);
-  return Math.min(left, Math.max(8, window.innerWidth - popoverWidth.value - POPOVER_GAP));
+  return Math.min(left, Math.max(8, winWidth.value - popoverWidth.value - POPOVER_GAP));
 });
 
 const popoverY = computed(() => {
   if (adjustPos.value) return adjustPos.value.y;
   // 高度估计用当前配置高度（自定义/自动），保证退出调整态后按新尺寸重新定位不越出视口
   const h = gs.settings.ui.floating_popover_height;
-  const estHeight = h > 0 ? h : Math.min(window.innerHeight * 0.55, window.innerHeight - 16);
-  const maxTop = Math.max(8, window.innerHeight - estHeight - 8);
+  const estHeight = h > 0 ? h : Math.min(winHeight.value * 0.55, winHeight.value - 16);
+  const maxTop = Math.max(8, winHeight.value - estHeight - 8);
   return Math.max(8, Math.min(bubbleY.value, maxTop));
 });
 

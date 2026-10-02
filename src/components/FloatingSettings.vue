@@ -319,6 +319,12 @@ const onResizeEnd = () => {
   document.removeEventListener('mouseup', onResizeEnd);
 };
 
+onUnmounted(() => {
+  // 拖拽中组件被卸载（Esc 关面板/扩展禁用）：document 监听滞留到下一次 mouseup 才释放，
+  // 期间 onResizeMove 继续写尺寸 ref——卸载时成对移除（onResizeEnd 幂等）
+  onResizeEnd();
+});
+
 useEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape' && isSettingsOpen.value) {
     closeSettings();

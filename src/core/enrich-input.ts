@@ -6,6 +6,7 @@ import {
   parseOptions,
   resolveCount,
   resolveWIParticipation,
+  runWIExclWindow,
 } from './generator';
 import type { Ctx } from './generator';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -63,13 +64,21 @@ export async function enrichUserInput(input: string): Promise<string[]> {
 
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-  const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-    : null;
 
   try {
-    const messages = await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
+    // WI 排他窗口（互斥 + 即用即还，见 generator.runWIExclWindow）：仅消息构建读取世界书，
+    // 构建完成立即还原，与选项生成/卡牌池链路并发时不再交错践踏全局 WI 状态
+    const messages = await runWIExclWindow(async () => {
+      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
+      const restore = gwi.enabled
+        ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
+        : null;
+      try {
+        return await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
+      } finally {
+        restore?.restore();
+      }
+    });
 
     enrichController = new AbortController();
     const signal = enrichController.signal;
@@ -87,7 +96,6 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     console.error('[Choice] 润色失败', e);
     throw e;
   } finally {
-    if (restore) restore.restore();
     enrichController = null;
   }
 }

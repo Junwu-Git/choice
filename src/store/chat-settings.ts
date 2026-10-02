@@ -1,5 +1,6 @@
 import { chat_metadata } from '@sillytavern/script';
 import { saveMetadataDebounced } from '@sillytavern/scripts/extensions';
+import toastr from 'toastr';
 import { ChatSettings, setting_field, type WorldInfoChatSettings } from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
@@ -34,23 +35,36 @@ export const useChatSettingsStore = defineStore('chat-settings', () => {
   if (!chat_metadata[setting_field]) {
     chat_metadata[setting_field] = {};
   }
-  const settings = ref(initSettings());
 
+  /** 解析失败（坏聊天元数据）回退默认值：保留上一聊天的旧 settings 会在 watch 恢复后
+   *  把旧配置误写到新聊天上，默认值是最安全的落点；toastr 明示不静默 */
   function initSettings() {
-    const parsed = validateInplace(ChatSettings, chat_metadata[setting_field]);
-    migrateWorldInfo(parsed.world_info);
-    return parsed;
+    try {
+      const parsed = validateInplace(ChatSettings, chat_metadata[setting_field]);
+      migrateWorldInfo(parsed.world_info);
+      return parsed;
+    } catch (e) {
+      console.error('[Choice] 聊天设置解析失败，使用默认值', e);
+      toastr.error(t`聊天设置数据损坏，已使用默认值`);
+      return ChatSettings.parse({});
+    }
   }
+
+  const settings = ref(initSettings());
 
   const reload = () => {
     reloading = true;
     if (!chat_metadata[setting_field]) {
       chat_metadata[setting_field] = {};
     }
-    settings.value = initSettings();
-    nextTick(() => {
-      reloading = false;
-    });
+    try {
+      settings.value = initSettings();
+    } finally {
+      // finally 复位不可省：解析路径抛错时 reloading 卡 true 会让 deep watch 永久静默
+      nextTick(() => {
+        reloading = false;
+      });
+    }
   };
 
   watch(

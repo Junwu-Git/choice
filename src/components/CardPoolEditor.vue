@@ -12,6 +12,14 @@
             <small>{{ t`判定叠加可装备效果卡、幸运数开卡包、行动币收支；关闭则与旧版完全一致` }}</small>
           </span>
         </label>
+        <!-- 依赖提示：卡牌的判定叠加/触发/行动币/幸运开包全挂在骰子判定分支内，
+             骰子未开时整套卡牌静默无效（新手「开了卡牌没反应」的首要原因） -->
+        <p v-if="gs.settings.card_enabled && !gs.settings.dice.enabled" class="choice-card-deps-hint">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span>{{
+            t`卡牌触发、行动币与幸运开包都依赖骰子判定——当前骰子判定未启用，卡牌不会生效。请在「生成设置 → 骰子判定」开启。`
+          }}</span>
+        </p>
       </div>
     </div>
 
@@ -24,6 +32,7 @@
 <script setup lang="ts">
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { ensureStarterCards, ensureCharacterPool } from '@/core/cards';
+import toastr from 'toastr';
 import CardLibrary from '@/components/CardLibrary.vue';
 import CardCollection from '@/components/CardCollection.vue';
 import CardDeckEditor from '@/components/CardDeckEditor.vue';
@@ -33,11 +42,15 @@ defineProps<{ area: 'library' | 'deck' | 'collection' }>();
 const gs = useGlobalSettingsStore();
 
 /** 启用卡牌时发放新手 starter + 触发角色主题池懒生成（判定/购买入口也有双保险，
- *  这里让启用即开始后台生成，无需等幸运命中）。 */
+ *  这里让启用即开始后台生成，无需等幸运命中）。骰子未开则整套卡牌静默无效，
+ *  给出一次性指引（页壳另有常驻提示行）。 */
 const onEnableToggle = () => {
   if (gs.settings.card_enabled) {
     ensureStarterCards();
     ensureCharacterPool();
+    if (!gs.settings.dice.enabled) {
+      toastr.warning(t`卡牌效果依赖骰子判定——请在「生成设置 → 骰子判定」启用，否则卡牌不会生效`);
+    }
   }
 };
 </script>
@@ -53,5 +66,21 @@ const onEnableToggle = () => {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--choice-space-2);
+}
+
+/* 卡牌×骰子依赖提示行：与开关同区常驻，随 dice.enabled 显隐 */
+.choice-card-deps-hint {
+  margin: 0;
+  font-size: var(--choice-text-xs);
+  line-height: 1.5;
+  color: var(--choice-color-warning, var(--choice-color-error));
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.choice-card-deps-hint i {
+  flex: 0 0 auto;
+  margin-top: 2px;
 }
 </style>

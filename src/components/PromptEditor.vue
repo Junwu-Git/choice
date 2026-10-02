@@ -18,7 +18,9 @@
             v-model.number="rules.context_rounds"
             class="choice-input choice-input-w-sm"
             type="number"
-            min="0"
+            min="1"
+            :title="t`每次生成携带的最近消息轮数；0/负数会被兜底为 1（0 并非「不限」）`"
+            @change="rules.context_rounds = Math.max(1, Math.round(Number(rules.context_rounds)) || 1)"
           />
         </label>
         <label
@@ -281,7 +283,7 @@
                   class="choice-input choice-rename-input"
                   @blur="finishRename(mod)"
                   @keydown.enter="finishRename(mod)"
-                  @keydown.escape="cancelRename"
+                  @keydown.escape.stop="cancelRename"
                 />
                 <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
                 <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
@@ -386,7 +388,7 @@
 
 <script setup lang="ts">
 import toastr from 'toastr';
-import { this_chid } from '@sillytavern/script';
+import { this_chid } from '@/core/st-world-info';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';

@@ -606,7 +606,7 @@
           </div>
         </div>
         <p v-if="earnedByOutcome" class="choice-stats-sub">
-          {{ t`收支构成` }}：{{ earnedByOutcome }}{{ t`（失败/大失败为负向，只扣余额）` }}
+          {{ t`收支构成` }}：{{ earnedByOutcome }}{{ t`（失败/大失败通常只扣余额，叠加套装加成时可为正收入）` }}
         </p>
         <!-- 每卡触发次数（join 卡定义，按触发次数降序） -->
         <div class="choice-stats-sub-block">
@@ -928,7 +928,7 @@ const leaderboardHelp = computed(() =>
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
-const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的 D100 判定结局计数与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
+const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的判定结局计数（D100 或骰式）与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
 const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
@@ -956,9 +956,14 @@ const scopeOptions = computed(() => {
 
 // 选中维度指向的配置被删除时回退全局，避免下拉失配
 watch(
-  [configs, scopeId],
+  [configs, scopeId, hasNoneScopeData],
   () => {
-    if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
+    if (scopeId.value === GLOBAL_SCOPE) return;
+    // NONE 数据已清空且有可用 config：NONE 选项已从下拉移除，滞留会让视图与模型脱节——回退全局
+    if (scopeId.value === NONE_SCOPE) {
+      if (!hasNoneScopeData.value && configs.value.length > 0) scopeId.value = GLOBAL_SCOPE;
+      return;
+    }
     if (!configs.value.some(c => c.id === scopeId.value)) scopeId.value = GLOBAL_SCOPE;
   },
   { immediate: true },
@@ -1230,7 +1235,7 @@ const rollLabelHist = (o: DiceOutcome): string =>
 
 // ── 卡牌（统计层，全局维度，不随 config 切换） ──
 const cardStats = computed<CardStats>(() => stats.value.card ?? createEmptyCardStats());
-const cardHelp = t`卡牌系统统计（全局维度，不随条目池配置切换）：幸运数命中/开包/得卡/行动币收支，以及每卡触发次数。随「统计采集」开关积累；清空统计时一并清除（行动币余额/收藏属游戏进度层，不清除）。`;
+const cardHelp = t`卡牌系统统计（全局维度，不随条目池配置切换）：幸运数命中/开包/得卡/行动币收支，以及每卡触发次数。随「统计采集」开关积累；清空统计时一并清除（行动币余额/收藏属游戏进度层，不清除）。注意：收入只记正向、失败扣币不入账，故获得−消费与当前余额不对应；支出一律来自开卡包。`;
 /** 每卡触发次数（join 卡定义，按触发次数降序取前 20） */
 const cardTopTriggers = computed(() => {
   const per = cardStats.value.per_card ?? {};
@@ -1244,9 +1249,10 @@ const cardTopTriggers = computed(() => {
     .slice(0, 20);
 });
 
-// 行动币获得构成（按结局键记录的 earned 分布；fail/crit_fail 为负向不入 earned，无行）
+// 行动币获得构成（按结局键记录的 earned 分布）：四结局都展示——失败结局叠加套装加成
+// 可能为正收入（recordCurrencyOutcome 按传入结局键记账），只列 success 两键会漏显
 const earnedByOutcome = computed(() =>
-  (['crit_success', 'success'] as const)
+  (['crit_success', 'success', 'fail', 'crit_fail'] as const)
     .map(k => ({ label: rollLabelHist(k), v: cardStats.value.currency_earned_by_outcome[k] ?? 0 }))
     .filter(e => e.v > 0)
     .map(e => `${e.label} +${e.v}`)
@@ -1543,6 +1549,9 @@ const historyTimeTitle = (ts: number): string => formatDateTime(ts);
 const undoHistoryEntry = (entryId: string) => {
   if (undoApply(entryId)) {
     toastr.success(t`已撤销该批应用`);
+  } else {
+    // 零回滚（该批字段已被后续应用/手动编辑全覆盖）：明示而非假成功
+    toastr.warning(t`该批没有可回滚的字段（已被后续改动覆盖）`);
   }
 };
 
@@ -1612,6 +1621,10 @@ const onUndo = () => {
   if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
   if (undoLastApply(scopeId.value)) {
     toastr.success(t`已撤销最近一次应用`);
+  } else {
+    // 零回滚：明示而非假成功（槽保留，撤销更近批次后仍可回滚）
+    // undoLastApply 已把零回滚死记录自动跳过：走到这里 = 本 scope 无可撤销历史
+    toastr.warning(t`没有可撤销的应用记录`);
   }
 };
 

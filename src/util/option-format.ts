@@ -19,8 +19,10 @@
 
 import { isDiceFormula } from '@/core/dice-expression';
 
-// 分隔符：半角/全角冒号后跟任意空白字符，与 generator.ts 的 parseOptions 正则保持一致
-const OPTION_SEP_RE = /[:：]\s/;
+// 分隔符：半角/全角冒号 + 任意空白（含零个）。generator 端 parseOptions 的 titleRe 是
+// `[:：]\s*`（容忍零空格），此处必须同口径——否则「动手:内容」生成端能拆、展示端拆不开，
+// 类型前缀与正文重复进输入框。零宽容忍对「12:30」这类串的误切两端一致，域内可接受
+const OPTION_SEP_RE = /[:：]\s*/;
 
 // 匹配开头的 [标题] 或 【标题】 模式，标题为括号内文字，括号后紧跟内容
 const OPTION_TYPE_BRACKET_RE = /^[[【]([^\]】]+)[\]】]\s*/;
@@ -67,7 +69,7 @@ const splitBracketParts = (
 ): { title: string; style: OptionStyleGrade | null; rate: number | null; formula: string | null } => {
   if (!rawTitle.includes('|')) return { title: rawTitle, style: null, rate: null, formula: null };
   const parts = rawTitle.split('|');
-  const [head] = parts;
+  const head = parts[0].trim(); // 注释承诺「竖线两侧做 trim」：head 侧不能漏（[顺势而为 | 大胆]）
   let style: OptionStyleGrade | null = null;
   let rate: number | null = null;
   let formula: string | null = null;
@@ -122,6 +124,19 @@ export const GRADE_FALLBACK_RATE: Readonly<Record<OptionStyleGrade, number>> = {
   bold: 85,
 };
 
+/** low（COC）模式的档位兜底：100−v 对偶。high 保守 35 → 成功率 ≈65%；low 对偶 65 →
+ *  P(≤65)=65%，两模式成功率一致。语义上 COC 第三段是「能力值」：保守行动所需能力低
+ *  （容易 ≤）、大胆所需能力高，数值直觉与难度制相反。 */
+export const GRADE_FALLBACK_RATE_LOW: Readonly<Record<OptionStyleGrade, number>> = {
+  conservative: 65,
+  balanced: 40,
+  bold: 15,
+};
+
+/** 模式感知的档位兜底唯一入口（v67）：徽标展示与骰子判定共用，勿在调用点各写一份对偶。 */
+export const gradeFallbackRate = (style: OptionStyleGrade, lowRoll: boolean): number =>
+  lowRoll ? GRADE_FALLBACK_RATE_LOW[style] : GRADE_FALLBACK_RATE[style];
+
 export const parseOptionType = (text: string): string => {
   const m = text.match(OPTION_TYPE_BRACKET_RE);
   if (m) return splitBracketParts(m[1].replace(/"/g, '')).title;
@@ -145,20 +160,11 @@ export const parseOptionRate = (text: string): number | null => {
   return splitBracketParts(m[1].replace(/"/g, '')).rate;
 };
 
-/** 选项最终需求值（UI 徽标与骰子判定的唯一解析点，两处禁止各写一套）：
- *  AI 标注优先，无标注时按风险档位兜底，无档位无标注 → null（不掷骰）。
- *  难度制语义：数值 = 掷出 ≥ 该值才算成功的需求下限，越大越难。 */
-export const resolveOptionSuccessRate = (text: string): number | null => {
-  const rate = parseOptionRate(text);
-  if (rate !== null) return rate;
-  const style = parseOptionStyle(text);
-  return style ? GRADE_FALLBACK_RATE[style] : null;
-};
-
 /** 骰式标注解析（v61，dice.allow_formula）：标题内竖线段含合法骰式（如 `2d6+3`）时，
  *  返回 {formula, rate} —— rate 为 0-100 难度代理（显式需求值段或档位兜底，需有其一）。
+ *  lowRoll（v67）：档位兜底改走模式感知对偶（COC 下 65/40/15），与判定/徽标同口径。
  *  无骰式段 / 无难度代理 / 段非法 → 返回 null（调用方回退既有解析路径，不改默认行为）。 */
-export const parseOptionDice = (text: string): { formula: string; rate: number } | null => {
+export const parseOptionDice = (text: string, lowRoll = false): { formula: string; rate: number } | null => {
   const m = text.match(OPTION_TYPE_BRACKET_RE);
   if (!m) return null;
   const parts = m[1].replace(/"/g, '').split('|');
@@ -202,8 +208,8 @@ export const parseOptionDice = (text: string): { formula: string; rate: number }
     break;
   }
   if (bad || !formula) return null;
-  // 难度代理：显式需求值优先，否则档位兜底；都没有就不当作骰式判定（返回 null）
-  const proxy = rate !== null ? rate : grade ? GRADE_FALLBACK_RATE[grade] : null;
+  // 难度代理：显式需求值优先，否则档位兜底（模式感知）；都没有就不当作骰式判定（返回 null）
+  const proxy = rate !== null ? rate : grade ? gradeFallbackRate(grade, lowRoll) : null;
   return proxy === null ? null : { formula, rate: proxy };
 };
 
