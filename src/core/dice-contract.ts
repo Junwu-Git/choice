@@ -31,13 +31,7 @@
  * 通道，全部收敛在本模块，开关/清空即置空撤销。
  */
 
-import {
-  chat,
-  extension_prompt_roles,
-  extension_prompt_types,
-  saveChatDebounced,
-  setExtensionPrompt,
-} from '@sillytavern/script';
+import { chat, extension_prompt_roles, extension_prompt_types, saveChatDebounced, setExtensionPrompt } from '@sillytavern/script';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { DICE_OUTCOME_LABEL, type DiceOutcome } from '@/core/dice';
 
@@ -71,6 +65,17 @@ export function syncDiceContractPrompt(): void {
   }
 }
 
+/** 每回合动态槽的摘要文本（armDiceTurnPrompt 与 flushPendingTurnMarker 回写共用）：
+ *  槽内恒为短摘要（结局+程度+受卡名），完整判定注释只活在消息内——回写成功后槽里再放
+ *  一份完整注释是与消息内容完全重复的长注入（百余 token/回合），摘要兜底语义不变。 */
+function buildTurnSummary(outcome: DiceOutcome, degree: string, cardNames?: string[]): string {
+  const cards = cardNames?.length ? `，受卡牌「${cardNames.join('」「')}」影响` : '';
+  return (
+    `【跑团辅助·choice】玩家刚发送的行动已由骰子判定：${DICE_OUTCOME_LABEL[outcome]}（程度 ${degree}）${cards}。` +
+    '请按此结局与程度演绎本回合；正文中不得提及骰子、点数、需求值或判定字样。'
+  );
+}
+
 /** 挂载本回合裁定指令（send 点选判定后调用；degree 为 marginDegree 程度词，
  *  cardNames 为本次触发的卡名）。门控在内部：骰子关或 main_ai_awareness 关时静默不挂。
  *  覆盖式写入——同回合重复点选以最后一次判定为准。 */
@@ -78,13 +83,9 @@ export function armDiceTurnPrompt(outcome: DiceOutcome, degree: string, cardName
   try {
     const gs = useGlobalSettingsStore();
     if (!(gs.settings.dice.enabled && gs.settings.dice.main_ai_awareness)) return;
-    const cards = cardNames?.length ? `，受卡牌「${cardNames.join('」「')}」影响` : '';
-    const text =
-      `【跑团辅助·choice】玩家刚发送的行动已由骰子判定：${DICE_OUTCOME_LABEL[outcome]}（程度 ${degree}）${cards}。` +
-      '请按此结局与程度演绎本回合；正文中不得提及骰子、点数、需求值或判定字样。';
     setExtensionPrompt(
       TURN_KEY,
-      text,
+      buildTurnSummary(outcome, degree, cardNames),
       extension_prompt_types.IN_CHAT,
       TURN_DEPTH,
       false,
@@ -106,13 +107,22 @@ export function clearDiceTurnPrompt(): void {
 
 // ── 挂起判定（判定注释对用户全程隐形） ──────────────────────────────────
 
-/** 内存单槽：content = 点选的选项纯正文（匹配依据），marker = 组装好的完整判定注释 */
-let pendingTurn: { content: string; marker: string } | null = null;
+/** 内存单槽：content = 点选的选项纯正文（匹配依据），marker = 组装好的完整判定注释，
+ *  meta = 动态槽摘要素材（回写成功后重挂摘要用，与 armDiceTurnPrompt 同源三参）。 */
+let pendingTurn: {
+  content: string;
+  marker: string;
+  meta?: { outcome: DiceOutcome; degree: string; cardNames?: string[] };
+} | null = null;
 
 /** 挂起一次判定（点选判定后调用，send/fill/insert/append 四行为统一走此通道）。
  *  marker 为空串（无模板且无卡叙事）视为无注入、清槽。 */
-export function stagePendingTurn(content: string, marker: string): void {
-  pendingTurn = marker ? { content, marker } : null;
+export function stagePendingTurn(
+  content: string,
+  marker: string,
+  meta?: { outcome: DiceOutcome; degree: string; cardNames?: string[] },
+): void {
+  pendingTurn = marker ? { content, marker, meta } : null;
 }
 
 /** 清空挂起（换聊天防陈旧判定跨聊天误挂；点选覆盖由 stage 自身完成）。幂等。 */
@@ -124,8 +134,9 @@ export function clearPendingTurn(): void {
  *  把判定注释前插进该消息的 mes 开头——AI 请求读到、聊天渲染不可见、随消息持久化。
  *  匹配口径：玩家可能微调过填入的正文（改字/续写/前后拼接），取正文压平空白后的
  *  前 20 字做包含匹配；整体重写视为放弃该判定（不回写不注入，挂起保留至同内容后发）。
- *  回写成功后用完整注释覆盖动态槽（depth 1 双保险：后续酒馆版本万一打乱
- *  MESSAGE_SENT 时序导致回写迟到，本回合裁定仍经注入到达；受 main_ai_awareness 门控）。 */
+ *  回写成功后动态槽只挂短摘要（buildTurnSummary，与 armDiceTurnPrompt 同文本）：
+ *  完整注释已随消息进提示词，槽内再放一份是纯冗余；depth 1 摘要兜底防消息内注释被
+ *  预设/正则改写（受 main_ai_awareness 门控）。meta 缺失时保持槽现状不动。 */
 export function flushPendingTurnMarker(chatId: number): void {
   try {
     const pending = pendingTurn;
@@ -141,10 +152,10 @@ export function flushPendingTurnMarker(chatId: number): void {
       saveChatDebounced();
     }
     const gs = useGlobalSettingsStore();
-    if (gs.settings.dice.enabled && gs.settings.dice.main_ai_awareness) {
+    if (gs.settings.dice.enabled && gs.settings.dice.main_ai_awareness && pending.meta) {
       setExtensionPrompt(
         TURN_KEY,
-        pending.marker,
+        buildTurnSummary(pending.meta.outcome, pending.meta.degree, pending.meta.cardNames),
         extension_prompt_types.IN_CHAT,
         TURN_DEPTH,
         false,

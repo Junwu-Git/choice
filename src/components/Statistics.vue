@@ -674,6 +674,13 @@
         {{ t`在役 ${rosterPlan.activeCount} 条` }}
         <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
         · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
+        <template v-if="rosterPostApplyShortfall > 0">
+          ·
+          <span
+            :title="t`探索补入每次至多填一半空位，应用本计划后再次应用可继续从未入池条目补入（直至无可补）`"
+            >{{ t`应用后仍缺 ${rosterPostApplyShortfall} 条` }}</span
+          >
+        </template>
       </div>
       <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
         <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
@@ -896,6 +903,7 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import {
   SCHEMA_VERSION,
   SUGGEST_MIN_SAMPLES,
+  SUGGEST_WEIGHT_MIN,
   GenerationSettings,
   AI_ANALYSIS_DEBOUNCE_MS,
   createEmptyDiceStats,
@@ -923,13 +931,13 @@ const overviewHelp = computed(
 );
 const leaderboardHelp = computed(() =>
   [
-    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
+    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中；统计满 ${sampleMin} 轮后按平均每轮点选数校正，多选时基线随之抬高），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
     view.value.isGlobal ? t` 全局 = 所有配置混合累计，不代表任何单一场景；建议功能需切换到具体配置维度。` : '',
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
 const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的判定结局计数（D100 或骰式）与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
-const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
+const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算（每次至多一半空位）从未入池条目补入，空缺可再次应用继续填。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
 
@@ -1447,7 +1455,13 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
       return {
         text: t`冷却中`,
         cls: 'choice-stats-insight--cooldown',
-        title: t`最近一次自动化调整后不足 ${sampleMin} 轮新数据，暂不重新评级`,
+        title: t`最近一次自动化调整后不足 ${sampleMin} 轮新数据，暂不重新评级；调整超过 7 天且已有 ≥3 轮新数据时放宽`,
+      };
+    case 'floor':
+      return {
+        text: t`已到下限`,
+        cls: 'choice-stats-insight--floor',
+        title: t`权重已到自动化下限（${SUGGEST_WEIGHT_MIN}）且表现持续低于期望，建议引擎不再调整；可在阵容计划落出或手动处理`,
       };
     default:
       return null;
@@ -1458,24 +1472,27 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
 const actionLabel = (s: Suggestion): string =>
   s.action === 'down' ? t`降权` : s.reason === 'recover' ? t`回捞` : t`提权`;
 
-/** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额） */
+/** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额）；回捞建议若作用于
+ *  手动设置的低权重（从未被自动化调整），追加覆盖提示 */
 const suggestionTitle = (s: Suggestion | null): string => {
   if (!s) return t`基于近 ${sampleMin} 轮或全量样本的统计建议`;
   const newWeightText = s.newWeight !== undefined ? ` → ${s.newWeight}` : '';
   const act = actionLabel(s);
-  return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}`;
+  const manualNote = s.reason === 'recover' && s.manualLow ? t`（该权重为手动设置，回捞会覆盖手动值）` : '';
+  return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}${manualNote}`;
 };
 
 const rowMeta = computed<Map<string, RowMeta>>(() => {
   const map = new Map<string, RowMeta>();
+  const avgPicks = view.value.avgPicks;
   for (const g of groups.value) {
     for (const r of g.rows) {
-      const suggestion = entrySuggestion(r);
+      const suggestion = entrySuggestion(r, avgPicks);
       const insight = entryInsight(r, suggestion);
       map.set(r.entryId, {
         suggestion,
         insight,
-        window: windowMetrics(r),
+        window: windowMetrics(r.recent, avgPicks),
         expectedRate: fullExpectedRate(r),
         badge: buildInsightBadge(insight, suggestion),
       });
@@ -1567,14 +1584,25 @@ const applyConfirmMessage = computed(() => {
       return `· ${name}：${actionLabel(s)}（${change}；${basis}命中 ${rateText(s.rate)}，期望 ${rateText(s.expected)}）`;
     })
     .join('\n');
-  return t`将应用到当前配置：\n${lines}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
+  // 「应用全部」作用于搜索/筛选后的行：范围小于未筛选全集时明示，防「以为应用了全部」
+  const applyableTotal = groups.value.flatMap(g => g.rows).filter(r => canApplyRow(r)).length;
+  const scopeNote =
+    pendingFiltered.value && list.length < applyableTotal
+      ? t`\n\n当前仅包含搜索/筛选结果（未筛选时共 ${applyableTotal} 条可应用）。`
+      : '';
+  return t`将应用到当前配置：\n${lines}${scopeNote}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
 });
 
+/** 「应用全部」标记：本次确认清单来自筛选后的行（applyConfirmMessage 据此决定是否附范围提示） */
+const pendingFiltered = ref(false);
+
 /** 应用一批建议：设 pending → 弹确认 → 确认后写入。取消/外层守卫失败则只复位 pending。
+ *  filtered=true 表示清单来自「应用全部」且受当前搜索/筛选影响。
  *  showApplyConfirm 弹窗的确认/取消分别走 confirmApply/cancelApply（关闭弹窗 + resolve），
  *  applyConfirmMessage 在 pending 已设后 show() 时同步求值，与原 computed 行为等价 */
-const runApply = async (list: Suggestion[]) => {
+const runApply = async (list: Suggestion[], filtered = false) => {
   pending.value = list;
+  pendingFiltered.value = filtered;
   const ok = await showApplyConfirm({
     title: t`应用统计建议`,
     message: applyConfirmMessage.value,
@@ -1614,7 +1642,7 @@ const applyAll = () => {
     .filter(r => canApplyRow(r))
     .map(r => suggestionOf(r))
     .filter((s): s is Suggestion => s !== null);
-  void runApply(list);
+  void runApply(list, true);
 };
 
 const onUndo = () => {
@@ -1681,6 +1709,13 @@ const unreferencedCount = computed(() => {
   if (!cfg) return 0;
   const ref = new Set(cfg.entries.map(e => e.entry_id));
   return masterPool.value.filter(e => !ref.has(e.id)).length;
+});
+
+/** 应用当前计划后仍低于目标的条数：探索补入每次只填剩余空位的一半，达目标需再次应用 */
+const rosterPostApplyShortfall = computed(() => {
+  const p = rosterPlan.value;
+  if (!p || !rosterEnabled.value) return 0;
+  return Math.max(0, p.target - (p.activeCount - p.drops.length + p.promotes.length));
 });
 
 /** 超额命中率展示（带符号、百分比） */
@@ -2287,6 +2322,14 @@ const onClearStats = async () => {
 .choice-stats-insight--cooldown {
   background: var(--choice-color-info-bg);
   color: var(--choice-color-info);
+}
+
+/* 已到下限（权重到自动化下限且持续低迷，建议引擎沉默）：警示色弱化——
+ * 需要用户行动（阵容落出/手动处理）但不是新建议，用边框区分于「候选降权」 */
+.choice-stats-insight--floor {
+  background: var(--choice-color-warning-bg);
+  color: var(--choice-color-warning);
+  box-shadow: inset 0 0 0 1px var(--choice-color-warning);
 }
 
 /* ── 样本量分布诊断 ── */

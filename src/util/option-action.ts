@@ -162,7 +162,7 @@ type ApplyOptionOpts = {
   generationId?: string;
   matchedEntryId?: string | null;
   scopeId?: string;
-  /** v63 防刷：楼层标识（message+swipe），用于「同一层只结算一次卡牌经济」。 */
+  /** v63 防刷：楼层标识（message+swipe），用于「同一层只结算一次判定」（战绩与卡牌经济同口径）。 */
   messageId?: number;
   swipeId?: number;
   /** v61：调用方已 stage 的判定结果（就地重掷两步流），提供则不再内部掷骰 */
@@ -170,7 +170,7 @@ type ApplyOptionOpts = {
 };
 
 /** 同楼层互斥锁：send 往返（await sendTextareaMessage）窗口内同一楼层的第二次点击整体忽略，
- *  防连点双发消息、双掷骰、双结算卡牌经济——markCardSettled 在 send 之后才落标记，
+ *  防连点双发消息、双掷骰、双结算判定——markCardSettled 在 send 之后才落标记，
  *  isCardSettled 检查与标记之间隔着 await，仅靠它挡不住并发点击（v63 防刷的并发补口）。 */
 const layerBusy = new Set<string>();
 
@@ -278,7 +278,17 @@ async function applyOptionBehaviorInner(
       // v62 卡牌叙事：触发卡的 narrative 与结局模板共存于同一条 HTML 注释（不产生重复
       // `<!--`），AI 读到、聊天界面不可见。模板/叙事均约定避免 `--`（见设置页 hint）。
       const cardLines = diceResult.cards?.narrativeLines ?? [];
-      stagePendingTurn(content, marker ? mergeCardNarratives(marker, cardLines) : wrapCardNarratives(cardLines));
+      // 动态槽摘要素材与 armDiceTurnPrompt 同源：stage 带上 meta，MESSAGE_SENT 回写成功
+      // 后由 flushPendingTurnMarker 挂同一份摘要（send 分支不再重复计算）
+      stagePendingTurn(
+        content,
+        marker ? mergeCardNarratives(marker, cardLines) : wrapCardNarratives(cardLines),
+        {
+          outcome: diceResult.outcome,
+          degree: marginDegree(diceResult.outcome, diceResult.margin),
+          cardNames: diceResult.cards?.triggered.map(t => t.card.name),
+        },
+      );
       // 判定结果不弹酒馆 toastr（失败用 toastr.error 红得像插件报错）——
       // 改由视图层行内判定 chip 反馈（结局+差值，主面板/悬浮球各自实现），
       // 本共享层只返回 diceResult 供组件消费。
@@ -331,8 +341,8 @@ async function applyOptionBehaviorInner(
   if (behavior === 'send') {
     // 每回合动态摘要槽（与常驻契约分工：depth 4 常驻教「注释是什么」，本槽 depth 1 管
     // 「本回合裁定」）：位置贴近生成点、不依赖注释在历史中存活。send 即发即读先挂摘要版；
-    // fill/insert/append 由 MESSAGE_SENT 回写时以完整判定注释覆盖本槽（见
-    // dice-contract.flushPendingTurnMarker）。门控（dice.enabled + main_ai_awareness）在 arm 内部。
+    // fill/insert/append 由 MESSAGE_SENT 回写时挂同一份摘要（见 dice-contract 文件头注释）。
+    // 门控（dice.enabled + main_ai_awareness）在 arm 内部。
     if (diceResult) {
       armDiceTurnPrompt(
         diceResult.outcome,
@@ -363,16 +373,21 @@ async function applyOptionBehaviorInner(
   // 骰子战绩埋点：应用成功后（发送框可用 + 行为已执行）按判定结果记账；
   // 发送框不可用早退路径已提前 return，不计数（与应用口径一致）。v61 起记录
   // 最近判定历史（含选项正文摘要），就地重掷只记最终应用的这一次。
+  // 战绩与卡牌经济同口径（同层只记首次）：该层已结算（layerSettled）则不进战绩
+  // ——同层反复换选项点击/反复重掷确认不再刷判定统计与最近判定历史。楼层标记的语义
+  // 因此从「卡牌经济已结算」扩展为「该层判定已结算（战绩+经济）」：首次应用即标记，
+  // 卡牌关/骰式路径同样生效（否则这两条路径没有防重载体，战绩仍会每次记）。
+  // 楼层标识缺失（旧调用方未传 messageId/swipeId）无法防重，保持如实记录。
   if (diceResult) {
-    recordDiceRoll(diceResult.outcome, diceResult.roll, diceResult.rate, content);
+    if (!layerSettled) {
+      if (opts?.messageId != null && opts?.swipeId != null) markCardSettled(opts.messageId, opts.swipeId);
+      recordDiceRoll(diceResult.outcome, diceResult.roll, diceResult.rate, content);
+    }
     // v62 卡牌落库（真正应用后才走）：按结局收支行动币、幸运命中产开卡包 offer。
     // 就地重掷两步流的预览（rollOptionDice）不 commit，只有这次确认应用才提交。
-    // v63 防刷：只有首次结算带 cards（该楼层走卡路径）；首次提交前标记楼层已结算，
+    // v63 防刷：只有首次结算带 cards（该楼层走卡路径）；标记已在上方首次路径完成，
     // 此后同一层判定 cards 为空、天然不落经济——「单层最多结算一次」。
-    if (diceResult.cards) {
-      if (opts?.messageId != null && opts?.swipeId != null) markCardSettled(opts.messageId, opts.swipeId);
-      commitCardRun(diceResult.cards);
-    }
+    if (diceResult.cards) commitCardRun(diceResult.cards);
   }
   return diceResult;
 }

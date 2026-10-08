@@ -25,9 +25,10 @@ export function setAttributionPanelRefreshHook(fn: ((messageId: number, swipeId:
  * 设计红线（不能直接简化掉）：
  *  - 失败/未启用/解析失败一律静默保留 Dice 结果（主体功能对 AI 零依赖）；
  *  - 全局单飞串行队列：同一时刻至多一个 AI 请求在飞，避免短时间连发多轮请求成本叠加；
- *  - 写回前先修统计（reconcile 读的是生成对象里的 Dice 旧值），顺序颠倒会拿到已覆盖的新值；
- *  - 统计修正与消息写回**同进同出**：scope 已清空/该 gid 已滚出窗口时两者都跳过——
- *    单独写回会让该轮期望保持 Dice、点击命中按 AI，期望/命中来源永久分裂；
+ *  - 统计修正与消息写回**同进同出**：先写回消息、写回成功才修统计（reconcile 读的是内存
+ *    generation.options 的 Dice 旧值，与消息写回互不干扰，顺序反转安全）——写回失败
+ *    （楼层被删/顶掉）时两者都不动，消除「统计已按 AI 修正、消息仍是 Dice 口径」的单侧分裂；
+ *    scope 已清空/该 gid 已滚出窗口时同样两者都跳过（修正会复活已清数据）；
  *  - 前置快检：整轮选项均 type 前缀高置信命中（allPrefixMatched）时直接跳过——Dice 结果
  *    与 AI 几乎必然一致，省一次外部请求；
  *  - 队列有上限（AI_ATTRIBUTION_QUEUE_MAX）：超出丢最旧，宁可不纠偏不积压（坏 API 串行
@@ -146,13 +147,26 @@ async function runAttributionJob(job: AttributionJob): Promise<void> {
   // 仅对 poolEntryIds 推 recent）。限定候选集查 scopeHasGid，避免扫全 by_entry×window
   const candidateIds = new Set(generation.poolEntryIds);
   if (scope && scopeHasGid(scope, generation.id, candidateIds)) {
+    // 先写回消息：写回失败（消息/代已不存在，用户删楼层或重新生成顶掉旧代）直接跳过——
+    // 统计一并保持 Dice 口径，消除「统计已修、消息未写回」的单侧分裂（同进同出）。
+    // 写回改的是消息 extra 里的克隆，reconcile 读的内存 generation.options 不受影响
+    const written = writeBackOptionAttribution(
+      job.messageId,
+      job.swipeId,
+      job.generation.id,
+      result.map(r => ({ index: r.index, entryId: r.entryId })),
+    );
+    if (!written) return;
     // count 取 options.length（实际保留条数）与 recordOptionsGenerated 记账口径一致；
     // 勿用 generation.count（请求条数）——池下溢时两者不等，Δmatched/count 分母错配会让
     // 全量期望与窗口口径漂移、建议引擎误判（reconcileAttribution 默认 count=options.length）
     const r = reconcileAttribution(scope, generation.id, generation.options, result);
     aiAttributionState.corrected += r.adjusted;
     aiAttributionState.migrated += r.migrated;
-    writeBackAttribution(job, result);
+    // 同步刷新面板持有的当前 generation 副本：写回只改了消息 extra，面板的 generations ref 是
+    // 另一份克隆（非响应式源自 chat），不刷新则点击会读到旧 Dice matchedEntryId、而统计已按
+    // AI 修正——期望/命中来源分裂（同进同出设计的第三源缺口）。面板未显示该消息时钩子 no-op
+    panelRefreshHook?.(job.messageId, job.swipeId);
   }
 }
 
@@ -199,8 +213,10 @@ function buildAttributionPrompt(
   ];
 }
 
-/** 解析归因结果：剥代码围栏/截取首个 JSON 数组后 parse；任一元素非法（越界 index、
- *  entryId 不在候选集、index 重复）→ 整体返回 null（宁可保留 Dice 结果，不部分采用） */
+/** 解析归因结果：剥代码围栏/截取首个 JSON 数组后 parse；非法元素（非对象/越界 index/
+ *  entryId 不在候选集/类型错）逐条跳过、重复 index 取首个——弱模型容错，部分可用结果
+ *  仍被采用（与下游「缺 index = 保持 Dice」契约一致），全部元素非法或整体非数组才返回
+ *  null（宁可保留 Dice 结果，不采用空结果） */
 function parseAttributionResult(raw: string, optionCount: number, candidateIds: Set<string>): AttributionResult | null {
   const cleaned = raw
     .trim()
@@ -224,16 +240,16 @@ function parseAttributionResult(raw: string, optionCount: number, candidateIds: 
   const out: AttributionResult = [];
   const seen = new Set<number>();
   for (const item of arr) {
-    if (!item || typeof item !== 'object') return null;
+    if (!item || typeof item !== 'object') continue;
     const { index, entryId } = item as { index?: unknown; entryId?: unknown };
-    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= optionCount) return null;
-    if (seen.has(index)) return null; // index 重复：结果自相矛盾，整体放弃
-    if (entryId !== null && typeof entryId !== 'string') return null;
-    if (typeof entryId === 'string' && !candidateIds.has(entryId)) return null;
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= optionCount) continue;
+    if (seen.has(index)) continue; // index 重复：取首个（首见即认），后续按非法跳过
+    if (entryId !== null && typeof entryId !== 'string') continue;
+    if (typeof entryId === 'string' && !candidateIds.has(entryId)) continue;
     seen.add(index);
     out.push({ index, entryId: (entryId as string | null) ?? null });
   }
-  return out;
+  return out.length > 0 ? out : null;
 }
 
 /** 该 scope 的窗口记录里是否还有该 gid（reconcile 前置守卫：清空统计后旧代残留检查）。
@@ -248,21 +264,4 @@ function scopeHasGid(scope: ScopeStats, gid: string, candidateIds: Set<string>):
     if (e?.recent.some(r => r.gid === gid)) return true;
   }
   return false;
-}
-
-/** 写回消息 extra：按 gid 定位 generations（仅行动选项视图，enrich 不归因），覆盖 matchedEntryId。
- *  写回收敛进 options-store 单一入口（read-modify-write；store 外禁止构造 MessageChoiceData
- *  字面量）。消息/代已不存在（用户删楼层/重新生成顶掉了旧代）→ 入口返回 false，静默跳过。 */
-function writeBackAttribution(job: AttributionJob, result: AttributionResult): void {
-  const written = writeBackOptionAttribution(
-    job.messageId,
-    job.swipeId,
-    job.generation.id,
-    result.map(r => ({ index: r.index, entryId: r.entryId })),
-  );
-  if (!written) return;
-  // 同步刷新面板持有的当前 generation 副本：写回只改了消息 extra，面板的 generations ref 是
-  // 另一份克隆（非响应式源自 chat），不刷新则点击会读到旧 Dice matchedEntryId、而统计已按
-  // AI 修正——期望/命中来源分裂（同进同出设计的第三源缺口）。面板未显示该消息时钩子 no-op
-  panelRefreshHook?.(job.messageId, job.swipeId);
 }

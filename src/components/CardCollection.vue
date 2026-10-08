@@ -32,41 +32,6 @@
     </div>
 
     <!-- 收藏成就（趣味彩蛋，零操作） -->
-    <ChoiceSectionCard title="成就" icon="fa-solid fa-trophy">
-      <p class="choice-lib-hint">{{ t`单类型集齐 1–5 星、或收藏达里程碑即自动达成，无需额外操作。` }}</p>
-      <div class="choice-lib-trophies">
-        <span
-          v-for="t in trophies"
-          :key="t.key"
-          class="choice-lib-trophy"
-          :class="{ 'choice-lib-trophy--done': t.achieved }"
-          :title="t.label"
-        >
-          <i class="fa-solid" :class="t.achieved ? 'fa-circle-check' : 'fa-lock'"></i>{{ t.label }}
-        </span>
-      </div>
-    </ChoiceSectionCard>
-
-    <!-- 套装收藏（背景套组卡进度，集齐解锁特殊效果） -->
-    <ChoiceSectionCard title="套装收藏" icon="fa-solid fa-layer-group">
-      <p class="choice-lib-hint">{{ t`集齐某套装的卡解锁其特殊效果；装备 ≥2 张成套卡时判定触发。` }}</p>
-      <div class="choice-lib-sets">
-        <div
-          v-for="s in setProgress"
-          :key="s.id"
-          class="choice-lib-set"
-          :class="{ 'choice-lib-set--done': s.complete }"
-        >
-          <div class="choice-lib-set-head">
-            <span class="choice-lib-set-name"><i class="fa-solid fa-layer-group"></i>{{ s.name }}</span>
-            <span class="choice-lib-set-count">{{ s.owned }}/{{ s.total }}</span>
-          </div>
-          <p class="choice-lib-set-theme">{{ s.theme }}</p>
-          <div class="choice-lib-set-bar"><i :style="{ width: setPct(s) }"></i></div>
-        </div>
-      </div>
-    </ChoiceSectionCard>
-
     <!-- 内置卡库（不可编辑，只可收集/装备；未获得卡模糊遮盖） -->
     <ChoiceSectionCard title="内置卡库" icon="fa-solid fa-database">
       <p class="choice-lib-hint">
@@ -96,7 +61,18 @@
     <ChoiceSectionCard title="当前角色主题池" icon="fa-solid fa-user">
       <template v-if="currentPoolDefs.length">
         <div class="choice-lib-pool-actions">
-          <p class="choice-lib-hint">{{ t`已懒生成并固定此角色的主题卡池；池内卡随开卡包反复掉落。` }}</p>
+          <p class="choice-lib-hint">
+            {{
+              t`主题卡池随游玩分批生长（${currentPoolDefs.length}/${CARD_POOL_MAX_CARDS}）：幸运数命中/购买开卡包时自动补充一批，每批吃到当时剧情上下文；池内卡随开卡包反复掉落。`
+            }}</p>
+          <button
+            v-if="currentPoolDefs.length < CARD_POOL_MAX_CARDS"
+            class="menu_button choice-lib-gen-btn"
+            :disabled="generating"
+            @click="onGeneratePool"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`补充一批` }}
+          </button>
           <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onRegeneratePool">
             <i class="fa-solid fa-rotate"></i>{{ generating ? t`生成中…` : t`重新生成` }}
           </button>
@@ -116,7 +92,9 @@
       <div v-else class="choice-empty">
         <i class="fa-solid fa-wand-magic-sparkles"></i>
         <div>
-          {{ t`当前角色主题池尚未生成。可手动立即生成，或游玩中幸运数/购买开卡包时按角色世界观懒生成并固定。` }}
+          {{
+            t`当前角色主题池尚未生成。可手动立即生成首批，或游玩中幸运数命中/购买开卡包时按当时剧情上下文自动分批生成。`
+          }}
         </div>
         <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onGeneratePool">
           <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`立即生成主题卡` }}
@@ -152,8 +130,6 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
 import {
   collectedCardIds,
-  cardTrophyList,
-  cardSetProgress,
   buyPack,
   currentCardConfigId,
   clearCharacterPool,
@@ -161,7 +137,7 @@ import {
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
 import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
-import { CARD_PACK_PRICE } from '@/core/cards-constraints';
+import { CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } from '@/core/cards-constraints';
 import toastr from 'toastr';
 import type { Card, CardStar } from '@/type/settings';
 
@@ -170,7 +146,7 @@ const gs = useGlobalSettingsStore();
 /** 主题池生成中（防连点/防「立即生成」与「重新生成」互撞） */
 const generating = ref(false);
 
-/** 手动生成当前角色主题池（测试/手动获取用）：await 到 AI 返回并 toastr 反馈张数或失败原因。 */
+/** 手动生成当前角色主题池下一批（池空 = 首批、未满 = 补充一批）：await 到 AI 返回并 toastr 反馈张数或失败原因。 */
 const onGeneratePool = async () => {
   const cid = gs.currentCharacterId;
   if (cid == null) {
@@ -180,12 +156,12 @@ const onGeneratePool = async () => {
   if (generating.value) return;
   generating.value = true;
   try {
-    const n = await generateCharacterPool(String(cid));
-    if (n > 0) {
+    const cards = await generateCharacterPool(String(cid));
+    if (cards.length > 0) {
       const name = getStCharacter(String(cid))?.name ?? '';
-      toastr.success(`已生成 ${n} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
+      toastr.success(`已生成 ${cards.length} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
     } else {
-      toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且本次生成结果有效。');
+      toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且池未达上限，本次生成结果有效。');
     }
   } finally {
     generating.value = false;
@@ -227,14 +203,8 @@ const charName = (id: string): string => getStCharacter(id)?.name ?? id;
 
 const builtinCards = computed<Card[]>(() => [...BUILTIN_CARDS]);
 const ownedMap = computed(() => gs.settings.card_collection);
-/** 历史获得集合（曾获得 ∪ 当前持有）：进度/成就/内置卡库基于它——旧版分解（v66 已裁撤）只移除持有、不抹掉图鉴。 */
+/** 历史获得集合（曾获得 ∪ 当前持有）：图鉴进度/内置卡库基于它——旧版分解（v66 已裁撤）只移除持有、不抹掉图鉴。 */
 const collected = computed(() => collectedCardIds());
-const trophies = computed(() => cardTrophyList());
-const setProgress = computed(() => cardSetProgress());
-
-/** 套装收集进度百分比（卡库套装收藏区进度条）。 */
-const setPct = (s: { owned: number; total: number }): string =>
-  s.total ? `${Math.round((s.owned / s.total) * 100)}%` : '0%';
 
 /** 卡面状态：未拥有置灰 disabled；其余 normal。 */
 const cardState = (c: Card): 'normal' | 'disabled' => {
@@ -379,86 +349,6 @@ const otherPools = computed(() =>
   display: inline-flex;
   align-items: center;
   gap: 3px;
-}
-
-/* 成就 chip：未达成灰锁，达成高亮 */
-.choice-lib-trophies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--choice-space-2);
-}
-.choice-lib-trophy {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  border: 1px solid var(--choice-border-strong);
-  border-radius: 999px;
-  padding: 2px var(--choice-space-2);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.choice-lib-trophy--done {
-  color: var(--choice-color-success);
-  border-color: var(--choice-color-success);
-  background: color-mix(in srgb, var(--choice-color-success) 10%, transparent 90%);
-}
-
-/* 套装收藏：每套一行名称+进度+背景，集齐高亮 */
-.choice-lib-sets {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-}
-.choice-lib-set {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-md);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-  background: var(--choice-bg-card);
-}
-.choice-lib-set--done {
-  border-color: var(--choice-color-success);
-}
-.choice-lib-set-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--choice-space-2);
-}
-.choice-lib-set-name {
-  font-size: var(--choice-text-sm);
-  font-weight: bold;
-  color: var(--choice-text);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.choice-lib-set-count {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-.choice-lib-set-theme {
-  margin: 0;
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-}
-.choice-lib-set-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--choice-bg-element);
-  overflow: hidden;
-}
-.choice-lib-set-bar i {
-  display: block;
-  height: 100%;
-  background: var(--choice-primary);
-  transition: width var(--choice-transition);
-}
-.choice-lib-set--done .choice-lib-set-bar i {
-  background: var(--choice-color-success);
 }
 
 .choice-lib-pool-group {

@@ -1075,7 +1075,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 67;
+export const SCHEMA_VERSION = 68;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1104,6 +1104,20 @@ export const SUGGEST_UPGRADE_MULTIPLIER = 1.5;
 /** 阵容计划补入探索上限：剩余空位 × 该比例（向上取整）后从未入池条目补入。
  *  余下空位保持空缺——纯「杀低捧高」会把候选集收敛成少数几条，探索预算是多样性兜底。 */
 export const ROSTER_EXPLORE_RATIO = 0.5;
+/** 评级阈值 SE 自适应系数：实际阈值 = max(固定阈值, SE×本系数)，SE = sqrt(rate(1−rate)/n)。
+ *  小样本命中率噪声大（10 轮边缘 ±0.2 的超额一半是噪声），样本越少门槛越高防抖动建议；
+ *  rate→0/1 时 SE→0，回落固定阈值（SUGGEST_DOWNGRADE_EXCESS / SUGGEST_UPGRADE_EXCESS） */
+export const SUGGEST_THRESHOLD_SE_FACTOR = 1.5;
+/** 冷却墙钟上限：自动化调整后超过此时长且已有 ≥ SUGGEST_COOLDOWN_MIN_POST 轮新数据时，
+ *  放宽「足 SUGGEST_MIN_SAMPLES 轮才评级」的冷却门槛。低权重条目参与频率近似正比权重，
+ *  纯按参与轮数等门槛会形成「权重越低观察期越长」的冷却黑洞，墙钟兜底；
+ *  放宽后的小样本噪声由 SUGGEST_THRESHOLD_SE_FACTOR 兜住 */
+export const SUGGEST_COOLDOWN_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+/** 冷却放宽所需的最低调整后新数据轮数（见 SUGGEST_COOLDOWN_MAX_MS） */
+export const SUGGEST_COOLDOWN_MIN_POST = 3;
+/** 期望基线多点选校正启用门槛：scope 总轮数 ≥ 此值才启用平均点选数 m̄ 修正（样本不足
+ *  不猜，回退单点模型 matched/count）。见 ScopeStats.total_rounds / scopeAvgPicks */
+export const AVG_PICKS_MIN_ROUNDS = 10;
 /** 自动化应用历史槽上限：超过后 FIFO 丢最旧，保证撤销入口始终指向最近 N 次写入 */
 export const APPLY_HISTORY_LIMIT = 20;
 /** AI 建议分析单批条数上限：一次请求只发送 ≤ 此数的条目（控制单次 token 与输出解析难度） */
@@ -1125,6 +1139,12 @@ export const AI_ATTRIBUTION_QUEUE_MAX = 32;
  * 优先于本阈值兜底（AI 常以 type 名开头写选项）。启发式常量，随真实数据表现调参。
  */
 export const OPTION_MATCH_THRESHOLD = 0.25;
+/**
+ * Dice 兜底归因的最优-次优差值下限：最高分与次高分拉开不足此差距时，两条目归属近随机
+ * （命中谁基本是掷硬币，污染命中/期望记账），归 null（宁缺勿错，与 L1 保守哲学一致）。
+ * 仅约束 Dice 兜底路径；type 前缀精确匹配不受影响。
+ */
+export const OPTION_MATCH_MARGIN = 0.05;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1426,6 +1446,14 @@ export const ScopeStats = z
   .object({
     total_generated: z.number().min(0).default(0).catch(0),
     total_selected: z.number().min(0).default(0).catch(0),
+    /** 成功生成轮数（每轮 recordOptionsGenerated +1，与输出条数无关）：平均点选数
+     *  m̄ = picks_total / total_rounds 的分母——多点选用户的期望基线校正因子（单点模型
+     *  matched/count 系统性低估基线、超额偏高偏提权）。老档缺字段由 ?? 0 兜底（视为
+     *  未启用校正），无需 bump schema_version */
+    total_rounds: z.number().min(0).optional(),
+    /** 点选次数（recordOptionSelected 每次点击 +1，与 total_selected 同口径、不做同代
+     *  去重——重复点击也是点选习惯的一部分）。老档缺字段由 ?? 0 兜底 */
+    picks_total: z.number().min(0).optional(),
     /** 本维度最近一次活动（生成/选择）时间戳：AI 建议分析按它做失效判定——
      *  全局 stats.updated_at 会被其他维度活动带动，导致无关维度缓存误失效、全量重跑 */
     updated_at: z.number().default(0),
@@ -1541,8 +1569,6 @@ export const Card = z
     effects: z.array(CardEffect).prefault([]),
     narrative: z.string().default(''),
     source: z.enum(CARD_SOURCES),
-    /** 套装/系列 id（''=通用无套装，如西游/三国等背景套组卡）。见 cards-meta CARD_SETS。 */
-    set: z.string().default(''),
     /** 角色主题卡归属：source='character' 时填生成它的角色 id/名（内置卡为空），
      *  供卡面角标区分「这张主题卡属于哪个角色」，避免多池混排时认不出。 */
     character_id: z.string().default(''),
@@ -1875,8 +1901,6 @@ export const GlobalSettings = z
     auto_deck_enabled: z.boolean().default(true),
     /** 新手 starter 是否已发放（一次性）：首次启用卡牌且收藏为空时赠 4 张 1★，auto-deck 立即满编。 */
     card_starter_granted: z.boolean().default(false),
-    /** 收藏成就已触发标记（键 = 成就 key，一次性）：达成即置 true，重复达成不再庆祝。 */
-    card_achievements: z.record(z.string(), z.boolean()).prefault({}),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——

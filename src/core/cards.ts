@@ -25,7 +25,7 @@ import { BUILTIN_CARDS } from '@/core/cards-builtin';
 // 构建下动态导入既不分包也不延迟求值，只会留下 vite「dynamic + static 混合」告警；
 // cards-ai 不反向依赖本模块，无循环风险
 import { generateCharacterPool } from '@/core/cards-ai';
-import { CARD_TYPE_LABEL, CARD_OUTCOME_LABEL, CARD_SETS, cardSetById, effectSummary } from '@/core/cards-meta';
+import { CARD_OUTCOME_LABEL, effectSummary } from '@/core/cards-meta';
 // 卡定义/卡组解析簇已拆至 cards-deck.ts（头部注释说明拆分动机），本模块消费并 re-export，
 // 既有组件/共享层的 import 点零改动
 import {
@@ -39,6 +39,8 @@ import {
 } from '@/core/cards-deck';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import toastr from 'toastr';
+import { resolveCustomApi } from '@/core/api-client';
+import { getStCharacter } from '@/core/st-character';
 import { parseOptionStyle, parseOptionType, type OptionStyleGrade } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import {
@@ -52,8 +54,7 @@ import {
   CARD_LUCKY_NUMBER,
   CARD_LUCKY_NUMBER_LOW,
   CARD_PACK_OFFER,
-  CARD_TYPE_FULL_STARS,
-  CARD_TROPHY_COLLECT_MILESTONES,
+  CARD_POOL_MAX_CARDS,
 } from '@/core/cards-constraints';
 import { diceMargin, judgeOutcome, type DiceOutcome, type DiceRollMode } from '@/core/dice';
 import type { Card, CardOwned, CardTrigger, GlobalSettings } from '@/type/settings';
@@ -96,7 +97,7 @@ export type CardResolution = {
 /** 装备位解析结果（装备 + 持有态）——类型定义随解析簇迁至 cards-deck.ts，此处已透传 */
 
 /** 历史获得 id 集合：card_obtained（曾获得）∪ card_collection（当前持有）的并集。
- *  收藏进度/成就/套装基于它永久保留，与当前是否持有无关。 */
+ *  图鉴进度/未拥有遮盖基于它永久保留，与当前是否持有无关。 */
 export function collectedCardIds(): Set<string> {
   const s = useGlobalSettingsStore().settings;
   return new Set([...Object.keys(s.card_obtained), ...Object.keys(s.card_collection)]);
@@ -404,26 +405,11 @@ export function resolveCardRoll(
     narrativeLines.push('机制记录（仅供理解因果，演绎时转化为剧情表现，勿在正文写数值）：', ...mechanicalLines);
   }
 
-  // 满编齐整套装联动：4 槽全装且至少有卡触发 → 注入套装修辞 + 小额奖励（鼓励凑满一套）
+  // 满编共鸣：4 槽全装且本次有卡触发 → 注入齐整叙事 + 小额奖励（鼓励凑满一套装备）
   let setBonus = 0;
   if (cardEnabled && equipped.length === CARD_SLOT_TYPES.length && fired.length > 0) {
-    narrativeLines.push('整套卡牌同频共鸣，攻防一体，气势一时无两。');
+    narrativeLines.push('四卡齐备、行伍整肃，出手收放之间更显从容。');
     setBonus = 1;
-  }
-  // 套装共鸣（v64）：装备 ≥2 张「已集齐」套装的卡且本次有卡触发 → 注入该套装特殊叙事 + 小额奖励。
-  // 激励收集：成套才解锁，装备成套才在判定中显现。两套封顶 +2。
-  if (cardEnabled && fired.length > 0) {
-    const equippedSetCounts = new Map<string, number>();
-    for (const eq of equipped) {
-      if (eq.card.set) equippedSetCounts.set(eq.card.set, (equippedSetCounts.get(eq.card.set) ?? 0) + 1);
-    }
-    for (const [setId, n] of equippedSetCounts) {
-      if (n >= 2 && isSetComplete(setId)) {
-        const def = cardSetById(setId);
-        if (def?.resonance) narrativeLines.push(def.resonance);
-        setBonus += 1;
-      }
-    }
   }
 
   const margin = diceMargin(mode, roll, rate);
@@ -500,10 +486,8 @@ export function applyPackSelection(offer: CardOffer, chosenIdx: number, via: 'lu
   const opt = offer.options[chosenIdx];
   if (!opt) return;
   void via;
-  const before = achievedTrophyKeys(); // 快照：区分「本次促成」与「历史积压」的成就
   acquireOrConvert(gs.settings, opt.card);
   recordCardsObtained();
-  maybeGrantTrophy(before);
 }
 
 /** 新得或折算一张卡（开卡包共用）：未拥有 → 建持有条目；已拥有 → 折算小额行动币
@@ -528,83 +512,6 @@ function acquireOrConvert(s: GlobalSettings, card: Card): void {
     trigger_count: 0,
     source: card.source,
   };
-}
-
-// ── 收藏成就（趣味彩蛋，零操作）：单类型全收集 + 总数里程碑 + 套装集齐 ─────
-
-/** 各套装的收藏进度（供卡库套装区 + 套装共鸣 + 套装成就共用）。 */
-export type CardSetProgress = {
-  id: string;
-  name: string;
-  theme: string;
-  owned: number;
-  total: number;
-  complete: boolean;
-};
-
-export function cardSetProgress(): CardSetProgress[] {
-  const owned = collectedCardIds();
-  return CARD_SETS.map(set => {
-    const setCards = BUILTIN_CARDS.filter(c => c.set === set.id);
-    const ownedN = setCards.filter(c => owned.has(c.id)).length;
-    return {
-      id: set.id,
-      name: set.name,
-      theme: set.theme,
-      owned: ownedN,
-      total: setCards.length,
-      complete: setCards.length > 0 && ownedN === setCards.length,
-    };
-  });
-}
-
-/** 该套装是否已集齐（全部内置套卡已拥有）。 */
-export const isSetComplete = (setId: string): boolean => cardSetProgress().find(s => s.id === setId)?.complete ?? false;
-
-/** 全部可达成成就及当前达成态（条件即达成，不论是否庆祝过）。供收藏页展示 + 庆祝触发共用。 */
-export function cardTrophyList(): Array<{ key: string; label: string; achieved: boolean }> {
-  const owned = collectedCardIds();
-  const out: Array<{ key: string; label: string; achieved: boolean }> = [];
-  for (const type of CARD_SLOT_TYPES) {
-    const full = CARD_TYPE_FULL_STARS.every(s => owned.has(`builtin_${type}_${s}`));
-    out.push({ key: `set_${type}`, label: `${CARD_TYPE_LABEL[type]}卡全收集（1–5 星）`, achieved: full });
-  }
-  for (const set of cardSetProgress()) {
-    out.push({ key: `set_full_${set.id}`, label: `「${set.name}」集齐`, achieved: set.complete });
-  }
-  const count = owned.size;
-  for (const n of CARD_TROPHY_COLLECT_MILESTONES) {
-    out.push({ key: `collect_${n}`, label: `收藏 ${n} 张卡`, achieved: count >= n });
-  }
-  return out;
-}
-
-/** 当前已达成成就 key 集合（供获得动作前后对比，判断哪项是「本次真正促成」而非历史积压）。 */
-export function achievedTrophyKeys(): Set<string> {
-  return new Set(
-    cardTrophyList()
-      .filter(t => t.achieved)
-      .map(t => t.key),
-  );
-}
-
-/** 达成且未庆祝过的成就 → 标记 + 庆祝 toast。获得卡后（applyPackSelection/buyCard）调用。
- *  before 为获得动作前的已达成 key 快照（achievedTrophyKeys）：历史已满足的成就只静默标记不弹，
- *  只对「本次获得把它从未达成推向达成」的项弹 toast；多项合并为一条，避免刷屏/补弹历史积压。 */
-export function maybeGrantTrophy(before: Set<string>): void {
-  const gs = useGlobalSettingsStore();
-  if (!gs.settings.card_enabled) return;
-  const newly: string[] = [];
-  for (const t of cardTrophyList()) {
-    if (gs.settings.card_achievements[t.key]) continue;
-    gs.settings.card_achievements[t.key] = true;
-    if (!before.has(t.key)) newly.push(t.label);
-  }
-  if (newly.length === 1) {
-    toastr.success(`🏆 达成成就：${newly[0]}`);
-  } else if (newly.length > 1) {
-    toastr.success(`🏆 达成 ${newly.length} 项成就：${newly.join('、')}`);
-  }
 }
 
 // ── 卡组编辑（CardDeckEditor 用） ────────────────────────────────────────
@@ -719,14 +626,20 @@ export function clearCharacterPool(charId: string): void {
 let poolGenRunning = false;
 let poolGenPending = false;
 
-/** 触发当前角色主题池懒生成（fire-and-forget）：该角色池未生成时异步调 AI 生成并固定。
- *  无 API / 无当前角色 / 失败 → 静默回退纯内置池，不影响内置抽卡；生成中重复调用去重。 */
+/** 触发当前角色主题池的**分批**懒生成（fire-and-forget）：池未满（上限 CARD_POOL_MAX_CARDS）时
+ *  异步调 AI 补一批（首批 CARD_POOL_FIRST_BATCH、之后每批 CARD_POOL_BATCH_SIZE，见 cards-ai.ts）。
+ *  分批的意义：每批吃到触发时刻的剧情上下文（激活的绿灯世界书 + 最近聊天记录），池随剧情阶段
+ *  逐步变宽，化解一次性整池生成只反映开局面导致的内容窄化。生成过程 toastr 提示（开始/成功/失败）。
+ *  未配置副 API（用户未启用 AI 池，常态）/ 无当前角色 → 静默；失败回退现有池/内置池，不影响本次开卡包；
+ *  生成中重复调用去重排队。 */
 export function ensureCharacterPool(): void {
   const gs = useGlobalSettingsStore();
   const charId = gs.currentCharacterId;
   if (charId == null) return;
+  // 未配置副 API：AI 主题池功能未启用，静默退出（不开包流程受影响，纯内置池照常）
+  if (!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) return;
   const pool = gs.settings.card_character_pools[charId];
-  if (pool?.generated) return;
+  if ((pool?.card_ids.length ?? 0) >= CARD_POOL_MAX_CARDS) return;
   if (poolGenRunning) {
     poolGenPending = true;
     return;
@@ -734,9 +647,16 @@ export function ensureCharacterPool(): void {
   poolGenRunning = true;
   void (async () => {
     try {
-      await generateCharacterPool(charId);
+      const name = getStCharacter(charId)?.name ?? '';
+      toastr.info(`正在为「${name}」生成主题卡…`);
+      const cards = await generateCharacterPool(charId);
+      if (cards.length > 0) {
+        toastr.success(`「${name}」主题卡 +${cards.length} ${cards.map(c => `「${c.name}」`).join('')}`);
+      } else {
+        toastr.warning(`「${name}」主题卡生成失败，本次开卡包先用现有池，下次触发自动重试`);
+      }
     } catch {
-      /* 生成失败静默回退内置池，不 toastr */
+      /* 防御兜底：generateCharacterPool 内部已全 catch，正常不会走到 */
     } finally {
       poolGenRunning = false;
       if (poolGenPending) {

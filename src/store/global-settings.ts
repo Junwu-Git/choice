@@ -2184,6 +2184,30 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v68 卡牌再瘦身：移除套装系统（CARD_SETS + 10 张 set_ 内置卡 + 套装共鸣）与收藏成就。
+  // 同 v66 的坑——zod 解析会 strip 不认识的键，但 validateInplace 用 _.assign 就地合并回
+  // 原对象，旧键会残留并被 deep watch 继续落盘，必须显式 delete：
+  // ① card_achievements 整键；② 收藏/图鉴里的 set_ 前缀套装卡条目（卡定义已不存在，
+  // 留着会虚增图鉴计数）；③ 卡组槽位里指向套装卡的 card_id（置空，槽位随 normalize 补空）；
+  // ④ card_definitions 条目内的 set 残留字段（Card 类型已删该字段）。
+  if ((validated.schema_version ?? 0) < 68) {
+    delete (validated as Record<string, unknown>).card_achievements;
+    const isLegacySetCard = (id: string): boolean => typeof id === 'string' && id.startsWith('set_');
+    for (const record of [validated.card_collection, validated.card_obtained]) {
+      for (const id of Object.keys(record ?? {})) {
+        if (isLegacySetCard(id)) delete (record as Record<string, unknown>)[id];
+      }
+    }
+    for (const deck of Object.values(validated.card_decks ?? {})) {
+      for (const slot of (deck as { slots?: Array<{ card_id: string }> })?.slots ?? []) {
+        if (isLegacySetCard(slot.card_id)) slot.card_id = '';
+      }
+    }
+    for (const def of Object.values(validated.card_definitions ?? {})) {
+      delete (def as Record<string, unknown>).set;
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 

@@ -18,12 +18,10 @@ type BuiltinSpec = {
   trigger: Card['trigger'];
   effects: CardEffect[];
   narrative?: string;
-  /** 套装/系列 id（如 xiyou/sanguo）；空 = 通用无套装。见 cards-meta CARD_SETS。 */
-  set?: string;
 };
 
 const builtin = (spec: BuiltinSpec): Card => ({
-  id: spec.set ? `set_${spec.set}_${spec.type}_${spec.star}` : `builtin_${spec.type}_${spec.star}`,
+  id: `builtin_${spec.type}_${spec.star}`,
   name: spec.name,
   type: spec.type,
   star: spec.star,
@@ -31,7 +29,6 @@ const builtin = (spec: BuiltinSpec): Card => ({
   effects: spec.effects,
   narrative: spec.narrative ?? '',
   source: 'builtin',
-  set: spec.set ?? '',
   character_id: '', // 内置卡无角色归属
   character_name: '',
 });
@@ -242,105 +239,5 @@ export const BUILTIN_CARDS: readonly Card[] = [
       { kind: 'reroll', on: 'crit_fail' },
     ],
     narrative: '终焉之裁落定，万事万物的极限皆由你执掌。',
-  }),
-
-  // ── 套装：西游记（5 张，覆盖武器×2/法术/祝福/试炼） ─────────────────────
-  builtin({
-    type: 'weapon',
-    star: '1',
-    name: '九齿钉耙',
-    set: 'xiyou',
-    trigger: R('roll', { min: 1, max: 60 }),
-    effects: [{ kind: 'roll_bonus', amount: 5 }],
-    narrative: '九齿钉耙势大力沉，八戒的蛮劲让这一击重了几分。',
-  }),
-  builtin({
-    type: 'weapon',
-    star: '2',
-    name: '金箍棒',
-    set: 'xiyou',
-    trigger: R('roll', { min: 1, max: 80 }),
-    effects: [{ kind: 'roll_bonus', amount: 11 }],
-    narrative: '金箍棒迎风便长，悟空的神力随棍身轰然落下。',
-  }),
-  builtin({
-    type: 'spell',
-    star: '1',
-    name: '定身咒',
-    set: 'xiyou',
-    trigger: R('grade', { grade: 'balanced' }),
-    effects: [{ kind: 'demand_mod', amount: -8 }],
-    narrative: '定身咒一出，敌人的动作被定住半瞬，机会悄然浮现。',
-  }),
-  builtin({
-    type: 'blessing',
-    star: '3',
-    name: '观音净瓶',
-    set: 'xiyou',
-    trigger: R('grade', { grade: 'bold' }),
-    effects: [{ kind: 'crit_window', success_delta: 2, fail_delta: 2 }],
-    narrative: '净瓶洒下甘露，连那微乎其微的胜机都被温柔放大。',
-  }),
-  builtin({
-    type: 'trial',
-    star: '4',
-    name: '大闹天宫',
-    set: 'xiyou',
-    trigger: R('grade', { grade: 'bold' }),
-    effects: [
-      { kind: 'roll_bonus', amount: 16 },
-      { kind: 'reroll', on: 'crit_fail' },
-    ],
-    narrative: '大闹天宫的架势铺开，天地间无人能挡这一棒。',
-  }),
-
-  // ── 套装：三国演义（5 张，覆盖武器×2/法术/祝福/试炼） ───────────────────
-  builtin({
-    type: 'weapon',
-    star: '1',
-    name: '丈八蛇矛',
-    set: 'sanguo',
-    trigger: R('roll', { min: 1, max: 60 }),
-    effects: [{ kind: 'roll_bonus', amount: 5 }],
-    narrative: '丈八蛇矛横扫如风，张飞的暴喝惊退千军。',
-  }),
-  builtin({
-    type: 'weapon',
-    star: '3',
-    name: '青龙偃月刀',
-    set: 'sanguo',
-    trigger: R('roll', { min: 1, max: 90 }),
-    effects: [{ kind: 'roll_bonus', amount: 12 }],
-    narrative: '青龙偃月刀寒光过处，关云长一骑当千。',
-  }),
-  builtin({
-    type: 'spell',
-    star: '2',
-    name: '借东风',
-    set: 'sanguo',
-    trigger: R('demand', { min: 50, max: 90 }),
-    effects: [{ kind: 'demand_mod', amount: -20 }],
-    narrative: '借得东风一夜，火烧连营，胜机随风而来。',
-  }),
-  builtin({
-    type: 'blessing',
-    star: '3',
-    name: '桃园仁德',
-    set: 'sanguo',
-    trigger: R('grade', { grade: 'balanced' }),
-    effects: [{ kind: 'crit_window', success_delta: 2, fail_delta: 2 }],
-    narrative: '桃园一拜，仁德加身，绝境亦有回旋余地。',
-  }),
-  builtin({
-    type: 'trial',
-    star: '5',
-    name: '桃园结义',
-    set: 'sanguo',
-    trigger: R('grade', { grade: 'bold' }),
-    effects: [
-      { kind: 'roll_bonus', amount: 25 },
-      { kind: 'reroll', on: 'crit_fail' },
-    ],
-    narrative: '桃园一诺，三英同气连枝，千军万马亦不退。',
   }),
 ];

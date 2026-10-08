@@ -8,9 +8,13 @@
  * 收集 {label, value} 候选，再与选项里检测出的属性名做字符串相似度匹配。属性名检测也是
  * 启发式（`【力量】` / `力量检定` / `动用 XX` 等）。全程失败返回 null，绝不抛错。
  *
- * 属性值直接当 D100 需求值（COC 类 0-100 卡正好对得上；DND 类 3-18 卡会偏宽松——
- * 属可配置启发式的已知取舍，文档注明）。实现前已核对 st-character.ts 的 StCharacter
- * 类型：角色卡对象需访问 ch.data.extensions / ch.data（V2 卡字段），访问一律走 ?.。
+ * 属性值按刻度自适应换算成「等效成功率」（0-100 语义）再交调用方按判定方向反向：
+ * 值 ≤ 20 视作 DND 型 3-18 刻度（×5 换算，力量 16 → 80% 成功率——直接 100−v 会让
+ * 3-18 值域整体压进 3-19% 成功率区间、几乎必败）；值 > 20 视作 COC 百分位刻度原样
+ * 采用（现状）。取舍：COC 卡个别 ≤20 的低属性会被误判成 DND 高胜率，但 attr 只替换
+ * 档位兜底这一级、AI 标注始终优先，影响可控。实现前已核对 st-character.ts 的
+ * StCharacter 类型：角色卡对象需访问 ch.data.extensions / ch.data（V2 卡字段），
+ * 访问一律走 ?.。
  */
 
 import {
@@ -92,7 +96,8 @@ const collectAttributeCandidates = (node: unknown, out: AttrCandidate[], depth =
   }
 };
 
-/** 解析当前角色卡中 ref 对应的属性值（D100 需求值 0-100 语义，夹取到 [1,99]）。
+/** 解析当前角色卡中 ref 对应的属性，换算为「等效成功率」（0-100 语义，夹取到 [1,99]）：
+ *  值 ≤ 20 视 DND 型 3-18 刻度按 ×5 放大（16 → 80），> 20 视百分位刻度原样采用。
  *  匹配不到 / 角色卡缺失 / 异常一律 null。 */
 function resolveAttributeDc(character: { data?: unknown } | undefined, ref: string): number | null {
   try {
@@ -118,7 +123,10 @@ function resolveAttributeDc(character: { data?: unknown } | undefined, ref: stri
     }
     if (!best || bestScore < 0.6) return null;
     const v = Math.round(best.value);
-    return Number.isFinite(v) ? Math.min(99, Math.max(1, v)) : null;
+    if (!Number.isFinite(v)) return null;
+    // 刻度自适应：≤20 在百分位语义下成功率 ≤20%（几乎必败），按 DND 型 ×5 放大才符合
+    // 「高属性→高胜率」直觉；>20 保持百分位原样（COC 卡零变化）
+    return v <= 20 ? Math.min(99, Math.max(1, v * 5)) : Math.min(99, Math.max(1, v));
   } catch {
     return null;
   }
@@ -126,9 +134,9 @@ function resolveAttributeDc(character: { data?: unknown } | undefined, ref: stri
 
 /** 统一带属性的需求值解析：AI 标注优先，无标注且 attr_dc_enabled 时尝试属性，最后档位兜底。
  *  返回值 = D100 目标需求值（null = 不掷骰）。
- *  v61 low_roll：属性来源的 DC 随模式反向——DND（lowRoll=false）DC = 100 − 属性值
- *  （roll ≥ DC 成功），COC（lowRoll=true）DC = 属性值（roll ≤ DC 成功）；两模式成功率都 =
- *  属性%。
+ *  v61 low_roll：属性来源的 DC 随模式反向——先把属性值换算成「等效成功率」（≤20 视 DND
+ *  型 ×5 放大、>20 视百分位原样，见 resolveAttributeDc），再 low（COC）DC = 成功率、
+ *  high DC = 100 − 成功率；两模式成功率一致，高属性 → 高胜率。
  *  v67：档位兜底改走 gradeFallbackRate 模式感知对偶（COC 65/40/15，成功率与 high 对齐）。
  *  旧版「档位兜底不随模式反向」在 low 模式下会把保守档变成最难、大胆档变成最易，与本意
  *  相悖——本函数不再委托模式盲的 resolveOptionSuccessRate，显式标注/兜底/属性三级全部
@@ -149,10 +157,11 @@ export function resolveOptionSuccessRateWithAttr(
   // 最前，整条文本匹配会拿标题当属性名、正文里的【力量】永远轮不到
   const ref = detectAttributeRef(parseOptionContent(text));
   if (ref) {
-    const dc = resolveAttributeDc(character, ref);
-    if (dc !== null) {
-      // DND 下对属性反向：高属性 → 低需求（更易高点数成功），成功率与 COC 对称
-      return lowRoll ? dc : Math.min(99, Math.max(1, 100 - dc));
+    const rate = resolveAttributeDc(character, ref);
+    if (rate !== null) {
+      // 等效成功率按判定方向反向成 D100 需求值：low（COC）DC = 成功率，high（DND/难度制）
+      // DC = 100 − 成功率——两模式成功率一致，高属性 → 高胜率
+      return lowRoll ? rate : Math.min(99, Math.max(1, 100 - rate));
     }
   }
   return null;

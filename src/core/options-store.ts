@@ -130,7 +130,7 @@ export function setMessageChoiceIndex(
   setMessageChoiceData(messageId, swipeId, data);
 }
 
-/** 该楼层是否已结算过卡牌经济（防刷「同一层最多结算一次」）。 */
+/** 该楼层是否已结算过判定（防刷「同一层最多结算一次」，覆盖战绩统计与卡牌经济两层口径）。 */
 export function isCardSettled(messageId: number, swipeId: number): boolean {
   // 兜底集合同步消费：markCardSettled 遇 data 缺失（脏楼层）时记到这里，防脏楼层被反复结算
   if (settledLayerFallback.has(layerKey(messageId, swipeId))) return true;
@@ -157,7 +157,7 @@ try {
   /* eventSource 不可用时静默跳过 */
 }
 
-/** 标记该楼层已结算卡牌经济（首次判定结算后调用；幂等）。 */
+/** 标记该楼层已结算判定（战绩 + 卡牌经济，首次应用后调用；幂等）。 */
 export function markCardSettled(messageId: number, swipeId: number): void {
   const data = getMessageChoiceData(messageId, swipeId);
   if (!data) {

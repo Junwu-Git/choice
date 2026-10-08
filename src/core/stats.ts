@@ -6,6 +6,7 @@ import type { ChoiceOption } from '@/core/options-store';
 import type { DiceOutcome } from '@/core/dice';
 import {
   APPLY_HISTORY_LIMIT,
+  AVG_PICKS_MIN_ROUNDS,
   createEmptyStats,
   createEmptyDiceStats,
   createEmptyCardStats,
@@ -13,6 +14,9 @@ import {
   SUGGEST_MIN_SAMPLES,
   SUGGEST_DOWNGRADE_EXCESS,
   SUGGEST_UPGRADE_EXCESS,
+  SUGGEST_THRESHOLD_SE_FACTOR,
+  SUGGEST_COOLDOWN_MAX_MS,
+  SUGGEST_COOLDOWN_MIN_POST,
   SUGGEST_WEIGHT_MIN,
   SUGGEST_WEIGHT_MAX,
   SUGGEST_WEIGHT_DEFAULT,
@@ -129,6 +133,9 @@ export function recordOptionsGenerated(
   const scope = getScopeStats(stats, scopeId ?? currentScopeId());
   scope.updated_at = Date.now();
   scope.total_generated += options.length;
+  // 成功轮数计数（与输出条数无关）：平均点选数 m̄ 的分母（多点选期望基线校正，见
+  // scopeAvgPicks / windowMetrics）
+  scope.total_rounds = (scope.total_rounds ?? 0) + 1;
   getDaily(scope, dailyKey()).generated += options.length;
   const now = Date.now();
   const count = options.length;
@@ -210,6 +217,9 @@ export function recordOptionSelected(
   const scope = getScopeStats(stats, scopeId);
   scope.updated_at = Date.now();
   scope.total_selected += 1;
+  // 点选次数计数（与 total_selected 同口径、不做去重——重复点击也是点选习惯的一部分）：
+  // 平均点选数 m̄ 的分子（多点选期望基线校正，见 scopeAvgPicks / windowMetrics）
+  scope.picks_total = (scope.picks_total ?? 0) + 1;
   getDaily(scope, dailyKey()).selected += 1;
   if (poolEntryIds.length === 0) return;
   const now = Date.now();
@@ -459,6 +469,30 @@ export type StatsView = {
   updated_at: number;
   daily: Record<string, DailyCount>;
   by_entry: Record<string, StatsEntryEntry>;
+  /** 平均每轮点选数 m̄（scope.picks_total / scope.total_rounds，总轮数达
+   *  AVG_PICKS_MIN_ROUNDS 才启用）：窗口期望基线的多点选校正因子；null = 样本不足
+   *  或全局聚合视图（回退单点模型 matched/count） */
+  avgPicks: number | null;
+};
+
+/** 平均每轮点选数 m̄（module 内部，经 buildStatsView 预计算进 StatsView）：总轮数不足
+ *  AVG_PICKS_MIN_ROUNDS 或字段缺失（老档）返回 null——不猜，回退单点模型 */
+const scopeAvgPicks = (scope: ScopeStats | undefined): number | null => {
+  if (!scope) return null;
+  const rounds = scope.total_rounds ?? 0;
+  if (rounds < AVG_PICKS_MIN_ROUNDS) return null;
+  return (scope.picks_total ?? 0) / rounds;
+};
+
+/** 随机点选 m 个（不放回）命中「该条目 k 条输出之一」的精确概率（超几何）：
+ *  P = 1 − Π_{i=0..m−1} (n−k−i)/(n−i)。m≥n 或 k≥n 时分子先取到 0 → P=1，无需特判。
+ *  单点模型（m=1）退化为 k/n，与旧口径一致 */
+const randomPickHitProb = (matched: number, picks: number, count: number): number => {
+  if (matched <= 0 || picks <= 0 || count <= 0) return 0;
+  const m = Math.min(picks, count);
+  let miss = 1;
+  for (let i = 0; i < m; i++) miss *= (count - matched - i) / (count - i);
+  return Math.min(1, Math.max(0, 1 - miss));
 };
 
 /** 构造维度视图：scopeId = GLOBAL_SCOPE 时聚合所有 scope（recent 不聚合——窗口指标仅
@@ -514,6 +548,8 @@ export function buildStatsView(stats: StatsSettings, scopeId: string): StatsView
       updated_at: stats.updated_at,
       daily,
       by_entry,
+      // 全局聚合视图 recent 恒为 []（窗口口径仅单一 scope 有效），m̄ 无消费方
+      avgPicks: null,
     };
   }
   const scope = stats.entries[scopeId];
@@ -527,6 +563,7 @@ export function buildStatsView(stats: StatsSettings, scopeId: string): StatsView
     updated_at: scope?.updated_at ?? 0,
     daily: scope?.daily ?? {},
     by_entry: scope?.by_entry ?? {},
+    avgPicks: scopeAvgPicks(scope),
   };
 }
 
@@ -726,17 +763,24 @@ export type WindowMetrics = {
   excess: number | null;
 };
 
-export function windowMetrics(row: Pick<EntryRankRow, 'recent'>): WindowMetrics | null {
-  const recent = row.recent;
+export function windowMetrics(recent: StatsRoundRecord[] | undefined, avgPicks?: number | null): WindowMetrics | null {
   if (!recent || recent.length === 0) return null;
   let hits = 0;
   let expected = 0;
   for (const r of recent) {
     if (r.hit) hits += 1;
-    // 期望按 matched/count：该条目被匹配到的输出数 ÷ 输出条数（用户随机点选命中其
-    // 任一输出的概率）。老代记录无 matched（旧口径每轮按 1/count 计期望，与
-    // matched=1 数值一致）；v53+ 按实际 matched 计，多输出条目基线不再被低估
-    if (r.count > 0 && (r.matched ?? 1) > 0) expected += (r.matched ?? 1) / r.count;
+    // 期望基线：该条目被匹配到 k 条输出时，用户随机点选命中其任一输出的概率。
+    // avgPicks 可用（scope 轮数达标）→ 按平均每轮点选数 m̄ 的超几何概率校正——单点模型
+    // matched/count 在多点选用户下系统性低估基线、超额偏高偏提权（P1）；点数至少取 1
+    //（m̄<1 的轻度用户沿用单点模型，避免基线归零引发误提权）。avgPicks 不可用回退单点
+    // 模型 matched/count。老代记录无 matched 回退 1/count（与新代 matched=1 数值一致）
+    const matched = r.matched ?? 1;
+    if (r.count > 0 && matched > 0) {
+      expected +=
+        avgPicks != null
+          ? randomPickHitProb(matched, Math.max(1, Math.round(avgPicks)), r.count)
+          : matched / r.count;
+    }
   }
   const samples = recent.length;
   const rate = hits / samples;
@@ -750,28 +794,43 @@ export function fullExpectedRate(row: Pick<EntryRankRow, 'rounds_included' | 'ex
   return row.expected_sum / row.rounds_included;
 }
 
+/** 冷却是否仍在生效（entryMetrics 评级门槛与 entryInsight「冷却中」徽标共用，防两处漂移）：
+ *  调整后窗口新数据不足 SUGGEST_MIN_SAMPLES 轮即视为冷却中；但距调整超过
+ *  SUGGEST_COOLDOWN_MAX_MS 且已有 ≥ SUGGEST_COOLDOWN_MIN_POST 轮新数据时放宽——
+ *  低权重条目参与频率近似正比权重，纯按参与轮数等门槛会形成「权重越低观察期越长」的
+ *  冷却黑洞，墙钟上限兜底；放宽后的小样本噪声由 entrySuggestion 的 SE 自适应阈值兜住 */
+function cooldownStillActive(changedAt: number, postLen: number): boolean {
+  if (postLen >= SUGGEST_MIN_SAMPLES) return false;
+  if (postLen >= SUGGEST_COOLDOWN_MIN_POST && Date.now() - changedAt > SUGGEST_COOLDOWN_MAX_MS) return false;
+  return true;
+}
+
 /** 条目评级解析（纯函数，建议引擎与阵容计划共用，防止两处解析逻辑漂移）：
  *  数据源优先窗口（recent 长度 ≥ SUGGEST_MIN_SAMPLES），否则全量
  *  （rounds_included ≥ SUGGEST_MIN_SAMPLES）；样本不足或无记录返回 null。
+ *  avgPicks 为维度视图预计算的平均点选数（透传 windowMetrics 做多点选基线校正）。
  *  返回窗口/全量统一后的命中率、期望命中率与超额（rate - expected）。
  *  冷却语义（不能直接简化掉）：条目被自动化调整过（last_weight_changed_at > 0）时，
- *  只用该时间戳之后的窗口记录评级，且不足 SUGGEST_MIN_SAMPLES 轮新数据直接返回 null——
+ *  只用该时间戳之后的窗口记录评级，且新数据不足直接返回 null——
  *  ① 避免建议基于旧权重下的表现（新权重还没积累足够样本）；② 缩短窗口期限天然形成
  *  「调整后需观察 N 轮」的冷却，防止 1↔2↔4 权重颠簸。全量兜底此时不可用（全量含
- *  变更前数据，正是要排除的）。从未调整（=0）的条目走原有窗口→全量路径，行为不变。 */
+ *  变更前数据，正是要排除的）。从未调整（=0）的条目走原有窗口→全量路径，行为不变。
+ *  冷却放宽见 cooldownStillActive：调整超 7 天且 ≥3 轮新数据时提前结束冷却，
+ *  防低权重条目（参与慢）形成「权重越低观察期越长」的黑洞。 */
 function entryMetrics(
   row: Pick<
     EntryRankRow,
     'rounds_included' | 'rounds_with_selection' | 'expected_sum' | 'recent' | 'last_weight_changed_at'
   >,
+  avgPicks?: number | null,
 ): { samples: number; rate: number; expected: number; excess: number; basis: '窗口' | '全量' } | null {
   if (!row || row.rounds_included <= 0 || !row.recent) return null;
   const changedAt = row.last_weight_changed_at ?? 0;
   // 自动化调整后的条目：只统计调整之后的窗口数据
   if (changedAt > 0) {
     const post = row.recent.filter(r => r.ts >= changedAt);
-    if (post.length < SUGGEST_MIN_SAMPLES) return null; // 冷却中：新数据不足，暂不评级
-    const w = windowMetrics({ recent: post });
+    if (cooldownStillActive(changedAt, post.length)) return null; // 冷却中：新数据不足，暂不评级
+    const w = windowMetrics(post, avgPicks);
     if (!w) return null;
     // post 非空保证 samples > 0，rate/expectedRate 不会为 null（windowMetrics 的类型
     // 是 number|null，这里用 hits/expected 除 samples 得到确定值，避免 null 运算）
@@ -779,7 +838,7 @@ function entryMetrics(
     const expectedRate = w.expected / w.samples;
     return { samples: w.samples, rate, expected: expectedRate, excess: rate - expectedRate, basis: '窗口' };
   }
-  const w = windowMetrics(row);
+  const w = windowMetrics(row.recent, avgPicks);
   let samples: number;
   let hits: number;
   let expected: number;
@@ -825,6 +884,9 @@ export type Suggestion = {
   /** up 的来源：'upgrade' = 数据驱动提权（超额高）；'recover' = 低于默认权重的回捞（保持多样性）。
    *  down 无此字段。 */
   reason?: 'upgrade' | 'recover';
+  /** 仅 recover：当前低权重从未被自动化调整过（last_weight_changed_at = 0），属用户手动
+   *  设置。纯展示字段（suggestionTitle 提示「回捞会覆盖手动值」），不纳入 suggestionKey */
+  manualLow?: boolean;
   /** 依据口径：'窗口' | '全量' */
   basis: '窗口' | '全量';
 };
@@ -852,6 +914,9 @@ export function suggestionKey(s: Suggestion): string {
  *  已删除条目（deleted=true，master_pool 已无此 id）直接跳过——config 引用即使仍指向
  *  该 id，条目也已不在 effectivePool，建议与写入均无实际意义（纯噪音，含「样本不足」
  *  这类展示标签一并屏蔽）。
+ *  阈值随样本量 SE 自适应（实际阈值 = max(固定阈值, SE×系数)，见 settings.ts
+ *  SUGGEST_THRESHOLD_SE_FACTOR），小样本噪声大、门槛收缩防抖动；固定值是下限。
+ *  avgPicks 为维度视图预计算的平均点选数（透传 entryMetrics 做多点选基线校正）。
  *  阈值是启发式常量（settings.ts），注释不重复解释，随数据积累调参。 */
 export function entrySuggestion(
   row: Pick<
@@ -867,10 +932,11 @@ export function entrySuggestion(
     | 'last_weight_changed_at'
     | 'deleted'
   >,
+  avgPicks?: number | null,
 ): Suggestion | null {
   if (row.deleted) return null;
   if (row.effectivePinned || !row.effectiveEnabled) return null;
-  const m = entryMetrics(row);
+  const m = entryMetrics(row, avgPicks);
   if (!m) return null;
   const { samples, rate, expected: expectedRate, excess, basis } = m;
   const base: Omit<Suggestion, 'action' | 'newWeight' | 'reason'> = {
@@ -882,14 +948,19 @@ export function entrySuggestion(
     currentWeight: row.effectiveWeight,
     basis,
   };
-  if (excess <= SUGGEST_DOWNGRADE_EXCESS) {
+  // SE 自适应阈值：SE = sqrt(rate(1−rate)/n)，样本越少门槛越高（固定阈值为下限），
+  // rate→0/1 时 SE→0 回落固定值
+  const se = Math.sqrt(Math.max(0, rate * (1 - rate)) / Math.max(1, samples));
+  const downThreshold = Math.min(SUGGEST_DOWNGRADE_EXCESS, -(se * SUGGEST_THRESHOLD_SE_FACTOR));
+  const upThreshold = Math.max(SUGGEST_UPGRADE_EXCESS, se * SUGGEST_THRESHOLD_SE_FACTOR);
+  if (excess <= downThreshold) {
     const newWeight = Math.max(SUGGEST_WEIGHT_MIN, row.effectiveWeight * 0.5);
     // 权重已在下限边界时降权无实际变化：返回 null 而非零差异建议，
     // 否则应用会产生「0 条变更」历史批次并误刷冷却（建议→应用→冷却→再建议空转）
     if (newWeight === row.effectiveWeight) return null;
     return { ...base, action: 'down', newWeight };
   }
-  if (excess >= SUGGEST_UPGRADE_EXCESS) {
+  if (excess >= upThreshold) {
     // 提权按 SUGGEST_UPGRADE_MULTIPLIER 保守倍率（1.5，非翻倍）：期望基线不随权重变化，
     // 翻倍会让高权重条目更快向 SUGGEST_WEIGHT_MAX 收敛，权重分散度劣化（见 settings.ts 常量注释）
     const newWeight = Math.min(SUGGEST_WEIGHT_MAX, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
@@ -901,19 +972,28 @@ export function entrySuggestion(
   if (row.effectiveWeight < SUGGEST_WEIGHT_DEFAULT) {
     const newWeight = Math.min(SUGGEST_WEIGHT_DEFAULT, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
     if (newWeight === row.effectiveWeight) return null;
-    return { ...base, action: 'up', newWeight, reason: 'recover' };
+    return {
+      ...base,
+      action: 'up',
+      newWeight,
+      reason: 'recover',
+      // 从未被自动化调整过 = 用户手动设置的低权重（展示层提示回捞会覆盖手动值）
+      manualLow: (row.last_weight_changed_at ?? 0) === 0,
+    };
   }
   return null;
 }
 
-export type EntryInsight = 'downgrade' | 'recover' | 'good' | 'insufficient' | 'disabled' | 'cooldown' | null;
+export type EntryInsight = 'downgrade' | 'recover' | 'good' | 'insufficient' | 'disabled' | 'cooldown' | 'floor' | null;
 
 /** 洞察标签（展示层派生）：有建议 → 按其动作标「候选降权/权重回捞/表现良好」；
- *  已停用条目 → 「已停用」（真实启用态，仅阵容落出会置，不再给建议）；自动化调整后新数据不足 →
+ *  已停用条目 → 「已停用」（真实启用态，仅阵容落出会置，不再给建议）；权重已到自动化
+ *  下限且无建议 → 「已到下限」（建议引擎对它沉默：降无可降、回捞不可达，给信号引导走
+ *  阵容落出/手动处理，消除「建议真空」）；自动化调整后新数据不足 →
  *  「冷却中」（等新样本再评级）；参与 >0 但样本不足 → 「样本不足」；
  *  无参与/无建议 → 无标签。只提示不改权重。
  *  suggestion 为可选预计算值（组件一次 entrySuggestion、多标签复用，避免每处重算）：
- *  缺省时内部自行计算，行为不变。已删除条目返回 null（不挂任何质量标签）。 */
+ *  缺省时内部自行计算（avgPicks 透传），行为不变。已删除条目返回 null（不挂任何质量标签）。 */
 export function entryInsight(
   row: Pick<
     EntryRankRow,
@@ -929,19 +1009,23 @@ export function entryInsight(
     | 'deleted'
   >,
   suggestion?: Suggestion | null,
+  avgPicks?: number | null,
 ): EntryInsight {
   if (row.deleted) return null;
   if (!row.effectiveEnabled) return 'disabled';
-  const s = suggestion !== undefined ? suggestion : entrySuggestion(row);
+  const s = suggestion !== undefined ? suggestion : entrySuggestion(row, avgPicks);
   if (s) return s.action === 'down' ? 'downgrade' : s.reason === 'recover' ? 'recover' : 'good';
-  // 冷却中：仅当调整后的窗口数据确实不足门槛（entryMetrics 因冷却返回 null）才标——
-  // 若冷却早已过期（新数据 ≥10 轮）但未达任何建议阈值，应回落到「无标签」而非永远「冷却中」
+  // 已到下限：权重在自动化下限且无建议——降权分支因零差异返回 null、回捞要求超额进入
+  // 中性带，超额持续低迷时建议引擎对其完全沉默（无建议无徽标），此处给唯一可行动信号
+  if (row.effectiveWeight <= SUGGEST_WEIGHT_MIN && row.rounds_included > 0) return 'floor';
+  // 冷却中：仅当冷却确实仍在生效（cooldownStillActive 与 entryMetrics 同源判定）才标——
+  // 若冷却早已放宽/过期但未达任何建议阈值，应回落到「无标签」而非永远「冷却中」
   // 全局聚合视图 recent 恒为 []（窗口口径仅单一 scope 有效）：无窗口数据无法判冷却，
   // 跳过本分支回落到 insufficient/无标签，避免全局视图把调整过的条目永久标「冷却中」
   const changedAt = row.last_weight_changed_at ?? 0;
   if (changedAt > 0 && row.rounds_included > 0 && row.recent.length > 0) {
     const post = row.recent.filter(r => r.ts >= changedAt);
-    if (post.length < SUGGEST_MIN_SAMPLES) return 'cooldown';
+    if (cooldownStillActive(changedAt, post.length)) return 'cooldown';
   }
   if (row.rounds_included > 0 && row.rounds_included < SUGGEST_MIN_SAMPLES) return 'insufficient';
   return null;
@@ -1289,7 +1373,7 @@ export function planRoster(view: StatsView, masterPool: PoolEntry[], config: Poo
   if (over > 0) {
     const rated = active
       .filter(id => !effectivePinned(id))
-      .map(id => ({ id, m: entryMetrics(view.by_entry[id]) }))
+      .map(id => ({ id, m: entryMetrics(view.by_entry[id], view.avgPicks) }))
       .filter((x): x is { id: string; m: NonNullable<ReturnType<typeof entryMetrics>> } => x.m !== null)
       .sort((a, b) => a.m.excess - b.m.excess); // 超额升序：表现最差在前
     const dropCount = Math.min(over, rated.length);
@@ -1314,7 +1398,11 @@ export function planRoster(view: StatsView, masterPool: PoolEntry[], config: Poo
   if (slots > 0) {
     const benchRated = bench
       .filter(id => !effectivePinned(id))
-      .map(id => ({ id, m: entryMetrics(view.by_entry[id]), last: view.by_entry[id]?.last_included_at ?? 0 }))
+      .map(id => ({
+        id,
+        m: entryMetrics(view.by_entry[id], view.avgPicks),
+        last: view.by_entry[id]?.last_included_at ?? 0,
+      }))
       .sort(benchComparator);
     for (const { id, m } of benchRated.slice(0, slots)) {
       const e = poolMap.get(id)!;
@@ -1531,7 +1619,7 @@ export function entrySampleDistribution(view: StatsView, poolSize: number, poolI
   for (const [id, e] of Object.entries(view.by_entry)) {
     if (!poolIds.has(id)) continue;
     inPool += 1;
-    if (entryMetrics(e)) sufficient += 1;
+    if (entryMetrics(e, view.avgPicks)) sufficient += 1;
     else if (e.rounds_included > 0) insufficient += 1;
   }
   return { sufficient, insufficient, never: Math.max(0, poolSize - inPool) };

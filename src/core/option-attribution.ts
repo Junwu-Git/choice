@@ -1,11 +1,12 @@
-import type { PoolEntry } from '@/type/settings';
+import { OPTION_MATCH_MARGIN, type PoolEntry } from '@/type/settings';
 
 /**
  * 选项→条目精确归因（纯函数）：生成时把每条输出选项近似归属到当轮候选条目，
  * 结果随消息持久化（options[].matchedEntryId），统计「命中」只对匹配条目计数——
  * 被 AI 舍弃的候选不产生命中，AI 自由发挥的选项无归属。
  * 选项是 AI 自由文本，归属为启发式：type 前缀精确匹配优先，否则字符 2-gram
- * Dice 相似度阈值兜底。阈值常量 OPTION_MATCH_THRESHOLD（settings.ts）集中可调。
+ * Dice 相似度阈值兜底（且要求与次优拉开 OPTION_MATCH_MARGIN，平票归属近随机、
+ * 记账等于掷硬币，宁归 null）。阈值常量（settings.ts）集中可调。
  */
 
 /** 条目匹配特征串：type + content 拼接（rule 是写作约束，不参与匹配；
@@ -75,7 +76,8 @@ export type OptionMatch = {
  * 1. 提取括号标题壳（parse 主路径会保留 [标题]/【标题】，标题即 AI 给选项起的方向名），
  *    标题与正文一起参与匹配——此前整壳剥掉会把类型信息一并丢掉、前缀匹配全部失效；
  * 2. type 前缀精确匹配（信号已按 type 长度降序，取首个命中 = 最长 type）→ 直接认定；
- * 3. 否则对全部候选算 2-gram Dice（bigram 预计算复用），最高分 ≥ threshold 取唯一归属。
+ * 3. 否则对全部候选算 2-gram Dice（bigram 预计算复用），最高分 ≥ threshold 且与次优
+ *    分差 ≥ OPTION_MATCH_MARGIN 才认定唯一归属；分数接近的两条目归属近随机，归 null。
  */
 export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal[], threshold: number): OptionMatch {
   const raw = optionText.trim();
@@ -91,12 +93,17 @@ export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal
   const optionBigrams = bigrams(text);
   let bestId: string | null = null;
   let bestScore = 0;
+  let secondScore = 0;
   for (const s of signals) {
     const score = dice(optionBigrams, s.bigrams);
     if (score > bestScore) {
+      secondScore = bestScore;
       bestScore = score;
       bestId = s.id;
+    } else if (score > secondScore) {
+      secondScore = score;
     }
   }
-  return { id: bestScore >= threshold ? bestId : null, via: bestScore >= threshold ? 'dice' : null };
+  const matched = bestScore >= threshold && bestScore - secondScore >= OPTION_MATCH_MARGIN;
+  return { id: matched ? bestId : null, via: matched ? 'dice' : null };
 }

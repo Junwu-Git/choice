@@ -327,7 +327,12 @@ export const buildMessages = async (
   return merged;
 };
 
-export const buildChatHistory = (contextRounds: number): ChatMsg[] => {
+/**
+ * 拉取聊天历史。wrapCurrentScene=true（默认）时把最后一条 assistant 消息包进 <current_scene>，
+ * 让选项 AI 明确"当前场景"边界——选项是场景产物，需要这层锚定；卡牌主题池等跨场景常驻
+ * 内容的生成方传 false：卡在剧情推进后仍要反复掉落，绑死当前场景会让池子迅速过时。
+ */
+export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -400,7 +405,8 @@ export const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   }
   // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
   // 避免在长对话中注意力被稀释到更早的剧情。回退到 h 最后一条（无 assistant 时）。
-  if (h.length > 0) {
+  // wrapCurrentScene=false（卡牌池等跨场景生成方）跳过包裹，见函数头注释
+  if (wrapCurrentScene && h.length > 0) {
     const wrapIdx = lastAssistantIdx >= 0 ? lastAssistantIdx : h.length - 1;
     h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }

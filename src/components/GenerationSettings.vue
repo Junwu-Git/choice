@@ -221,6 +221,15 @@
           </span>
         </label>
       </div>
+      <!-- 互斥警示：骰式路径不经过卡牌管线，两开关同开时卡牌静默停摆，提前说明防困惑 -->
+      <small
+        v-if="gs.settings.dice.allow_formula && gs.settings.card_enabled"
+        class="choice-field-hint choice-dice-crit-warn"
+      >
+        <i class="fa-solid fa-triangle-exclamation"></i>{{
+          t`卡牌系统已开启：骰式判定路径不经过卡牌，卡触发、行动币与幸运开包将停摆；如需卡牌玩法请关闭骰式表达式`
+        }}
+      </small>
       <!-- 演绎文案模板：收进可折叠「高级」区，减轻主体卡片负担 -->
       <ChoiceSectionCard title="演绎文案模板（高级）" icon="fa-solid fa-comment">
         <small class="choice-field-hint">{{

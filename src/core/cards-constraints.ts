@@ -25,6 +25,16 @@ export const CARD_CRIT_WINDOW_LIMIT = 5;
 /** 叙事注入字数上限（narrative 正文，占位符不计入） */
 export const CARD_NARRATIVE_CHARS_LIMIT = 40;
 
+// ── 角色主题池分批生成节奏（每次触发生成多少、何时停） ────────────────────
+
+/** 首批张数（池空初始化）：保证首次开包后池子有像样的可掉落主题卡 */
+export const CARD_POOL_FIRST_BATCH = 4;
+/** 补充批张数（池非空时每次彩蛋触发补充） */
+export const CARD_POOL_BATCH_SIZE = 2;
+/** 池上限：满池后停止自动补充（防池无限膨胀稀释内置掉落 + 防请求浪费）；
+ *  批次生成让每批吃到触发时刻的剧情上下文，池随剧情阶段逐步变宽，上限给够 4 批补充余量 */
+export const CARD_POOL_MAX_CARDS = 12;
+
 // ── 等级预算（装备格内强卡上限，防叠爆） ────────────────────────────────
 
 /** 各星级在卡组内的数量上限（仅高星卡受限；1/2 星不限，受 5 格 + 同类 ≤1 约束） */
@@ -86,13 +96,6 @@ export const CARD_DROP_WEIGHT: Readonly<Record<CardStar, number>> = {
 /** 是否「稀有卡」（3 星及以上）：开包弹窗稀有提示与卡面高亮用此判定（v66 起保底/分解已裁撤）。 */
 export const isHighStar = (star: CardStar): boolean => Number(star) >= 3;
 
-// ── 收藏成就（趣味彩蛋，零操作） ─────────────────────────────────────────
-
-/** 单类型集齐 1–5 星（一套内置卡）即成一枚「全收集」成就；键 = `set_<type>`。 */
-export const CARD_TYPE_FULL_STARS: CardStar[] = ['1', '2', '3', '4', '5'];
-/** 收藏总数里程碑：累计拥有达到该数即一性触发庆祝（键 = `collect_<n>`）。 */
-export const CARD_TROPHY_COLLECT_MILESTONES: readonly number[] = [10, 20];
-
 // ── 效果 clamp（数值先经这里再进判定，防越权） ───────────────────────────
 
 const clamp = (v: number, lim: number): number => Math.min(lim, Math.max(-lim, Math.round(Number.isFinite(v) ? v : 0)));
@@ -128,7 +131,20 @@ export function clampEffect(e: CardEffect): CardEffect | null {
   }
 }
 
-/** 校验一张卡（AI 角色卡入库前）：字段缺失 / 枚举越界 / 数值超限 / 叙事超长 → 拒绝并给错误。
+/** 效果集是否全为「正向数值效果」（roll_bonus/demand_mod/crit_window 且数值 > 0）：
+ *  宽触发区间 + 纯利好高星卡的拒绝判据。reroll/outcome_convert/narrative 属保命/演出
+ *  效果不算纯正向，出现即放行（内置卡深渊凝视 roll 1-99 仅 reroll 即此形态）。 */
+const isAllPositiveNumeric = (effects: CardEffect[]): boolean =>
+  effects.length > 0 &&
+  effects.every(
+    e =>
+      (e.kind === 'roll_bonus' && e.amount > 0) ||
+      (e.kind === 'demand_mod' && e.amount > 0) ||
+      (e.kind === 'crit_window' && (e.success_delta > 0 || e.fail_delta > 0)),
+  );
+
+/** 校验一张卡（AI 角色卡入库前）：字段缺失 / 枚举越界 / 数值超限 / 叙事超长 /
+ *  效果数超 3 / 恒等转化 / 宽触发区间纯利好高星 → 拒绝并给错误。
  *  返回 { ok, errors[] }。内置卡直接视为合法（构建时已符合约束）。
  *  star/type/trigger/effect 枚举必须在此把关：这些卡会写进 card_definitions 持久化，
  *  枚举外的值会让下次加载的 GlobalSettings Zod 解析整体失败（扩展 init 崩）。 */
@@ -164,6 +180,7 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
     }
   }
   if (!Array.isArray(card.effects) || card.effects.length === 0) errors.push('缺少效果');
+  else if (card.effects.length > 3) errors.push('效果数量超过 3 个');
   const hasNarrative = card.narrative?.length > CARD_NARRATIVE_CHARS_LIMIT;
   if (hasNarrative) errors.push(`叙事超过 ${CARD_NARRATIVE_CHARS_LIMIT} 字`);
   for (const e of card.effects ?? []) {
@@ -184,6 +201,7 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
         break;
       case 'outcome_convert':
         if (!CONVERT_FROM.includes(e.from) || !CONVERT_TO.includes(e.to)) errors.push('结局转化方向非法');
+        else if (e.from === e.to) errors.push('结局转化方向无意义（from 与 to 相同）');
         break;
       case 'reroll':
         if (!['fail', 'crit_fail'].includes(e.on)) errors.push('重掷触发结局非法');
@@ -192,6 +210,18 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
         if (e.text.length > CARD_NARRATIVE_CHARS_LIMIT) errors.push(`叙事超过 ${CARD_NARRATIVE_CHARS_LIMIT} 字`);
         break;
     }
+  }
+  // 宽触发区间 + 纯正向数值效果的高星卡：与生成端「需求值标进触发区间」的教学行叠加
+  // 会变成近乎常驻的免费增益，系统性拉低判定难度。低星小利可接受（失衡砝码 2★ 跨 79），
+  // 只拦高星；带任何代价/保命/演出效果即放行
+  if (
+    trigger &&
+    (trigger.kind === 'demand' || trigger.kind === 'roll') &&
+    Number(card.star) >= 3 &&
+    trigger.max - trigger.min >= 80 &&
+    isAllPositiveNumeric(card.effects ?? [])
+  ) {
+    errors.push('宽触发区间的高星卡必须带代价或负向效果');
   }
   return { ok: errors.length === 0, errors: [...new Set(errors)] };
 }

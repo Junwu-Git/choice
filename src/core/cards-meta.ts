@@ -46,26 +46,6 @@ export const CARD_TYPE_ICON: Readonly<Record<CardType, string>> = {
   trial: 'fa-solid fa-bolt',
 };
 
-/** 套装/系列注册表（世界观背景卡组）。resonance = 集齐该套装 + 装备 ≥2 张时判定触发的特殊叙事。
- *  新增套装只需在此补一条 + 往 cards-builtin 加对应 set 卡，逻辑零改动。 */
-export const CARD_SETS: Readonly<Array<{ id: string; name: string; theme: string; resonance: string }>> = [
-  {
-    id: 'xiyou',
-    name: '西游记',
-    theme: '取经路上五圣的奇遇，一念之间斗转星移。',
-    resonance: '西游师徒同心，经文佛光护体，气运悄然向善。',
-  },
-  {
-    id: 'sanguo',
-    name: '三国演义',
-    theme: '烽火乱世，桃园一诺，谋略与武勇并立。',
-    resonance: '三国英杰齐聚，干戈玉帛之间，胜算悄然翻转。',
-  },
-];
-
-/** 按 id 取套装定义（无则 undefined）。 */
-export const cardSetById = (id: string): (typeof CARD_SETS)[number] | undefined => CARD_SETS.find(s => s.id === id);
-
 /** 判定结局 → 中文（卡面触发/效果标签共用；带兜底，未知值原样回退）。
  *  映射单一来源在 core/dice.ts 的 DICE_OUTCOME_LABEL（判定注释头部「结局」键共用）。 */
 export const CARD_OUTCOME_LABEL: Readonly<Record<string, string>> = { ...DICE_OUTCOME_LABEL };
