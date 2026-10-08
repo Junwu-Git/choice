@@ -621,7 +621,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     enrich_max_chars: pr.enrich_max_chars ?? 80,
     context_rounds: pr.context_rounds ?? 10,
     context_mode: pr.context_mode ?? 'visible_only',
-    prefill_enabled: pr.prefill_enabled ?? true,
     baibai_enabled: pr.baibai_enabled ?? false,
     shujuku_enabled: pr.shujuku_enabled ?? false,
   };
@@ -648,7 +647,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     enrich_max_chars: 80,
     context_rounds: 10,
     context_mode: 'visible_only',
-    prefill_enabled: true,
     baibai_enabled: false,
     shujuku_enabled: false,
   };
@@ -666,7 +664,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
   pr.enrich_max_chars = 80;
   pr.context_rounds = 10;
   pr.context_mode = 'visible_only';
-  pr.prefill_enabled = true;
   pr.baibai_enabled = false;
   pr.shujuku_enabled = false;
 
@@ -708,7 +705,6 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
       enrich_max_chars: pr.enrich_max_chars ?? 80,
       context_rounds: pr.context_rounds ?? 10,
       context_mode: pr.context_mode ?? 'visible_only',
-      prefill_enabled: pr.prefill_enabled ?? true,
       baibai_enabled: pr.baibai_enabled ?? false,
       shujuku_enabled: pr.shujuku_enabled ?? false,
     },
@@ -1213,7 +1209,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       pr35.enrich_max_chars = defPrompt.enrich_max_chars;
       pr35.context_rounds = defPrompt.context_rounds;
       pr35.context_mode = defPrompt.context_mode;
-      pr35.prefill_enabled = defPrompt.prefill_enabled;
       pr35.baibai_enabled = defPrompt.baibai_enabled;
       pr35.shujuku_enabled = defPrompt.shujuku_enabled;
     }
@@ -2208,6 +2203,46 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v69：移除「预填充」开关与依赖——assistant_ack/assistant_thinking/enrich_assistant 三个
+  // 起手模块默认改为 system 角色 + 指令式文案（不依赖模型预填充能力，开箱即用；想用预填充
+  // 把模块角色改为 assistant 即可）。exact-match（内容 === 旧默认字面量才换，同 v44/v53 模式）
+  // 保证用户自定义过的模块不动；「内容未动 + 角色仍 assistant」的默认档才顺带改角色为 system，
+  // 用户已自行改过角色的不动。to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 69) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V69_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v68 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'assistant_ack',
+        '收到。本轮按系统规则执行：先判断任务类型，再只输出 <thinking> 与 <options>，不输出任何多余内容。',
+        newContentById.get('assistant_ack') ?? '',
+      ],
+      [
+        'assistant_thinking',
+        '收到，开始按问题梳理场景与方向。\n\n<thinking>\n',
+        newContentById.get('assistant_thinking') ?? '',
+      ],
+      [
+        'enrich_assistant',
+        '收到，开始处理润色任务：先理解原文，再自检人称、字数、忠实度。\n\n<thinking>\n',
+        newContentById.get('enrich_assistant') ?? '',
+      ],
+    ];
+    const migrateV69 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V69_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            if (mod.role === 'assistant') mod.role = 'system';
+            break;
+          }
+        }
+      }
+    };
+    migrateV69(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV69(cfg.modules);
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2921,7 +2956,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       enrich_max_chars: n(fc.enrich_max_chars),
       context_rounds: n(fc.context_rounds),
       context_mode: fc.context_mode === 'rounds' || fc.context_mode === 'visible_only' ? fc.context_mode : undefined,
-      prefill_enabled: b(fc.prefill_enabled),
       baibai_enabled: b(fc.baibai_enabled),
       shujuku_enabled: b(fc.shujuku_enabled),
     };

@@ -164,7 +164,6 @@ export const buildMessages = async (
   isEnrich = false,
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
-  const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
   const pr = gs.settings.prompt_rules;
   const augmentedCtx: Ctx = {
     ...ctx,
@@ -235,7 +234,7 @@ export const buildMessages = async (
         break;
       }
       case 'chat_history': {
-        // 保持原始 user/assistant 角色（buildChatHistory 内已强制），不再随 prefillEnabled 切换；
+        // 保持原始 user/assistant 角色（buildChatHistory 内已强制，v69 起无预填充开关可切换）；
         // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在聊天历史外注入
         const history = buildChatHistory(contextRounds);
         for (const m of history) msgs.push(m);
@@ -276,32 +275,9 @@ export const buildMessages = async (
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
-      case 'assistant_ack': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: mod.role, content });
-        break;
-      }
-      case 'assistant_thinking': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) {
-          msgs.push({
-            role: prefillEnabled ? mod.role : 'system',
-            content,
-          });
-        }
-        break;
-      }
-      case 'enrich_assistant': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) {
-          msgs.push({
-            role: prefillEnabled ? mod.role : 'system',
-            content,
-          });
-        }
-        break;
-      }
       default: {
+        // v69：模块一律按其自身 role 发送（assistant_ack/assistant_thinking/enrich_assistant
+        // 不再特殊处理，预填充开关已移除）。想用预填充把模块角色改为 assistant 即可。
         const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
@@ -1427,7 +1403,8 @@ const poolGenKindBlock = (kind: string): string => {
  *  其他文本=自定义种类，语义块见 poolGenKindBlock）。
  *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（显式覆盖，优先于四字判断），
  *  留空则 type 由 AI 逐条判断四字标签；不做生成后改写标签——那会给不匹配的内容错挂类型。
- *  不走思维链预填充（区别于行动选项生成），stream 由 api.stream 决定。 */
+ *  模块一律按自身 role 发送（v69 起无预填充开关；行动选项生成同样不依赖预填充，默认
+ *  起手模块为 system 指令），stream 由 api.stream 决定。 */
 export async function generatePoolEntries(params: {
   count: number;
   requirements: string;

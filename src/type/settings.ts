@@ -189,7 +189,8 @@ export const PromptConfig = z
       .catch(ENRICH_MAX_CHARS_DEFAULT),
     context_rounds: z.number().min(0).default(10).catch(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
-    prefill_enabled: z.boolean().default(true),
+    /** @deprecated v69 起移除预填充开关与读取方（模块角色可逐模块自定义），仅存档兼容的死数据 */
+    prefill_enabled: z.boolean().optional(),
     baibai_enabled: z.boolean().default(false),
     shujuku_enabled: z.boolean().default(false),
     /** @deprecated v44 起不再有写入方：「全向」配置已随轻型默认预设重构删除，
@@ -375,7 +376,8 @@ const PromptRules = z
     chat_filter_rules: z.array(ChatFilterRule).default([]),
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
     modules: z.array(PromptModule).prefault([]),
-    prefill_enabled: z.boolean().default(true),
+    /** @deprecated v69 起移除预填充开关与读取方（模块角色可逐模块自定义），仅存档兼容的死数据 */
+    prefill_enabled: z.boolean().optional(),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
@@ -1075,7 +1077,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 68;
+export const SCHEMA_VERSION = 69;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */

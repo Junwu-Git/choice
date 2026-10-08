@@ -17,7 +17,7 @@ SillyTavern 第三方扩展，基于 `tavern_extension_template`。核心：单�
 - **设置走 Pinia store**：组件不直接读写 `extension_settings`/`chat_metadata`/`character.data.extensions`，经对应 `useXxxStore()`，同步逻辑集中在 `src/store/`。
 - ⚠️ **角色绑定/解绑是唯一直接写 `character.data.extensions` 的例外**：入口只同步写内存 + `setBinding()` 换设置对象，持久化仅由 character-settings 的 deep watch 统一落盘（`persistCharacter` 直 POST `/api/characters/edit`）。入口不要再显式 `persistCharacter`（重复全量序列化→绑定卡顿）；严禁 `saveCharacterDebounced` 持久化扩展字段（旧 json_data 快照覆盖刚写字段→绑定失效）。唯一受控例外是 v33/v44 迁移期 `rebindConfigId`/`rebindPromptConfigId` 回写。
 - ⚠️ **条目池两层结构**：`master_pool` 是内容真相源（`id/type/content/rule/category` + 默认 `pinned/weight`）；`configs[]` 只引用/覆盖（`enabled/pinned/weight`）、不持正文。config 选择是**覆盖式** `chat > character > default`，命中后只用该 config、不合并多个；内容/类型/规则/分类必须从 master_pool 读。提示词配置同理覆盖式。
-- **提示词组装走角色结构**：`system` 放规则（人称/格式/字数），`user` 放抽中的素材与上下文截取，可选 `assistant` 放格式起手式（预填充开时保持 assistant，关时仅「思维链预填」「润色应答」两模块转 system）。
+- **提示词组装走角色结构**：`system` 放规则（人称/格式/字数），`user` 放抽中的素材与上下文截取，可选 `assistant` 放格式起手式。v69 起无全局预填充开关——模块一律按其自身 `role` 发送；默认起手模块为 system 指令（不依赖模型预填充能力），想用预填充把模块角色改为 assistant 即可。
 - **楼层持久化挂消息对象**：结果写 `message.extra['choice']`，按 `swipe_id` 分层；同楼多次生成用 `generations[] + currentIndex` 翻页，润色另用 `enrichGenerations`/`enrichCurrentIndex`。
 - **第三方桥接可选**：`baibai/ejs/shujuku-bridge` 等检测能力，不可用时主体功能照常。
 - **生成模块是可排序可启停管线**：`prompt_rules.modules` 用 `order/enabled/enrich_only` 控制；`enrich` 必须排在 assistant 相关模块之前。

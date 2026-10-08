@@ -190,7 +190,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         id: 'prompt-intro',
         icon: 'fa-solid fa-align-left',
         title: '提示词：选项提示词怎么组装',
-        html: `<p>选项内容由这里的<strong>提示词模块</strong>驱动：<strong>顶部工具栏</strong>可切换上下文轮数模式、开关预填充；下方是模块列表，可拖拽排序、编辑内容。</p>
+        html: `<p>选项内容由这里的<strong>提示词模块</strong>驱动：<strong>顶部工具栏</strong>可切换上下文轮数模式；下方是模块列表，可拖拽排序、编辑内容。</p>
 <p>默认配置开箱即用，新手无需改动；想调整时点 <i class="fa-solid fa-circle-question"></i> 查看本子区说明。</p>`,
         tab: 'prompt',
         target: '[data-tour="prompt-toolbar"]',
@@ -345,9 +345,9 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
     title: '提示词',
     brief: '选项内容由模块化提示词驱动，默认配置开箱即用；编辑器里看到的模块内容就是实际发送给 AI 的提示词。',
     points: [
-      '模块按角色分段：system = 系统指令，user = 素材与上下文，assistant = 预填充起手式；可拖拽排序、启停、编辑。',
+      '模块按角色分段：system = 系统指令，user = 素材与上下文，assistant = 预填充起手式（默认模块均为 system，不依赖模型预填充能力；模型支持预填充时，可把个别模块角色改为 assistant，提前铺好回复开头）；可拖拽排序、启停、编辑。',
       '默认提示词已把场景锚定、信息边界、方向差异等基础原则收进核心规则，不再拆成一排相互叠加的规则开关；需要改时直接编辑核心规则。',
-      '{{user}} 等酒馆宏仍由酒馆引擎替换（assistant 预填模块内同样执行）；插件自己的占位符（如 {{count}}、{{pool_selected}}）会在发送前替换为本轮实际值。',
+      '{{user}} 等酒馆宏仍由酒馆引擎替换（各角色模块内均同样执行）；插件自己的占位符（如 {{count}}、{{pool_selected}}）会在发送前替换为本轮实际值。',
       '上下文轮数决定带多少历史消息给生成选项的 AI。',
       '🔒 标记的不可编辑模块由系统自动管理（世界书条目、角色描述等注入项）。',
       '防重复：提示词不再注入上一轮选项（防污染），生成后自动剔除与上一 AI 楼层/当前楼既有版本重复的选项——同标题需内容也相似才剔除，不同标题按正文相似度判定，不足时自动补齐（最多 2 轮）。',
