@@ -22,10 +22,7 @@
         </p>
         <!-- 互斥提示：骰式表达式路径不走卡牌管线（三处判定/预览/生成注入同门控），
              骰子与卡牌都开但选了骰式时卡牌静默停摆，与「骰子未开」同样需要显式告知 -->
-        <p
-          v-else-if="gs.settings.dice.enabled && gs.settings.dice.allow_formula"
-          class="choice-card-deps-hint"
-        >
+        <p v-else-if="gs.settings.dice.enabled && gs.settings.dice.allow_formula" class="choice-card-deps-hint">
           <i class="fa-solid fa-triangle-exclamation"></i>
           <span>{{
             t`骰式表达式判定与卡牌互斥——当前骰式开启时卡触发、行动币与幸运开包不生效；如需卡牌玩法请在「生成设置 → 骰子判定」关闭骰式表达式。`

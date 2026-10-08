@@ -777,9 +777,7 @@ export function windowMetrics(recent: StatsRoundRecord[] | undefined, avgPicks?:
     const matched = r.matched ?? 1;
     if (r.count > 0 && matched > 0) {
       expected +=
-        avgPicks != null
-          ? randomPickHitProb(matched, Math.max(1, Math.round(avgPicks)), r.count)
-          : matched / r.count;
+        avgPicks != null ? randomPickHitProb(matched, Math.max(1, Math.round(avgPicks)), r.count) : matched / r.count;
     }
   }
   const samples = recent.length;

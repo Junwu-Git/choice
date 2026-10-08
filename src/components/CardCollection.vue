@@ -64,7 +64,8 @@
           <p class="choice-lib-hint">
             {{
               t`主题卡池随游玩分批生长（${currentPoolDefs.length}/${CARD_POOL_MAX_CARDS}）：幸运数命中/购买开卡包时自动补充一批，每批吃到当时剧情上下文；池内卡随开卡包反复掉落。`
-            }}</p>
+            }}
+          </p>
           <button
             v-if="currentPoolDefs.length < CARD_POOL_MAX_CARDS"
             class="menu_button choice-lib-gen-btn"
@@ -128,12 +129,7 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
-import {
-  collectedCardIds,
-  buyPack,
-  currentCardConfigId,
-  clearCharacterPool,
-} from '@/core/cards';
+import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool } from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
 import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';

@@ -32,7 +32,13 @@ import {
   runWIExclWindow,
   type WIBuckets,
 } from '@/core/generator';
-import { clampEffect, validateCard, CARD_POOL_FIRST_BATCH, CARD_POOL_BATCH_SIZE, CARD_POOL_MAX_CARDS } from '@/core/cards-constraints';
+import {
+  clampEffect,
+  validateCard,
+  CARD_POOL_FIRST_BATCH,
+  CARD_POOL_BATCH_SIZE,
+  CARD_POOL_MAX_CARDS,
+} from '@/core/cards-constraints';
 import { CARD_TYPE_LABEL } from '@/core/cards-meta';
 import { recordCardsObtained } from '@/core/stats';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -245,9 +251,7 @@ async function runPoolBatch(charId: string): Promise<Card[]> {
   if (wiBuckets?.depthAfter) messages.push({ role: 'system', content: wiBuckets.depthAfter });
   // 已有卡摘要随请求下发：跨批去重的第一层靠 AI 错开题材（签名判重 isDuplicateCard 只能拦
   // 「同构」卡，拦不住「意思重复但字段不同」的同侧面卡）；分批生成后 refCards 真实非空。
-  const refCards = (pool?.card_ids ?? [])
-    .map(id => gs.settings.card_definitions[id])
-    .filter((c): c is Card => !!c);
+  const refCards = (pool?.card_ids ?? []).map(id => gs.settings.card_definitions[id]).filter((c): c is Card => !!c);
   const refLines = refCards.map(c => `- ${c.name}（${CARD_TYPE_LABEL[c.type]}·${c.star}星）`).join('\n');
   messages.push({
     role: 'user',

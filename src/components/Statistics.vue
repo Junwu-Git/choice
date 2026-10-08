@@ -676,10 +676,9 @@
         · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
         <template v-if="rosterPostApplyShortfall > 0">
           ·
-          <span
-            :title="t`探索补入每次至多填一半空位，应用本计划后再次应用可继续从未入池条目补入（直至无可补）`"
-            >{{ t`应用后仍缺 ${rosterPostApplyShortfall} 条` }}</span
-          >
+          <span :title="t`探索补入每次至多填一半空位，应用本计划后再次应用可继续从未入池条目补入（直至无可补）`">{{
+            t`应用后仍缺 ${rosterPostApplyShortfall} 条`
+          }}</span>
         </template>
       </div>
       <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">

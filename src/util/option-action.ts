@@ -280,15 +280,11 @@ async function applyOptionBehaviorInner(
       const cardLines = diceResult.cards?.narrativeLines ?? [];
       // 动态槽摘要素材与 armDiceTurnPrompt 同源：stage 带上 meta，MESSAGE_SENT 回写成功
       // 后由 flushPendingTurnMarker 挂同一份摘要（send 分支不再重复计算）
-      stagePendingTurn(
-        content,
-        marker ? mergeCardNarratives(marker, cardLines) : wrapCardNarratives(cardLines),
-        {
-          outcome: diceResult.outcome,
-          degree: marginDegree(diceResult.outcome, diceResult.margin),
-          cardNames: diceResult.cards?.triggered.map(t => t.card.name),
-        },
-      );
+      stagePendingTurn(content, marker ? mergeCardNarratives(marker, cardLines) : wrapCardNarratives(cardLines), {
+        outcome: diceResult.outcome,
+        degree: marginDegree(diceResult.outcome, diceResult.margin),
+        cardNames: diceResult.cards?.triggered.map(t => t.card.name),
+      });
       // 判定结果不弹酒馆 toastr（失败用 toastr.error 红得像插件报错）——
       // 改由视图层行内判定 chip 反馈（结局+差值，主面板/悬浮球各自实现），
       // 本共享层只返回 diceResult 供组件消费。

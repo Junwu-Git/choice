@@ -64,13 +64,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import {
-  CARD_STAR_LABEL,
-  CARD_TYPE_LABEL,
-  CARD_TYPE_ICON,
-  triggerLabel,
-  effectsLabel,
-} from '@/core/cards-meta';
+import { CARD_STAR_LABEL, CARD_TYPE_LABEL, CARD_TYPE_ICON, triggerLabel, effectsLabel } from '@/core/cards-meta';
 import { isHighStar } from '@/core/cards-constraints';
 import type { Card, CardOwned } from '@/type/settings';
 

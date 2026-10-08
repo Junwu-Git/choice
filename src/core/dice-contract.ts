@@ -31,7 +31,13 @@
  * 通道，全部收敛在本模块，开关/清空即置空撤销。
  */
 
-import { chat, extension_prompt_roles, extension_prompt_types, saveChatDebounced, setExtensionPrompt } from '@sillytavern/script';
+import {
+  chat,
+  extension_prompt_roles,
+  extension_prompt_types,
+  saveChatDebounced,
+  setExtensionPrompt,
+} from '@sillytavern/script';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { DICE_OUTCOME_LABEL, type DiceOutcome } from '@/core/dice';
 
