@@ -1,6 +1,12 @@
 import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { getMessageChoiceData, setMessageChoiceIndex, storeEnrichGeneration } from '@/core/options-store';
+import {
+  captureLayerIdentity,
+  getMessageChoiceData,
+  isSameLayerIdentity,
+  setMessageChoiceIndex,
+  storeEnrichGeneration,
+} from '@/core/options-store';
 import type { ChoiceGeneration } from '@/core/options-store';
 import { enrichUserInput } from '@/core/enrich-input';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -104,6 +110,8 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     // 按响应式现值落库会把结果写进错误楼层
     const targetMessageId = messageId.value;
     const targetSwipeId = swipeId.value;
+    // 楼层身份快照：润色也是慢请求，落库前校验（同 generateOptions 收口），防跨聊天写入
+    const layerIdentity = captureLayerIdentity(targetMessageId);
     // 并发拦截：面板按钮（triggerEnrichRequested）与输入框按钮两入口互不感知，
     // 润色进行中再次触发整体忽略
     if (enrichLoading.value) return;
@@ -111,6 +119,19 @@ export const usePanelStateStore = defineStore('panel-state', () => {
     activeView.value = 'enrich';
     try {
       const options = await enrichUserInput(input);
+      // 解析为空（模型输出异常等）：不落库——空白代只会污染润色翻页历史；取消路径
+      // （AbortError）已在 enrichUserInput 处原样上抛，不会走进这里
+      if (options.length === 0) {
+        activeView.value = 'options';
+        toastr.info(t`润色未能解析出选项`);
+        return;
+      }
+      // 跨聊天防护：身份不符（切聊天/删楼重编号）丢弃，防写进别家楼层
+      if (!isSameLayerIdentity(layerIdentity, targetMessageId)) {
+        activeView.value = 'options';
+        toastr.info(t`聊天已切换，本次润色已丢弃`);
+        return;
+      }
       const generation: ChoiceGeneration = {
         id: uuidv4(),
         timestamp: Date.now(),

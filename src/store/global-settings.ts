@@ -775,7 +775,15 @@ const rebindPromptConfigId = (removedIds: Set<string>, keptId: string) => {
   }
 };
 
-const applyDefaults = (validated: GlobalSettingsType) => {
+/** v57/v58 迁移依赖的 parse 前快照：validateInplace 用 _.assign 就地合并，「旧键残留」
+ *  只对顶层键成立——嵌套对象（dice、configs 数组元素）会被 zod strip 后的新对象整体替换，
+ *  parse 后再读 _.get(extension_settings, ...) 恒为 undefined，迁移会静默空转。
+ *  旧值必须在 validateInplace 之前从 existing 捕获，经此参数传入（legacyRegexes 同理）。 */
+type LegacyPreParse = {
+  diceSend: { success: unknown; fail: unknown };
+  configExamples: unknown[];
+};
+const applyDefaults = (validated: GlobalSettingsType, legacy?: LegacyPreParse) => {
   if ((validated.schema_version ?? 0) < 9) {
     // 旧三层池数据迁移：收集 → 去重 → 合并为 master_pool + 自动配置
     const oldGlobalPool: PoolEntry[] = (_.get(extension_settings, [setting_field, 'pool']) as PoolEntry[]) ?? [];
@@ -2011,37 +2019,34 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
   // v57：骰子成功/失败模板按程度档位拆分。旧单条 success_send_template / fail_send_template
   // 语义最接近 mid 档（「顺利达成」/「事与愿违」），迁到 *_send_mid_template；
-  // low/high 档为空（回退该结局短文案）。dice 对象 prefault({}) 已在 zod 补齐为新默认，
-  // 但旧键被 strip 前仍在 extension_settings 里——此处显式读取并回写 mid，
-  // 避免用户自定义过的旧模板在拆档后丢失（zod default 只补缺失、不覆盖已存值）。
+  // low/high 档为空（回退该结局短文案）。旧值是嵌套键，须由调用方在 parse 前捕获
+  // （legacySnapshot，原因见 LegacyPreParse 注释）——parse 后读 extension_settings 恒为
+  // undefined，用户自定义过的旧模板会在拆档后静默丢失。
   // v56 及以前无 low/mid/high 拆分字段，用户不可能在本版本改过 mid，直接覆盖即可。
   if ((validated.schema_version ?? 0) < 57) {
     const dice = validated.dice as any;
-    const oldSuccess = _.get(extension_settings, [setting_field, 'dice', 'success_send_template']);
+    const oldSuccess = legacy?.diceSend.success;
     if (typeof oldSuccess === 'string' && oldSuccess.trim()) {
       dice.success_send_mid_template = oldSuccess;
     }
-    const oldFail = _.get(extension_settings, [setting_field, 'dice', 'fail_send_template']);
+    const oldFail = legacy?.diceSend.fail;
     if (typeof oldFail === 'string' && oldFail.trim()) {
       dice.fail_send_mid_template = oldFail;
     }
   }
 
   // v58：PoolConfig 的 rules/examples 两字段合并为单一自由文本 rules。examples 已从 schema
-  // 删除、被 zod strip 掉，parse 后 validated.configs 里已无它——必须读原始存档（同 v57 dice 先例），
-  // 把老档 examples 内容折并进 rules，避免用户写的样例丢失。
+  // 删除，且 configs 数组元素属嵌套对象——validateInplace 后被 strip 对象整体替换，
+  // 必须用 parse 前捕获的 legacySnapshot.configExamples 折并进 rules（同 v57 dice），
+  // 避免用户写的样例丢失。快照按下标与 validated.configs 对齐。
   if ((validated.schema_version ?? 0) < 58) {
-    const rawConfigs: unknown = _.get(extension_settings, [setting_field, 'configs']);
-    if (Array.isArray(rawConfigs)) {
-      rawConfigs.forEach((raw, i) => {
-        const dst = validated.configs[i];
-        if (!dst || !raw || typeof raw !== 'object') return;
-        const examples = (raw as any).examples;
-        if (typeof examples === 'string' && examples.trim()) {
-          dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
-        }
-      });
-    }
+    legacy?.configExamples.forEach((examples, i) => {
+      const dst = validated.configs[i];
+      if (!dst) return;
+      if (typeof examples === 'string' && examples.trim()) {
+        dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
+      }
+    });
   }
 
   // v59：新增「认知边界（非全知）」模块补建——缓解"选项太过全知"（用了角色不该知道的
@@ -2333,6 +2338,20 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // 旧字段 chat_filter_regexes 已被新 schema 移除，Zod 解析会将其剥离，
   // 因此必须在 validateInplace 之前捕获，供迁移使用
   const legacyRegexes: string[] = _.get(existing, 'prompt_rules.chat_filter_regexes', []) ?? [];
+  // v57/v58 同款 parse 前捕获（原因见 LegacyPreParse 注释）：dice 模板与 configs[].examples
+  // 都是嵌套键，validateInplace 后已被 strip 对象顶掉；必须先于下方 entry_ids→entries
+  // 转换等任何对 existing.configs 的就地改写
+  const legacySnapshot: LegacyPreParse = {
+    diceSend: {
+      success: _.get(existing, 'dice.success_send_template'),
+      fail: _.get(existing, 'dice.fail_send_template'),
+    },
+    configExamples: Array.isArray(_.get(existing, 'configs'))
+      ? (_.get(existing, 'configs') as unknown[]).map(c =>
+          c && typeof c === 'object' ? (c as Record<string, unknown>).examples : undefined,
+        )
+      : [],
+  };
 
   // 旧 entry_ids → entries 格式转换：必须在 Zod 验证之前执行，
   // 否则 Zod 会因 entries 为 undefined 而报错
@@ -2435,7 +2454,7 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
   if (needsMigration) {
-    applyDefaults(validated);
+    applyDefaults(validated, legacySnapshot);
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }

@@ -25,6 +25,8 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import {
   getMessageSwipeId,
   getMessageChoiceData,
+  captureLayerIdentity,
+  isSameLayerIdentity,
   type ChoiceGeneration,
   type ChoiceOption,
 } from '@/core/options-store';
@@ -864,6 +866,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   const gid = uuidv4();
   generatorState.loading = true;
   generatorState.generationId = gid;
+  // controller 随入口创建：WI 排他窗口构建消息（loadWorldInfo fetch/EJS 渲染）可达秒级，
+  // 此间点取消也要能 abort——此前在 API 调用前才创建，构建期取消无对象可 abort，
+  // 照发请求白耗 token（cancelGeneration 只 abort 不复位，见其注释）
+  genController = new AbortController();
+  const signal = genController.signal;
+  // 楼层身份快照：慢请求期间切聊天/删楼重编号会让 chat[messageId] 变成别的楼层，
+  // 落库前比对引用拦截（见下方 isSameLayerIdentity 校验点）
+  const layerIdentity = captureLayerIdentity(_target.messageId);
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
   try {
@@ -1010,8 +1020,8 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return null;
     }
 
-    genController = new AbortController();
-    const signal = genController.signal;
+    // 取消早退：构建完成后、发请求前再查一次（controller 已在入口创建，abort 已生效）
+    if (cancelled) return null;
 
     const raw = await callSecondaryApiWithRetry(
       messages,
@@ -1125,6 +1135,12 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       poolEntryIds,
       scopeId,
     };
+    // 跨聊天防护：身份不符（切聊天/删楼重编号）整体丢弃——统计记账、L1 入队与消息落库
+    // 必须同进同退，否则统计已记、结果写进别家楼层的单侧分裂
+    if (!isSameLayerIdentity(layerIdentity, _target.messageId)) {
+      toastr.info(t`聊天已切换，本次生成的选项已丢弃`);
+      return null;
+    }
     // 新手引导第 8 步"去生成第一组选项"的完成信号：只在选项生成成功时置位，
     // 润色（enrich-input）与条目生成（generatePoolEntries）不算——引导验证的是主链路
     lastOptionsGeneratedAt.value = Date.now();

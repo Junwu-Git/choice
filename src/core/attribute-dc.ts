@@ -139,31 +139,34 @@ function resolveAttributeDc(character: { data?: unknown } | undefined, ref: stri
  *  high DC = 100 − 成功率；两模式成功率一致，高属性 → 高胜率。
  *  v67：档位兜底改走 gradeFallbackRate 模式感知对偶（COC 65/40/15，成功率与 high 对齐）。
  *  旧版「档位兜底不随模式反向」在 low 模式下会把保守档变成最难、大胆档变成最易，与本意
- *  相悖——本函数不再委托模式盲的 resolveOptionSuccessRate，显式标注/兜底/属性三级全部
- *  在此收敛。 */
+ *  相悖——本函数不再委托模式盲的 resolveOptionSuccessRate，显式标注/属性/档位兜底三级
+ *  全部在此收敛。 */
 export function resolveOptionSuccessRateWithAttr(
   text: string,
   character: { data?: unknown } | undefined,
   attrEnabled: boolean,
   lowRoll = false,
 ): number | null {
-  // AI 显式标注（rate 或档位）始终优先——属性只替换档位兜底
+  // AI 显式数值标注始终优先
   const explicitRate = parseOptionRate(text);
   if (explicitRate !== null) return explicitRate;
-  const style = parseOptionStyle(text);
-  if (style !== null) return gradeFallbackRate(style, lowRoll);
-  if (!attrEnabled) return null;
-  // 无显式标注：尝试属性。在正文（剥掉标题括号）上检测——括号形态选项的标题括号恒在
+  // 属性 DC 替换档位兜底这一级（settings.ts attr_dc_enabled 注释口径）：检测失败静默落回
+  // 档位兜底而非直接不掷——此前档位兜底短路在属性之前，attr_dc_enabled 在 AI 标档位的
+  // 常见形态下永不生效。在正文（剥掉标题括号）上检测——括号形态选项的标题括号恒在
   // 最前，整条文本匹配会拿标题当属性名、正文里的【力量】永远轮不到
-  const ref = detectAttributeRef(parseOptionContent(text));
-  if (ref) {
-    const rate = resolveAttributeDc(character, ref);
-    if (rate !== null) {
-      // 等效成功率按判定方向反向成 D100 需求值：low（COC）DC = 成功率，high（DND/难度制）
-      // DC = 100 − 成功率——两模式成功率一致，高属性 → 高胜率
-      return lowRoll ? rate : Math.min(99, Math.max(1, 100 - rate));
+  if (attrEnabled) {
+    const ref = detectAttributeRef(parseOptionContent(text));
+    if (ref) {
+      const rate = resolveAttributeDc(character, ref);
+      if (rate !== null) {
+        // 等效成功率按判定方向反向成 D100 需求值：low（COC）DC = 成功率，high（DND/难度制）
+        // DC = 100 − 成功率——两模式成功率一致，高属性 → 高胜率
+        return lowRoll ? rate : Math.min(99, Math.max(1, 100 - rate));
+      }
     }
   }
+  const style = parseOptionStyle(text);
+  if (style !== null) return gradeFallbackRate(style, lowRoll);
   return null;
 }
 

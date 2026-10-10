@@ -65,6 +65,11 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
 
+  // controller 随入口创建：WI 窗口构建消息可达秒级，此间取消也要能 abort——此前在
+  // API 调用前才创建，构建期取消无对象可 abort，照发请求白耗 token（同 generateOptions）
+  enrichController = new AbortController();
+  const signal = enrichController.signal;
+
   try {
     // WI 排他窗口（互斥 + 即用即还，见 generator.runWIExclWindow）：仅消息构建读取世界书，
     // 构建完成立即还原，与选项生成/卡牌池链路并发时不再交错践踏全局 WI 状态
@@ -80,9 +85,6 @@ export async function enrichUserInput(input: string): Promise<string[]> {
       }
     });
 
-    enrichController = new AbortController();
-    const signal = enrichController.signal;
-
     const raw = await callSecondaryApiWithRetry(
       messages,
       api,
@@ -92,8 +94,11 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     );
     return parseOptions(raw, enrichCount);
   } catch (e) {
-    if ((e as Error)?.name === 'AbortError') return [];
-    console.error('[Choice] 润色失败', e);
+    // 取消（AbortError）原样上抛、不 console.error：正常路径由调用方 triggerEnrich 的
+    // AbortError 分支静默处理；此前吞掉返回 [] 会让调用方把空代落库污染润色翻页
+    if ((e as Error)?.name !== 'AbortError') {
+      console.error('[Choice] 润色失败', e);
+    }
     throw e;
   } finally {
     enrichController = null;

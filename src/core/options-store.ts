@@ -42,6 +42,17 @@ export function getMessageSwipeId(messageId: number): number {
   return getMessage(messageId)?.swipe_id ?? 0;
 }
 
+/** 生成开始时捕获楼层身份（消息对象引用）：慢请求期间 CHAT_CHANGED/删楼重编号都会让
+ *  chat[messageId] 变成别的对象，写回前用 isSameLayerIdentity 比对引用即可拦下「结果
+ *  写进新聊天同序号楼层」的污染；同层 swipe 换挡不换消息对象、不受影响。 */
+export function captureLayerIdentity(messageId: number): unknown {
+  return getMessage(messageId);
+}
+
+export function isSameLayerIdentity(identity: unknown, messageId: number): boolean {
+  return identity != null && getMessage(messageId) === identity;
+}
+
 export function getMessageChoiceData(messageId: number, swipeId: number): MessageChoiceData | null {
   const message = getMessage(messageId);
   if (!message) {

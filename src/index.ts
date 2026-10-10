@@ -44,7 +44,8 @@ $(() => {
   });
 
   // 判定契约（v67）：正文 AI 常驻说明「消息开头的 HTML 注释是骰子裁定指令」。
-  // 立即同步一次 + watch 开关；setExtensionPrompt 槽不随聊天切换变化，无需挂 CHAT_CHANGED。
+  // 立即同步一次 + watch 开关；常驻契约槽不随聊天切换变化，无需挂 CHAT_CHANGED
+  // （每回合动态槽不同：全局注入态，CHAT_CHANGED 时随挂起判定一并清，见下方订阅）。
   // 每回合动态槽（choice_dice_turn，见 dice-contract.ts）：send 点选判定时由 option-action
   // 挂载，此处只负责「消费即清」——AI 回复落地/中止后裁定已消费或失效。事件名已核对
   // 酒馆源码（script.js:3477/5559 emit，panel-mount 已有 MESSAGE_RECEIVED/GENERATION_ENDED 先例）。
@@ -80,6 +81,9 @@ $(() => {
         useChatSettingsStore().reload();
         // 换聊天清空挂起判定：判定归属旧聊天的回合，跨聊天误挂会污染新聊天首楼
         clearPendingTurn();
+        // 每回合动态槽同样随聊天清：IN_CHAT 注入槽是全局态，生成中切聊天时旧回合的
+        // 「已裁定」摘要会残留进新聊天首次生成请求；「不随聊天变化」只对常驻契约槽成立
+        clearDiceTurnPrompt();
       } catch (error) {
         console.error('[Choice] store reload on CHAT_CHANGED failed', error);
       }
