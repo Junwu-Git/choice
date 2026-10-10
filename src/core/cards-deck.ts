@@ -10,7 +10,7 @@
 
 import { BUILTIN_CARDS } from '@/core/cards-builtin';
 import { CARD_TYPE_LABEL, effectsLabel, triggerLabel } from '@/core/cards-meta';
-import { CARD_SLOT_TYPES, CARD_STAR_BUDGET, checkDeckBudget } from '@/core/cards-constraints';
+import { CARD_SLOT_TYPES, CARD_STAR_BUDGET, checkDeckBudget, isCardBroken } from '@/core/cards-constraints';
 import { getStCharacter } from '@/core/st-character';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
@@ -94,7 +94,8 @@ function effectiveDeckSlots(configId: string): CardDeck['slots'] {
 }
 
 /** 解析某 config 已装备的卡（遍历规整后的固定槽，跳过空槽/定义缺失，防御历史脏数据）。
- *  auto 模式自动编组，手动模式读存储 slots。 */
+ *  auto 模式自动编组，手动模式读存储 slots。破损卡（isCardBroken）一律不入选——统一口径：
+ *  破损 = 不可装备/不可触发（v70 耐久机制），自动编组与手动槽残留破损 id 自然退化为空槽。 */
 export function resolveEquippedCards(configId: string): EquippedCard[] {
   const gs = useGlobalSettingsStore();
   const equipped: EquippedCard[] = [];
@@ -102,21 +103,22 @@ export function resolveEquippedCards(configId: string): EquippedCard[] {
     if (!slot.card_id) continue;
     const card = cardDefById(slot.card_id);
     const owned = gs.settings.card_collection[slot.card_id];
-    if (!card || !owned) continue;
+    if (!card || !owned || isCardBroken(owned)) continue;
     equipped.push({ card, owned });
   }
   return applyBudget(equipped);
 }
 
 /** 自动编组：从已拥有卡里按类型各选最优填满 4 槽（星最高、平手按获得时间早优先），
- *  守星级预算（3★≤2/4★≤1/5★≤1）；预算冲突时退而取更低星或留空。确定性、纯投影不改状态。 */
+ *  守星级预算（3★≤2/4★≤1/5★≤1）；预算冲突时退而取更低星或留空。确定性、纯投影不改状态。
+ *  破损卡（isCardBroken）不入选——破损后自动编组自然换下一最佳卡，无需手动处理。 */
 export function autoDeckCards(): CardDeck['slots'] {
   const gs = useGlobalSettingsStore();
   const budgetCount: Partial<Record<CardStar, number>> = {};
   return CARD_SLOT_TYPES.map(type => {
     // 该类型已拥有卡，星降序（平手按获得时间早优先，稳定且可预期）
     const cands = Object.entries(gs.settings.card_collection)
-      .filter(([id, o]) => cardDefById(id)?.type === type && o.card_id)
+      .filter(([id, o]) => cardDefById(id)?.type === type && o.card_id && !isCardBroken(o))
       .sort((a, b) => {
         const sa = Number(cardDefById(a[0])!.star);
         const sb = Number(cardDefById(b[0])!.star);

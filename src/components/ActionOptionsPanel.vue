@@ -214,7 +214,7 @@
                 ></span
               ></template
             ><i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
-              rollChipText(rollOf(index)!)
+              rollChipText(rollOf(index)!) + brokenText(rollOf(index)!)
             }}</i
             ><template v-if="rollOf(index)?.cards?.triggered?.length"
               ><span class="choice-card-tag-row"
@@ -518,6 +518,13 @@ const rollLabel = (o: DiceOutcome): string =>
 // 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
 const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
 const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
+// v70 触发磨损破损短提示：仅应用后的判定结果带 brokenCards（预览/首掷 stage 为空，
+// 不提示——破损只在 commit 落库时产生）；chip 追加卡名提示玩家去修复/换卡。
+const brokenText = (r: RollResult): string => {
+  const broken = r.cards?.brokenCards ?? [];
+  if (broken.length === 0) return '';
+  return ` · ${broken.map(b => b.card.name).join('、')}耐久耗尽`;
+};
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
 // 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
@@ -834,7 +841,7 @@ const onSelect = async (option: ChoiceOption, index: number) => {
       margin: dice.margin,
       cards: dice.cards,
     });
-    // v62 幸运数命中 → 开卡包弹窗（applyOptionBehavior 已把卡叙事并入注释、commit 已在共享层完成，
+    // v62 幸运数命中 → 开卡包弹窗（applyOptionBehavior 已把卡机制行并入注释、commit 已在共享层完成，
     // 组件只需把 offer 交由全局弹窗消费；幸运数开包与每日/商店共用同一弹窗信号）
     if (dice.cards?.packOffer) openCardPack(dice.cards.packOffer, 'lucky');
   }

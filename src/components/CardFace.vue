@@ -6,6 +6,7 @@
       'choice-card-face--obscured': obscured,
       'choice-card-face--rare': isRare,
       'choice-card-face--selectable': selectable,
+      'choice-card-face--broken': broken,
     }"
     :style="starVars"
     role="button"
@@ -26,8 +27,11 @@
       <div class="choice-card-face__illu" :title="CARD_STAR_LABEL[card.star]">
         <i class="choice-card-face__illu-icon" :class="CARD_TYPE_ICON[card.type]"></i>
         <div class="choice-card-face__name">{{ card.name }}</div>
+        <span v-if="broken" class="choice-card-face__broken-badge" :title="t`耐久耗尽，修复后才能装备`">
+          <i class="fa-solid fa-hammer"></i>{{ t`耐久 0 · 需修复` }}
+        </span>
         <span
-          v-if="!owned"
+          v-else-if="!owned"
           class="choice-card-face__unowned-badge"
           :class="{ 'choice-card-face__unowned-badge--dismantled': previouslyOwned }"
         >
@@ -36,7 +40,7 @@
         </span>
       </div>
 
-      <!-- 效果区：归属徽标 + 触发行 + 效果行 + 可选叙事行 -->
+      <!-- 效果区：归属徽标 + 触发行 + 效果行 + 卡面叙事行 -->
       <div class="choice-card-face__meta">
         <div v-if="characterName" class="choice-card-face__character" :title="t`${characterName} 主题池`">
           <i class="fa-solid fa-user"></i>{{ characterName }}
@@ -46,11 +50,22 @@
         <div v-if="card.narrative" class="choice-card-face__narrative">{{ card.narrative }}</div>
       </div>
 
-      <!-- 页脚：持有态 + 动作插槽 -->
+      <!-- 页脚：持有态 + 耐久读数 + 动作插槽 -->
       <div class="choice-card-face__footer">
         <div class="choice-card-face__stats">
           <template v-if="owned">
-            <span class="choice-card-face__owned"><i class="fa-solid fa-circle-check"></i>{{ t`已拥有` }}</span>
+            <span class="choice-card-face__owned" :class="{ 'choice-card-face__owned--broken': broken }"
+              ><i :class="broken ? 'fa-solid fa-hammer' : 'fa-solid fa-circle-check'"></i
+              >{{ broken ? t`已破损` : t`已拥有` }}</span
+            >
+            <span
+              v-if="owned.max_durability > 1"
+              class="choice-card-face__durability"
+              :class="{ 'choice-card-face__durability--broken': broken }"
+              :title="t`耐久：触发一次消耗 1 点，归零破损需修复`"
+            >
+              <i class="fa-solid fa-shield-halved"></i>{{ broken ? 0 : owned.durability }}/{{ owned.max_durability }}
+            </span>
           </template>
           <span v-else class="choice-card-face__unowned">{{ previouslyOwned ? t`曾获得` : t`未拥有` }}</span>
         </div>
@@ -65,7 +80,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { CARD_STAR_LABEL, CARD_TYPE_LABEL, CARD_TYPE_ICON, triggerLabel, effectsLabel } from '@/core/cards-meta';
-import { isHighStar } from '@/core/cards-constraints';
+import { isHighStar, isCardBroken } from '@/core/cards-constraints';
 import type { Card, CardOwned } from '@/type/settings';
 
 const props = withDefaults(
@@ -92,6 +107,8 @@ const starN = computed(() => Number(props.card.star) || 0);
 const isRare = computed(() => isHighStar(props.card.star));
 /** 角色主题卡归属名（source='character' 且 character_name 非空时显示） */
 const characterName = computed(() => props.card.character_name || '');
+/** v70 破损态（owned 存在且耐久归零）：卡面红色破损标、页脚耐久 0、根描边变红 */
+const broken = computed(() => (props.owned ? isCardBroken(props.owned) : false));
 
 const onSelect = () => {
   if (props.selectable) emit('select');
@@ -262,6 +279,31 @@ const starVars = computed(() => ({
   border: 1px dashed var(--choice-border-strong);
 }
 
+/* v70 破损角标：置于卡面左上，红色警示（破损卡必为已拥有，优先于「未拥有」角标） */
+.choice-card-face__broken-badge {
+  position: absolute;
+  top: var(--choice-space-1);
+  left: var(--choice-space-1);
+  font-size: var(--choice-text-2xs);
+  font-weight: bold;
+  color: var(--choice-color-error);
+  background: color-mix(in srgb, var(--choice-color-error) 12%, transparent 88%);
+  border: 1px solid var(--choice-color-error);
+  border-radius: 999px;
+  padding: 1px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  z-index: 1;
+}
+
+/* v70 破损整卡态：红色描边 + 轻微去饱和，一眼可辨不可用 */
+.choice-card-face--broken {
+  border-color: var(--choice-color-error);
+  box-shadow: 0 0 0 1px var(--choice-color-error);
+  filter: saturate(0.75);
+}
+
 /* 效果区 */
 .choice-card-face__meta {
   display: flex;
@@ -280,6 +322,7 @@ const starVars = computed(() => ({
   overflow-wrap: anywhere;
 }
 
+/* 卡面叙事行：斜体弱化展示 */
 .choice-card-face__narrative {
   font-size: var(--choice-text-2xs);
   color: var(--choice-text-muted);
@@ -324,6 +367,23 @@ const starVars = computed(() => ({
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+/* v70 破损持有态：红色文字（替换「已拥有」绿色） */
+.choice-card-face__owned--broken {
+  color: var(--choice-color-error);
+}
+
+/* v70 耐久读数：盾形小图标 + 当前/上限，破损时红色 */
+.choice-card-face__durability {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--choice-text-secondary);
+}
+.choice-card-face__durability--broken {
+  color: var(--choice-color-error);
+  font-weight: bold;
 }
 
 .choice-card-face__unowned {

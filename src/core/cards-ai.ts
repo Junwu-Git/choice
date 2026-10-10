@@ -33,6 +33,7 @@ import {
   type WIBuckets,
 } from '@/core/generator';
 import {
+  cardMaxDurability,
   clampEffect,
   validateCard,
   CARD_POOL_FIRST_BATCH,
@@ -66,12 +67,12 @@ const SYSTEM_PROMPT = `你是一位卡牌设计师，为特定角色的冒险主
 - demand/roll 触发区间跨度超过 80 的高星卡，若效果全为正向数值（无任何代价/保命/演出效果），会被校验作废——宽触发区间只留给带取舍的设计。
 
 输出必须是 JSON 数组（张数以用户消息要求为准），数组元素结构：
-{"name":"卡名","type":"weapon|spell|blessing|trial","star":"1|2|3|4|5","trigger":{"kind":"type|grade|demand|roll|outcome",...},"effects":[...],"narrative":"（可选，一段叙事注入指令）"}
+{"name":"卡名","type":"weapon|spell|blessing|trial","star":"1|2|3|4|5","trigger":{"kind":"type|grade|demand|roll|outcome",...},"effects":[...],"narrative":"（可选，卡面叙事文本）"}
 字段约束（结构非法/效果集为空必被作废；数值若落在范围外会被钳制到边界，仍请尽量在范围内）：
 - star: 1=最常见到 5=最稀有最强，高星卡应更强但不要每张都顶配。
 - trigger: 与五种 kind 对应的字段只填一种，其余省略。type→typeValue（选项类型关键词，用 2-4 字宽泛题材词，如 战斗/交涉/潜行/探索——过窄的具体动作词几乎匹配不到选项标题，卡将无法触发）；grade→grade（conservative/balanced/bold）；demand→min/max（需求值区间 0-100，跨度建议 ≤60）；roll→min/max（骰值区间 1-100，跨度建议 ≤60）；outcome→outcome（success/fail/crit_success/crit_fail）。
 - effects（数组，至少 1 个，最多 3 个）：{"kind":"roll_bonus","amount":±30以内} 或 {"kind":"demand_mod","amount":±40以内} 或 {"kind":"crit_window","success_delta":±5,"fail_delta":±5} 或 {"kind":"outcome_convert","from":"fail|crit_fail|crit_success","to":"success|crit_success"} 或 {"kind":"reroll","on":"fail|crit_fail"} 或 {"kind":"narrative","text":"≤40字"}。amount 可正可负，负值即代价/减益。
-- narrative（卡的叙事演绎指令）≤40字，体现角色特质。
+- narrative（卡的卡面叙事文本）≤40字，体现角色特质。
 - 数值请严格落在上述范围内。`;
 
 /** 聊天记录前的用途声明（卡牌特有，对齐 SYSTEM_PROMPT 的跨场景通用要求）：
@@ -264,7 +265,7 @@ async function runPoolBatch(charId: string): Promise<Card[]> {
         ? `\n已有主题卡（本批的题材/意象/触发思路须与它们明显错开，不要重复它们已覆盖的侧面）：\n${refLines}\n` +
           `本批可侧重近期剧情中展现的角色侧面或阶段主题切入，但卡本身仍须跨场景可复用。`
         : '') +
-      `要求：卡名与叙事用该角色独有的词汇与意象、效果与其设定有逻辑关联、至少含 1 张双刃/代价卡` +
+      `要求：卡名用该角色独有的词汇与意象、效果与其设定有逻辑关联、至少含 1 张双刃/代价卡` +
       `（试炼类型优先做高风险高收益）。各张卡的触发与效果应彼此有明显差异，避免效果雷同。` +
       `输出 JSON 数组，若无法或不全生成，数量可以更少，但必须是合法的 JSON。`,
   });
@@ -314,6 +315,9 @@ async function runPoolBatch(charId: string): Promise<Card[]> {
           card_id: card.id,
           obtained_at: Date.now(),
           trigger_count: 0,
+          durability: cardMaxDurability(card),
+          max_durability: cardMaxDurability(card),
+          broken: false,
           source: 'character',
         };
       }

@@ -58,14 +58,16 @@ import { useGlobalSettingsStore } from '@/store/global-settings';
 
 /** 单次判定结果（组件 chip 与 marker 共用）：margin = diceMargin(mode, roll, rate) 归一化差值。
  *  v62 卡牌系统：card_enabled 开时判定会叠加卡效果，附加 cards（触发卡/幸运命中/行动币/
- *  卡叙事行）供 chip 展示、commitCardRun 落库与弹窗触发。card_enabled 关时无 cards 字段，
- *  与现状完全一致（零回归）。 */
+ *  机制行）供 chip 展示、commitCardRun 落库与弹窗触发。card_enabled 关时无 cards 字段，
+ *  与现状完全一致（零回归）。
+ *  bounds（v73）：骰式路径 = 表达式值域（程度占比制按它算判定空间），D100 路径缺省。 */
 export type DiceRollResult = {
   outcome: DiceOutcome;
   roll: number;
   rate: number;
   margin: number;
   mode: DiceRollMode;
+  bounds?: { min: number; max: number };
   cards?: CardResolution;
 };
 
@@ -76,16 +78,16 @@ const critThresholds = (d: DiceSettings): { success: number; fail: number } =>
     ? { success: d.low_roll_crit_success_max, fail: d.low_roll_crit_fail_min }
     : { success: d.crit_success_min, fail: d.crit_fail_max };
 
-/** 把卡叙事行合并进既有演绎注释（v62）：插在 `-->` 闭合前、纪律尾注（v67）之前，与结局
- *  模板共存于同一条注释。叙事行（AI 生成，不可信）先经 sanitizeNarrative 滤连续连字符，
- *  防 `-->` 提前闭合注释。 */
+/** 把卡机制行合并进既有演绎注释（v62，叙事/演出行不注入、只剩机制行）：插在 `-->` 闭合前、
+ *  纪律尾注（v67）之前，与结局模板共存于同一条注释。行文本（AI 生成的卡名等，不可信）
+ *  先经 sanitizeNarrative 滤连续连字符，防 `-->` 提前闭合注释。 */
 const mergeCardNarratives = (marker: string, lines: string[]): string => {
   if (lines.length === 0) return marker;
   const body = lines.map(sanitizeNarrative).join('\n');
   const m = marker.match(/^(<!--[\s\S]*?)(-->\s*)$/);
   if (!m) return marker;
   const head = m[1].replace(/\s*$/, '');
-  // v67 三段结构：叙事插在固定纪律尾注之前（演出指令在纪律前收尾更自然）；旧结构无尾注则附在正文后
+  // v67 三段结构：机制行插在固定纪律尾注之前（机制说明在纪律前收尾更自然）；旧结构无尾注则附在正文后
   const tailIdx = head.endsWith(DICE_MARKER_TAIL) ? head.length - DICE_MARKER_TAIL.length : -1;
   if (tailIdx > 0) {
     return `${head.slice(0, tailIdx).replace(/\s*$/, '')}\n${body}\n${head.slice(tailIdx)}\n${m[2]}`;
@@ -93,11 +95,12 @@ const mergeCardNarratives = (marker: string, lines: string[]): string => {
   return `${head}\n${body}\n${m[2]}`;
 };
 
-/** 无结局模板时为卡叙事单独包一条注释（同样滤连续连字符；v67 带固定头部与纪律尾注，
- *  让正文 AI 知道这段也是系统注入的演出指令）。 */
+/** 无结局模板时为卡行单独包一条注释（同样滤连续连字符；v67 带固定头部与纪律尾注，
+ *  让正文 AI 知道这段也是系统注入的机制说明）。卡行以「机制记录」开头，
+ *  头部用「卡牌系统」避免窄化成纯演出。 */
 const wrapCardNarratives = (lines: string[]): string =>
   lines.length
-    ? `<!--【卡牌演出·系统注入，玩家不可见】\n${lines.map(sanitizeNarrative).join('\n')}\n${DICE_MARKER_TAIL}-->\n`
+    ? `<!--【卡牌系统·系统注入，玩家不可见】\n${lines.map(sanitizeNarrative).join('\n')}\n${DICE_MARKER_TAIL}-->\n`
     : '';
 
 /** 按设置掷一次骰并判出结果（D100 或骰式）。无需求值/骰子关闭返回 null。纯判定、不应用、不记账。
@@ -131,7 +134,15 @@ function rollForOption(
         const critS = mapProxyToRange(crits.success, expr.min, expr.max);
         const critF = mapProxyToRange(crits.fail, expr.min, expr.max);
         const outcome = judgeOutcome(expr.total, target, critS, critF, mode, { min: expr.min, max: expr.max });
-        return { outcome, roll: expr.total, rate: target, margin: diceMargin(mode, expr.total, target), mode };
+        // bounds = 表达式值域（程度占比制 / 需求防呆共用同一值域）
+        return {
+          outcome,
+          roll: expr.total,
+          rate: target,
+          margin: diceMargin(mode, expr.total, target),
+          mode,
+          bounds: { min: expr.min, max: expr.max },
+        };
       }
       // 表达式非法：不抛错，落回 D100 路径（下方）
     }
@@ -228,7 +239,8 @@ async function applyOptionBehaviorInner(
       // 随消息持久化。v67 三段结构：代码固定头部（结局/裁定对象/点数/需求/差值/程度）
       // + 模板正文 + 固定纪律尾注，占位符 {rate}/{roll}/{margin}/{degree} 全部模板通用
       // （rate=D100 需求值或骰式映射 DC，margin=diceMargin 归一化差值，degree 见
-      // marginDegree）。v58：成功/失败按档位取独立模板。
+      // marginDegree）。v58：成功/失败按档位取独立模板；v73：档位改占比制
+      // （按差值占判定空间比例，ctx 含 mode+bounds）。
       // 裁定对象回显：头部「裁定对象」键消歧注释修饰的是哪个行动（编辑、
       // 单消息多行动场景）；压平空白并截 20 字，防长标题撑爆头部
       const optionTitle = parseOptionType(option.text).replace(/\s+/g, ' ').trim().slice(0, 20) || undefined;
@@ -273,16 +285,20 @@ async function applyOptionBehaviorInner(
           },
         },
         diceResult.margin,
+        { mode: diceResult.mode, rate: diceResult.rate, bounds: diceResult.bounds },
         optionTitle,
       );
-      // v62 卡牌叙事：触发卡的 narrative 与结局模板共存于同一条 HTML 注释（不产生重复
-      // `<!--`），AI 读到、聊天界面不可见。模板/叙事均约定避免 `--`（见设置页 hint）。
+      // v62 卡牌机制行：触发卡的效果摘要与结局模板共存于同一条 HTML 注释（不产生重复
+      // `<!--`），AI 读到、聊天界面不可见。叙事/演出行不注入正文 AI，只剩机制因果行。
+      // 模板/卡行均约定避免 `--`（见设置页 hint）。
       const cardLines = diceResult.cards?.narrativeLines ?? [];
       // 动态槽摘要素材与 armDiceTurnPrompt 同源：stage 带上 meta，MESSAGE_SENT 回写成功
-      // 后由 flushPendingTurnMarker 挂同一份摘要（send 分支不再重复计算）
+      // 后由 flushPendingTurnMarker 挂同一份摘要（send 分支不再重复计算）。
+      // degree 用与注释同一占比口径（v73 起需带 ctx）
+      const degreeCtx = { mode: diceResult.mode, rate: diceResult.rate, bounds: diceResult.bounds };
       stagePendingTurn(content, marker ? mergeCardNarratives(marker, cardLines) : wrapCardNarratives(cardLines), {
         outcome: diceResult.outcome,
-        degree: marginDegree(diceResult.outcome, diceResult.margin),
+        degree: marginDegree(diceResult.outcome, diceResult.margin, degreeCtx),
         cardNames: diceResult.cards?.triggered.map(t => t.card.name),
       });
       // 判定结果不弹酒馆 toastr（失败用 toastr.error 红得像插件报错）——
@@ -342,7 +358,11 @@ async function applyOptionBehaviorInner(
     if (diceResult) {
       armDiceTurnPrompt(
         diceResult.outcome,
-        marginDegree(diceResult.outcome, diceResult.margin),
+        marginDegree(diceResult.outcome, diceResult.margin, {
+          mode: diceResult.mode,
+          rate: diceResult.rate,
+          bounds: diceResult.bounds,
+        }),
         diceResult.cards?.triggered.map(t => t.card.name),
       );
     }

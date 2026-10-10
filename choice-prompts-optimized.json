@@ -13,16 +13,6 @@
       "order": 0
     },
     {
-      "id": "assistant_ack",
-      "name": "应答声明",
-      "role": "system",
-      "content": "本轮按系统规则执行：判断任务是选项生成还是输入润色，然后只输出 <thinking> 与 <options> 两个标签内的内容，不输出任何寒暄、解释与多余文字。",
-      "marker": false,
-      "system": false,
-      "enabled": true,
-      "order": 1
-    },
-    {
       "id": "reference_open",
       "name": "资料区开始",
       "role": "system",
@@ -199,9 +189,9 @@
     },
     {
       "id": "assistant_thinking",
-      "name": "思维链预填",
+      "name": "思维链起手",
       "role": "system",
-      "content": "输出必须以 <thinking> 标签开头：直接进入逐条分析与自检，不要先写任何致意、过渡或客套话；分析与自检完成后再输出 <options>。",
+      "content": "输出必须以 <thinking> 标签开头：直接进入逐条分析与自检，不要先写任何致意、过渡或客套话；若思考块已被开启，直接续写，不要重复开启第二个 <thinking>；分析与自检完成后再输出 <options>。",
       "marker": false,
       "system": false,
       "enabled": true,
@@ -256,7 +246,7 @@
       "id": "enrich_assistant",
       "name": "润色应答",
       "role": "system",
-      "content": "输出必须以 <thinking> 标签开头，直接进入润色前的处理与自检（先理解原文，再检查人称、字数、忠实度），不要先写任何致意或过渡语；全部检查完成后再输出 <options>。",
+      "content": "输出必须以 <thinking> 标签开头，直接进入润色前的处理与自检（先理解原文，再检查人称、字数、忠实度），不要先写任何致意或过渡语；若思考块已被开启，直接续写，不要重复开启第二个 <thinking>；全部检查完成后再输出 <options>。",
       "marker": false,
       "system": false,
       "enabled": true,

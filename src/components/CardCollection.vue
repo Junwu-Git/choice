@@ -51,6 +51,15 @@
             <span class="choice-lib-triggers" :title="t`触发次数`">
               <i class="fa-solid fa-hand-pointer"></i>{{ ownedMap[c.id].trigger_count }}
             </span>
+            <button
+              v-if="isBroken(ownedMap[c.id])"
+              class="choice-btn-sm choice-lib-repair"
+              :title="t`耐久归零，消耗行动币修复回满`"
+              :disabled="repairing.has(c.id)"
+              @click="onRepair(c)"
+            >
+              <i class="fa-solid fa-hammer"></i>{{ t`修复（${repairCostOf(c)} 币）` }}
+            </button>
           </template>
         </CardFace>
       </div>
@@ -87,7 +96,19 @@
             :state="cardState(c)"
             :obscured="!isCollected(c)"
             :previously-owned="isDismantled(c)"
-          />
+          >
+            <template v-if="ownedMap[c.id]" #footer>
+              <button
+                v-if="isBroken(ownedMap[c.id])"
+                class="choice-btn-sm choice-lib-repair"
+                :title="t`耐久归零，消耗行动币修复回满`"
+                :disabled="repairing.has(c.id)"
+                @click="onRepair(c)"
+              >
+                <i class="fa-solid fa-hammer"></i>{{ t`修复（${repairCostOf(c)} 币）` }}
+              </button>
+            </template>
+          </CardFace>
         </div>
       </template>
       <div v-else class="choice-empty">
@@ -129,18 +150,41 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
-import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool } from '@/core/cards';
+import { isCardBroken, cardRepairCost, CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } from '@/core/cards-constraints';
+import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool, repairCard } from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
 import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
-import { CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } from '@/core/cards-constraints';
 import toastr from 'toastr';
-import type { Card, CardStar } from '@/type/settings';
+import type { Card, CardOwned, CardStar } from '@/type/settings';
 
 const gs = useGlobalSettingsStore();
 
 /** 主题池生成中（防连点/防「立即生成」与「重新生成」互撞） */
 const generating = ref(false);
+
+/** v70 修复中卡 id 集合（防连点双扣币） */
+const repairing = ref<Set<string>>(new Set());
+
+/** 破损判定（收藏页修复按钮显隐） */
+const isBroken = (owned: CardOwned): boolean => isCardBroken(owned);
+
+/** 修复成本展示（与 repairCard 内同一纯函数口径） */
+const repairCostOf = (c: Card): number => cardRepairCost(c);
+
+/** 修复一张破损卡：repairCard 扣币回满并 toastr；失败 warning（余额不足/未破损）。 */
+const onRepair = (c: Card) => {
+  if (repairing.value.has(c.id)) return;
+  repairing.value = new Set(repairing.value).add(c.id);
+  try {
+    const r = repairCard(c.id);
+    if (!r.ok) toastr.warning(r.errors.join('；'));
+  } finally {
+    const next = new Set(repairing.value);
+    next.delete(c.id);
+    repairing.value = next;
+  }
+};
 
 /** 手动生成当前角色主题池下一批（池空 = 首批、未满 = 补充一批）：await 到 AI 返回并 toastr 反馈张数或失败原因。 */
 const onGeneratePool = async () => {
@@ -345,6 +389,21 @@ const otherPools = computed(() =>
   display: inline-flex;
   align-items: center;
   gap: 3px;
+}
+
+/* v70 修复按钮：破损卡卡脚，红色系小按钮（与卡面破损标同色相） */
+.choice-lib-repair {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-color-error);
+  background: color-mix(in srgb, var(--choice-color-error) 10%, transparent 90%);
+  border: 1px solid color-mix(in srgb, var(--choice-color-error) 55%, transparent 45%);
+}
+.choice-lib-repair:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--choice-color-error) 20%, transparent 80%);
+}
+.choice-lib-repair:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .choice-lib-pool-group {

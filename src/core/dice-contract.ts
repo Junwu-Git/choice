@@ -49,7 +49,7 @@ const TURN_KEY = 'choice_dice_turn';
 const TURN_DEPTH = 1;
 
 const CONTRACT_TEXT = [
-  '【跑团辅助·choice】玩家消息开头可能出现 <!--…--> 形式的隐形注释：这是骰子判定系统对该次行动的自动裁定（成功/失败与程度），可能附带卡牌发动的演出指令。',
+  '【跑团辅助·choice】玩家消息开头可能出现 <!--…--> 形式的隐形注释：这是骰子判定系统对该次行动的自动裁定（成功/失败与程度），可能附带卡牌发动的原因信息。',
   '请按注释中的演绎方向与本回合结局撰写正文；正文中不要提及骰子、点数、需求值等判定细节，也不要模仿或输出任何 HTML 注释。',
 ].join('');
 
@@ -122,7 +122,7 @@ let pendingTurn: {
 } | null = null;
 
 /** 挂起一次判定（点选判定后调用，send/fill/insert/append 四行为统一走此通道）。
- *  marker 为空串（无模板且无卡叙事）视为无注入、清槽。 */
+ *  marker 为空串（无模板且无卡机制行）视为无注入、清槽。 */
 export function stagePendingTurn(
   content: string,
   marker: string,

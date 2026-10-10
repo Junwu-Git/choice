@@ -19,6 +19,7 @@ import {
   PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
+  type Card,
   type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
@@ -38,6 +39,8 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
 import { scheduleCharacterPersist } from '@/util/character-bindings';
+import { BUILTIN_CARDS } from '@/core/cards-builtin';
+import { cardMaxDurability } from '@/core/cards-constraints';
 
 /**
  * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
@@ -2203,20 +2206,15 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
-  // v69：移除「预填充」开关与依赖——assistant_ack/assistant_thinking/enrich_assistant 三个
-  // 起手模块默认改为 system 角色 + 指令式文案（不依赖模型预填充能力，开箱即用；想用预填充
-  // 把模块角色改为 assistant 即可）。exact-match（内容 === 旧默认字面量才换，同 v44/v53 模式）
+  // v69：移除「预填充」开关与依赖——assistant_thinking/enrich_assistant 两个起手模块默认
+  // 改为 system 角色 + 指令式文案（不依赖模型预填充能力，开箱即用；想用预填充把模块角色
+  // 改为 assistant 即可）。exact-match（内容 === 旧默认字面量才换，同 v44/v53 模式）
   // 保证用户自定义过的模块不动；「内容未动 + 角色仍 assistant」的默认档才顺带改角色为 system，
   // 用户已自行改过角色的不动。to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
   if ((validated.schema_version ?? 0) < 69) {
     const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
     const V69_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
       // [模块 id, v68 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
-      [
-        'assistant_ack',
-        '收到。本轮按系统规则执行：先判断任务类型，再只输出 <thinking> 与 <options>，不输出任何多余内容。',
-        newContentById.get('assistant_ack') ?? '',
-      ],
       [
         'assistant_thinking',
         '收到，开始按问题梳理场景与方向。\n\n<thinking>\n',
@@ -2241,6 +2239,78 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     };
     migrateV69(validated.prompt_rules.modules);
     for (const cfg of validated.prompt_configs) migrateV69(cfg.modules);
+  }
+
+  // v71：预填充收尾——assistant_thinking/enrich_assistant 默认文案补「单 thinking 块防呆」
+  // （若思考块已被开启则直接续写、不重复开块，防弱模型自开第二个 <thinking>），并把
+  // assistant_thinking 的默认名从「思维链预填」改回「思维链起手」（模块已非预填充，名不副实）。
+  // exact-match（内容/名称 === 旧默认字面量才换，同 v69 模式）保证用户自定义过的模块不动；
+  // to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 71) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V71_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v70 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'assistant_thinking',
+        '输出必须以 <thinking> 标签开头：直接进入逐条分析与自检，不要先写任何致意、过渡或客套话；分析与自检完成后再输出 <options>。',
+        newContentById.get('assistant_thinking') ?? '',
+      ],
+      [
+        'enrich_assistant',
+        '输出必须以 <thinking> 标签开头，直接进入润色前的处理与自检（先理解原文，再检查人称、字数、忠实度），不要先写任何致意或过渡语；全部检查完成后再输出 <options>。',
+        newContentById.get('enrich_assistant') ?? '',
+      ],
+    ];
+    const migrateV71 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V71_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+        if (mod.id === 'assistant_thinking' && mod.name === '思维链预填') mod.name = '思维链起手';
+      }
+    };
+    migrateV71(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV71(cfg.modules);
+  }
+
+  // v72：删除废弃的「应答声明」模块（assistant_ack）——其职责已由 system_prompt（任务定位 +
+  // 输出纪律）与 option_task/enrich_prompt（具体任务）完全覆盖，属于预填充时代的重复应答语，
+  // 对弱模型不仅冗余还可能诱发「收到/本轮执行……」式复读。直接删除（同 v44 DEAD_MODS 先例）：
+  // 工作副本 + 每个 prompt_configs.modules 快照都删，避免切换配置后旧模块复活。
+  if ((validated.schema_version ?? 0) < 72) {
+    const fixModuleSet = (modules: PromptModuleType[]): void => {
+      for (let i = modules.length - 1; i >= 0; i--) {
+        if (modules[i].id === 'assistant_ack') modules.splice(i, 1);
+      }
+    };
+    fixModuleSet(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) fixModuleSet(cfg.modules);
+  }
+
+  // v70：恢复卡牌触发磨损与破损修复——CardOwned 新增 durability/max_durability/broken。
+  // 老档（v66 起删除了 level/durability/max_durability，v70 重新引入）无这些字段：
+  // zod 解析会把缺失字段补上 schema 默认值（durability=0 / max_durability=1），
+  // 无法用「字段是否缺失」区分旧档与新卡——以 max_durability 为哨兵：新卡恒为真实
+  // 满耐久（cardMaxDurability 钳制 ≥10），旧档被补成 1。max_durability ≤1 即旧档，
+  // 按卡定义补满耐久（内置卡 BUILTIN_CARDS ∪ card_definitions 角色主题卡，都含 star/type）、
+  // broken=false——零行为变化，后续正常触发磨损。
+  if ((validated.schema_version ?? 0) < 70) {
+    const defById = new Map<string, { star: Card['star']; type: Card['type'] }>();
+    for (const c of BUILTIN_CARDS) defById.set(c.id, { star: c.star, type: c.type });
+    for (const [id, def] of Object.entries(validated.card_definitions ?? {})) {
+      if (def) defById.set(id, { star: def.star, type: def.type });
+    }
+    for (const owned of Object.values(validated.card_collection ?? {})) {
+      if (!owned || owned.max_durability > 1) continue; // 已是 v70 新卡，跳过
+      const def = defById.get(owned.card_id);
+      const max = def ? cardMaxDurability(def) : 1;
+      owned.max_durability = max;
+      owned.durability = max;
+      owned.broken = false;
+    }
   }
 
   validated.schema_version = SCHEMA_VERSION;
@@ -2314,6 +2384,21 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   if (rawUI && ['warm', 'cream', 'spacegray'].includes(rawUI.theme_mode)) {
     rawUI.theme_mode = 'auto';
     removedThemeNormalized = true;
+  }
+
+  // v71 迁移：移除预填充残留——PromptConfig/PromptRules 的 prefill_enabled 字段已从 schema
+  // 删除（zod 会 strip 未知键），但 validateInplace 用 _.assign 就地合并回原对象，旧键仍会
+  // 残留在运行时对象里并被 deep watch 继续落盘（同 v66/v68 先例），必须就地 delete 才清干净。
+  // 无需 schema_version 门控：删除幂等，v71 时代的新存档本来就没有该键。
+  const rawPromptRules = _.get(existing, 'prompt_rules');
+  if (rawPromptRules && typeof rawPromptRules === 'object') {
+    delete (rawPromptRules as Record<string, unknown>).prefill_enabled;
+  }
+  const rawPromptConfigs = _.get(existing, 'prompt_configs');
+  if (Array.isArray(rawPromptConfigs)) {
+    for (const cfg of rawPromptConfigs) {
+      if (cfg && typeof cfg === 'object') delete (cfg as Record<string, unknown>).prefill_enabled;
+    }
   }
 
   // 注意：曾有一个 v14 迁移块把 chat_filter_groups.character_id 从字符串转 number，

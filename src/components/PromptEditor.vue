@@ -793,9 +793,8 @@ const previewContent = (mod: PromptModule): string => {
       world_info_after: '[世界书条目 - 角色定义后]',
       persona_description: '[Persona 描述]',
       chat_history: '[聊天历史]',
-      assistant_ack: '[AI 应答开头]',
       thinking_prompt: '[思考检查清单]',
-      assistant_thinking: '[思维链开头]',
+      assistant_thinking: '[思维链起手]',
     };
     return m[mod.id] ?? '[动态内容]';
   }

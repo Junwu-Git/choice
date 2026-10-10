@@ -88,7 +88,7 @@ export function effectSummary(e: CardEffect): string {
     case 'reroll':
       return t`${CARD_OUTCOME_LABEL[e.on] ?? e.on}重掷`;
     case 'narrative':
-      return t`叙事注入`;
+      return t`叙事`;
   }
 }
 

@@ -6,9 +6,9 @@
  *  ② AI 角色卡生成超限或字段非法 → validateCard 拒绝（调用方提示修改/重生成）；
  * ③ 每个 config 卡组星级预算（高星卡限装：3星≤2 / 4星≤1 / 5星≤1），checkDeckBudget 校验装备位。
  *
- * 货币「行动币」：结局收支 + 重复卡折算 + 卡包定价全部收敛在这张表，量级与
- * 「每次只给几个」匹配——攒几次判定才够开一包。卡为永久收藏（无耐久/等级），
- * 重复获得折算 CARD_DUPLICATE_VALUE 行动币。
+ * 货币「行动币」：结局收支 + 重复卡折算 + 修复支出 + 卡包定价全部收敛在这张表，量级与
+ * 「每次只给几个」匹配——攒几次判定才够开一包。卡为永久收藏；
+ * v70 起恢复触发磨损（耐久归零破损、行动币修复回满），重复获得折算 CARD_DUPLICATE_VALUE 行动币。
  */
 
 import { CARD_STARS, CARD_TYPES, type Card, type CardEffect, type CardStar, type CardType } from '@/type/settings';
@@ -22,7 +22,7 @@ export const CARD_ROLL_BONUS_LIMIT = 30;
 export const CARD_DEMAND_MOD_LIMIT = 40;
 /** 彩蛋窗口修正上限（±，crit_window 的大成功/大失败各 ± 至多本值） */
 export const CARD_CRIT_WINDOW_LIMIT = 5;
-/** 叙事注入字数上限（narrative 正文，占位符不计入） */
+/** 卡面叙事字数上限（narrative 展示文本） */
 export const CARD_NARRATIVE_CHARS_LIMIT = 40;
 
 // ── 角色主题池分批生成节奏（每次触发生成多少、何时停） ────────────────────
@@ -48,8 +48,70 @@ export const CARD_STAR_BUDGET: Readonly<Partial<Record<CardStar, number>>> = {
  *  CardDeck.slots 恒定按此顺序规整为 4 条（card_id='' 表示空槽）。 */
 export const CARD_SLOT_TYPES: readonly CardType[] = ['weapon', 'spell', 'blessing', 'trial'];
 
-// ── 耐久公式（v66 已删除） ─────────────────────────────────────────────
-// 卡为永久收藏：无耐久/等级机制。保留本节注释锚点说明语义变更，防误回填。
+// ── 耐久与修复（v70 恢复触发磨损 + 破损修复） ────────────────────────────
+// v66 曾删除耐久/等级（卡为永久收藏）；v70 应明确要求恢复「触发磨损」——卡每次触发
+// 判定扣 1 耐久，归零破损（broken=true）自动卸下禁装，消耗行动币修复回满。
+// 耐久按「星级 × 功能」差异化（老需求：耐久不能全相同，应根据稀有度/功能有所不同）：
+// 高星稀有卡更耐操，祝福（辅助）最耐用、试炼（高风险）最易损，武器/法术居中。
+
+/** 耐久基础值（按星级）：1★ 15 次 / 5★ 35 次触发才磨损到底，量级与「攒几次判定开一包」匹配 */
+export const CARD_DURABILITY_BASE: Readonly<Record<CardStar, number>> = {
+  '1': 15,
+  '2': 20,
+  '3': 25,
+  '4': 30,
+  '5': 35,
+};
+
+/** 功能（卡类型）修正：武器 0（基准）/ 法术 −2 / 祝福 +5（辅助耐用）/ 试炼 −5（高风险易损）。
+ *  与效果定位一致：祝福是稳定辅助、试炼是高收益高风险，耐久响应其「出场频次期望」。 */
+export const CARD_DURABILITY_TYPE_ADJ: Readonly<Record<CardType, number>> = {
+  weapon: 0,
+  spell: -2,
+  blessing: 5,
+  trial: -5,
+};
+
+/** 耐久终值钳制区间（防修正后过小让易损卡一碰就碎、或过大让复杂卡几乎不损） */
+export const CARD_DURABILITY_MIN = 10;
+export const CARD_DURABILITY_MAX = 40;
+
+/** 修复成本（行动币，与卡包 5 币同量级）：按星级递增——高星卡强度高、修起来也贵 */
+export const CARD_REPAIR_COST: Readonly<Record<CardStar, number>> = {
+  '1': 2,
+  '2': 3,
+  '3': 5,
+  '4': 6,
+  '5': 8,
+};
+
+/** 修复成本功能修正：试炼 −1（易损卡修得便宜）、祝福 +1（耐用卡修得贵），钳制 ≥1。
+ *  形成「强而脆的试炼卡坏了修得起、耐用的祝福坏了修不起」的取舍张力。 */
+export const CARD_REPAIR_TYPE_ADJ: Readonly<Record<CardType, number>> = {
+  weapon: 0,
+  spell: 0,
+  blessing: 1,
+  trial: -1,
+};
+
+/** 卡满耐久（获取时计算并写入 CardOwned.max_durability；纯函数，star/type 决定）。 */
+export function cardMaxDurability(card: { star: CardStar; type: CardType }): number {
+  const base = CARD_DURABILITY_BASE[card.star] ?? 0;
+  const adj = CARD_DURABILITY_TYPE_ADJ[card.type] ?? 0;
+  return Math.min(CARD_DURABILITY_MAX, Math.max(CARD_DURABILITY_MIN, base + adj));
+}
+
+/** 卡修复成本（行动币；纯函数，star/type 决定；低于 1 钳到 1）。 */
+export function cardRepairCost(card: { star: CardStar; type: CardType }): number {
+  const base = CARD_REPAIR_COST[card.star] ?? 1;
+  const adj = CARD_REPAIR_TYPE_ADJ[card.type] ?? 0;
+  return Math.max(1, base + adj);
+}
+
+/** 是否破损（0 耐久 = 破损：不能装备/触发；broken 字段与 durability===0 双保险判定）。 */
+export function isCardBroken(owned: { broken?: boolean; durability?: number }): boolean {
+  return !!owned?.broken || (owned?.durability ?? 0) <= 0;
+}
 
 // ── 行动币收支表（量级稀有，每次只给几个） ───────────────────────────────
 
@@ -100,8 +162,8 @@ export const isHighStar = (star: CardStar): boolean => Number(star) >= 3;
 
 const clamp = (v: number, lim: number): number => Math.min(lim, Math.max(-lim, Math.round(Number.isFinite(v) ? v : 0)));
 
-/** 叙事文本并入判定 HTML 注释（option-action mergeCardNarratives/wrapCardNarratives）前的安全化：
- *  连续连字符（如 AI 写出 `-->`）会提前闭合注释、使后续判定正文泄漏为聊天可见文本——
+/** 卡行文本并入判定 HTML 注释（option-action mergeCardNarratives/wrapCardNarratives）前的安全化：
+ *  连续连字符（如 AI 写出的卡名含 `--`）会提前闭合注释、使后续判定正文泄漏为聊天可见文本——
  *  统一替换为全角破折号（替换后长度不增，先替换再截断不会复活连续连字符）。 */
 export const sanitizeNarrative = (text: string): string => text.replace(/-{2,}/g, '－');
 
@@ -132,7 +194,7 @@ export function clampEffect(e: CardEffect): CardEffect | null {
 }
 
 /** 效果集是否全为「正向数值效果」（roll_bonus/demand_mod/crit_window 且数值 > 0）：
- *  宽触发区间 + 纯利好高星卡的拒绝判据。reroll/outcome_convert/narrative 属保命/演出
+ *  宽触发区间 + 纯利好高星卡的拒绝判据。reroll/outcome_convert/narrative 属保命/展示
  *  效果不算纯正向，出现即放行（内置卡深渊凝视 roll 1-99 仅 reroll 即此形态）。 */
 const isAllPositiveNumeric = (effects: CardEffect[]): boolean =>
   effects.length > 0 &&
@@ -143,8 +205,8 @@ const isAllPositiveNumeric = (effects: CardEffect[]): boolean =>
       (e.kind === 'crit_window' && (e.success_delta > 0 || e.fail_delta > 0)),
   );
 
-/** 校验一张卡（AI 角色卡入库前）：字段缺失 / 枚举越界 / 数值超限 / 叙事超长 /
- *  效果数超 3 / 恒等转化 / 宽触发区间纯利好高星 → 拒绝并给错误。
+/** 校验一张卡（AI 角色卡入库前）：字段缺失 / 枚举越界 / 数值超限 / 效果数超 3 /
+ *  恒等转化 / 宽触发区间纯利好高星 → 拒绝并给错误。
  *  返回 { ok, errors[] }。内置卡直接视为合法（构建时已符合约束）。
  *  star/type/trigger/effect 枚举必须在此把关：这些卡会写进 card_definitions 持久化，
  *  枚举外的值会让下次加载的 GlobalSettings Zod 解析整体失败（扩展 init 崩）。 */
@@ -213,7 +275,7 @@ export function validateCard(card: Card): { ok: boolean; errors: string[] } {
   }
   // 宽触发区间 + 纯正向数值效果的高星卡：与生成端「需求值标进触发区间」的教学行叠加
   // 会变成近乎常驻的免费增益，系统性拉低判定难度。低星小利可接受（失衡砝码 2★ 跨 79），
-  // 只拦高星；带任何代价/保命/演出效果即放行
+  // 只拦高星；带任何代价/保命效果即放行
   if (
     trigger &&
     (trigger.kind === 'demand' || trigger.kind === 'roll') &&

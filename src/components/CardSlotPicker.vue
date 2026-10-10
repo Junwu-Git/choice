@@ -8,7 +8,7 @@
           </span>
           <button class="choice-slotpicker-close" :title="t`关闭`" @click="emit('close')">&times;</button>
         </div>
-        <p class="choice-slotpicker-tip">{{ t`仅列出该类型已拥有的卡；星级预算超限项置灰。` }}</p>
+        <p class="choice-slotpicker-tip">{{ t`仅列出该类型已拥有的卡；星级预算超限项置灰；破损卡需先修复。` }}</p>
 
         <div v-if="candidates.length" class="choice-slotpicker-cards">
           <div v-for="c in candidates" :key="c.id" class="choice-slotpicker-card">
@@ -49,6 +49,7 @@
 import CardFace from '@/components/CardFace.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { canEquipInDeck, cardDefById, equipCard, resolveDeckSlots } from '@/core/cards';
+import { isCardBroken } from '@/core/cards-constraints';
 import { CARD_TYPE_ICON, CARD_TYPE_LABEL } from '@/core/cards-meta';
 import toastr from 'toastr';
 import type { Card, CardType } from '@/type/settings';
@@ -64,10 +65,12 @@ const currentId = computed(() => resolveDeckSlots(props.configId).find(s => s.ty
 
 const isCurrent = (c: Card): boolean => c.id === currentId.value;
 
-/** 该类型已拥有的卡。用 cardDefById 解析（含内置卡；card_definitions 只存角色池卡） */
+/** 该类型已拥有的卡。用 cardDefById 解析（含内置卡；card_definitions 只存角色池卡）。
+ *  v70：破损卡不列出（与「归零卸下禁装」一致）——破损=不可用，只能去收藏页修复。 */
 const candidates = computed<Card[]>(() =>
-  Object.values(gs.settings.card_collection)
-    .map(o => cardDefById(o.card_id))
+  Object.entries(gs.settings.card_collection)
+    .filter(([, o]) => !isCardBroken(o))
+    .map(([, o]) => cardDefById(o.card_id))
     .filter((d): d is Card => !!d && d.type === props.type),
 );
 

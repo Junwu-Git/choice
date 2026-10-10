@@ -53,7 +53,7 @@
                 v-if="rollOf(index)"
                 class="choice-roll-chip"
                 :class="`choice-roll-chip--${rollOf(index)!.outcome}`"
-                >{{ rollChipText(rollOf(index)!) }}</i
+                >{{ rollChipText(rollOf(index)!) + brokenText(rollOf(index)!) }}</i
               ><template v-if="rollOf(index)?.cards?.triggered?.length"
                 ><span class="choice-card-tag-row"
                   ><span
@@ -375,6 +375,13 @@ const rollLabel = (o: DiceOutcome): string =>
 // 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
 const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
 const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
+// v70 触发磨损破损短提示：仅应用后的判定结果带 brokenCards（预览/首掷 stage 为空，
+// 不提示——破损只在 commit 落库时产生）；chip 追加卡名提示玩家去修复/换卡。
+const brokenText = (r: RollResult): string => {
+  const broken = r.cards?.brokenCards ?? [];
+  if (broken.length === 0) return '';
+  return ` · ${broken.map(b => b.card.name).join('、')}耐久耗尽`;
+};
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"
 watch(dimEnabled, enabled => {

@@ -189,8 +189,6 @@ export const PromptConfig = z
       .catch(ENRICH_MAX_CHARS_DEFAULT),
     context_rounds: z.number().min(0).default(10).catch(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
-    /** @deprecated v69 起移除预填充开关与读取方（模块角色可逐模块自定义），仅存档兼容的死数据 */
-    prefill_enabled: z.boolean().optional(),
     baibai_enabled: z.boolean().default(false),
     shujuku_enabled: z.boolean().default(false),
     /** @deprecated v44 起不再有写入方：「全向」配置已随轻型默认预设重构删除，
@@ -376,8 +374,6 @@ const PromptRules = z
     chat_filter_rules: z.array(ChatFilterRule).default([]),
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
     modules: z.array(PromptModule).prefault([]),
-    /** @deprecated v69 起移除预填充开关与读取方（模块角色可逐模块自定义），仅存档兼容的死数据 */
-    prefill_enabled: z.boolean().optional(),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
@@ -1077,7 +1073,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 69;
+export const SCHEMA_VERSION = 72;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1509,9 +1505,10 @@ export type DiceStats = z.infer<typeof DiceStats>;
 
 // ── 卡牌系统（v62 增量字段，全走 zod default/prefault 补齐，不 bump schema_version）────────
 // 每张卡是可装备的效果卡：触发条件（选项类型/档位/需求区间/骰值区间/结局）+ 效果
-// （骰值/需求/彩蛋窗口修正、结局转化、强制重掷、叙事注入）。收藏全局 + 按 config 装备。
-// 卡为永久收藏（v66 起无耐久/等级）；角色主题池由 AI 按
-// 角色卡世界观懒生成、可重复掉落。货币「行动币」由骰子结局收支 + 重复卡折算获得。
+// （骰值/需求/彩蛋窗口修正、结局转化、强制重掷、叙事展示）。收藏全局 + 按 config 装备。
+// 卡为永久收藏但 v70 起恢复触发磨损与破损修复（耐久归零破损、行动币修复回满）；
+// 角色主题池由 AI 按角色卡世界观懒生成、可重复掉落。
+// 货币「行动币」由骰子结局收支 + 重复卡折算获得，新增修复支出形成消耗闭环。
 
 /** 星级：1星至5星（抽卡权重递减，高星装备数量受预算限制） */
 export const CARD_STARS = ['1', '2', '3', '4', '5'] as const;
@@ -1539,8 +1536,8 @@ export const CardTrigger = z
 export type CardTrigger = z.infer<typeof CardTrigger>;
 
 /** 卡效果（六类）：roll_bonus 掷骰前 ±；demand_mod ±DC；crit_window 扩/收彩蛋区间；
- *  outcome_convert 结局转化；reroll 强制重掷；narrative 注入演绎指令（原文并入判定注释，
- *  不做 {rate} 等占位符替换——那是骰子结局模板的机制）。 */
+ *  outcome_convert 结局转化；reroll 强制重掷；narrative 卡面叙事展示（不注入正文 AI
+ *  判定注释，只作卡面展示——注入移除见判定注释机制行取舍）。 */
 export const CardEffect = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('roll_bonus'), amount: z.number().default(0) }),
   z.object({ kind: z.literal('demand_mod'), amount: z.number().default(0) }),
@@ -1569,6 +1566,7 @@ export const Card = z
     star: z.enum(CARD_STARS),
     trigger: CardTrigger.prefault({}),
     effects: z.array(CardEffect).prefault([]),
+    /** 卡面叙事文本（仅展示，不注入正文 AI） */
     narrative: z.string().default(''),
     source: z.enum(CARD_SOURCES),
     /** 角色主题卡归属：source='character' 时填生成它的角色 id/名（内置卡为空），
@@ -1579,12 +1577,19 @@ export const Card = z
   .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
 export type Card = z.infer<typeof Card>;
 
-/** 收藏条目（键 = card_id）：卡为永久收藏（v66 起无耐久/等级），条目记录持有与触发计数。 */
+/** 收藏条目（键 = card_id）：卡为永久收藏，但 v70 起恢复触发磨损与破损修复
+ *  （durability 归零 → broken=true 自动卸下禁装，消耗行动币修复回满）。 */
 export const CardOwned = z
   .object({
     card_id: z.string().default(''),
     obtained_at: z.number().default(0),
     trigger_count: z.number().min(0).default(0).catch(0),
+    /** 当前耐久（0 = 破损）；获取时按星级×功能计算满值，触发扣减 */
+    durability: z.number().min(0).default(0).catch(0),
+    /** 满耐久（获取时按 cardMaxDurability 计算，详情见 cards-constraints.ts） */
+    max_durability: z.number().min(1).default(1).catch(1),
+    /** 破损态（持久化，供卡面/装备解析直接判断；durability===0 为等价判定，双保险） */
+    broken: z.boolean().default(false),
     source: z.enum(CARD_SOURCES).default('builtin'),
   })
   .prefault({});
@@ -1714,7 +1719,8 @@ export function createEmptyStats(): StatsSettings {
  *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
  *  成功侧勉强得手/险胜/顺利达成/漂亮完胜/势如破竹、失败侧差点成功/功亏一篑/事与愿违/溃败/
  *  彻底落败、彩蛋固定
- *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
+ *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 差值占判定空间
+ *  的比例命中档位取对应
  *  send 模板（success_/fail_send_{low,mid_low,mid,mid_high,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
  *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。
  *  v67：注释改三段结构——代码固定拼结构化头部（结局/裁定对象/点数/需求/差值/程度）+ 模板正文 + 固定纪律
@@ -1770,7 +1776,8 @@ export const DiceSettings = z
      *  （send 直接发送、fill/insert/append 填入输入框可编辑）。
      *  成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/漂亮完胜（mid_high）/
      *  势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/事与愿违（mid）/
-     *  溃败（mid_high）/彻底落败（high），按 margin 命中档位取对应模板。
+     *  溃败（mid_high）/彻底落败（high），按 margin 差值占判定空间的比例（20%/40%/60%/80%）
+     *  命中档位取对应模板（v73 起，旧固定绝对值断点废弃）。
      *  某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
      *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
     success_send_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_low_template),
@@ -1881,7 +1888,7 @@ export const GlobalSettings = z
     /** 卡牌总开关（默认关）：关 = 判定管线不读卡、无卡触发/无幸运开包/无行动币收支，
      *  存量升级零行为变化；收藏库/卡库展示常驻不受开关影响。 */
     card_enabled: z.boolean().default(false),
-    /** 收藏库（键 = card_id）：每张当前持有的卡（永久收藏，v66 起无耐久/等级）。
+    /** 收藏库（键 = card_id）：每张当前持有的卡（永久收藏；v70 起含触发磨损与破损修复）。
      *  持有 ≠ 曾获得：图鉴/成就以 card_obtained 为准。 */
     card_collection: z.record(z.string(), CardOwned).prefault({}),
     /** 历史获得记录（键 = card_id，v61）：记录"曾经获得过"的卡，独立于当前持有。

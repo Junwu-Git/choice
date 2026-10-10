@@ -9,7 +9,7 @@
  *   demand_mod 改需求、crit_window 改彩蛋窗口，数值经 cards-constraints clamp）在掷骰前
  *   施加（掷前触发卡）；后置分两遍：掷后触发卡的修正型效果先补算到已掷骰值/需求/窗口上
  *   并重判结局（武器系「roll 触发 + 骰值加成」的低骰补力即此语义），再按最终结局施加
- *   outcome_convert 结局转化、reroll 强制重掷、narrative 注入演绎指令。触发条件
+ *   outcome_convert 结局转化、reroll 强制重掷。触发条件
  *  （type/grade/demand 前置可知，roll/outcome 掷后可知）决定卡是否触发。
  *
  * 关键分层：卡效果**只走 card_enabled=true 分支**；card_enabled=false（默认）时本模块
@@ -44,8 +44,11 @@ import { getStCharacter } from '@/core/st-character';
 import { parseOptionStyle, parseOptionType, type OptionStyleGrade } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import {
+  cardMaxDurability,
+  cardRepairCost,
   clampEffect,
   checkDeckBudget,
+  isCardBroken,
   CARD_DUPLICATE_VALUE,
   CARD_DROP_WEIGHT,
   CARD_OUTCOME_CURRENCY,
@@ -83,7 +86,7 @@ export type CardOffer = {
   configId: string;
 };
 
-/** 一次判定中的卡牌决议（随 DiceRollResult 返回）：触发卡/幸运命中/行动币收支/卡叙事行。 */
+/** 一次判定中的卡牌决议（随 DiceRollResult 返回）：触发卡/幸运命中/行动币收支/机制行。 */
 export type CardResolution = {
   triggered: CardTriggeredInfo[];
   luckyHit: boolean;
@@ -92,6 +95,9 @@ export type CardResolution = {
   narrativeLines: string[];
   /** 最终结局：commitCardRun 用其在失败分支触发"判定中招诅咒" */
   outcome: DiceOutcome;
+  /** v70 本次判定中触发而耐久归零破损的卡（commitCardRun 落库时产生；调用方用于
+   *  判定 chip 短提示。仅真正应用后的 commit 才填充，预览/首掷 stage 为空）。 */
+  brokenCards: Array<{ card: Card; owned: CardOwned }>;
 };
 
 /** 装备位解析结果（装备 + 持有态）——类型定义随解析簇迁至 cards-deck.ts，此处已透传 */
@@ -276,7 +282,7 @@ export function resolveCardRoll(
   let critF = crits.fail;
   let rollBonus = 0;
   const preFired: EquippedCard[] = [];
-  // 每张触发卡的效果摘要（v67 机械效果叙事行的素材）：有前后值的补「（前→后）」，
+  // 每张触发卡的效果摘要（v67 机制行的素材）：有前后值的补「（前→后）」，
   // 正文 AI 才能理解数值因果；掷前触发卡还没掷骰，只列效果本身。
   const effectNotes = new Map<EquippedCard, string[]>();
   const note = (eq: EquippedCard, s: string): void => {
@@ -355,10 +361,9 @@ export function resolveCardRoll(
   }
   if (postModified) outcome = judgeOutcome(roll, rate, critS, critF, mode);
 
-  // ── 后置二遍：转化/重掷/叙事（按槽序、按当时结局匹配；上面的重判可能已
+  // ── 后置二遍：转化/重掷/机制行收集（按槽序、按当时结局匹配；上面的重判可能已
   //  改变 outcome，outcome 触发卡的转化条件沿此顺序依赖，与既有语义一致） ─
   const narrativeLines: string[] = [];
-  const narrativeCards = new Set<EquippedCard>();
   let rerolled = false;
   let rerollRaw: number | null = null;
   for (const eq of fired) {
@@ -376,27 +381,19 @@ export function resolveCardRoll(
         outcome = judgeOutcome(rr, rate, critS, critF, mode);
         roll = rr;
         note(eq, `重掷（${prevRoll}→${roll}）`);
-      } else if (eff.kind === 'narrative' && eff.text) {
-        narrativeLines.push(eff.text);
-        narrativeCards.add(eq);
       }
-    }
-    if (eq.card.narrative) {
-      narrativeLines.push(eq.card.narrative);
-      narrativeCards.add(eq);
     }
   }
 
-  // v67 机械效果叙事行：触发卡若没有任何叙事文本（narrative 效果未命中且卡无自带
-  // narrative），按效果摘要补一行结构化短句——否则机械触发对正文 AI 完全不可见，
-  // 卡的正文「存在感」只剩被改动的掷骰数值。复用 narrativeLines 管线：option-action
-  // 合并进判定注释前会过 sanitizeNarrative。
-  // 机械行是数值语言（「骰值+15（52→67）」），与判定注释纪律尾注「正文不得提及点数」
+  // v67 机械效果机制行：触发卡的效果摘要（effectNotes 含前后值「前→后」）——
+  // 所有触发卡都产出；卡面叙事/演出文案不注入正文 AI（只作卡面展示），机制行是
+  // 卡在判定注释里的唯一存在。复用 narrativeLines 管线：option-action 合并进判定
+  // 注释前会过 sanitizeNarrative。
+  // 机制行是数值语言（「骰值+15（52→67）」），与判定注释纪律尾注「正文不得提及点数」
   // 表面冲突——统一前置一句定位语划清「机制记录仅供理解因果」的边界，弱模型才不会
   // 把数值照抄进正文或对指令自相矛盾。
   const mechanicalLines: string[] = [];
   for (const eq of fired) {
-    if (narrativeCards.has(eq)) continue;
     const notes = effectNotes.get(eq);
     if (!notes || notes.length === 0) continue;
     mechanicalLines.push(`「${eq.card.name}」发动：${notes.join('、')}`);
@@ -405,10 +402,10 @@ export function resolveCardRoll(
     narrativeLines.push('机制记录（仅供理解因果，演绎时转化为剧情表现，勿在正文写数值）：', ...mechanicalLines);
   }
 
-  // 满编共鸣：4 槽全装且本次有卡触发 → 注入齐整叙事 + 小额奖励（鼓励凑满一套装备）
+  // 满编共鸣：4 槽全装且本次有卡触发 → 小额奖励（鼓励凑满一套装备）。
+  // 共鸣叙事句不再注入正文 AI（同演出行一并移除），setBonus +1 币保留照发。
   let setBonus = 0;
   if (cardEnabled && equipped.length === CARD_SLOT_TYPES.length && fired.length > 0) {
-    narrativeLines.push('四卡齐备、行伍整肃，出手收放之间更显从容。');
     setBonus = 1;
   }
 
@@ -434,6 +431,8 @@ export function resolveCardRoll(
       currencyDelta,
       narrativeLines,
       outcome,
+      // 破损只在 commitCardRun（真正应用落库）时产生——预览/首掷 stage 不扣耐久、不破损
+      brokenCards: [],
     },
   };
 }
@@ -445,7 +444,45 @@ export function isLuckyHit(roll: number, luckyNumber: number): boolean {
 
 // ── 落库（应用判定结果，真正改动状态） ──────────────────────────────────
 
-/** 提交一次已应用判定：按结局收支行动币（≥0 不扣穿）、幸运命中开卡包。
+/** 把某张破损卡从所有 config 的卡组里卸下（v70 破损自动卸下）。auto 模式无存储槽位
+ *  （投影自 autoDeckCards，破损后 resolveEquippedCards 自然过滤），仅手动槽需清。 */
+function unequipCardFromAllDecks(cardId: string): void {
+  const gs = useGlobalSettingsStore();
+  for (const deck of Object.values(gs.settings.card_decks)) {
+    if (!deck?.slots?.length) continue;
+    let dirty = false;
+    for (const slot of deck.slots) {
+      if (slot.card_id === cardId) {
+        slot.card_id = '';
+        dirty = true;
+      }
+    }
+    if (dirty) deck.slots = normalizeDeckSlots(deck.slots);
+  }
+}
+
+/** v70 触发磨损落库：对每张触发卡扣 1 耐久，归零标记破损并从所有卡组自动卸下。
+ *  只在 commitCardRun（真正应用落库的唯一入口）内调用——与楼层 cardSettled 防刷同门控：
+ *  同层只扣一次、重掷确认/预览/首掷 stage 不扣。返回本次破损的卡（含卡名/持有条目）供提示。 */
+function applyDurabilityLoss(resolution: Pick<CardResolution, 'triggered'>): Array<{ card: Card; owned: CardOwned }> {
+  const gs = useGlobalSettingsStore();
+  const broken: Array<{ card: Card; owned: CardOwned }> = [];
+  for (const t of resolution.triggered) {
+    const owned = gs.settings.card_collection[t.card.id];
+    const card = cardDefById(t.card.id);
+    if (!owned || !card) continue;
+    owned.durability = Math.max(0, (owned.durability ?? 0) - 1);
+    if (owned.durability <= 0) {
+      owned.durability = 0;
+      owned.broken = true;
+      unequipCardFromAllDecks(t.card.id);
+      broken.push({ card, owned });
+    }
+  }
+  return broken;
+}
+
+/** 提交一次已应用判定：按结局收支行动币（≥0 不扣穿）、触发磨损（≤0 扣穿破损）、幸运命中开卡包。
  *  仅真正应用（发送框可用 + 行为已执行）后调用。 */
 export function commitCardRun(resolution: CardResolution): CardOffer | undefined {
   const gs = useGlobalSettingsStore();
@@ -456,6 +493,13 @@ export function commitCardRun(resolution: CardResolution): CardOffer | undefined
     if (!owned) continue;
     owned.trigger_count += 1;
     recordCardTrigger(t.card.id);
+  }
+  // v70 触发磨损（与 trigger_count 同门控）：归零 → 破损 + 自动卸下
+  resolution.brokenCards = applyDurabilityLoss(resolution);
+  if (resolution.brokenCards.length > 0) {
+    for (const b of resolution.brokenCards) {
+      toastr.warning(`「${b.card.name}」耐久耗尽，已从卡组卸下——可在收藏页修复或更换其他卡`);
+    }
   }
   // 行动币收支（结局驱动；0 时失败不再减，不扣穿）
   if (resolution.currencyDelta !== 0) {
@@ -490,8 +534,9 @@ export function applyPackSelection(offer: CardOffer, chosenIdx: number, via: 'lu
   recordCardsObtained();
 }
 
-/** 新得或折算一张卡（开卡包共用）：未拥有 → 建持有条目；已拥有 → 折算小额行动币
- *  （卡为永久收藏，无耐久/等级，重复获得给币让 3 选 1 始终有意义）。 */
+/** 新得或折算一张卡（开卡包共用）：未拥有 → 建持有条目（满耐久）；已拥有 → 折算小额行动币
+ *  （卡为永久收藏，重复获得给币让 3 选 1 始终有意义）。v70：**破损卡抽到也照常折算**——
+ *  折算只给币、不刷新耐久（破损保持破损），修复经济不被开包绕开。 */
 function acquireOrConvert(s: GlobalSettings, card: Card): void {
   // 历史获得记录：新得/重复抽中都累计 → 图鉴/成就/套装永久保留
   const rec = s.card_obtained[card.id] ?? { card_id: card.id, obtained_at: Date.now(), count: 0 };
@@ -510,6 +555,9 @@ function acquireOrConvert(s: GlobalSettings, card: Card): void {
     card_id: card.id,
     obtained_at: Date.now(),
     trigger_count: 0,
+    durability: cardMaxDurability(card),
+    max_durability: cardMaxDurability(card),
+    broken: false,
     source: card.source,
   };
 }
@@ -533,6 +581,9 @@ export function ensureStarterCards(): void {
       card_id: id,
       obtained_at: Date.now(),
       trigger_count: 0,
+      durability: cardMaxDurability(def),
+      max_durability: cardMaxDurability(def),
+      broken: false,
       source: 'builtin',
     };
     // 首次发放同样计入历史获得，保证套装/成就进度完整
@@ -562,6 +613,7 @@ export function equipCard(configId: string, cardId: string): { ok: boolean; erro
   const card = cardDefById(cardId);
   const owned = gs.settings.card_collection[cardId];
   if (!card || !owned) return { ok: false, errors: ['卡不存在或未拥有'] };
+  if (isCardBroken(owned)) return { ok: false, errors: ['该卡已破损，需修复后才能装备'] };
   if (!CARD_SLOT_TYPES.includes(card.type)) return { ok: false, errors: ['该类型卡没有对应槽位'] };
   if (resolveDeckSlots(configId).some(s => s.card_id === cardId)) return { ok: false, errors: ['该卡已装备'] };
   const budget = canEquipInDeck(configId, card);
@@ -589,7 +641,30 @@ export function unequipCard(configId: string, cardId: string): void {
   if (slot) slot.card_id = '';
 }
 
-// ── 购买卡包（行动币唯一消费出口） ───────────────────────────────────────
+// ── 修复（v70 破损经济闭环） ─────────────────────────────────────────────
+
+/** 修复一张破损卡：扣行动币（cardRepairCost，与卡包同量级）恢复满耐久、清破损态。
+ *  未破损报「无需修复」；余额不足报错。修复是行动币支出闭环的一环（与开卡包并列），
+ *  破损卡不能装备/触发，修复后才可重新入组。 */
+export function repairCard(cardId: string): { ok: boolean; errors: string[]; cost?: number } {
+  const gs = useGlobalSettingsStore();
+  const card = cardDefById(cardId);
+  const owned = gs.settings.card_collection[cardId];
+  if (!card || !owned) return { ok: false, errors: ['卡不存在或未拥有'] };
+  if (!isCardBroken(owned)) return { ok: false, errors: ['「' + card.name + '」未破损，无需修复'] };
+  const cost = cardRepairCost(card);
+  if (gs.settings.card_currency < cost) {
+    return { ok: false, errors: [`行动币不足，修复需 ${cost} 币`] };
+  }
+  gs.settings.card_currency -= cost;
+  owned.durability = owned.max_durability || cardMaxDurability(card);
+  owned.broken = false;
+  recordCurrencySpent(cost);
+  toastr.success(`「${card.name}」已修复至满耐久`);
+  return { ok: true, errors: [], cost };
+}
+
+// ── 购买卡包（行动币消费出口，另一出口为 v70 破损修复） ───────────────────
 
 /** 购买卡包：恒定 CARD_PACK_PRICE，扣币后返回 offer 立即开。 */
 export function buyPack(configId: string): { ok: boolean; errors: string[]; offer?: CardOffer } {

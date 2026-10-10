@@ -232,7 +232,7 @@
       <!-- 演绎文案模板：收进可折叠「高级」区，减轻主体卡片负担 -->
       <ChoiceSectionCard title="演绎文案模板（高级）" icon="fa-solid fa-comment">
         <small class="choice-field-hint">{{
-          t`成功/失败按点数与需求值的差距（margin）分档，每档独立演绎指令；大成功/大失败为单条。指令以 HTML 注释随玩家消息隐形注入（AI 可见、聊天界面与输入框均不可见，用户全程看不到）。插件会自动在注释开头拼结构化结论（结局/裁定对象/点数/需求/差值/程度）、结尾拼纪律尾注，模板只需写演绎要求；仍支持 {rate} {roll} {margin} {degree}；某档留空回退该结局回退文案、两者皆空则不注入`
+          t`成功/失败按点数与需求值的差距占判定空间的比例分档（差距越大、占成功/失败空间比例越高则档位越高），每档独立演绎指令；大成功/大失败为单条。指令以 HTML 注释随玩家消息隐形注入（AI 可见、聊天界面与输入框均不可见，用户全程看不到）。插件会自动在注释开头拼结构化结论（结局/裁定对象/点数/需求/差值/程度）、结尾拼纪律尾注，模板只需写演绎要求；仍支持 {rate} {roll} {margin} {degree}；某档留空回退该结局回退文案、两者皆空则不注入`
         }}</small>
         <div class="choice-dice-template-list">
           <div class="choice-dice-template-row">
@@ -243,7 +243,7 @@
                 v-model="gs.settings.dice.success_send_low_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin 0–19，给 AI 的演绎指令`"
+                :placeholder="t`差值占成功空间 0–20%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -255,7 +255,7 @@
                 v-model="gs.settings.dice.success_send_mid_low_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin 20–39，给 AI 的演绎指令`"
+                :placeholder="t`差值占成功空间 20–40%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -267,7 +267,7 @@
                 v-model="gs.settings.dice.success_send_mid_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin 40–59，给 AI 的演绎指令`"
+                :placeholder="t`差值占成功空间 40–60%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -279,7 +279,7 @@
                 v-model="gs.settings.dice.success_send_mid_high_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin 60–79，给 AI 的演绎指令`"
+                :placeholder="t`差值占成功空间 60–80%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -291,7 +291,7 @@
                 v-model="gs.settings.dice.success_send_high_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin ≥80，给 AI 的演绎指令`"
+                :placeholder="t`差值占成功空间 80% 以上，给 AI 的演绎指令`"
               />
             </label>
             <label class="choice-count-item">
@@ -311,7 +311,7 @@
                 v-model="gs.settings.dice.fail_send_low_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin −1–−19，给 AI 的演绎指令`"
+                :placeholder="t`差值占失败空间 0–20%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -323,7 +323,7 @@
                 v-model="gs.settings.dice.fail_send_mid_low_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin −20–−39，给 AI 的演绎指令`"
+                :placeholder="t`差值占失败空间 20–40%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -335,7 +335,7 @@
                 v-model="gs.settings.dice.fail_send_mid_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin −40–−59，给 AI 的演绎指令`"
+                :placeholder="t`差值占失败空间 40–60%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -347,7 +347,7 @@
                 v-model="gs.settings.dice.fail_send_mid_high_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin −60–−79，给 AI 的演绎指令`"
+                :placeholder="t`差值占失败空间 60–80%，给 AI 的演绎指令`"
               />
             </label>
           </div>
@@ -359,7 +359,7 @@
                 v-model="gs.settings.dice.fail_send_high_template"
                 class="choice-input"
                 :title="t`模板内勿输入 --（会截断 HTML 注释）`"
-                :placeholder="t`margin ≤−80，给 AI 的演绎指令`"
+                :placeholder="t`差值占失败空间 80% 以上，给 AI 的演绎指令`"
               />
             </label>
             <label class="choice-count-item">
