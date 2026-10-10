@@ -76,9 +76,10 @@ npx knip         # 死代码扫描（klona/pinia/toastr 在 knip.json ignoreDepe
 ## 分支纪律
 
 - `main` 发布线，只从 `test` 同步源码，dist 归 bot bundle；`test` 是 bug fix 主战场；`feat/passive-status` 只做被动状态。
-- 大版本 `test → main`：`git merge test --no-ff -X theirs`，合并后 `git restore --source=<merge 前 main sha> dist` 恢复 main 侧 dist 让 bot 重出；merge 信息带 `[release minor/patch/major]`（bundle CI 自动 bump 版本/tag，勿手改版本号）。
+- 大版本 `test → main`：`git merge test --no-ff -X theirs --allow-unrelated-histories`（test 与 main 无共同祖先，不加必失败），合并后 `git restore --source=<merge 前 main sha> dist` 恢复 main 侧 dist 让 bot 重出；merge 信息带 `[release minor/patch/major]`（bundle CI 自动 bump 版本/tag，勿手改版本号）。
 - 增量 bugfix 用 `git cherry-pick -n <sha>` 只搬源码；dist 冲突保留 main 侧。`feat` rebase 中 `ours` = 新 base，dist 用 main 侧。
-- 同步前先查远端 main 最新提交（有定期依赖更新 action 可能造成 drift）。
+- 同步前先查远端 main 最新提交（发布合并前 main 侧可能只有 bot 提交造成 drift）。
+- **依赖更新只走 `chore/dep-updates` 分支，严禁提交 main**：酒馆的扩展更新提示 = 「`git log 本地HEAD..origin/main` 非空即弹」，纯依赖提交进 main 会每 3 天让用户白收一次更新提示，bundle 还会把未经发布验证的依赖变更打进 dist 分发。bump_deps workflow 每 3 天把 main 的 package.json/lockfile 更新累积到该分支；发布时把它（或重新跑一次 `pnpm update`）合进 test，依赖变更随发布过验证后才到用户。分支被删时先 `git push origin origin/main:refs/heads/chore/dep-updates` 重建。
 
 ## 实现前核实的酒馆接口
 
