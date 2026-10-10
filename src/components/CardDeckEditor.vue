@@ -1,0 +1,486 @@
+<template>
+  <div class="choice-card-deck">
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-table-cells"></i> {{ t`当前卡组` }}</h4>
+      <p class="choice-deck-config">
+        <span class="choice-cfg-chip" :title="t`装备位随生效条目池配置切换`">
+          <i class="fa-solid fa-tag"></i>{{ t`当前配置` }}：{{ configId }}
+        </span>
+        <span v-if="autoDeck" class="choice-deck-auto" :title="t`自动从已拥有卡填满 4 槽，省去手动编组`">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>{{ t`自动编组中` }}
+        </span>
+        <span class="choice-deck-count">
+          {{ t`已装备` }} {{ filledCount }}/{{ fixedSlots.length
+          }}<template v-if="budgetText"> · {{ budgetText }}</template>
+        </span>
+      </p>
+      <p class="choice-deck-hint">
+        {{ t`角色装备区：4 个类型槽位环绕，各装对应类型 1 张；整组受星级预算（${budgetHint}）约束。` }}
+      </p>
+      <label class="choice-toggle">
+        <input type="checkbox" :checked="autoDeck" @change="onAutoToggle" />
+        <span class="choice-toggle-custom"></span>
+        <span class="choice-toggle-label">
+          <strong>{{ t`自动编组` }}</strong>
+          <small>{{
+            autoDeck
+              ? t`已自动填满 4 槽（全局开关）——卸下卡或成功装备卡后切换为手动调整`
+              : t`手动编辑卡组（自动编组已关）`
+          }}</small>
+        </span>
+      </label>
+
+      <div class="choice-paperdoll">
+        <!-- 中央通用半身像（不用角色头像） -->
+        <div class="choice-paperdoll-bust" aria-hidden="true">
+          <i class="fa-solid fa-user"></i>
+        </div>
+
+        <!-- 环绕槽位：祝福=顶 / 武器=左 / 法术=右 / 试炼=底 -->
+        <div
+          v-for="slot in slotViews"
+          :key="slot.type"
+          class="choice-doll-slot"
+          :class="[`choice-doll-slot--${slotPos[slot.type]}`, { 'choice-doll-slot--empty': !slot.card }]"
+          :style="slot.card ? { borderColor: CARD_STAR_COLOR[slot.card.star] } : undefined"
+          :title="slot.card ? t`${slot.card.name}：点击更换` : t`点击装备 ${CARD_TYPE_LABEL[slot.type]}卡`"
+        >
+          <button class="choice-doll-slot__btn" @click="openPicker(slot.type)">
+            <template v-if="slot.card">
+              <!-- 头部行：类型小图标 + 名称 + 星级标（星级色与槽描边同源） -->
+              <span class="choice-doll-slot__head">
+                <i class="choice-doll-slot__icon" :class="CARD_TYPE_ICON[slot.type]"></i>
+                <span
+                  class="choice-doll-slot__stars"
+                  :style="{ color: CARD_STAR_COLOR[slot.card.star] }"
+                  :title="CARD_STAR_LABEL[slot.card.star]"
+                >
+                  <i v-for="n in starCount(slot.card.star)" :key="n" class="fa-solid fa-star"></i>
+                </span>
+              </span>
+              <span class="choice-doll-slot__name">{{ slot.card.name }}</span>
+              <span class="choice-doll-slot__line">{{ t`触发：${triggerLabel(slot.card.trigger)}` }}</span>
+              <span class="choice-doll-slot__line">{{ t`效果：${effectsLabel(slot.card.effects)}` }}</span>
+              <span v-if="slot.card.narrative" class="choice-doll-slot__narrative">{{ slot.card.narrative }}</span>
+              <span class="choice-doll-slot__meta">
+                <span v-if="slot.card.character_name" class="choice-doll-slot__character">
+                  <i class="fa-solid fa-user"></i>{{ slot.card.character_name }}
+                </span>
+                <span
+                  v-if="slot.owned"
+                  class="choice-doll-slot__durability"
+                  :class="{ 'choice-doll-slot__durability--broken': isBroken(slot.owned) }"
+                  :title="t`耐久：触发一次消耗 1 点，归零破损需修复`"
+                >
+                  <i class="fa-solid fa-shield-halved"></i>{{ slot.owned.durability }}/{{ slot.owned.max_durability }}
+                </span>
+              </span>
+            </template>
+            <template v-else>
+              <i class="choice-doll-slot__icon" :class="CARD_TYPE_ICON[slot.type]"></i>
+              <span class="choice-doll-slot__label">{{ CARD_TYPE_LABEL[slot.type] }}</span>
+              <small class="choice-doll-slot__add">{{ t`点击装备` }}</small>
+            </template>
+          </button>
+
+          <!-- 已装槽的卸下 -->
+          <button
+            v-if="slot.card"
+            class="choice-doll-slot__unequip"
+            :title="t`卸下`"
+            @click.stop="onUnequip(slot.card_id)"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <CardSlotPicker v-if="activeSlotType" :type="activeSlotType" :config-id="configId" @close="activeSlotType = null" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import CardSlotPicker from '@/components/CardSlotPicker.vue';
+import { useGlobalSettingsStore } from '@/store/global-settings';
+import { cardDefById, currentCardConfigId, unequipCard, resolveDeckSlots, autoDeckCards } from '@/core/cards';
+import {
+  CARD_STAR_COLOR,
+  CARD_TYPE_ICON,
+  CARD_TYPE_LABEL,
+  CARD_STAR_LABEL,
+  triggerLabel,
+  effectsLabel,
+} from '@/core/cards-meta';
+import { CARD_STAR_BUDGET, isCardBroken } from '@/core/cards-constraints';
+import type { CardOwned, CardStar, CardType } from '@/type/settings';
+
+const gs = useGlobalSettingsStore();
+
+const configId = computed(() => currentCardConfigId());
+
+/** 固定槽（按 CARD_SLOT_TYPES 权威顺序规整），card_id='' 为空槽 */
+const fixedSlots = computed(() => resolveDeckSlots(configId.value));
+const filledCount = computed(() => fixedSlots.value.filter(s => s.card_id).length);
+
+/** 预算约束文案（从 CARD_STAR_BUDGET 派生，勿在模板硬编码，改常量即脱节） */
+const budgetEntries = computed(() => Object.entries(CARD_STAR_BUDGET) as [CardStar, number][]);
+const budgetHint = computed(() => budgetEntries.value.map(([star, max]) => `${star}★≤${max}`).join('/'));
+
+/** 当前卡组的预算占用读数（仅列受限星级），如「3★ 1/2 · 5★ 0/1」；无高星卡时为空 */
+const budgetText = computed(() => {
+  const counts: Partial<Record<CardStar, number>> = {};
+  for (const s of fixedSlots.value) {
+    const star = cardDefById(s.card_id)?.star;
+    if (star && CARD_STAR_BUDGET[star] !== undefined) counts[star] = (counts[star] ?? 0) + 1;
+  }
+  const text = budgetEntries.value.map(([star, max]) => `${star}★ ${counts[star] ?? 0}/${max}`).join(' · ');
+  return Object.keys(counts).length > 0 ? text : '';
+});
+
+/** 供渲染的槽视图：把卡已装但定义缺失的异常一并归为占位；
+ *  顺带解析 owned（收藏条目，装备槽展示耐久读数用；缺数据时隐藏）。 */
+const slotViews = computed(() =>
+  fixedSlots.value.map(s => ({
+    type: s.type,
+    card_id: s.card_id,
+    card: s.card_id ? cardDefById(s.card_id) : undefined,
+    owned: s.card_id ? gs.settings.card_collection[s.card_id] : undefined,
+  })),
+);
+
+/** 星级 → 星标个数（与 CardFace 口径一致，纯展示） */
+const starCount = (star: CardStar): number => Number(star) || 0;
+
+/** 破损判定（槽内耐久读数红显；装备解析已保证不装破损卡，此为数据异常的防御） */
+const isBroken = (owned: CardOwned): boolean => isCardBroken(owned);
+
+/** 类型 → 纸娃娃环绕方位（仅展示映射；数据顺序仍以 CARD_SLOT_TYPES 为准） */
+const slotPos: Record<CardType, 'top' | 'left' | 'right' | 'bottom'> = {
+  blessing: 'top',
+  weapon: 'left',
+  spell: 'right',
+  trial: 'bottom',
+};
+
+/** 当前要挑选的槽类型；非 null 时挂载 CardSlotPicker */
+const activeSlotType = ref<CardType | null>(null);
+
+/** 自动编组态（读全局设置；auto 时 resolveDeckSlots 已返回自动结果） */
+const autoDeck = computed(() => gs.settings.auto_deck_enabled);
+
+/** 自动→手动：把当前自动编组结果快照进存储（手动编辑起点）。仅在 auto 态调用，幂等。 */
+const snapshotFromAuto = () => {
+  if (!autoDeck.value) return;
+  const slots = autoDeckCards();
+  (gs.settings.card_decks[configId.value] ??= { config_id: configId.value, slots: [] }).slots = slots;
+};
+
+/** 自动编组开关：关时先快照当前自动结果再切手动；开时无需快照（auto 直接接管展示）。 */
+const onAutoToggle = (e: Event) => {
+  if ((e.target as HTMLInputElement).checked) {
+    gs.settings.auto_deck_enabled = true;
+  } else {
+    snapshotFromAuto();
+    gs.settings.auto_deck_enabled = false;
+  }
+};
+
+/** 点槽位打开选择器。不预先切手动：equipCard 已改为校验通过后才快照+接管，
+ *  失败/取消路径不留「auto 被静默关闭」的副作用；auto 态下候选与预算校验按
+ *  自动编组投影解析（resolveDeckSlots 模式感知，投影即接管后的卡组内容）。 */
+const openPicker = (type: CardType) => {
+  activeSlotType.value = type;
+};
+
+/** 卸下：auto 下同样先切手动，再对快照槽位卸卡。 */
+const onUnequip = (cardId: string) => {
+  snapshotFromAuto();
+  gs.settings.auto_deck_enabled = false;
+  unequipCard(configId.value, cardId);
+};
+</script>
+
+<style scoped>
+.choice-card-deck {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-4);
+}
+
+.choice-deck-config {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  margin: 0 0 var(--choice-space-1);
+  flex-wrap: wrap;
+}
+
+.choice-cfg-chip {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  background: var(--choice-bg-element);
+  border-radius: 999px;
+  padding: 2px var(--choice-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.choice-deck-count {
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+  margin-left: auto;
+}
+
+.choice-deck-auto {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-color-success);
+  background: var(--choice-bg-element);
+  border-radius: 999px;
+  padding: 2px var(--choice-space-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: var(--choice-space-2);
+}
+
+.choice-deck-hint {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  margin: 0 0 var(--choice-space-2);
+}
+
+/* 角色装备区：3×3 grid，中央半身像 + 四向环绕槽位（响应式，无绝对定位错位风险） */
+.choice-paperdoll {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1.7fr 1fr;
+  grid-template-areas:
+    '. top .'
+    'left bust right'
+    '. bottom .';
+  gap: var(--choice-space-3);
+  align-items: center;
+  justify-items: stretch;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.choice-doll-slot--top {
+  grid-area: top;
+}
+.choice-doll-slot--left {
+  grid-area: left;
+}
+.choice-doll-slot--right {
+  grid-area: right;
+}
+.choice-doll-slot--bottom {
+  grid-area: bottom;
+}
+
+.choice-paperdoll-bust {
+  grid-area: bust;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--choice-radius-lg);
+  background: radial-gradient(circle at 50% 24%, var(--choice-bg-element), transparent 72%);
+  color: var(--choice-text-muted);
+  font-size: 100px;
+  user-select: none;
+}
+
+/* 槽位物品框：星级色描边。已装槽内容驱动高度（信息块），空槽保持原方形 */
+.choice-doll-slot {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--choice-radius-md);
+  border: 1.5px solid var(--choice-border-strong);
+  background: var(--choice-bg-card);
+  overflow: hidden;
+  transition:
+    border-color var(--choice-transition),
+    transform var(--choice-transition-motion),
+    box-shadow var(--choice-transition);
+}
+
+/* 已装槽：内容驱动高度，保证信息块可读的最小高度 */
+.choice-doll-slot:not(.choice-doll-slot--empty) {
+  min-height: 140px;
+}
+
+.choice-doll-slot:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 10px var(--choice-bg-active);
+}
+
+/* 已装槽：信息块左上对齐、文字左排；空槽仍居中 */
+.choice-doll-slot:not(.choice-doll-slot--empty) .choice-doll-slot__btn {
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.choice-doll-slot__btn {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--choice-space-1);
+  padding: var(--choice-space-2);
+  text-align: center;
+}
+
+/* 已装槽头部行：小图标 + 星标两端分布 */
+.choice-doll-slot__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--choice-space-1);
+}
+
+.choice-doll-slot__icon {
+  font-size: 40px;
+}
+
+.choice-doll-slot:not(.choice-doll-slot--empty) .choice-doll-slot__icon {
+  font-size: 18px;
+}
+
+/* 星级标：小星图标，色与槽描边同源 */
+.choice-doll-slot__stars {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 10px;
+  letter-spacing: -0.5px;
+}
+
+.choice-doll-slot__name {
+  font-size: var(--choice-text-sm);
+  font-weight: bold;
+  color: var(--choice-text);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 触发/效果行：小号次级文本，长文本换行截断 */
+.choice-doll-slot__line {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-text-secondary);
+  line-height: 1.35;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 卡面叙事行：斜体弱化（槽位空间有限，最多 3 行截断） */
+.choice-doll-slot__narrative {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-text-muted);
+  font-style: italic;
+  line-height: 1.35;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* 底部 meta 行：角色归属 + 耐久两端分布，沉底 */
+.choice-doll-slot__meta {
+  width: 100%;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--choice-space-1);
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-text-secondary);
+}
+
+.choice-doll-slot__character {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-doll-slot__durability {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.choice-doll-slot__durability--broken {
+  color: var(--choice-color-error);
+  font-weight: bold;
+}
+
+.choice-doll-slot__label {
+  font-size: var(--choice-text-sm);
+  font-weight: bold;
+  color: var(--choice-text);
+}
+
+.choice-doll-slot__add {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+}
+
+.choice-doll-slot--empty {
+  color: var(--choice-text-muted);
+  border-style: dashed;
+  aspect-ratio: 1 / 1;
+}
+
+.choice-doll-slot--empty:hover {
+  border-style: solid;
+  border-color: var(--choice-border-active);
+  color: var(--choice-text);
+}
+
+/* 卸下按钮：右上角小 X */
+.choice-doll-slot__unequip {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choice-doll-slot__unequip:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-color-error);
+}
+</style>

@@ -28,12 +28,6 @@ function writeEnabled(key: EntryKey, on: boolean, ui: UiShape): void {
   else ui.chat_panel_enabled = on;
 }
 
-/** 当前开启的入口数（悬浮球/魔棒/聊天面板） */
-export function ensureEntryPoint(): number {
-  const ui = useGlobalSettingsStore().settings.ui as UiShape;
-  return (readEnabled('floating', ui) ? 1 : 0) + (readEnabled('wand', ui) ? 1 : 0) + (readEnabled('chat', ui) ? 1 : 0);
-}
-
 /**
  * 设置入口显隐（入口保底护栏）：关闭最后一个开着的入口时拒绝并提示，
  * 保证插件永远至少有一个可视化入口（否则用户无意全关后无从找回）。

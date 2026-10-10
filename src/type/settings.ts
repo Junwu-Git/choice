@@ -189,7 +189,6 @@ export const PromptConfig = z
       .catch(ENRICH_MAX_CHARS_DEFAULT),
     context_rounds: z.number().min(0).default(10).catch(10),
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
-    prefill_enabled: z.boolean().default(true),
     baibai_enabled: z.boolean().default(false),
     shujuku_enabled: z.boolean().default(false),
     /** @deprecated v44 起不再有写入方：「全向」配置已随轻型默认预设重构删除，
@@ -375,7 +374,6 @@ const PromptRules = z
     chat_filter_rules: z.array(ChatFilterRule).default([]),
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
     modules: z.array(PromptModule).prefault([]),
-    prefill_enabled: z.boolean().default(true),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
     /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
@@ -1075,7 +1073,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 60;
+export const SCHEMA_VERSION = 72;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1104,6 +1102,20 @@ export const SUGGEST_UPGRADE_MULTIPLIER = 1.5;
 /** 阵容计划补入探索上限：剩余空位 × 该比例（向上取整）后从未入池条目补入。
  *  余下空位保持空缺——纯「杀低捧高」会把候选集收敛成少数几条，探索预算是多样性兜底。 */
 export const ROSTER_EXPLORE_RATIO = 0.5;
+/** 评级阈值 SE 自适应系数：实际阈值 = max(固定阈值, SE×本系数)，SE = sqrt(rate(1−rate)/n)。
+ *  小样本命中率噪声大（10 轮边缘 ±0.2 的超额一半是噪声），样本越少门槛越高防抖动建议；
+ *  rate→0/1 时 SE→0，回落固定阈值（SUGGEST_DOWNGRADE_EXCESS / SUGGEST_UPGRADE_EXCESS） */
+export const SUGGEST_THRESHOLD_SE_FACTOR = 1.5;
+/** 冷却墙钟上限：自动化调整后超过此时长且已有 ≥ SUGGEST_COOLDOWN_MIN_POST 轮新数据时，
+ *  放宽「足 SUGGEST_MIN_SAMPLES 轮才评级」的冷却门槛。低权重条目参与频率近似正比权重，
+ *  纯按参与轮数等门槛会形成「权重越低观察期越长」的冷却黑洞，墙钟兜底；
+ *  放宽后的小样本噪声由 SUGGEST_THRESHOLD_SE_FACTOR 兜住 */
+export const SUGGEST_COOLDOWN_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+/** 冷却放宽所需的最低调整后新数据轮数（见 SUGGEST_COOLDOWN_MAX_MS） */
+export const SUGGEST_COOLDOWN_MIN_POST = 3;
+/** 期望基线多点选校正启用门槛：scope 总轮数 ≥ 此值才启用平均点选数 m̄ 修正（样本不足
+ *  不猜，回退单点模型 matched/count）。见 ScopeStats.total_rounds / scopeAvgPicks */
+export const AVG_PICKS_MIN_ROUNDS = 10;
 /** 自动化应用历史槽上限：超过后 FIFO 丢最旧，保证撤销入口始终指向最近 N 次写入 */
 export const APPLY_HISTORY_LIMIT = 20;
 /** AI 建议分析单批条数上限：一次请求只发送 ≤ 此数的条目（控制单次 token 与输出解析难度） */
@@ -1125,6 +1137,12 @@ export const AI_ATTRIBUTION_QUEUE_MAX = 32;
  * 优先于本阈值兜底（AI 常以 type 名开头写选项）。启发式常量，随真实数据表现调参。
  */
 export const OPTION_MATCH_THRESHOLD = 0.25;
+/**
+ * Dice 兜底归因的最优-次优差值下限：最高分与次高分拉开不足此差距时，两条目归属近随机
+ * （命中谁基本是掷硬币，污染命中/期望记账），归 null（宁缺勿错，与 L1 保守哲学一致）。
+ * 仅约束 Dice 兜底路径；type 前缀精确匹配不受影响。
+ */
+export const OPTION_MATCH_MARGIN = 0.05;
 
 export const WorldInfoGlobalSettings = z
   .object({
@@ -1426,6 +1444,14 @@ export const ScopeStats = z
   .object({
     total_generated: z.number().min(0).default(0).catch(0),
     total_selected: z.number().min(0).default(0).catch(0),
+    /** 成功生成轮数（每轮 recordOptionsGenerated +1，与输出条数无关）：平均点选数
+     *  m̄ = picks_total / total_rounds 的分母——多点选用户的期望基线校正因子（单点模型
+     *  matched/count 系统性低估基线、超额偏高偏提权）。老档缺字段由 ?? 0 兜底（视为
+     *  未启用校正），无需 bump schema_version */
+    total_rounds: z.number().min(0).optional(),
+    /** 点选次数（recordOptionSelected 每次点击 +1，与 total_selected 同口径、不做同代
+     *  去重——重复点击也是点选习惯的一部分）。老档缺字段由 ?? 0 兜底 */
+    picks_total: z.number().min(0).optional(),
     /** 本维度最近一次活动（生成/选择）时间戳：AI 建议分析按它做失效判定——
      *  全局 stats.updated_at 会被其他维度活动带动，导致无关维度缓存误失效、全量重跑 */
     updated_at: z.number().default(0),
@@ -1449,16 +1475,172 @@ const DiceOutcomeCounts = z
   .prefault({});
 type DiceOutcomeCounts = z.infer<typeof DiceOutcomeCounts>;
 
-/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。 */
+/** 单次骰子判定历史条目（v61）。text = parse 后选项正文的短摘要，rate = 本次判定的实际
+ *  比较目标（D100 为需求值、骰式为映射 DC），roll = 点数/骰式总和，outcome = 结局。
+ *  供统计页最近判定回顾；不参与条目建议/权重/AI 分析。 */
+const DiceHistoryEntry = z
+  .object({
+    ts: z.number().default(0),
+    text: z.string().default(''),
+    rate: z.number().default(0),
+    roll: z.number().default(0),
+    outcome: z.enum(['crit_success', 'success', 'fail', 'crit_fail']).default('fail'),
+  })
+  .prefault({});
+type DiceHistoryEntry = z.infer<typeof DiceHistoryEntry>;
+
+/** 全局骰子战绩；daily 使用本地时区 YYYY-MM-DD。history 为最近判定日志（v61），
+ *  上限 DICE_HISTORY_LIMIT 由 stats.ts 固化，超出丢最旧。 */
 export const DiceStats = z
   .object({
     total_rolls: z.number().min(0).default(0).catch(0),
     by_outcome: DiceOutcomeCounts.prefault({}),
     daily: z.record(z.string(), DiceOutcomeCounts).prefault({}),
+    /** 最近判定历史（FIFO，v61）：随 stats_enabled 采集，清空统计一并清除 */
+    history: z.array(DiceHistoryEntry).prefault([]),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type DiceStats = z.infer<typeof DiceStats>;
+
+// ── 卡牌系统（v62 增量字段，全走 zod default/prefault 补齐，不 bump schema_version）────────
+// 每张卡是可装备的效果卡：触发条件（选项类型/档位/需求区间/骰值区间/结局）+ 效果
+// （骰值/需求/彩蛋窗口修正、结局转化、强制重掷、叙事展示）。收藏全局 + 按 config 装备。
+// 卡为永久收藏但 v70 起恢复触发磨损与破损修复（耐久归零破损、行动币修复回满）；
+// 角色主题池由 AI 按角色卡世界观懒生成、可重复掉落。
+// 货币「行动币」由骰子结局收支 + 重复卡折算获得，新增修复支出形成消耗闭环。
+
+/** 星级：1星至5星（抽卡权重递减，高星装备数量受预算限制） */
+export const CARD_STARS = ['1', '2', '3', '4', '5'] as const;
+export type CardStar = (typeof CARD_STARS)[number];
+/** 卡类型：武器/法术/祝福/试炼（装备位同类最多 1 张，效果定位见 cards-builtin.ts） */
+export const CARD_TYPES = ['weapon', 'spell', 'blessing', 'trial'] as const;
+export type CardType = (typeof CARD_TYPES)[number];
+/** 卡来源：builtin = 内置（全球反复掉落）；character = 角色主题池（懒生成、可重复掉落）。
+ *  联合类型由 z.enum(CARD_SOURCES) 经 z.infer 推导，不另立别名。 */
+export const CARD_SOURCES = ['builtin', 'character'] as const;
+
+/** 卡触发条件：单对象含可选字段，按 kind 取值匹配。kind 语义：
+ *  type = 选项类型（parseOptionType 命中 typeValue）；grade = 风险档位（conservative/balanced/bold）；
+ *  demand = 需求值区间 [min,max]；roll = 骰值区间 [min,max]；outcome = 判定结局。 */
+export const CardTrigger = z
+  .object({
+    kind: z.enum(['type', 'grade', 'demand', 'roll', 'outcome']).default('type'),
+    typeValue: z.string().default(''),
+    grade: z.enum(['conservative', 'balanced', 'bold']).nullable().default(null),
+    min: z.number().default(0),
+    max: z.number().default(0),
+    outcome: z.enum(['success', 'fail', 'crit_success', 'crit_fail']).nullable().default(null),
+  })
+  .prefault({});
+export type CardTrigger = z.infer<typeof CardTrigger>;
+
+/** 卡效果（六类）：roll_bonus 掷骰前 ±；demand_mod ±DC；crit_window 扩/收彩蛋区间；
+ *  outcome_convert 结局转化；reroll 强制重掷；narrative 卡面叙事展示（不注入正文 AI
+ *  判定注释，只作卡面展示——注入移除见判定注释机制行取舍）。 */
+export const CardEffect = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('roll_bonus'), amount: z.number().default(0) }),
+  z.object({ kind: z.literal('demand_mod'), amount: z.number().default(0) }),
+  z.object({
+    kind: z.literal('crit_window'),
+    success_delta: z.number().default(0),
+    fail_delta: z.number().default(0),
+  }),
+  z.object({
+    kind: z.literal('outcome_convert'),
+    /** from 含 crit_fail（v66 后扩）：大失败→大成功为 5★ 专属强力转化 */
+    from: z.enum(['fail', 'crit_fail', 'crit_success']),
+    to: z.enum(['success', 'crit_success']),
+  }),
+  z.object({ kind: z.literal('reroll'), on: z.enum(['fail', 'crit_fail']).default('fail') }),
+  z.object({ kind: z.literal('narrative'), text: z.string().default('') }),
+]);
+export type CardEffect = z.infer<typeof CardEffect>;
+
+/** 卡定义（内置 or 角色主题池卡）。内置卡 id 稳定；角色卡 id=uuidv4() 且归组到角色池。 */
+export const Card = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    type: z.enum(CARD_TYPES),
+    star: z.enum(CARD_STARS),
+    trigger: CardTrigger.prefault({}),
+    effects: z.array(CardEffect).prefault([]),
+    /** 卡面叙事文本（仅展示，不注入正文 AI） */
+    narrative: z.string().default(''),
+    source: z.enum(CARD_SOURCES),
+    /** 角色主题卡归属：source='character' 时填生成它的角色 id/名（内置卡为空），
+     *  供卡面角标区分「这张主题卡属于哪个角色」，避免多池混排时认不出。 */
+    character_id: z.string().default(''),
+    character_name: z.string().default(''),
+  })
+  .prefault(() => ({ id: '', name: '', type: 'weapon', star: '1', source: 'builtin' }));
+export type Card = z.infer<typeof Card>;
+
+/** 收藏条目（键 = card_id）：卡为永久收藏，但 v70 起恢复触发磨损与破损修复
+ *  （durability 归零 → broken=true 自动卸下禁装，消耗行动币修复回满）。 */
+export const CardOwned = z
+  .object({
+    card_id: z.string().default(''),
+    obtained_at: z.number().default(0),
+    trigger_count: z.number().min(0).default(0).catch(0),
+    /** 当前耐久（0 = 破损）；获取时按星级×功能计算满值，触发扣减 */
+    durability: z.number().min(0).default(0).catch(0),
+    /** 满耐久（获取时按 cardMaxDurability 计算，详情见 cards-constraints.ts） */
+    max_durability: z.number().min(1).default(1).catch(1),
+    /** 破损态（持久化，供卡面/装备解析直接判断；durability===0 为等价判定，双保险） */
+    broken: z.boolean().default(false),
+    source: z.enum(CARD_SOURCES).default('builtin'),
+  })
+  .prefault({});
+export type CardOwned = z.infer<typeof CardOwned>;
+
+/** 历史获得记录（键 = card_id）：与 card_collection（当前持有）分离，记录"曾经获得过"，
+ *  收藏进度/成就/套装基于它永久保留。count 为累计获得次数（含重复抽中折算）。 */
+export const CardObtained = z
+  .object({
+    card_id: z.string().default(''),
+    obtained_at: z.number().default(0),
+    count: z.number().min(1).default(1).catch(1),
+  })
+  .prefault({});
+export type CardObtained = z.infer<typeof CardObtained>;
+
+/** 某 config 的卡组（固定 4 个类型槽，顺序见 CARD_SLOT_TYPES；每槽绑一种类型、只装该类型 1 张，
+ *  card_id='' 表示空槽；整组受星级预算约束）。独立 record，不写进 PoolConfig.entries。 */
+export const CardDeck = z
+  .object({
+    config_id: z.string().default(''),
+    slots: z.array(z.object({ type: z.enum(CARD_TYPES), card_id: z.string().default('') })).prefault([]),
+  })
+  .prefault({});
+export type CardDeck = z.infer<typeof CardDeck>;
+
+/** 角色 AI 主题卡池：首次幸运掉落需要时懒生成并固定（generated=true）；池内卡反复掉落（重复获得折算）。 */
+export const CardCharacterPool = z
+  .object({
+    character_id: z.string().default(''),
+    generated: z.boolean().default(false),
+    card_ids: z.array(z.string()).prefault([]),
+  })
+  .prefault({});
+export type CardCharacterPool = z.infer<typeof CardCharacterPool>;
+
+/** 卡牌统计（stats.card，统计层）：随 stats_enabled 采集、clearStats 清。
+ *  游戏进度（货币余额/收藏/角色池）放 GlobalSettings，不被清空。 */
+export const CardStats = z
+  .object({
+    lucky_hits: z.number().min(0).default(0).catch(0),
+    packs_opened: z.number().min(0).default(0).catch(0),
+    cards_obtained: z.number().min(0).default(0).catch(0),
+    per_card: z.record(z.string(), z.object({ triggers: z.number().default(0) })).prefault({}),
+    currency_earned_by_outcome: z.record(z.string(), z.number().min(0).default(0).catch(0)).prefault({}),
+    currency_earned: z.number().min(0).default(0).catch(0),
+    currency_spent: z.number().min(0).default(0).catch(0),
+    updated_at: z.number().default(0),
+  })
+  .prefault({});
+export type CardStats = z.infer<typeof CardStats>;
 
 export const StatsSettings = z
   .object({
@@ -1478,10 +1660,29 @@ export const StatsSettings = z
     /** 骰子判定战绩（全局维度，不随 config 维度）：随 stats_enabled 采集；
      *  不参与条目建议/权重/AI 分析；清空统计时一并清除。 */
     dice: DiceStats.prefault({}),
+    /** 卡牌系统统计（统计层，随 stats_enabled 采集、clearStats 清）。游戏进度
+     *  （card_currency/card_collection/card_character_pools）放 GlobalSettings，
+     *  不被清空——防「清统计把玩家攒的货币抹了」。 */
+    card: CardStats.prefault({}),
     updated_at: z.number().default(0),
   })
   .prefault({});
 export type StatsSettings = z.infer<typeof StatsSettings>;
+
+/** 构造一份空白卡牌统计（纯数据构造，不依赖任何 store）。统计层随 stats_enabled 采集、
+ *  清空统计一并清；游戏进度（卡币/收藏/角色池）放 GlobalSettings 不被清。 */
+export function createEmptyCardStats(): CardStats {
+  return {
+    lucky_hits: 0,
+    packs_opened: 0,
+    cards_obtained: 0,
+    per_card: {},
+    currency_earned_by_outcome: {},
+    currency_earned: 0,
+    currency_spent: 0,
+    updated_at: 0,
+  };
+}
 
 /** 构造一份空白骰子战绩（纯数据构造，不依赖任何 store）。 */
 export function createEmptyDiceStats(): DiceStats {
@@ -1489,6 +1690,7 @@ export function createEmptyDiceStats(): DiceStats {
     total_rolls: 0,
     by_outcome: { crit_success: 0, success: 0, fail: 0, crit_fail: 0 },
     daily: {},
+    history: [],
     updated_at: 0,
   };
 }
@@ -1503,25 +1705,59 @@ export function createEmptyStats(): StatsSettings {
     last_hit_generation_id: null,
     ai_analysis: {},
     dice: createEmptyDiceStats(),
+    card: createEmptyCardStats(),
     updated_at: Date.now(),
   };
 }
 
 /** 骰子判定设置（v57，难度制）：选项点击时掷 D100 判定成败——AI 标注/档位兜底的数字是
  *  「需求值」，掷出 ≥ 需求才算成功（点数越大越好，与正文 AI 直觉一致；v55 的
- *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给发送文本带隐形
- *  演绎指令（包在 HTML 注释中随消息发送/填入，AI 可见、聊天界面不可见；
- *  fill/insert/append 填入输入框可见可编辑，手动发送后 AI 同样读到）。模板占位符
+ *  「掷 ≤ 率 = 成功」概率制已废弃）。成功/失败/大成功/大失败都按模板给隐形
+ *  演绎指令（包在 HTML 注释中对用户全程隐形注入：四种行为输入框只放纯正文，玩家消息
+ *  真正发出时由 MESSAGE_SENT 回写进该消息，AI 可见、聊天界面不可见、随消息持久化）。
+ *  模板占位符
  *  {rate}/{roll}/{margin}/{degree}（margin = 点数 − 需求，degree 为口语化程度词：
  *  成功侧勉强得手/险胜/顺利达成/漂亮完胜/势如破竹、失败侧差点成功/功亏一篑/事与愿违/溃败/
  *  彻底落败、彩蛋固定
- *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 命中档位取对应
+ *  惊艳无比/灾难性失败，见 core/dice.ts marginDegree）。成功/失败按 margin 差值占判定空间
+ *  的比例命中档位取对应
  *  send 模板（success_/fail_send_{low,mid_low,mid,mid_high,high}_template）；彩蛋单条。enabled 默认关——存量用户升级零行为变化；老档缺
- *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。 */
+ *  字段由 prefault({}) 补齐，无需内容迁移（提示词文本变更单独走 v56 迁移；骰子模板拆档单独走 v58 迁移）。
+ *  v67：注释改三段结构——代码固定拼结构化头部（结局/裁定对象/点数/需求/差值/程度）+ 模板正文 + 固定纪律
+ *  尾注（见 core/dice.ts buildDiceMarker）；12 条 send 模板默认重写为纯演绎指令（数字由头部
+ *  承载，默认文案不再重复），存量未自定义的默认经 v67 迁移换新；新增 main_ai_awareness
+ *  （正文 AI 常驻契约注入，见 core/dice-contract.ts）。 */
+
+/** v67 起的 12 条 send 模板默认文案（纯演绎指令，数字由代码固定的结构化头部承载）。
+ *  schema 默认与 v67 迁移的 to 值共用这一份，防两处字面量漂移。 */
+export const SEND_TEMPLATE_DEFAULTS = {
+  success_send_low_template:
+    '行动只是勉强够到了达标线：请描写略显吃力、磕磕绊绊的勉强达成，可留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+  success_send_mid_low_template: '行动刚刚越过达标线、优势微弱：请描写略带惊险、险中取胜的过程，结果成立但谈不上从容。',
+  success_send_mid_template: '行动干净利落、顺理成章地完成：请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+  success_send_mid_high_template:
+    '行动以出彩的姿态漂亮完成：请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+  success_send_high_template: '行动以碾压般的气势一举拿下：请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
+  fail_send_low_template: '行动几乎就要成了：请描写功亏一篑、与成功失之交臂的落差，以及那一线之差带来的懊恼与遗憾。',
+  fail_send_mid_low_template:
+    '行动在半途受阻、差口气没能拿下：请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
+  fail_send_mid_template: '结果与预期相左：请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+  fail_send_mid_high_template: '行动明显失守、局面被动：请描写节节败退、落了下风的处境，以及随之扩大的损失。',
+  fail_send_high_template: '行动一败涂地：请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+  crit_success_send_template:
+    '行动以远超预期的完美方式达成：请着重描写惊艳的发挥、他人的赞叹，以及随之而来的额外好处。',
+  crit_fail_send_template:
+    '行动不仅失败，还引发了严重的事故或连锁反应：请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+} as const;
+
 export const DiceSettings = z
   .object({
     /** 总开关：关 = 不掷骰、不显示需求值徽标、选项行为与 v54 完全一致 */
     enabled: z.boolean().default(false),
+    /** 正文 AI 感知判定注释（v67，默认开）：向正文生成请求常驻注入一段系统说明，
+     *  解释玩家消息开头的判定注释并要求遵守（见 core/dice-contract.ts）。关 = 仅靠注释
+     *  自解释。仅 dice.enabled 开时生效。 */
+    main_ai_awareness: z.boolean().default(true),
     /** 大成功阈值（下限）：掷出 ≥ 本值 → 大成功（默认 96，即顶部 5%，2–100） */
     crit_success_min: z.number().min(2).max(100).default(96).catch(96),
     /** 大失败阈值（上限）：掷出 ≤ 本值 → 大失败（默认 5，即底部 5%，1–99） */
@@ -1534,73 +1770,45 @@ export const DiceSettings = z
     crit_fail_template: z.string().default('【大失败】'),
     /** 成功后回退文案（v57：成功也注入演绎指令），同样支持占位符。 */
     success_template: z.string().default('【判定成功】'),
-    /** 隐形演绎指令（按程度档位拆分，v58）：实际包在 HTML 注释中随消息发送/填入，
-     *  聊天界面不可见；所有点击行为共用（send 直接发送、fill/insert/append 填入输入框
-     *  可编辑）。成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/
-     *  漂亮完胜（mid_high）/势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/
-     *  事与愿违（mid）/溃败（mid_high）/彻底落败（high），按 margin 命中档位取对应模板。
+    /** 隐形演绎指令（按程度档位拆分，v58；v67 起默认为纯演绎指令——结局/裁定对象/点数/需求/差值/程度
+     *  由代码固定的结构化头部承载，纪律由固定尾注承载，模板只写演绎要求）：
+     *  实际包在 HTML 注释中随消息发送/填入，聊天界面不可见；所有点击行为共用
+     *  （send 直接发送、fill/insert/append 填入输入框可编辑）。
+     *  成功侧五档 = 勉强得手（low）/险胜（mid_low）/顺利达成（mid）/漂亮完胜（mid_high）/
+     *  势如破竹（high），失败侧五档 = 差点成功（low）/功亏一篑（mid_low）/事与愿违（mid）/
+     *  溃败（mid_high）/彻底落败（high），按 margin 差值占判定空间的比例（20%/40%/60%/80%）
+     *  命中档位取对应模板（v73 起，旧固定绝对值断点废弃）。
      *  某档为空 = 该档回退对应结局的 *template 短文案（同为空则该档不注入）；
      *  占位符 {rate}/{roll}/{margin}/{degree} 全部通用（degree 为 marginDegree 程度词，可选用）。*/
-    success_send_low_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
-      ),
-    success_send_mid_low_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，险胜）。行动刚刚越过了达标线、优势微弱，请描写略带惊险、险中取胜的完成，过程不算从容但结果成立。',
-      ),
-    success_send_mid_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
-      ),
-    success_send_mid_high_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
-      ),
-    success_send_high_template: z
-      .string()
-      .default(
-        '骰子判定：成功（点数 {roll}，需求 {rate}，势如破竹）。行动以碾压般的气势一举拿下，请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
-      ),
-    fail_send_low_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
-      ),
-    fail_send_mid_low_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，功亏一篑）。行动在半途受阻、差口气没能拿下，请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
-      ),
-    fail_send_mid_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
-      ),
-    fail_send_mid_high_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，溃败）。行动明显失守、局面被动，请描写节节败退、落了下风的处境，以及随之扩大的损失。',
-      ),
-    fail_send_high_template: z
-      .string()
-      .default(
-        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
-      ),
-    crit_success_send_template: z
-      .string()
-      .default(
-        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
-      ),
-    crit_fail_send_template: z
-      .string()
-      .default(
-        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
-      ),
+    success_send_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_low_template),
+    success_send_mid_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_low_template),
+    success_send_mid_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_template),
+    success_send_mid_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_mid_high_template),
+    success_send_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.success_send_high_template),
+    fail_send_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_low_template),
+    fail_send_mid_low_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_low_template),
+    fail_send_mid_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_template),
+    fail_send_mid_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_mid_high_template),
+    fail_send_high_template: z.string().default(SEND_TEMPLATE_DEFAULTS.fail_send_high_template),
+    crit_success_send_template: z.string().default(SEND_TEMPLATE_DEFAULTS.crit_success_send_template),
+    crit_fail_send_template: z.string().default(SEND_TEMPLATE_DEFAULTS.crit_fail_send_template),
+    /** 判定方向（v61）：high = 点数越大越好（默认，难度制原语义）；low = 点数 ≤ 需求=成功
+     *  （COC 百分位）。low 开启时大成功/大失败彩蛋阈值改用 low_roll_crit_success_max /
+     *  low_roll_crit_fail_min（见下）。默认关保持既有判定不变。 */
+    low_roll: z.boolean().default(false),
+    /** low 模式大成功阈值（上限）：掷出 ≤ 本值 → 大成功（默认 5，COC 百分位，范围 1–99） */
+    low_roll_crit_success_max: z.number().min(1).max(99).default(5).catch(5),
+    /** low 模式大失败阈值（下限）：掷出 ≥ 本值 → 大失败（默认 96，范围 2–100） */
+    low_roll_crit_fail_min: z.number().min(2).max(100).default(96).catch(96),
+    /** 角色属性驱动 DC（v61，默认关）：选项无显式需求值时，从当前角色卡解析属性值做需求值；
+     *  AI 标注始终优先，属性只替换档位兜底这一级；识别不到静默回退档位兜底。 */
+    attr_dc_enabled: z.boolean().default(false),
+    /** 允许 AI 标注真实骰式（NdM，如 2d6+3，v61，默认关）：开启后第三段为合法骰式的选项
+     *  改掷表达式而非 D100，需求值(0-100)按比映射到骰式值域当 DC。默认关保证不改变既有解析。 */
+    allow_formula: z.boolean().default(false),
+    /** 就地重掷（v61，默认关）：开启后点选项先掷骰出示 ↻，玩家重掷满意后确认才应用发送；
+     *  关闭保持现状（点击即判定+应用）。 */
+    reroll_enabled: z.boolean().default(false),
   })
   .prefault({});
 export type DiceSettings = z.infer<typeof DiceSettings>;
@@ -1676,6 +1884,32 @@ export const GlobalSettings = z
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),
     /** 骰子判定（v56 难度制）：AI 标注/档位兜底需求值 + D100 随机判定（掷 ≥ 需求值=成功），失败等结局前缀标记 */
     dice: DiceSettings.prefault({}),
+    // ── 卡牌系统（v62，游戏进度层；清空统计不清）────────
+    /** 卡牌总开关（默认关）：关 = 判定管线不读卡、无卡触发/无幸运开包/无行动币收支，
+     *  存量升级零行为变化；收藏库/卡库展示常驻不受开关影响。 */
+    card_enabled: z.boolean().default(false),
+    /** 收藏库（键 = card_id）：每张当前持有的卡（永久收藏；v70 起含触发磨损与破损修复）。
+     *  持有 ≠ 曾获得：图鉴/成就以 card_obtained 为准。 */
+    card_collection: z.record(z.string(), CardOwned).prefault({}),
+    /** 历史获得记录（键 = card_id，v61）：记录"曾经获得过"的卡，独立于当前持有。
+     *  分解只删 card_collection、不删这里，故收藏进度/套装/成就永久保留；v61 迁移把存量收藏补种进来。 */
+    card_obtained: z.record(z.string(), CardObtained).prefault({}),
+    /** 卡组（键 = config.id）：每个 config 一套卡组，固定 4 个类型槽、同类 ≤1、受星级预算约束。 */
+    card_decks: z.record(z.string(), CardDeck).prefault({}),
+    /** 全量卡定义（键 = card_id）：内置卡定义在 BUILTIN_CARDS 常量，角色主题卡由 AI 生成后
+     *  存这里（card_collection 只记持有与触发计数，不冗余卡效果）。抽卡/装备/展示统一从
+     *  本记录 + 内置常量解析卡定义。 */
+    card_definitions: z.record(z.string(), Card).prefault({}),
+    /** 角色 AI 主题卡池（键 = character id）：首次幸运掉落需要时懒生成并固定；
+     *  generated=true 后不再重生成，池内卡反复掉落（重复获得折算）。 */
+    card_character_pools: z.record(z.string(), CardCharacterPool).prefault({}),
+    /** 行动币余额（全局唯一货币，量级稀有）：骰子结局收支 + 重复卡折算获得；≥0 不扣穿。 */
+    card_currency: z.number().min(0).default(0).catch(0),
+    /** 自动编组（默认开）：从已拥有卡自动填满 4 槽（守星级预算），玩家零编组负担；
+     *  关 = 手动编辑存储卡组。仅影响"谁在槽里"，不改判定语义。 */
+    auto_deck_enabled: z.boolean().default(true),
+    /** 新手 starter 是否已发放（一次性）：首次启用卡牌且收藏为空时赠 4 张 1★，auto-deck 立即满编。 */
+    card_starter_granted: z.boolean().default(false),
     empty_groups: z.array(z.string()).default([]),
     /** 全局抽取参数（分组抽取/打乱结果/固定溢出/冗余比例）。v35 起从 PoolConfig.generation
      *  收归全局：条目池配置收敛为"纯条目引用清单"，切换池配置严禁带动任何生成参数——

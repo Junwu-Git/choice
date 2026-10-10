@@ -529,6 +529,104 @@
             </div>
           </div>
         </div>
+        <!-- 最近判定历史（v61）：FIFO 上限 DICE_HISTORY_LIMIT，随 stats_enabled 采集 -->
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-clock-rotate-left"></i>{{ t`最近判定` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`最近 ${diceHistoryLimit} 次判定（点数 / 需求 / 结局）` }}</p>
+          <div v-if="diceHistory.length === 0" class="choice-empty-hint">{{ t`暂无判定历史` }}</div>
+          <ol v-else class="choice-dice-history-list">
+            <li v-for="(h, i) in diceHistory" :key="i" class="choice-dice-history-item">
+              <span class="choice-dice-history-text" :title="h.text">{{ h.text }}</span>
+              <span class="choice-dice-history-nums"
+                ><b>{{ h.roll }}</b
+                >/{{ h.rate }}
+                <span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${h.outcome}`">{{
+                  rollLabelHist(h.outcome)
+                }}</span></span
+              >
+            </li>
+          </ol>
+        </div>
+      </template>
+    </ChoiceSectionCard>
+
+    <!-- 卡牌（统计层，全局维度；默认折叠：卡库/触发/幸运数/货币收支读数） -->
+    <ChoiceSectionCard id="choice-stats-anchor-card" title="卡牌" icon="fa-solid fa-chess-knight" data-anchor="card">
+      <template #extra>
+        <span class="choice-stats-info" :title="cardHelp"><i class="fa-solid fa-circle-info"></i></span>
+      </template>
+      <p class="choice-stats-sub">
+        {{ t`幸运命中 ${cardStats.lucky_hits} · 开包 ${cardStats.packs_opened} · 获得卡 ${cardStats.cards_obtained}` }}
+      </p>
+      <div v-if="cardStats.lucky_hits === 0 && cardStats.cards_obtained === 0" class="choice-empty-hint">
+        {{ t`尚未触卡。开卡牌总开关后，判定击中幸运数可开卡包；卡触发继续下面的明细。` }}
+      </div>
+      <template v-else>
+        <div class="choice-stats-cards">
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--warning"><i class="fa-solid fa-star"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`幸运命中` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.lucky_hits }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--info"><i class="fa-solid fa-gift"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`开包次数` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.packs_opened }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-layer-group"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`获得卡` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.cards_obtained }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--success"
+              ><i class="fa-solid fa-coins"></i
+            ></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`行动币获得` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.currency_earned }}</div>
+            </div>
+          </div>
+          <div class="choice-stats-card">
+            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-minus"></i></span>
+            <div class="choice-stats-card-body">
+              <div class="choice-stats-card-label">{{ t`行动币支出` }}</div>
+              <div class="choice-stats-card-value">{{ cardStats.currency_spent }}</div>
+            </div>
+          </div>
+        </div>
+        <p v-if="earnedByOutcome" class="choice-stats-sub">
+          {{ t`收支构成` }}：{{ earnedByOutcome }}{{ t`（失败/大失败通常只扣余额，叠加套装加成时可为正收入）` }}
+        </p>
+        <!-- 每卡触发次数（join 卡定义，按触发次数降序） -->
+        <div class="choice-stats-sub-block">
+          <div class="choice-stats-sub-block-head">
+            <span class="choice-stats-mini-title"><i class="fa-solid fa-id-badge"></i>{{ t`每卡触发` }}</span>
+          </div>
+          <p class="choice-stats-sub">{{ t`卡效果实际触发的次数（累计）` }}</p>
+          <div v-if="cardTopTriggers.length === 0" class="choice-empty-hint">{{ t`暂无卡触发` }}</div>
+          <ol v-else class="choice-dice-history-list">
+            <li v-for="t in cardTopTriggers" :key="t.card_id" class="choice-dice-history-item">
+              <span class="choice-dice-history-text" :title="t.name">{{ t.name }}</span>
+              <span class="choice-dice-history-nums"
+                ><b>{{ t.triggers }}</b
+                ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
+                  CARD_STAR_LABEL[t.star]
+                }}</span></span
+              >
+            </li>
+          </ol>
+        </div>
       </template>
     </ChoiceSectionCard>
 
@@ -576,6 +674,12 @@
         {{ t`在役 ${rosterPlan.activeCount} 条` }}
         <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
         · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
+        <template v-if="rosterPostApplyShortfall > 0">
+          ·
+          <span :title="t`探索补入每次至多填一半空位，应用本计划后再次应用可继续从未入池条目补入（直至无可补）`">{{
+            t`应用后仍缺 ${rosterPostApplyShortfall} 条`
+          }}</span>
+        </template>
       </div>
       <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
         <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
@@ -750,6 +854,7 @@ import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
+import type { DiceOutcome } from '@/core/dice';
 import {
   buildStatsView,
   entryGroups,
@@ -770,6 +875,7 @@ import {
   applyRosterPlan,
   reEnableEntry,
   diceWinRate,
+  DICE_HISTORY_LIMIT,
   GLOBAL_SCOPE,
   NONE_SCOPE,
   suggestionKey,
@@ -796,13 +902,18 @@ import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import {
   SCHEMA_VERSION,
   SUGGEST_MIN_SAMPLES,
+  SUGGEST_WEIGHT_MIN,
   GenerationSettings,
   AI_ANALYSIS_DEBOUNCE_MS,
   createEmptyDiceStats,
+  createEmptyCardStats,
   type AiAnalysisEntry,
+  type CardStats,
   type DiceStats,
   type PoolConfigEntry,
 } from '@/type/settings';
+import { CARD_STAR_LABEL } from '@/core/cards-meta';
+import { BUILTIN_CARDS } from '@/core/cards-builtin';
 
 const gs = useGlobalSettingsStore();
 const stats = computed(() => gs.settings.stats);
@@ -819,13 +930,13 @@ const overviewHelp = computed(
 );
 const leaderboardHelp = computed(() =>
   [
-    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
+    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中；统计满 ${sampleMin} 轮后按平均每轮点选数校正，多选时基线随之抬高），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
     view.value.isGlobal ? t` 全局 = 所有配置混合累计，不代表任何单一场景；建议功能需切换到具体配置维度。` : '',
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
-const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的 D100 判定结局计数与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
-const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算从未入池条目补入。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
+const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的判定结局计数（D100 或骰式）与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
+const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算（每次至多一半空位）从未入池条目补入，空缺可再次应用继续填。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
 const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
 
@@ -852,9 +963,14 @@ const scopeOptions = computed(() => {
 
 // 选中维度指向的配置被删除时回退全局，避免下拉失配
 watch(
-  [configs, scopeId],
+  [configs, scopeId, hasNoneScopeData],
   () => {
-    if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
+    if (scopeId.value === GLOBAL_SCOPE) return;
+    // NONE 数据已清空且有可用 config：NONE 选项已从下拉移除，滞留会让视图与模型脱节——回退全局
+    if (scopeId.value === NONE_SCOPE) {
+      if (!hasNoneScopeData.value && configs.value.length > 0) scopeId.value = GLOBAL_SCOPE;
+      return;
+    }
     if (!configs.value.some(c => c.id === scopeId.value)) scopeId.value = GLOBAL_SCOPE;
   },
   { immediate: true },
@@ -1118,6 +1234,37 @@ const diceTrend = computed(() => {
 });
 const diceTrendMax = computed(() => Math.max(1, ...diceTrend.value.map(p => p.total)));
 const diceBarHeight = (v: number) => (v > 0 ? Math.max(4, Math.round((v / diceTrendMax.value) * 100)) : 0) + '%';
+/** 最近判定历史（v61）：最新在前，空数组兜底老档缺字段。 */
+const diceHistory = computed(() => [...(diceStats.value.history ?? [])].reverse());
+const diceHistoryLimit = DICE_HISTORY_LIMIT;
+const rollLabelHist = (o: DiceOutcome): string =>
+  o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
+
+// ── 卡牌（统计层，全局维度，不随 config 切换） ──
+const cardStats = computed<CardStats>(() => stats.value.card ?? createEmptyCardStats());
+const cardHelp = t`卡牌系统统计（全局维度，不随条目池配置切换）：幸运数命中/开包/得卡/行动币收支，以及每卡触发次数。随「统计采集」开关积累；清空统计时一并清除（行动币余额/收藏属游戏进度层，不清除）。注意：收入只记正向、失败扣币不入账，故获得−消费与当前余额不对应；支出一律来自开卡包。`;
+/** 每卡触发次数（join 卡定义，按触发次数降序取前 20） */
+const cardTopTriggers = computed(() => {
+  const per = cardStats.value.per_card ?? {};
+  return Object.entries(per)
+    .map(([card_id, v]) => {
+      const def = BUILTIN_CARDS.find(c => c.id === card_id) ?? gs.settings.card_definitions[card_id];
+      return { card_id, triggers: v.triggers, name: def?.name ?? card_id, star: def?.star ?? '1' };
+    })
+    .filter(x => x.triggers > 0)
+    .sort((a, b) => b.triggers - a.triggers)
+    .slice(0, 20);
+});
+
+// 行动币获得构成（按结局键记录的 earned 分布）：四结局都展示——失败结局叠加套装加成
+// 可能为正收入（recordCurrencyOutcome 按传入结局键记账），只列 success 两键会漏显
+const earnedByOutcome = computed(() =>
+  (['crit_success', 'success', 'fail', 'crit_fail'] as const)
+    .map(k => ({ label: rollLabelHist(k), v: cardStats.value.currency_earned_by_outcome[k] ?? 0 }))
+    .filter(e => e.v > 0)
+    .map(e => `${e.label} +${e.v}`)
+    .join(' · '),
+);
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
@@ -1307,7 +1454,13 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
       return {
         text: t`冷却中`,
         cls: 'choice-stats-insight--cooldown',
-        title: t`最近一次自动化调整后不足 ${sampleMin} 轮新数据，暂不重新评级`,
+        title: t`最近一次自动化调整后不足 ${sampleMin} 轮新数据，暂不重新评级；调整超过 7 天且已有 ≥3 轮新数据时放宽`,
+      };
+    case 'floor':
+      return {
+        text: t`已到下限`,
+        cls: 'choice-stats-insight--floor',
+        title: t`权重已到自动化下限（${SUGGEST_WEIGHT_MIN}）且表现持续低于期望，建议引擎不再调整；可在阵容计划落出或手动处理`,
       };
     default:
       return null;
@@ -1318,24 +1471,27 @@ const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null)
 const actionLabel = (s: Suggestion): string =>
   s.action === 'down' ? t`降权` : s.reason === 'recover' ? t`回捞` : t`提权`;
 
-/** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额） */
+/** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额）；回捞建议若作用于
+ *  手动设置的低权重（从未被自动化调整），追加覆盖提示 */
 const suggestionTitle = (s: Suggestion | null): string => {
   if (!s) return t`基于近 ${sampleMin} 轮或全量样本的统计建议`;
   const newWeightText = s.newWeight !== undefined ? ` → ${s.newWeight}` : '';
   const act = actionLabel(s);
-  return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}`;
+  const manualNote = s.reason === 'recover' && s.manualLow ? t`（该权重为手动设置，回捞会覆盖手动值）` : '';
+  return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}${manualNote}`;
 };
 
 const rowMeta = computed<Map<string, RowMeta>>(() => {
   const map = new Map<string, RowMeta>();
+  const avgPicks = view.value.avgPicks;
   for (const g of groups.value) {
     for (const r of g.rows) {
-      const suggestion = entrySuggestion(r);
+      const suggestion = entrySuggestion(r, avgPicks);
       const insight = entryInsight(r, suggestion);
       map.set(r.entryId, {
         suggestion,
         insight,
-        window: windowMetrics(r),
+        window: windowMetrics(r.recent, avgPicks),
         expectedRate: fullExpectedRate(r),
         badge: buildInsightBadge(insight, suggestion),
       });
@@ -1409,6 +1565,9 @@ const historyTimeTitle = (ts: number): string => formatDateTime(ts);
 const undoHistoryEntry = (entryId: string) => {
   if (undoApply(entryId)) {
     toastr.success(t`已撤销该批应用`);
+  } else {
+    // 零回滚（该批字段已被后续应用/手动编辑全覆盖）：明示而非假成功
+    toastr.warning(t`该批没有可回滚的字段（已被后续改动覆盖）`);
   }
 };
 
@@ -1424,14 +1583,25 @@ const applyConfirmMessage = computed(() => {
       return `· ${name}：${actionLabel(s)}（${change}；${basis}命中 ${rateText(s.rate)}，期望 ${rateText(s.expected)}）`;
     })
     .join('\n');
-  return t`将应用到当前配置：\n${lines}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
+  // 「应用全部」作用于搜索/筛选后的行：范围小于未筛选全集时明示，防「以为应用了全部」
+  const applyableTotal = groups.value.flatMap(g => g.rows).filter(r => canApplyRow(r)).length;
+  const scopeNote =
+    pendingFiltered.value && list.length < applyableTotal
+      ? t`\n\n当前仅包含搜索/筛选结果（未筛选时共 ${applyableTotal} 条可应用）。`
+      : '';
+  return t`将应用到当前配置：\n${lines}${scopeNote}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
 });
 
+/** 「应用全部」标记：本次确认清单来自筛选后的行（applyConfirmMessage 据此决定是否附范围提示） */
+const pendingFiltered = ref(false);
+
 /** 应用一批建议：设 pending → 弹确认 → 确认后写入。取消/外层守卫失败则只复位 pending。
+ *  filtered=true 表示清单来自「应用全部」且受当前搜索/筛选影响。
  *  showApplyConfirm 弹窗的确认/取消分别走 confirmApply/cancelApply（关闭弹窗 + resolve），
  *  applyConfirmMessage 在 pending 已设后 show() 时同步求值，与原 computed 行为等价 */
-const runApply = async (list: Suggestion[]) => {
+const runApply = async (list: Suggestion[], filtered = false) => {
   pending.value = list;
+  pendingFiltered.value = filtered;
   const ok = await showApplyConfirm({
     title: t`应用统计建议`,
     message: applyConfirmMessage.value,
@@ -1471,13 +1641,17 @@ const applyAll = () => {
     .filter(r => canApplyRow(r))
     .map(r => suggestionOf(r))
     .filter((s): s is Suggestion => s !== null);
-  void runApply(list);
+  void runApply(list, true);
 };
 
 const onUndo = () => {
   if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
   if (undoLastApply(scopeId.value)) {
     toastr.success(t`已撤销最近一次应用`);
+  } else {
+    // 零回滚：明示而非假成功（槽保留，撤销更近批次后仍可回滚）
+    // undoLastApply 已把零回滚死记录自动跳过：走到这里 = 本 scope 无可撤销历史
+    toastr.warning(t`没有可撤销的应用记录`);
   }
 };
 
@@ -1534,6 +1708,13 @@ const unreferencedCount = computed(() => {
   if (!cfg) return 0;
   const ref = new Set(cfg.entries.map(e => e.entry_id));
   return masterPool.value.filter(e => !ref.has(e.id)).length;
+});
+
+/** 应用当前计划后仍低于目标的条数：探索补入每次只填剩余空位的一半，达目标需再次应用 */
+const rosterPostApplyShortfall = computed(() => {
+  const p = rosterPlan.value;
+  if (!p || !rosterEnabled.value) return 0;
+  return Math.max(0, p.target - (p.activeCount - p.drops.length + p.promotes.length));
 });
 
 /** 超额命中率展示（带符号、百分比） */
@@ -2142,6 +2323,14 @@ const onClearStats = async () => {
   color: var(--choice-color-info);
 }
 
+/* 已到下限（权重到自动化下限且持续低迷，建议引擎沉默）：警示色弱化——
+ * 需要用户行动（阵容落出/手动处理）但不是新建议，用边框区分于「候选降权」 */
+.choice-stats-insight--floor {
+  background: var(--choice-color-warning-bg);
+  color: var(--choice-color-warning);
+  box-shadow: inset 0 0 0 1px var(--choice-color-warning);
+}
+
 /* ── 样本量分布诊断 ── */
 .choice-stats-sample {
   display: flex;
@@ -2708,5 +2897,54 @@ const onClearStats = async () => {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-secondary);
   min-width: 0;
+}
+
+/* ── 骰子最近判定历史（v61） ── */
+.choice-dice-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.choice-dice-history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  padding: 3px var(--choice-space-2);
+  border-radius: var(--choice-radius-sm);
+  background: var(--choice-bg-element);
+  font-size: var(--choice-text-xs);
+}
+.choice-dice-history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--choice-text-secondary);
+}
+.choice-dice-history-nums {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--choice-text-secondary);
+}
+.choice-dice-history-nums b {
+  color: var(--choice-text);
+}
+.choice-dice-history-outcome {
+  font-weight: 600;
+  margin-left: var(--choice-space-1);
+}
+.choice-dice-history-outcome--crit_success,
+.choice-dice-history-outcome--success {
+  color: var(--choice-color-success);
+}
+.choice-dice-history-outcome--fail,
+.choice-dice-history-outcome--crit_fail {
+  color: var(--choice-color-danger);
 }
 </style>

@@ -15,9 +15,12 @@ type DedupResult = {
 };
 
 export function dedupOptions(candidates: string[], references: string[], threshold: number): DedupResult {
+  // 阈值防御：非有限输入（未钳制的表单值，如 ''/NaN）兜底默认——'' 会使 titleGate=0 且
+  // score>=threshold 恒真，去重「全杀」并空转补齐请求
+  const t = Number.isFinite(threshold) ? Math.min(1, Math.max(0, threshold)) : 0.75;
   // 标题匹配的内容门槛 = max(0, 用户阈值 - 0.35)。默认 0.75 → 0.4，保持现状；
   // 用户调高阈值时标题门槛同步上浮，调低时标题门槛下探至 0（单靠标题即可判重）。
-  const titleGate = Math.max(0, threshold - 0.35);
+  const titleGate = Math.max(0, t - 0.35);
   const titleOf = (s: string): string | null => {
     const m = s.match(/^\s*[[【]([^\]】]+)[\]】]/);
     return m ? m[1] : null;
@@ -60,7 +63,7 @@ export function dedupOptions(candidates: string[], references: string[], thresho
       }
     }
     const score = jaccard(bigrams(contentOf(cand)), bigrams(contentOf(ref)));
-    if (score >= threshold) {
+    if (score >= t) {
       return { dup: true, detail: { candidate: cand, reason: 'jaccard', matchedRef: ref, score } };
     }
     return { dup: false };

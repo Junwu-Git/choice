@@ -99,6 +99,7 @@ export function initPanelMount() {
         return;
       }
       if (messageId === 0) {
+        // 0 楼通常是开场白（greeting）：无玩家输入语境，自动生成无意义，跳过
         return;
       }
       const gs = useGlobalSettingsStore(pinia);
@@ -185,8 +186,12 @@ export function initPanelMount() {
   };
 
   tryInjectEnrichBtn();
+  // ST 慢初始化时发送栏可能晚于扩展就绪：0/1/3s 三轮重试再加 8s/15s 两轮（与 wand-menu
+  // 注入轮询同量级），仍失败仅损失润色入口、主功能不受影响（tryInjectEnrichBtn 幂等）
   setTimeout(tryInjectEnrichBtn, 1000);
   setTimeout(tryInjectEnrichBtn, 3000);
+  setTimeout(tryInjectEnrichBtn, 8000);
+  setTimeout(tryInjectEnrichBtn, 15000);
 
   // 监听 enrich_enabled / chat_panel_enabled 开关变化，同步更新按钮显隐
   const updateEnrichBtn = () => {

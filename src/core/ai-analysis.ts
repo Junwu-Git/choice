@@ -133,14 +133,18 @@ export async function runAiAnalysis(scopeId: string, force = false, signal?: Abo
         return cached.suggestion_key !== suggestionKey(r.suggestion);
       });
   if (needsAnalysis.length === 0) {
-    // 仅自动路径可达（force 下 needsAnalysis 必然非空）：全部未变化只刷新失效时间戳，
-    // 并按当前建议集裁剪缓存（丢弃已无建议的条目键，避免长尾滞留）
     const currentKeys = new Set(maxRows.map(r => r.entryId));
-    gs.settings.stats.ai_analysis[scopeId] = {
-      updated_at: Date.now(),
-      data_updated_at: scopeUpdatedAt(scopeId, view),
-      entries: pruneAiReasonCache(cachedScope?.entries, currentKeys, {}),
-    };
+    // 仅自动路径可达（force 下 needsAnalysis 必然非空）：全部未变化只刷新失效时间戳，
+    // 并按当前建议集就地裁剪缓存（丢弃已无建议的条目键，避免长尾滞留）。原地改字段不重建
+    // 对象——统计页开着时每轮活动都会走到这里，整体重建白白放大 settings 持久化写入。
+    // 此分支 cachedScope 必已存在：needsAnalysis 为空 = 每行都有缓存命中（缺键行会进入
+    // needsAnalysis 使其非空）；防御分支理论不可达
+    if (!cachedScope) return true;
+    cachedScope.updated_at = Date.now();
+    cachedScope.data_updated_at = scopeUpdatedAt(scopeId, view);
+    for (const id of Object.keys(cachedScope.entries)) {
+      if (!currentKeys.has(id)) delete cachedScope.entries[id];
+    }
     return true;
   }
   const payloads = needsAnalysis.map(r => toPayload(r, poolMap));
@@ -222,9 +226,11 @@ function collectSuggestionRows(scopeId: string, view: StatsView): Array<EntryRan
   const config =
     scopeId === GLOBAL_SCOPE || scopeId === NONE_SCOPE ? undefined : gs.settings.configs.find(c => c.id === scopeId);
   const cfgMap = new Map<string, PoolConfigEntry>(config?.entries.map(e => [e.entry_id, e]) ?? []);
+  // 平均点选数 m̄ 直接取维度视图预计算值（buildStatsView 已算好；全局视图恒 null=单点模型）
+  const avgPicks = view.avgPicks;
   return entryGroups(view, gs.settings.master_pool, gs.settings.group_order, cfgMap)
     .flatMap(group => group.rows)
-    .map(row => ({ row, suggestion: entrySuggestion(row) }))
+    .map(row => ({ row, suggestion: entrySuggestion(row, avgPicks) }))
     .filter((item): item is { row: EntryRankRow; suggestion: Suggestion } => item.suggestion !== null)
     .sort((a, b) => b.row.rounds_included - a.row.rounds_included || a.row.entryId.localeCompare(b.row.entryId))
     .map(item => ({ ...item.row, suggestion: item.suggestion }));
@@ -282,6 +288,8 @@ function pruneAiReasonCache(
   return { ...kept, ...results };
 }
 
+/** 解析分析结果：剥代码围栏/截取 JSON 数组后 parse；非法元素（非对象/id 未知/理由为空）
+ *  逐条跳过——弱模型容错，部分合法结果仍被采用；全部非法或整体非数组返回 null */
 function parseAnalysisResult(raw: string, entryIds: Set<string>): Record<string, AiAnalysisEntry> | null {
   const text = raw.trim();
   let value: unknown;
@@ -300,10 +308,10 @@ function parseAnalysisResult(raw: string, entryIds: Set<string>): Record<string,
   if (!Array.isArray(value)) return null;
   const out: Record<string, AiAnalysisEntry> = {};
   for (const item of value) {
-    if (!item || typeof item !== 'object') return null;
+    if (!item || typeof item !== 'object') continue;
     const record = item as Record<string, unknown>;
     const id = record.entryId;
-    if (typeof id !== 'string' || !entryIds.has(id)) return null;
+    if (typeof id !== 'string' || !entryIds.has(id)) continue;
     const reason = typeof record.reason === 'string' ? record.reason.trim().slice(0, AI_REASON_MAX_CHARS) : '';
     const rawConfidence = typeof record.confidence === 'number' ? record.confidence : 0;
     const confidence = Math.min(1, Math.max(0, Number.isFinite(rawConfidence) ? rawConfidence : 0));
@@ -311,5 +319,5 @@ function parseAnalysisResult(raw: string, entryIds: Set<string>): Record<string,
     // suggestion_key 由调用方按当前建议指纹覆写；此处占位保持类型完整
     out[id] = { reason, confidence, suggestion_key: '' };
   }
-  return out;
+  return Object.keys(out).length > 0 ? out : null;
 }

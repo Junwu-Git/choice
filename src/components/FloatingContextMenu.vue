@@ -36,22 +36,32 @@ import {
 import { setEntryVisible } from '@/core/entry-points';
 
 const MENU_WIDTH = 140;
+// 三项菜单估高（项高 ~40px + 上下 padding），仅用于底部视口钳制；与实际渲染高度略有
+// 出入可接受——钳制目标是「打开设置/隐藏悬浮球」可达而非像素级贴边
+const MENU_HEIGHT_EST = 132;
 
 const menuEl = ref<HTMLElement | null>(null);
+
+// 视口尺寸走 useWindowSize 响应式：computed 里裸读 window.innerWidth/innerHeight 不被
+// 依赖追踪，旋转屏幕/缩放窗口后按旧视口钳制，弹层可部分出屏（FloatingOptions 同款修复）
+const { width: winWidth, height: winHeight } = useWindowSize();
 
 const menuX = computed(() => {
   const bx = bubbleX.value;
   // 菜单锚定实际球体边缘：移动端球 48px，桌面 60px，统一取 bubbleSize 单一来源
   const size = bubbleSize.value;
   const centerX = bx + size / 2;
-  if (centerX + MENU_WIDTH > window.innerWidth) {
+  if (centerX + MENU_WIDTH > winWidth.value) {
     return bx - MENU_WIDTH - 8;
   }
   return bx + size + 8;
 });
 
 const menuY = computed(() => {
-  return Math.max(8, bubbleY.value);
+  // 底部视口钳制：气泡默认在屏幕下部，菜单可整体越出下缘致「打开设置/隐藏悬浮球」
+  // 在移动端不可达；上缘 8px 下限防顶出
+  const maxTop = Math.max(8, winHeight.value - MENU_HEIGHT_EST - 8);
+  return Math.max(8, Math.min(bubbleY.value, maxTop));
 });
 
 const onShowOptions = () => {

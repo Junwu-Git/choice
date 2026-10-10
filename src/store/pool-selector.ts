@@ -10,15 +10,21 @@ export const usePoolSelectorStore = defineStore('pool-selector', () => {
   const chatStore = useChatSettingsStore();
 
   const effectiveConfig = computed<PoolConfig | null>(() => {
+    const configs = globalStore.settings.configs;
+    // 覆盖式 chat > character > default；绑定 id 悬空（配置已在别处被删）时逐级降级而非落空
+    // ——落空会走 effectivePool 的整库回退，把 config 里停用/opt-in 的条目全部带出生成
+    // （与 global-settings v33 注释声明的「解析落空→回退默认」对齐）
     const chatConfigId = chatStore.settings.config_id;
     if (chatConfigId) {
-      return globalStore.settings.configs.find(c => c.id === chatConfigId) ?? null;
+      const hit = configs.find(c => c.id === chatConfigId);
+      if (hit) return hit;
     }
     const charConfigId = characterStore.settings.config_id;
     if (charConfigId) {
-      return globalStore.settings.configs.find(c => c.id === charConfigId) ?? null;
+      const hit = configs.find(c => c.id === charConfigId);
+      if (hit) return hit;
     }
-    return globalStore.settings.configs.find(c => c.is_default) ?? null;
+    return configs.find(c => c.is_default) ?? null;
   });
 
   const effectivePool = computed<PoolEntry[]>(() => {

@@ -79,6 +79,10 @@
           <WorldInfoEditor v-else-if="activeSubArea === 'worldinfo'" />
           <FilterEditor v-else-if="activeSubArea === 'filter'" />
           <Statistics v-else-if="activeSubArea === 'stats'" />
+          <CardPoolEditor
+            v-else-if="activeSubArea === 'library' || activeSubArea === 'deck' || activeSubArea === 'collection'"
+            :area="cardArea"
+          />
           <AppearanceSettings v-else-if="activeSubArea === 'appearance'" />
           <DebugSettings v-else-if="activeSubArea === 'debug'" />
         </div>
@@ -99,6 +103,7 @@ import PoolEditor from '@/components/PoolEditor.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
 import FilterEditor from '@/components/FilterEditor.vue';
 import Statistics from '@/components/Statistics.vue';
+import CardPoolEditor from '@/components/CardPoolEditor.vue';
 import WorldInfoEditor from '@/components/WorldInfoEditor.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
 import DebugSettings from '@/components/DebugSettings.vue';
@@ -131,6 +136,16 @@ const guideBtn = ref<HTMLElement | null>(null);
 const currentPage = computed(() => PAGES.find(p => p.id === activePage.value)!);
 // 某页当前可见子区：仅过滤不排序，展示顺序跟随 page.subAreas
 const displaySubAreas = computed(() => visibleSubAreas(currentPage.value, advanced.value));
+
+// 卡牌页子区（library/deck/collection）窄化：v-else-if 已保证 activeSubArea 属卡牌子区，
+// 此处收窄类型供 CardPoolEditor 的 area prop 复用（避免在模板里写 TS as 联合导致
+// Vue 过滤器解析歧义）
+const cardArea = computed<'library' | 'deck' | 'collection'>(() => {
+  const a = activeSubArea.value;
+  if (a === 'deck') return 'deck';
+  if (a === 'collection') return 'collection';
+  return 'library';
+});
 
 // 切一级页：默认落到该页首个可见子区（简化模式下落到唯一基础子区）
 function onPageClick(id: PageId) {
@@ -303,6 +318,12 @@ const onResizeEnd = () => {
   document.removeEventListener('mousemove', onResizeMove);
   document.removeEventListener('mouseup', onResizeEnd);
 };
+
+onUnmounted(() => {
+  // 拖拽中组件被卸载（Esc 关面板/扩展禁用）：document 监听滞留到下一次 mouseup 才释放，
+  // 期间 onResizeMove 继续写尺寸 ref——卸载时成对移除（onResizeEnd 幂等）
+  onResizeEnd();
+});
 
 useEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape' && isSettingsOpen.value) {

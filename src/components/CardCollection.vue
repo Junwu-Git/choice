@@ -1,0 +1,421 @@
+<template>
+  <div class="choice-card-library">
+    <!-- 收藏进度概览 + 行动币/开卡包入口（原商店收编） -->
+    <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-box-open"></i> {{ t`收藏进度` }}</h4>
+      <div class="choice-lib-progress">
+        <span class="choice-lib-stat"
+          >{{ t`已收集` }} <b>{{ ownedCount }}/{{ ownableCount }}</b></span
+        >
+        <span v-for="r in CARD_STAR_ORDER" :key="r" class="choice-lib-stat" :title="CARD_STAR_LABEL[r]">
+          <i class="fa-solid fa-sort-down" :style="{ color: CARD_STAR_COLOR[r] }"></i>{{ starCounts[r] }}
+        </span>
+        <span class="choice-lib-stat choice-lib-coins"
+          ><i class="fa-solid fa-coins"></i><b>{{ gs.settings.card_currency }}</b></span
+        >
+        <button
+          class="choice-btn-sm choice-pack-buy"
+          :disabled="gs.settings.card_currency < CARD_PACK_PRICE"
+          @click="onBuyPack"
+        >
+          <i class="fa-solid fa-box"></i>{{ t`开卡包（${CARD_PACK_PRICE} 币）` }}
+        </button>
+        <button
+          v-if="parked"
+          class="choice-btn-sm choice-pack-parked"
+          :title="t`稍后再选的卡包已保留，点击重新打开`"
+          @click="onReopenParked"
+        >
+          <i class="fa-solid fa-envelope-open-text"></i>{{ t`待开启卡包` }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 收藏成就（趣味彩蛋，零操作） -->
+    <!-- 内置卡库（不可编辑，只可收集/装备；未获得卡模糊遮盖） -->
+    <ChoiceSectionCard title="内置卡库" icon="fa-solid fa-database">
+      <p class="choice-lib-hint">
+        {{ t`内置卡全球通用、可反复掉落；未获得的卡模糊遮盖，靠开卡包/幸运掉落随机获得（重复获得自动折算行动币）。` }}
+      </p>
+      <div class="choice-lib-cards">
+        <CardFace
+          v-for="c in builtinCards"
+          :key="c.id"
+          :card="c"
+          :owned="ownedMap[c.id]"
+          :state="cardState(c)"
+          :obscured="!isCollected(c)"
+          :previously-owned="isDismantled(c)"
+        >
+          <template v-if="ownedMap[c.id]" #footer>
+            <span class="choice-lib-triggers" :title="t`触发次数`">
+              <i class="fa-solid fa-hand-pointer"></i>{{ ownedMap[c.id].trigger_count }}
+            </span>
+            <button
+              v-if="isBroken(ownedMap[c.id])"
+              class="choice-btn-sm choice-lib-repair"
+              :title="t`耐久归零，消耗行动币修复回满`"
+              :disabled="repairing.has(c.id)"
+              @click="onRepair(c)"
+            >
+              <i class="fa-solid fa-hammer"></i>{{ t`修复（${repairCostOf(c)} 币）` }}
+            </button>
+          </template>
+        </CardFace>
+      </div>
+      <div v-if="builtinCards.length === 0" class="choice-empty">{{ t`暂无内置卡` }}</div>
+    </ChoiceSectionCard>
+
+    <!-- 当前角色主题池 -->
+    <ChoiceSectionCard title="当前角色主题池" icon="fa-solid fa-user">
+      <template v-if="currentPoolDefs.length">
+        <div class="choice-lib-pool-actions">
+          <p class="choice-lib-hint">
+            {{
+              t`主题卡池随游玩分批生长（${currentPoolDefs.length}/${CARD_POOL_MAX_CARDS}）：幸运数命中/购买开卡包时自动补充一批，每批吃到当时剧情上下文；池内卡随开卡包反复掉落。`
+            }}
+          </p>
+          <button
+            v-if="currentPoolDefs.length < CARD_POOL_MAX_CARDS"
+            class="menu_button choice-lib-gen-btn"
+            :disabled="generating"
+            @click="onGeneratePool"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`补充一批` }}
+          </button>
+          <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onRegeneratePool">
+            <i class="fa-solid fa-rotate"></i>{{ generating ? t`生成中…` : t`重新生成` }}
+          </button>
+        </div>
+        <div class="choice-lib-cards">
+          <CardFace
+            v-for="c in currentPoolDefs"
+            :key="c.id"
+            :card="c"
+            :owned="ownedMap[c.id]"
+            :state="cardState(c)"
+            :obscured="!isCollected(c)"
+            :previously-owned="isDismantled(c)"
+          >
+            <template v-if="ownedMap[c.id]" #footer>
+              <button
+                v-if="isBroken(ownedMap[c.id])"
+                class="choice-btn-sm choice-lib-repair"
+                :title="t`耐久归零，消耗行动币修复回满`"
+                :disabled="repairing.has(c.id)"
+                @click="onRepair(c)"
+              >
+                <i class="fa-solid fa-hammer"></i>{{ t`修复（${repairCostOf(c)} 币）` }}
+              </button>
+            </template>
+          </CardFace>
+        </div>
+      </template>
+      <div v-else class="choice-empty">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <div>
+          {{
+            t`当前角色主题池尚未生成。可手动立即生成首批，或游玩中幸运数命中/购买开卡包时按当时剧情上下文自动分批生成。`
+          }}
+        </div>
+        <button class="menu_button choice-lib-gen-btn" :disabled="generating" @click="onGeneratePool">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>{{ generating ? t`生成中…` : t`立即生成主题卡` }}
+        </button>
+      </div>
+    </ChoiceSectionCard>
+
+    <!-- 其余角色主题池（浏览） -->
+    <ChoiceSectionCard v-if="otherPools.length" title="其他角色主题池" icon="fa-solid fa-users">
+      <div v-for="pool in otherPools" :key="pool.character_id" class="choice-lib-pool-group">
+        <h5 class="choice-lib-pool-title">{{ t`角色主题池 · ${charName(pool.character_id)}` }}</h5>
+        <div class="choice-lib-cards">
+          <CardFace
+            v-for="c in poolDefs(pool)"
+            :key="c.id"
+            :card="c"
+            :owned="ownedMap[c.id]"
+            :state="cardState(c)"
+            :obscured="!isCollected(c)"
+            :previously-owned="isDismantled(c)"
+          />
+        </div>
+      </div>
+    </ChoiceSectionCard>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { BUILTIN_CARDS } from '@/core/cards-builtin';
+import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
+import CardFace from '@/components/CardFace.vue';
+import { useGlobalSettingsStore } from '@/store/global-settings';
+import { CARD_STAR_COLOR, CARD_STAR_LABEL, CARD_STAR_ORDER } from '@/core/cards-meta';
+import { isCardBroken, cardRepairCost, CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } from '@/core/cards-constraints';
+import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool, repairCard } from '@/core/cards';
+import { generateCharacterPool } from '@/core/cards-ai';
+import { getStCharacter } from '@/core/st-character';
+import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
+import toastr from 'toastr';
+import type { Card, CardOwned, CardStar } from '@/type/settings';
+
+const gs = useGlobalSettingsStore();
+
+/** 主题池生成中（防连点/防「立即生成」与「重新生成」互撞） */
+const generating = ref(false);
+
+/** v70 修复中卡 id 集合（防连点双扣币） */
+const repairing = ref<Set<string>>(new Set());
+
+/** 破损判定（收藏页修复按钮显隐） */
+const isBroken = (owned: CardOwned): boolean => isCardBroken(owned);
+
+/** 修复成本展示（与 repairCard 内同一纯函数口径） */
+const repairCostOf = (c: Card): number => cardRepairCost(c);
+
+/** 修复一张破损卡：repairCard 扣币回满并 toastr；失败 warning（余额不足/未破损）。 */
+const onRepair = (c: Card) => {
+  if (repairing.value.has(c.id)) return;
+  repairing.value = new Set(repairing.value).add(c.id);
+  try {
+    const r = repairCard(c.id);
+    if (!r.ok) toastr.warning(r.errors.join('；'));
+  } finally {
+    const next = new Set(repairing.value);
+    next.delete(c.id);
+    repairing.value = next;
+  }
+};
+
+/** 手动生成当前角色主题池下一批（池空 = 首批、未满 = 补充一批）：await 到 AI 返回并 toastr 反馈张数或失败原因。 */
+const onGeneratePool = async () => {
+  const cid = gs.currentCharacterId;
+  if (cid == null) {
+    toastr.warning('请先打开一个角色的聊天再生成主题卡。');
+    return;
+  }
+  if (generating.value) return;
+  generating.value = true;
+  try {
+    const cards = await generateCharacterPool(String(cid));
+    if (cards.length > 0) {
+      const name = getStCharacter(String(cid))?.name ?? '';
+      toastr.success(`已生成 ${cards.length} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
+    } else {
+      toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且池未达上限，本次生成结果有效。');
+    }
+  } finally {
+    generating.value = false;
+  }
+};
+
+/** 重新生成当前角色主题池：先清空现有池（删除已收集的该角色主题卡）再重出，供测试/换新风格。 */
+const onRegeneratePool = async () => {
+  const cid = gs.currentCharacterId;
+  if (cid == null || generating.value) return;
+  if (
+    !confirm(
+      `将清空当前角色主题池并重新生成（已收集的 ${currentPoolDefs.value.length} 张该角色主题卡会被删除），确定继续？`,
+    )
+  )
+    return;
+  clearCharacterPool(String(cid));
+  await onGeneratePool();
+};
+
+/** 行动币开卡包（原「兑换与任务」页收编到页顶）：不足额按钮置灰。 */
+const onBuyPack = () => {
+  const r = buyPack(currentCardConfigId());
+  if (!r.ok) {
+    toastr.warning(r.errors.join('；'));
+    return;
+  }
+  openCardPack(r.offer!, 'shop');
+};
+
+/** 稍后再选挂起的卡包（null = 无）。 */
+const parked = computed(() => parkedCardPack.value);
+const onReopenParked = () => {
+  reopenParkedPack();
+};
+
+/** 角色显示名（其他角色池标题用）：解析不到时回退原始 id。 */
+const charName = (id: string): string => getStCharacter(id)?.name ?? id;
+
+const builtinCards = computed<Card[]>(() => [...BUILTIN_CARDS]);
+const ownedMap = computed(() => gs.settings.card_collection);
+/** 历史获得集合（曾获得 ∪ 当前持有）：图鉴进度/内置卡库基于它——旧版分解（v66 已裁撤）只移除持有、不抹掉图鉴。 */
+const collected = computed(() => collectedCardIds());
+
+/** 卡面状态：未拥有置灰 disabled；其余 normal。 */
+const cardState = (c: Card): 'normal' | 'disabled' => {
+  return ownedMap.value[c.id] ? 'normal' : 'disabled';
+};
+
+/** 是否已收集（历史获得过）：未收集才模糊遮盖。 */
+const isCollected = (c: Card): boolean => collected.value.has(c.id);
+/** 曾获得但当前未持有（旧版分解遗留）：区分「曾获得」与「从未获得」的展示。 */
+const isDismantled = (c: Card): boolean => !ownedMap.value[c.id] && !!gs.settings.card_obtained[c.id];
+
+const starCounts = computed<Record<CardStar, number>>(() => {
+  const out: Record<CardStar, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
+  for (const def of allDefs.value) {
+    if (collected.value.has(def.id)) out[def.star] += 1;
+  }
+  return out;
+});
+
+const allDefs = computed<Card[]>(() => {
+  const set = new Map<string, Card>();
+  for (const c of BUILTIN_CARDS) set.set(c.id, c);
+  for (const pool of Object.values(gs.settings.card_character_pools)) {
+    for (const id of pool.card_ids) {
+      const d = gs.settings.card_definitions[id];
+      if (d) set.set(id, d);
+    }
+  }
+  return [...set.values()];
+});
+const ownableCount = computed(() => allDefs.value.length);
+const ownedCount = computed(() => allDefs.value.filter(d => collected.value.has(d.id)).length);
+
+const poolDefs = (pool: { card_ids: string[] }): Card[] =>
+  pool.card_ids.map(id => gs.settings.card_definitions[id]).filter((d): d is Card => !!d);
+const currentPoolDefs = computed<Card[]>(() => {
+  const cid = gs.currentCharacterId;
+  if (cid == null) return [];
+  const pool = gs.settings.card_character_pools[cid];
+  return pool ? poolDefs(pool) : [];
+});
+const otherPools = computed(() =>
+  Object.values(gs.settings.card_character_pools).filter(p => p.character_id !== gs.currentCharacterId),
+);
+</script>
+
+<style scoped>
+.choice-card-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-4);
+}
+
+.choice-lib-progress {
+  display: flex;
+  gap: var(--choice-space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.choice-lib-stat {
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.choice-lib-stat b {
+  color: var(--choice-text);
+}
+
+/* 行动币 + 开卡包入口（原商店功能收编到收藏页顶部） */
+.choice-lib-coins {
+  color: var(--choice-text);
+  margin-left: auto;
+}
+
+.choice-pack-buy {
+  color: var(--choice-primary);
+  background: color-mix(in srgb, var(--choice-primary) 12%, transparent 88%);
+}
+
+.choice-pack-buy:hover:not(:disabled) {
+  color: var(--choice-primary);
+  background: color-mix(in srgb, var(--choice-primary) 22%, transparent 78%);
+}
+
+.choice-pack-buy:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 稍后再选挂起的卡包重开入口：与购买按钮同排，绿色提示有待选机会 */
+.choice-pack-parked {
+  color: var(--choice-color-success);
+  background: color-mix(in srgb, var(--choice-color-success) 12%, transparent 88%);
+}
+
+.choice-pack-parked:hover {
+  color: var(--choice-color-success);
+  background: color-mix(in srgb, var(--choice-color-success) 22%, transparent 78%);
+}
+
+.choice-lib-hint {
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-secondary);
+  margin: 0 0 var(--choice-space-2);
+}
+
+/* 主题池区操作行：提示文案 + 生成/重新生成按钮横向排布 */
+.choice-lib-pool-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+  flex-wrap: wrap;
+}
+.choice-lib-pool-actions .choice-lib-hint {
+  margin: 0;
+  flex: 1 1 auto;
+}
+.choice-lib-gen-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.choice-lib-gen-btn[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.choice-lib-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--choice-space-3);
+}
+
+.choice-lib-triggers {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* v70 修复按钮：破损卡卡脚，红色系小按钮（与卡面破损标同色相） */
+.choice-lib-repair {
+  font-size: var(--choice-text-2xs);
+  color: var(--choice-color-error);
+  background: color-mix(in srgb, var(--choice-color-error) 10%, transparent 90%);
+  border: 1px solid color-mix(in srgb, var(--choice-color-error) 55%, transparent 45%);
+}
+.choice-lib-repair:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--choice-color-error) 20%, transparent 80%);
+}
+.choice-lib-repair:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.choice-lib-pool-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-2);
+  margin-bottom: var(--choice-space-3);
+}
+
+.choice-lib-pool-title {
+  margin: 0;
+  font-size: var(--choice-text-sm);
+  color: var(--choice-text);
+}
+</style>

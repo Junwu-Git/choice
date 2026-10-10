@@ -1,5 +1,5 @@
 import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
-import { getStCharacter } from '@/core/st-character';
+import { getStCharacter, readCharacterFields } from '@/core/st-character';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
@@ -12,7 +12,8 @@ import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensio
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
-import { callSecondaryApiWithRetry, type ChatMsg } from '@/core/api-client';
+import { equippedCardsPromptLine } from '@/core/cards-deck';
+import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
@@ -34,7 +35,6 @@ import type {
   PoolConfig,
   PoolEntry,
   PromptModule,
-  SecondaryApi,
   WIBookMode,
   WorldInfoGlobalSettings,
 } from '@/type/settings';
@@ -96,8 +96,7 @@ export const resolveCount = (cm: string): number => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
-  id ? apis.find(a => a.id === id) : undefined;
+export { resolveCustomApi };
 
 /**
  * 解析世界书参与范围（全局排除 + 聊天排除 + 数据库开关 + 数据库目标书强制排除/启用）。
@@ -165,7 +164,6 @@ export const buildMessages = async (
   isEnrich = false,
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
-  const prefillEnabled = gs.settings.prompt_rules.prefill_enabled;
   const pr = gs.settings.prompt_rules;
   const augmentedCtx: Ctx = {
     ...ctx,
@@ -210,19 +208,19 @@ export const buildMessages = async (
       }
       case 'char_description': {
         const ch = getStCharacter(this_chid);
-        const desc = ch?.data?.description;
+        const desc = readCharacterFields(ch).description;
         if (desc) msgs.push({ role: 'system', content: substituteParams(desc) });
         break;
       }
       case 'char_personality': {
         const ch = getStCharacter(this_chid);
-        const personality = ch?.data?.personality;
+        const personality = readCharacterFields(ch).personality;
         if (personality) msgs.push({ role: 'system', content: substituteParams(personality) });
         break;
       }
       case 'char_scenario': {
         const ch = getStCharacter(this_chid);
-        const scenario = ch?.data?.scenario;
+        const scenario = readCharacterFields(ch).scenario;
         if (scenario) msgs.push({ role: 'system', content: substituteParams(scenario) });
         break;
       }
@@ -236,7 +234,7 @@ export const buildMessages = async (
         break;
       }
       case 'chat_history': {
-        // 保持原始 user/assistant 角色（buildChatHistory 内已强制），不再随 prefillEnabled 切换；
+        // 保持原始 user/assistant 角色（buildChatHistory 内已强制，v69 起无预填充开关可切换）；
         // 世界书深度条目不再织入此数组，改由 wi_depth_before/after 在聊天历史外注入
         const history = buildChatHistory(contextRounds);
         for (const m of history) msgs.push(m);
@@ -277,32 +275,9 @@ export const buildMessages = async (
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
-      case 'assistant_ack': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) msgs.push({ role: mod.role, content });
-        break;
-      }
-      case 'assistant_thinking': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) {
-          msgs.push({
-            role: prefillEnabled ? mod.role : 'system',
-            content,
-          });
-        }
-        break;
-      }
-      case 'enrich_assistant': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
-        if (content) {
-          msgs.push({
-            role: prefillEnabled ? mod.role : 'system',
-            content,
-          });
-        }
-        break;
-      }
       default: {
+        // v69：模块一律按其自身 role 发送（assistant_ack/assistant_thinking/enrich_assistant
+        // 不再特殊处理，预填充开关已移除）。想用预填充把模块角色改为 assistant 即可。
         const content = substituteParams(sub(mod.content, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
@@ -328,7 +303,12 @@ export const buildMessages = async (
   return merged;
 };
 
-const buildChatHistory = (contextRounds: number): ChatMsg[] => {
+/**
+ * 拉取聊天历史。wrapCurrentScene=true（默认）时把最后一条 assistant 消息包进 <current_scene>，
+ * 让选项 AI 明确"当前场景"边界——选项是场景产物，需要这层锚定；卡牌主题池等跨场景常驻
+ * 内容的生成方传 false：卡在剧情推进后仍要反复掉落，绑死当前场景会让池子迅速过时。
+ */
+export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -401,7 +381,8 @@ const buildChatHistory = (contextRounds: number): ChatMsg[] => {
   }
   // 将最后一条 assistant 消息用 <current_scene> 包裹，让 AI 明确识别"当前场景"边界，
   // 避免在长对话中注意力被稀释到更早的剧情。回退到 h 最后一条（无 assistant 时）。
-  if (h.length > 0) {
+  // wrapCurrentScene=false（卡牌池等跨场景生成方）跳过包裹，见函数头注释
+  if (wrapCurrentScene && h.length > 0) {
     const wrapIdx = lastAssistantIdx >= 0 ? lastAssistantIdx : h.length - 1;
     h[wrapIdx].content = `<current_scene>\n${h[wrapIdx].content}\n</current_scene>`;
   }
@@ -439,7 +420,7 @@ const extractTagContents = (content: string, rules: Array<{ tag_name: string }>)
   return out;
 };
 
-type WIBuckets = {
+export type WIBuckets = {
   before: string;
   after: string;
   anBefore: string;
@@ -473,7 +454,7 @@ const renderWIBuckets = async (buckets: WIBuckets): Promise<WIBuckets> => {
   return { before, after, anBefore, anAfter, em, depthBefore, depthAfter };
 };
 
-const buildWI = async (): Promise<WIBuckets> => {
+export const buildWI = async (): Promise<WIBuckets> => {
   const gs = useGlobalSettingsStore();
   const empty: WIBuckets = {
     before: '',
@@ -675,6 +656,24 @@ export const applyWIExcl = async (
   };
 };
 
+/** 世界书排他窗口互斥（模块级队列）：applyWIExcl 是对酒馆全局 WI 状态（selected_world_info/
+ *  角色绑定书/chat_metadata/缓存条目 disable）的 save/restore，选项生成/润色/卡牌池三条链路
+ *  并发时窗口交错——后者的 restore 会基于前者已改写的快照回滚，把临时排除永久留在酒馆状态。
+ *  排队串行化消除交错；窗口已收窄到「消息构建完成即还原」（副 API 直连不再读酒馆世界书），
+ *  排队等待为毫秒级。 */
+let wiWindowTail: Promise<void> = Promise.resolve();
+export async function runWIExclWindow<T>(task: () => Promise<T>): Promise<T> {
+  const prev = wiWindowTail;
+  let release!: () => void;
+  wiWindowTail = new Promise<void>(resolve => (release = resolve));
+  await prev;
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+}
+
 /** 思维链标签块剥离正则：parseOptions 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
@@ -705,9 +704,9 @@ const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200
  *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
 const parseJsonOptionArray = (c: string): string[] | null => {
   try {
-    // 处理 JSON 尾随逗号（LLM 常见错误）
-    const fc = c.replace(/,(\s*[\]}])/g, '$1');
-    const p = JSON.parse(fc);
+    // 处理 JSON 尾随逗号（LLM 常见错误）：复用条目池路径的字符串感知版本——全局正则
+    // `,(\s*[\]}])` 会命中字符串值内部的 ",]"/",}" 字面量，静默篡改选项正文
+    const p = JSON.parse(stripTrailingCommas(c));
     if (!Array.isArray(p)) return null;
     const items = p
       .map(x => {
@@ -867,10 +866,6 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   generatorState.generationId = gid;
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
-  const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-  const restore = gwi.enabled
-    ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-    : null;
   try {
     const count = resolveCount(gs.settings.global_count_mode);
     // 抽取参数读全局 settings.generation（v35 起从 per-pool-config 收归全局）：条目池配置
@@ -956,7 +951,58 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     if (!enabledModules || enabledModules.length === 0) {
       enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
-    const messages = await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+    // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
+    // 副 API 直连不再读——构建完成立即还原，不再持有到请求结束。此前 applyWIExcl 悬在 try 外
+    // （抛错绕过 finally、loading 永久卡死），且排他态持有整个生成期（酒馆 WI 面板读到临时改写态）
+    const messages = await runWIExclWindow(async () => {
+      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
+      const wiRestore = gwi.enabled
+        ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
+        : null;
+      try {
+        return await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+      } finally {
+        wiRestore?.restore();
+      }
+    });
+
+    // 运行时追加指令统一出口（v61 骰式行先例）：追加到末条 user 消息，避免「system 紧随
+    // user」的次序噪音；末条非 user 才另起 system。骰式标注/COC 教学行/装备卡上下文共用。
+    const appendRuntimeLine = (line: string): void => {
+      if (messages.length === 0) return;
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role === 'user') {
+        lastMsg.content += `\n\n${line}`;
+      } else {
+        messages.push({ role: 'system', content: line });
+      }
+    };
+
+    // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
+    // 指令（运行时多 token，不改用户提示词），让 AI 在相关选项上输出真实骰式。
+    if (gs.settings.dice.allow_formula) {
+      appendRuntimeLine(
+        t`可选进阶：若某条选项涉及具体骰子检定，可在标题标注真实骰式与需求值，格式 [标题|骰式|需求值]（如 [攻击|2d6+3|70]）；不涉及的选项保持原有格式即可。`,
+      );
+    }
+
+    // v67 COC 判定方向教学（dice.low_roll）：core_rules 默认教的是难度制「越难标得越高」，
+    // low 模式语义相反（第三段=能力值，越有把握标得越高；掷 ≤ 需求值成功），且档位兜底已按
+    // 100−v 对偶（见 option-format.gradeFallbackRate）——不追加这句 AI 会按难度制标注，
+    // low 模式下难度整体反转。同骰式行：运行时追加，不改用户提示词。
+    if (gs.settings.dice.enabled && gs.settings.dice.low_roll) {
+      appendRuntimeLine(
+        t`判定方向（COC 百分位，覆盖前文「越难标得越高」的说明）：标题第三段的需求值代表达成该行动所需的能力/技艺水平（0-100），掷出 ≤ 需求值才算成功——行动对能力要求越高标得越低，越有把握标得越高。`,
+      );
+    }
+
+    // v67 卡牌上下文告知（card_enabled + 骰子开且非骰式，口径与卡判定路径一致）：让生成端
+    // 知道玩家装备了什么卡、卡的发动面长什么样，AI 可在候选的题材/难度上自然呼应——卡与
+    // 选项从单向触发（卡等选项）变为双向配合。只告知不强制，防纯对话轮逼出不自然选项。
+    if (gs.settings.card_enabled && gs.settings.dice.enabled && !gs.settings.dice.allow_formula) {
+      const cardLine = equippedCardsPromptLine();
+      if (cardLine) appendRuntimeLine(cardLine);
+    }
 
     const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
     if (!api) {
@@ -1099,7 +1145,6 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     toastr.error(t`选项生成失败:${e instanceof Error ? e.message : String(e)}`);
     return null;
   } finally {
-    if (restore) restore.restore();
     cancelled = false;
     genController = null;
     generatorState.loading = false;
@@ -1358,7 +1403,8 @@ const poolGenKindBlock = (kind: string): string => {
  *  其他文本=自定义种类，语义块见 poolGenKindBlock）。
  *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（显式覆盖，优先于四字判断），
  *  留空则 type 由 AI 逐条判断四字标签；不做生成后改写标签——那会给不匹配的内容错挂类型。
- *  不走思维链预填充（区别于行动选项生成），stream 由 api.stream 决定。 */
+ *  模块一律按自身 role 发送（v69 起无预填充开关；行动选项生成同样不依赖预填充，默认
+ *  起手模块为 system 指令），stream 由 api.stream 决定。 */
 export async function generatePoolEntries(params: {
   count: number;
   requirements: string;
@@ -1394,11 +1440,10 @@ export async function generatePoolEntries(params: {
       poolGenKindBlock(params.kind) +
       (forceType ? `\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。` : '');
     const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }];
-    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams）
-    const ch = getStCharacter(this_chid);
-    if (ch?.data?.description) messages.push({ role: 'system', content: substituteParams(ch.data.description) });
-    if (ch?.data?.personality) messages.push({ role: 'system', content: substituteParams(ch.data.personality) });
-    if (ch?.data?.scenario) messages.push({ role: 'system', content: substituteParams(ch.data.scenario) });
+    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams；V1/浅卡走 readCharacterFields 兜底）
+    for (const field of Object.values(readCharacterFields(getStCharacter(this_chid)))) {
+      if (field) messages.push({ role: 'system', content: substituteParams(field) });
+    }
     if (params.includeContext) {
       for (const m of buildChatHistory(gs.settings.prompt_rules.context_rounds)) messages.push(m);
     }

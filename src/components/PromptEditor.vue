@@ -18,15 +18,10 @@
             v-model.number="rules.context_rounds"
             class="choice-input choice-input-w-sm"
             type="number"
-            min="0"
+            min="1"
+            :title="t`每次生成携带的最近消息轮数；0/负数会被兜底为 1（0 并非「不限」）`"
+            @change="rules.context_rounds = Math.max(1, Math.round(Number(rules.context_rounds)) || 1)"
           />
-        </label>
-        <label
-          class="choice-context-rounds"
-          :title="t`关闭后仅将思维链预填和润色应答的 assistant 角色改为 system，其他模块与提示词顺序不变`"
-        >
-          <input v-model="rules.prefill_enabled" type="checkbox" />
-          {{ t`预填充` }}
         </label>
         <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
           <input v-model="rules.baibai_enabled" type="checkbox" />
@@ -281,7 +276,7 @@
                   class="choice-input choice-rename-input"
                   @blur="finishRename(mod)"
                   @keydown.enter="finishRename(mod)"
-                  @keydown.escape="cancelRename"
+                  @keydown.escape.stop="cancelRename"
                 />
                 <span class="choice-module-role" :class="`choice-role-${mod.role}`">{{ mod.role }}</span>
                 <span v-if="mod.enrich_only" class="choice-enrich-badge-sm">{{ t`润色` }}</span>
@@ -386,7 +381,7 @@
 
 <script setup lang="ts">
 import toastr from 'toastr';
-import { this_chid } from '@sillytavern/script';
+import { this_chid } from '@/core/st-world-info';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
@@ -606,7 +601,6 @@ function exportPrompts(mode: 'all' | 'option' | 'enrich' = 'all') {
         enrich_max_chars: pr.enrich_max_chars,
         context_rounds: pr.context_rounds,
         context_mode: pr.context_mode,
-        prefill_enabled: pr.prefill_enabled,
         baibai_enabled: pr.baibai_enabled,
         shujuku_enabled: pr.shujuku_enabled,
       },
@@ -693,7 +687,6 @@ function importPrompts() {
             ? rawConfig.context_mode
             : undefined,
         ],
-        ['prefill_enabled', b(rawConfig.prefill_enabled)],
         ['baibai_enabled', b(rawConfig.baibai_enabled)],
         ['shujuku_enabled', b(rawConfig.shujuku_enabled)],
       ];
@@ -800,9 +793,8 @@ const previewContent = (mod: PromptModule): string => {
       world_info_after: '[世界书条目 - 角色定义后]',
       persona_description: '[Persona 描述]',
       chat_history: '[聊天历史]',
-      assistant_ack: '[AI 应答开头]',
       thinking_prompt: '[思考检查清单]',
-      assistant_thinking: '[思维链开头]',
+      assistant_thinking: '[思维链起手]',
     };
     return m[mod.id] ?? '[动态内容]';
   }

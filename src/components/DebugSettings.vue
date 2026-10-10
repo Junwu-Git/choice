@@ -105,7 +105,7 @@ const PLACEHOLDER_DOCS = [
   { syntax: '{{prev_options}}', desc: t`上一楼已生成选项的文本（默认提示词已不使用；自定义模块可引用作参照）` },
   {
     syntax: '{{user}} 等酒馆宏',
-    desc: t`由酒馆宏引擎替换（assistant 预填模块内同样执行）`,
+    desc: t`由酒馆宏引擎替换（assistant 角色模块内同样执行）`,
   },
 ];
 

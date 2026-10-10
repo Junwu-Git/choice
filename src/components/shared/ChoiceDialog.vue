@@ -1,7 +1,12 @@
 <template>
   <Teleport to="body">
-    <div v-if="open" class="choice-dialog-overlay" @click.self="$emit('close')">
-      <div class="choice-dialog" :style="{ '--choice-dialog-width': width, '--choice-dialog-max-height': maxHeight }">
+    <div v-if="open" class="choice-dialog-overlay" @click.self="onOverlayClick()">
+      <div
+        ref="dialogEl"
+        class="choice-dialog"
+        tabindex="-1"
+        :style="{ '--choice-dialog-width': width, '--choice-dialog-max-height': maxHeight }"
+      >
         <div class="choice-dialog-header">
           <span class="choice-dialog-title">
             <i v-if="icon" :class="icon"></i>
@@ -26,24 +31,69 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(
+import { isTopDialog, lockBodyScroll, popDialog, pushDialog, unlockBodyScroll } from '@/components/shared/dialog-stack';
+
+const props = withDefaults(
   defineProps<{
     open: boolean;
     title: string;
     icon?: string;
     width?: string;
     maxHeight?: string;
+    /** false：禁用 Esc/遮罩点击关闭（× 按钮仍可用）。默认 true。 */
+    dismissible?: boolean;
   }>(),
   {
     icon: '',
     width: '560px',
     maxHeight: '85vh',
+    dismissible: true,
   },
 );
 
-defineEmits<{
+const emit = defineEmits<{
   close: [];
 }>();
+
+const dialogEl = ref<HTMLElement | null>(null);
+const stackId = Symbol();
+
+// Esc 关闭：document 级监听（焦点可能在弹窗内输入框，容器级 keydown 不可靠）；
+// 多弹窗叠开只关最上层，防一键连环关闭
+const onEscKey = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && props.dismissible && isTopDialog(stackId)) emit('close');
+};
+
+// 打开：进栈 + 锁背景滚动（计数制，见 dialog-stack.ts）+ 焦点移入；关闭：出栈 + 解锁
+watch(
+  () => props.open,
+  open => {
+    if (open) {
+      pushDialog(stackId);
+      document.addEventListener('keydown', onEscKey);
+      lockBodyScroll();
+      // 焦点移入弹窗：Esc 立即可用、Tab 从弹窗内开始循环
+      nextTick(() => dialogEl.value?.focus());
+    } else {
+      popDialog(stackId);
+      document.removeEventListener('keydown', onEscKey);
+      unlockBodyScroll();
+    }
+  },
+  // immediate：组件以 open=true 初始挂载（父级无 v-if 前置）时也走同一开启路径
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  // 打开态被父级直接卸载（父 v-if）：还原锁与监听，防背景永久不可滚
+  popDialog(stackId);
+  document.removeEventListener('keydown', onEscKey);
+  unlockBodyScroll();
+});
+
+const onOverlayClick = () => {
+  if (props.dismissible) emit('close');
+};
 </script>
 
 <style scoped>
@@ -80,6 +130,11 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* 容器仅作 Esc/Tab 焦点落点（tabindex=-1 程序化聚焦），不显示焦点环 */
+.choice-dialog:focus {
+  outline: none;
 }
 
 /* 窄视口（手机）下弹窗近全屏：信息密集弹窗按 560px 设计，92vw 也放不下几行内容，

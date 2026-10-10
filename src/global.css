@@ -1,6 +1,26 @@
 /* 覆盖酒馆全局 .menu_button 的 width: min-content + white-space: normal，
-   这两条规则会导致中文按钮文字逐字竖向排列（min-content 宽度 = 最宽单字宽） */
-.menu_button {
+   这两条规则会导致中文按钮文字逐字竖向排列（min-content 宽度 = 最宽单字宽）。
+   必须限域到扩展容器：CSS 经 manifest 全页注入，裸 .menu_button 会改写酒馆全站
+   菜单按钮的布局行为（破坏 choice-* 命名空间纪律，见 theme.css 同款纪律注释） */
+#choice-panel-mount .menu_button,
+#choice-floating-root .menu_button,
+.choice-floating-overlay .menu_button,
+.choice-floating-bubble .menu_button,
+.choice-poolgen-overlay .menu_button,
+.choice-epool-overlay .menu_button,
+.choice-sedlg-overlay .menu_button,
+.choice-cfdlg-overlay .menu_button,
+.choice-ccdlg-overlay .menu_button,
+.choice-cardpack-overlay .menu_button,
+.choice-slotpicker-overlay .menu_button,
+.choice-strdlg-overlay .menu_button,
+.choice-regexlib-overlay .menu_button,
+.choice-dialog-overlay .menu_button,
+.choice-guide-popover .menu_button,
+.choice-floating-options .menu_button,
+.choice-welcome-card .menu_button,
+.choice-tour-menu-backdrop .menu_button,
+.choice-tour-card .menu_button {
   width: auto;
   white-space: nowrap;
 }
@@ -106,8 +126,28 @@
   font-size: inherit;
 }
 
-/* 键盘焦点指示 */
-*:focus-visible {
+/* 键盘焦点指示（限域到扩展容器：裸 *:focus-visible 会给酒馆全站输入框/按钮
+   套扩展主色 outline，全页注入的样式必须随容器收口） */
+#choice-panel-mount *:focus-visible,
+#choice-floating-root *:focus-visible,
+.choice-floating-overlay *:focus-visible,
+.choice-floating-bubble *:focus-visible,
+.choice-poolgen-overlay *:focus-visible,
+.choice-epool-overlay *:focus-visible,
+.choice-sedlg-overlay *:focus-visible,
+.choice-cfdlg-overlay *:focus-visible,
+.choice-ccdlg-overlay *:focus-visible,
+.choice-cardpack-overlay *:focus-visible,
+.choice-slotpicker-overlay *:focus-visible,
+.choice-strdlg-overlay *:focus-visible,
+.choice-regexlib-overlay *:focus-visible,
+.choice-dialog-overlay *:focus-visible,
+.choice-guide-popover *:focus-visible,
+.choice-floating-options *:focus-visible,
+.choice-welcome-card *:focus-visible,
+.choice-tour-menu-backdrop *:focus-visible,
+.choice-tour-card *:focus-visible,
+.choice-floating-context *:focus-visible {
   outline: 1px solid var(--choice-primary);
   outline-offset: 2px;
 }
@@ -121,6 +161,14 @@
 
 .choice-config-row {
   display: flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+}
+
+/* 字数/数值多输入行：窄屏（~380px）放不下整行输入时换行，防横向溢出 */
+.choice-count-row {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--choice-space-2);
 }
@@ -867,6 +915,61 @@
   color: var(--choice-rate-low);
 }
 
+/* v61 骰式表达式：骰式选项的徽标用独立强调色（区别于纯需求值分档），提示「这是骰式而非 D100」 */
+.choice-option-rate--formula {
+  color: var(--choice-color-info);
+}
+
+/* v62 卡牌：星级专用色板（判定行内触发卡 chip 的左缘色条）。
+   取 theme.css 的 --choice-star-N（卡面 CardFace 自用同一色板，经自身注入 var，不依赖此处左缘单条） */
+.choice-card-star--1 {
+  border-left-color: var(--choice-star-1);
+}
+.choice-card-star--2 {
+  border-left-color: var(--choice-star-2);
+}
+.choice-card-star--3 {
+  border-left-color: var(--choice-star-3);
+}
+.choice-card-star--4 {
+  border-left-color: var(--choice-star-4);
+}
+.choice-card-star--5 {
+  border-left-color: var(--choice-star-5);
+}
+
+/* v62 判定行内触发卡徽标（主面板/悬浮球共用）：chip 旁显示触发卡的图徽/名称 */
+.choice-card-tag-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.choice-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--choice-text-xs);
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--choice-border-strong);
+  border-left-width: 3px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-secondary);
+  white-space: nowrap;
+}
+
+/* v66 点选前「可触发」预览 chip：空心虚线区分于点选后已触发的实心 chip（同一行内、
+ * 判定后由后者接管，两者不会同时出现） */
+.choice-card-tag--preview {
+  background: transparent;
+  border-style: dashed;
+  border-left-style: dashed;
+  opacity: 0.8;
+}
+
 /* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留 */
 .choice-roll-chip {
   position: absolute;
@@ -899,6 +1002,28 @@
   to {
     opacity: 0.5;
   }
+}
+
+/* v61 就地重掷 ↻：紧贴 chip 左侧（chip 绝对定位在行尾），独立可点、不随 chip 淡出。
+   @click.stop 由组件保证不触发选项本体；reduced-motion 下无动画（本就无动画）。 */
+.choice-roll-reroll {
+  position: absolute;
+  right: 4.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--choice-radius-sm);
+  color: var(--choice-text-secondary);
+  cursor: pointer;
+  font-size: var(--choice-text-xs);
+}
+.choice-roll-reroll:hover {
+  color: var(--choice-primary);
+  background: var(--choice-bg-element);
 }
 
 @media (prefers-reduced-motion: reduce) {

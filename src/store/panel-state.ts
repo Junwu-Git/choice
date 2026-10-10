@@ -1,6 +1,6 @@
 import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import { getMessageChoiceData, setMessageChoiceData, storeEnrichGeneration } from '@/core/options-store';
+import { getMessageChoiceData, setMessageChoiceIndex, storeEnrichGeneration } from '@/core/options-store';
 import type { ChoiceGeneration } from '@/core/options-store';
 import { enrichUserInput } from '@/core/enrich-input';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -77,12 +77,9 @@ export const usePanelStateStore = defineStore('panel-state', () => {
       return;
     }
     currentIndex.value = index;
-    setMessageChoiceData(messageId.value as number, swipeId.value, {
-      generations: generations.value,
-      currentIndex: index,
-      enrichGenerations: enrichGenerations.value,
-      enrichCurrentIndex: enrichCurrentIndex.value,
-    });
+    // 只写翻页指针（read-modify-write）：本地 generations 是消息数据的克隆且不会比消息更新
+    // （唯一的代新增走 storeGeneration 落库后面板重载），整体覆盖反而会洗掉 cardSettled 等字段
+    setMessageChoiceIndex(messageId.value as number, swipeId.value, { currentIndex: index });
   };
 
   const enrichGoTo = (index: number) => {
@@ -90,12 +87,7 @@ export const usePanelStateStore = defineStore('panel-state', () => {
       return;
     }
     enrichCurrentIndex.value = index;
-    setMessageChoiceData(messageId.value as number, swipeId.value, {
-      generations: generations.value,
-      currentIndex: currentIndex.value,
-      enrichGenerations: enrichGenerations.value,
-      enrichCurrentIndex: index,
-    });
+    setMessageChoiceIndex(messageId.value as number, swipeId.value, { enrichCurrentIndex: index });
   };
 
   function setActiveView(view: 'options' | 'enrich') {
@@ -108,6 +100,13 @@ export const usePanelStateStore = defineStore('panel-state', () => {
       toastr.error(t`请先发送一条消息后再使用润色功能`);
       return;
     }
+    // 楼层快照贯穿全程：await 期间 resync 事件（切楼层/swipe）会改写 messageId/swipeId，
+    // 按响应式现值落库会把结果写进错误楼层
+    const targetMessageId = messageId.value;
+    const targetSwipeId = swipeId.value;
+    // 并发拦截：面板按钮（triggerEnrichRequested）与输入框按钮两入口互不感知，
+    // 润色进行中再次触发整体忽略
+    if (enrichLoading.value) return;
     enrichLoading.value = true;
     activeView.value = 'enrich';
     try {
@@ -120,12 +119,14 @@ export const usePanelStateStore = defineStore('panel-state', () => {
         // 润色不消费池条目素材，poolEntryIds 置空（统计口径：润色不计入）
         poolEntryIds: [],
       };
-      storeEnrichGeneration(messageId.value, swipeId.value, generation);
-      // 重新加载以同步 store 状态
-      const data = getMessageChoiceData(messageId.value, swipeId.value);
-      if (data) {
-        enrichGenerations.value = data.enrichGenerations ?? [];
-        enrichCurrentIndex.value = data.enrichCurrentIndex ?? 0;
+      storeEnrichGeneration(targetMessageId, targetSwipeId, generation);
+      // 重新加载以同步 store 状态（仅当面板仍停在目标楼层；期间切了楼层则下次 load 自然取到）
+      if (messageId.value === targetMessageId && swipeId.value === targetSwipeId) {
+        const data = getMessageChoiceData(targetMessageId, targetSwipeId);
+        if (data) {
+          enrichGenerations.value = data.enrichGenerations ?? [];
+          enrichCurrentIndex.value = data.enrichCurrentIndex ?? 0;
+        }
       }
     } catch (e) {
       activeView.value = 'options';

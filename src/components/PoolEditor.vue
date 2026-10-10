@@ -251,7 +251,7 @@ import CreateConfigDialog from '@/components/CreateConfigDialog.vue';
 import SelectEntriesDialog from '@/components/SelectEntriesDialog.vue';
 import ConfigBindings from '@/components/shared/ConfigBindings.vue';
 import toastr from 'toastr';
-import { this_chid } from '@sillytavern/script';
+import { this_chid } from '@/core/st-world-info';
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { getStCharacter } from '@/core/st-character';
 import { useCharacterSettingsStore } from '@/store/character-settings';

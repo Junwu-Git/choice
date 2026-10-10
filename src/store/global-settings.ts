@@ -8,6 +8,7 @@ import {
   SCHEMA_VERSION,
   setting_field,
   DEFAULT_MODULES,
+  SEND_TEMPLATE_DEFAULTS,
   SIMPLE_MODULE_CONTENTS,
   BAIBAI_MODULE_IDS,
   DEFAULT_ENRICH_PERSON_STYLE,
@@ -18,6 +19,7 @@ import {
   PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
+  type Card,
   type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
@@ -36,6 +38,9 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
+import { scheduleCharacterPersist } from '@/util/character-bindings';
+import { BUILTIN_CARDS } from '@/core/cards-builtin';
+import { cardMaxDurability } from '@/core/cards-constraints';
 
 /**
  * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
@@ -619,7 +624,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     enrich_max_chars: pr.enrich_max_chars ?? 80,
     context_rounds: pr.context_rounds ?? 10,
     context_mode: pr.context_mode ?? 'visible_only',
-    prefill_enabled: pr.prefill_enabled ?? true,
     baibai_enabled: pr.baibai_enabled ?? false,
     shujuku_enabled: pr.shujuku_enabled ?? false,
   };
@@ -646,7 +650,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
     enrich_max_chars: 80,
     context_rounds: 10,
     context_mode: 'visible_only',
-    prefill_enabled: true,
     baibai_enabled: false,
     shujuku_enabled: false,
   };
@@ -664,7 +667,6 @@ const ensureBuiltinPromptConfigs = (validated: GlobalSettingsType) => {
   pr.enrich_max_chars = 80;
   pr.context_rounds = 10;
   pr.context_mode = 'visible_only';
-  pr.prefill_enabled = true;
   pr.baibai_enabled = false;
   pr.shujuku_enabled = false;
 
@@ -706,7 +708,6 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
       enrich_max_chars: pr.enrich_max_chars ?? 80,
       context_rounds: pr.context_rounds ?? 10,
       context_mode: pr.context_mode ?? 'visible_only',
-      prefill_enabled: pr.prefill_enabled ?? true,
       baibai_enabled: pr.baibai_enabled ?? false,
       shujuku_enabled: pr.shujuku_enabled ?? false,
     },
@@ -714,7 +715,8 @@ const ensureDefaultPromptConfig = (validated: GlobalSettingsType) => {
 };
 
 /** v33 全向去重自愈的回写工具：把指向"被删重复份"的 chat/character 绑定重指到保留份。
- *  照 v9 迁移范式：chat_metadata + getStCharacter(this_chid) + save*Debounced。
+ *  手法：chat_metadata + getStCharacter(this_chid) 直改内存 + save*Debounced（受控例外，
+ *  见下方「例外说明」；v9 块「新写入」的 config_id 已改走 scheduleCharacterPersist）。
  *  局限：仅愈合当前已加载的 chat/character 绑定（迁移在 store init 期跑，此时只有当前
  *  会话的 chat_metadata/角色可用）；其余 chat/character 的悬空绑定在加载该会话时由
  *  effectiveConfig 解析落空→回退默认（不崩溃），且 v31 幂等守卫已杜绝新增悬空。
@@ -844,7 +846,11 @@ const applyDefaults = (validated: GlobalSettingsType) => {
           _.set(ch, ['data', 'extensions', setting_field, 'config_id'], charConfigId);
           // 旧 pool 字段被 config 体系取代，删除残留；extensions 可能在异常卡上缺失
           delete ch.data?.extensions?.[setting_field]?.pool;
-          saveCharacterDebounced();
+          // scheduleCharacterPersist（直 POST /api/characters/edit，json_data 取最新 data）而非
+          // saveCharacterDebounced——v8 存档旧 json_data 快照里没有 config_id，后者会把刚写的
+          // 绑定覆盖回快照态（迁移静默丢失）。与 v33/v44 的受控例外不同：那两处回写的字段在
+          // 旧快照中早已存在，本处是「新写入」扩展字段，必须走单一落盘通道
+          scheduleCharacterPersist(ch);
         }
       } catch {
         // 角色绑定失败时静默跳过
@@ -1206,7 +1212,6 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       pr35.enrich_max_chars = defPrompt.enrich_max_chars;
       pr35.context_rounds = defPrompt.context_rounds;
       pr35.context_mode = defPrompt.context_mode;
-      pr35.prefill_enabled = defPrompt.prefill_enabled;
       pr35.baibai_enabled = defPrompt.baibai_enabled;
       pr35.shujuku_enabled = defPrompt.shujuku_enabled;
     }
@@ -2076,6 +2081,238 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     }
   }
 
+  // v61：新增 card_obtained（历史获得记录，独立于当前持有 card_collection）。收藏进度/成就/套装
+  // 改以其为准，分解只删持有、不抹掉图鉴。老存档无此字段：把存量收藏补种为历史（obtained_at 沿用
+  // CardOwned 里已有的 obtained_at，count=1），这样已持有的卡立即计入；已分解的卡历史无法回溯，
+  // 从升级起对未来获得生效（zod prefault 保证 card_obtained 恒为对象）。
+  if ((validated.schema_version ?? 0) < 61) {
+    const obtained = validated.card_obtained ?? {};
+    for (const [id, owned] of Object.entries(validated.card_collection ?? {})) {
+      if (obtained[id]) continue;
+      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at ?? Date.now(), count: 1 };
+    }
+    validated.card_obtained = obtained;
+  }
+
+  // v66 卡牌瘦身：删除血战/副本、诅咒、每日任务、保底与耐久/等级。zod 解析会 strip 新 schema
+  // 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象——旧键会残留在运行时对象里
+  // 并被 deep watch 继续落盘，必须在此显式 delete 才算清干净。card_collection 条目内的
+  // level/durability/max_durability 与 stats.card 的废弃计数字段同理。
+  if ((validated.schema_version ?? 0) < 66) {
+    const legacyKeys = [
+      'battle_enabled',
+      'battle_player_hp',
+      'battle_player_max_hp',
+      'battle_monster_hp',
+      'battle_monster_id',
+      'battle_dungeon_index',
+      'battle_boss_index',
+      'battle_statuses',
+      'battle_weak_recover_at',
+      'card_debuffs',
+      'card_pity',
+      'card_daily',
+    ];
+    for (const key of legacyKeys) delete (validated as Record<string, unknown>)[key];
+    for (const owned of Object.values(validated.card_collection ?? {})) {
+      delete (owned as Record<string, unknown>).level;
+      delete (owned as Record<string, unknown>).durability;
+      delete (owned as Record<string, unknown>).max_durability;
+    }
+    const legacyStatKeys = ['pity_epicplus_hits', 'daily_rewards_claimed'] as const;
+    for (const key of legacyStatKeys) delete (validated.stats.card as Record<string, unknown>)[key];
+  }
+
+  // v67：判定注释改版——结构化头部（点数/需求/差值/程度）与纪律尾注改由代码层固定拼装
+  // （core/dice.ts buildDiceMarker），12 条 send 模板默认重写为纯演绎指令（去掉与头部重复的
+  // 「骰子判定：…（点数/需求）」数字前缀）。exact-match（内容 === 旧默认字面量才换，同
+  // v53-v56 模式）保证用户自定义过的模板不动；to 取自 DiceSettings schema 默认（单一事实
+  // 源，迁移终态与 schema 零漂移）。fail_send_mid_template 额外接受 v56 时代旧单条
+  // fail_send_template 的默认文本——v57 迁移把该文本搬进了 mid 档，与 v58 mid 默认不同，
+  // 这批「从未自定义」的存量档也应换新。新增 main_ai_awareness 布尔由 zod prefault 补齐，
+  // 无需内容迁移。
+  if ((validated.schema_version ?? 0) < 67) {
+    const dice = validated.dice as Record<string, unknown>;
+    // from = 本版之前的默认原文（与 v67 前的 settings.ts 默认逐字一致）；
+    // to 取 SEND_TEMPLATE_DEFAULTS（schema 默认同一来源，迁移终态与 schema 零漂移）
+    const V66_DICE_TEMPLATE_DEFAULTS: Readonly<Record<string, readonly string[]>> = {
+      success_send_low_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，勉强得手）。结果只是勉强够到了达标线，请描写行动勉强达成、略显吃力，或许留下一点小代价或遗憾，切勿渲染成轻松完胜。',
+      ],
+      success_send_mid_low_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，险胜）。行动刚刚越过了达标线、优势微弱，请描写略带惊险、险中取胜的完成，过程不算从容但结果成立。',
+      ],
+      success_send_mid_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，顺利达成）。行动干净利落、顺理成章地完成，请描写过程平稳、结果扎实，不过于张扬也不拖泥带水。',
+      ],
+      success_send_mid_high_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，漂亮完胜）。行动以出彩的姿态漂亮完成，请着重描写出色的发挥、加分的光彩，以及顺带带来的好处或余韵。',
+      ],
+      success_send_high_template: [
+        '骰子判定：成功（点数 {roll}，需求 {rate}，势如破竹）。行动以碾压般的气势一举拿下，请着重描写压倒性的发挥、顺带的连锁好处，以及旁人的惊叹。',
+      ],
+      fail_send_low_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，差点成功）。几乎就要成了，请描写功亏一篑、与成功失之交臂的落差，那一线之差带来的懊恼与遗憾。',
+      ],
+      fail_send_mid_low_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，功亏一篑）。行动在半途受阻、差口气没能拿下，请描写临门一脚失手的不甘，以及这次失败留下的余地或伏笔。',
+      ],
+      fail_send_mid_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，事与愿违）。结果与预期相左，请描写行动受阻、实际走向偏离设想的局面，以及由此带来的纠葛或麻烦。',
+        // v57 自旧单条 fail_send_template 迁入的默认（v56 档），同样视为「未自定义」
+        '骰子判定：失败（点数 {roll}，需求 {rate}）。行动未能达成预期，请描写受挫的过程、由此产生的后续影响，并让角色对这一结果作出真实反应。',
+      ],
+      fail_send_mid_high_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，溃败）。行动明显失守、局面被动，请描写节节败退、落了下风的处境，以及随之扩大的损失。',
+      ],
+      fail_send_high_template: [
+        '骰子判定：失败（点数 {roll}，未达需求 {rate}，彻底落败）。行动一败涂地，请描写灰头土脸的惨况、随之而来的损失或难堪，让角色切实承受这次失败的代价。',
+      ],
+      crit_success_send_template: [
+        '骰子判定：大成功（点数 {roll}）。行动以远超预期的完美方式达成，请着重描写这一惊艳的结果——角色出色的发挥、他人的赞叹，以及随之而来的额外好处。',
+      ],
+      crit_fail_send_template: [
+        '骰子判定：大失败（点数 {roll}）。行动不仅失败，还引发了严重的事故或连锁反应，请描写灾难性的后果，并让角色为这一失误付出实实在在的代价。',
+      ],
+    };
+    for (const [field, froms] of Object.entries(V66_DICE_TEMPLATE_DEFAULTS)) {
+      const current = dice[field];
+      if (typeof current !== 'string' || !froms.includes(current)) continue;
+      dice[field] = SEND_TEMPLATE_DEFAULTS[field as keyof typeof SEND_TEMPLATE_DEFAULTS];
+    }
+  }
+
+  // v68 卡牌再瘦身：移除套装系统（CARD_SETS + 10 张 set_ 内置卡 + 套装共鸣）与收藏成就。
+  // 同 v66 的坑——zod 解析会 strip 不认识的键，但 validateInplace 用 _.assign 就地合并回
+  // 原对象，旧键会残留并被 deep watch 继续落盘，必须显式 delete：
+  // ① card_achievements 整键；② 收藏/图鉴里的 set_ 前缀套装卡条目（卡定义已不存在，
+  // 留着会虚增图鉴计数）；③ 卡组槽位里指向套装卡的 card_id（置空，槽位随 normalize 补空）；
+  // ④ card_definitions 条目内的 set 残留字段（Card 类型已删该字段）。
+  if ((validated.schema_version ?? 0) < 68) {
+    delete (validated as Record<string, unknown>).card_achievements;
+    const isLegacySetCard = (id: string): boolean => typeof id === 'string' && id.startsWith('set_');
+    for (const record of [validated.card_collection, validated.card_obtained]) {
+      for (const id of Object.keys(record ?? {})) {
+        if (isLegacySetCard(id)) delete (record as Record<string, unknown>)[id];
+      }
+    }
+    for (const deck of Object.values(validated.card_decks ?? {})) {
+      for (const slot of (deck as { slots?: Array<{ card_id: string }> })?.slots ?? []) {
+        if (isLegacySetCard(slot.card_id)) slot.card_id = '';
+      }
+    }
+    for (const def of Object.values(validated.card_definitions ?? {})) {
+      delete (def as Record<string, unknown>).set;
+    }
+  }
+
+  // v69：移除「预填充」开关与依赖——assistant_thinking/enrich_assistant 两个起手模块默认
+  // 改为 system 角色 + 指令式文案（不依赖模型预填充能力，开箱即用；想用预填充把模块角色
+  // 改为 assistant 即可）。exact-match（内容 === 旧默认字面量才换，同 v44/v53 模式）
+  // 保证用户自定义过的模块不动；「内容未动 + 角色仍 assistant」的默认档才顺带改角色为 system，
+  // 用户已自行改过角色的不动。to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 69) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V69_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v68 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'assistant_thinking',
+        '收到，开始按问题梳理场景与方向。\n\n<thinking>\n',
+        newContentById.get('assistant_thinking') ?? '',
+      ],
+      [
+        'enrich_assistant',
+        '收到，开始处理润色任务：先理解原文，再自检人称、字数、忠实度。\n\n<thinking>\n',
+        newContentById.get('enrich_assistant') ?? '',
+      ],
+    ];
+    const migrateV69 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V69_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            if (mod.role === 'assistant') mod.role = 'system';
+            break;
+          }
+        }
+      }
+    };
+    migrateV69(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV69(cfg.modules);
+  }
+
+  // v71：预填充收尾——assistant_thinking/enrich_assistant 默认文案补「单 thinking 块防呆」
+  // （若思考块已被开启则直接续写、不重复开块，防弱模型自开第二个 <thinking>），并把
+  // assistant_thinking 的默认名从「思维链预填」改回「思维链起手」（模块已非预填充，名不副实）。
+  // exact-match（内容/名称 === 旧默认字面量才换，同 v69 模式）保证用户自定义过的模块不动；
+  // to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 71) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V71_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v70 默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'assistant_thinking',
+        '输出必须以 <thinking> 标签开头：直接进入逐条分析与自检，不要先写任何致意、过渡或客套话；分析与自检完成后再输出 <options>。',
+        newContentById.get('assistant_thinking') ?? '',
+      ],
+      [
+        'enrich_assistant',
+        '输出必须以 <thinking> 标签开头，直接进入润色前的处理与自检（先理解原文，再检查人称、字数、忠实度），不要先写任何致意或过渡语；全部检查完成后再输出 <options>。',
+        newContentById.get('enrich_assistant') ?? '',
+      ],
+    ];
+    const migrateV71 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V71_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+        if (mod.id === 'assistant_thinking' && mod.name === '思维链预填') mod.name = '思维链起手';
+      }
+    };
+    migrateV71(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV71(cfg.modules);
+  }
+
+  // v72：删除废弃的「应答声明」模块（assistant_ack）——其职责已由 system_prompt（任务定位 +
+  // 输出纪律）与 option_task/enrich_prompt（具体任务）完全覆盖，属于预填充时代的重复应答语，
+  // 对弱模型不仅冗余还可能诱发「收到/本轮执行……」式复读。直接删除（同 v44 DEAD_MODS 先例）：
+  // 工作副本 + 每个 prompt_configs.modules 快照都删，避免切换配置后旧模块复活。
+  if ((validated.schema_version ?? 0) < 72) {
+    const fixModuleSet = (modules: PromptModuleType[]): void => {
+      for (let i = modules.length - 1; i >= 0; i--) {
+        if (modules[i].id === 'assistant_ack') modules.splice(i, 1);
+      }
+    };
+    fixModuleSet(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) fixModuleSet(cfg.modules);
+  }
+
+  // v70：恢复卡牌触发磨损与破损修复——CardOwned 新增 durability/max_durability/broken。
+  // 老档（v66 起删除了 level/durability/max_durability，v70 重新引入）无这些字段：
+  // zod 解析会把缺失字段补上 schema 默认值（durability=0 / max_durability=1），
+  // 无法用「字段是否缺失」区分旧档与新卡——以 max_durability 为哨兵：新卡恒为真实
+  // 满耐久（cardMaxDurability 钳制 ≥10），旧档被补成 1。max_durability ≤1 即旧档，
+  // 按卡定义补满耐久（内置卡 BUILTIN_CARDS ∪ card_definitions 角色主题卡，都含 star/type）、
+  // broken=false——零行为变化，后续正常触发磨损。
+  if ((validated.schema_version ?? 0) < 70) {
+    const defById = new Map<string, { star: Card['star']; type: Card['type'] }>();
+    for (const c of BUILTIN_CARDS) defById.set(c.id, { star: c.star, type: c.type });
+    for (const [id, def] of Object.entries(validated.card_definitions ?? {})) {
+      if (def) defById.set(id, { star: def.star, type: def.type });
+    }
+    for (const owned of Object.values(validated.card_collection ?? {})) {
+      if (!owned || owned.max_durability > 1) continue; // 已是 v70 新卡，跳过
+      const def = defById.get(owned.card_id);
+      const max = def ? cardMaxDurability(def) : 1;
+      owned.max_durability = max;
+      owned.durability = max;
+      owned.broken = false;
+    }
+  }
+
   validated.schema_version = SCHEMA_VERSION;
 };
 
@@ -2149,6 +2386,21 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     removedThemeNormalized = true;
   }
 
+  // v71 迁移：移除预填充残留——PromptConfig/PromptRules 的 prefill_enabled 字段已从 schema
+  // 删除（zod 会 strip 未知键），但 validateInplace 用 _.assign 就地合并回原对象，旧键仍会
+  // 残留在运行时对象里并被 deep watch 继续落盘（同 v66/v68 先例），必须就地 delete 才清干净。
+  // 无需 schema_version 门控：删除幂等，v71 时代的新存档本来就没有该键。
+  const rawPromptRules = _.get(existing, 'prompt_rules');
+  if (rawPromptRules && typeof rawPromptRules === 'object') {
+    delete (rawPromptRules as Record<string, unknown>).prefill_enabled;
+  }
+  const rawPromptConfigs = _.get(existing, 'prompt_configs');
+  if (Array.isArray(rawPromptConfigs)) {
+    for (const cfg of rawPromptConfigs) {
+      if (cfg && typeof cfg === 'object') delete (cfg as Record<string, unknown>).prefill_enabled;
+    }
+  }
+
   // 注意：曾有一个 v14 迁移块把 chat_filter_groups.character_id 从字符串转 number，
   // 方向与现行 schema（z.preprocess(String) 归一化为字符串）相反，已删除——
   // schema 的 preprocess 已兼容旧数字/旧字符串存档，保留该块只会误导后人。
@@ -2203,16 +2455,36 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // 导致所有消费方 settings.configs/master_pool 等变 any[]，回调参数全变隐式 any
   const settings = ref<GlobalSettingsType>(validated);
 
+  // 落盘 watch 防抖（nextTick 级合并）：deep watch 对每次变更同步 klona 整个 settings（现含
+  // 卡池/统计/条目池大对象），PromptEditor 文本框每敲一键会触发两次全量深拷贝（modules 回写
+  // watch + 本 watch）。同一 burst 的多次变更合并为最后一次快照，只拷贝/落盘一次；
+  // saveSettingsDebounced 本身已防抖，此处省的是 klona 的同步开销
+  let pendingSnapshot: GlobalSettingsType | null = null;
+  let snapshotFlushScheduled = false;
   watch(
     settings,
     new_settings => {
-      // 落盘前 sanitize：把 prompt_rules 字数钳到合法区间，堵住任何路径写入的非法值
-      // （前端 v-model 直写 store 引用、外部编辑 settings.json、历史存档残留），
-      // 保证落盘值必合法——与加载预迁移 clamp + schema .catch 构成纵深防御。
-      const snapshot = klona(new_settings);
-      sanitizePromptRulesChars(snapshot.prompt_rules);
-      _.set(extension_settings, setting_field, snapshot);
-      saveSettingsDebounced();
+      pendingSnapshot = new_settings;
+      if (snapshotFlushScheduled) return;
+      snapshotFlushScheduled = true;
+      nextTick(() => {
+        snapshotFlushScheduled = false;
+        const source = pendingSnapshot;
+        pendingSnapshot = null;
+        if (!source) return;
+        try {
+          // 落盘前 sanitize：把 prompt_rules 字数钳到合法区间，堵住任何路径写入的非法值
+          // （前端 v-model 直写 store 引用、外部编辑 settings.json、历史存档残留），
+          // 保证落盘值必合法——与加载预迁移 clamp + schema .catch 构成纵深防御。
+          const snapshot = klona(source);
+          sanitizePromptRulesChars(snapshot.prompt_rules);
+          _.set(extension_settings, setting_field, snapshot);
+          saveSettingsDebounced();
+        } catch (e) {
+          // 快照/落盘抛错不静默丢变更：留痕（下一次变更会重走本 flush）
+          console.error('[Choice] settings 落盘失败', e);
+        }
+      });
     },
     { deep: true },
   );
@@ -2769,7 +3041,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
       enrich_max_chars: n(fc.enrich_max_chars),
       context_rounds: n(fc.context_rounds),
       context_mode: fc.context_mode === 'rounds' || fc.context_mode === 'visible_only' ? fc.context_mode : undefined,
-      prefill_enabled: b(fc.prefill_enabled),
       baibai_enabled: b(fc.baibai_enabled),
       shujuku_enabled: b(fc.shujuku_enabled),
     };

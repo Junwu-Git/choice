@@ -7,11 +7,23 @@
 /** 感知亮度阈值：高于此值判定为亮色主题 */
 const LUMINANCE_THRESHOLD = 128;
 
-/** 解析 CSS 颜色字符串中的 RGB 分量 */
+/** 解析 CSS 颜色字符串中的 RGB 分量（rgba() 函数形态 + #rgb/#rrggbb hex 形态：
+ *  ST 部分主题变量直接给 hex，不支持会静默回落系统偏好、判错极性） */
 function parseRGB(color: string): [number, number, number] | null {
   const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!match) return null;
-  return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+  if (match) return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+  const hex = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const full =
+      hex[1].length === 3
+        ? hex[1]
+            .split('')
+            .map(c => c + c)
+            .join('')
+        : hex[1];
+    return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
+  }
+  return null;
 }
 
 /** 计算感知亮度（ITU-R BT.601 加权） */
