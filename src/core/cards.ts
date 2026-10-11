@@ -498,7 +498,7 @@ export function commitCardRun(resolution: CardResolution): CardOffer | undefined
   resolution.brokenCards = applyDurabilityLoss(resolution);
   if (resolution.brokenCards.length > 0) {
     for (const b of resolution.brokenCards) {
-      toastr.warning(`「${b.card.name}」耐久耗尽，已从卡组卸下——可在收藏页修复或更换其他卡`);
+      toastr.warning(t`「${b.card.name}」耐久耗尽，已从卡组卸下——可在收藏页修复或更换其他卡`);
     }
   }
   // 行动币收支（结局驱动；0 时失败不再减，不扣穿）
@@ -548,7 +548,7 @@ function acquireOrConvert(s: GlobalSettings, card: Card): void {
   if (existing) {
     const gain = CARD_DUPLICATE_VALUE[card.star] ?? 1;
     s.card_currency += gain;
-    toastr.info(`「${card.name}」已拥有，折算 +${gain} 行动币`);
+    toastr.info(t`「${card.name}」已拥有，折算 +${gain} 行动币`);
     return;
   }
   s.card_collection[card.id] = {
@@ -623,7 +623,7 @@ export function equipCard(configId: string, cardId: string): { ok: boolean; erro
   if (gs.settings.auto_deck_enabled) {
     deck.slots = autoDeckCards();
     gs.settings.auto_deck_enabled = false;
-    toastr.info('已切换为手动卡组（可在卡组页重新开启自动编组）');
+    toastr.info(t`已切换为手动卡组（可在卡组页重新开启自动编组）`);
   }
   deck.slots = normalizeDeckSlots(deck.slots);
   const slot = deck.slots.find(s => s.type === card.type);
@@ -660,7 +660,7 @@ export function repairCard(cardId: string): { ok: boolean; errors: string[]; cos
   owned.durability = owned.max_durability || cardMaxDurability(card);
   owned.broken = false;
   recordCurrencySpent(cost);
-  toastr.success(`「${card.name}」已修复至满耐久`);
+  toastr.success(t`「${card.name}」已修复至满耐久`);
   return { ok: true, errors: [], cost };
 }
 
@@ -723,12 +723,14 @@ export function ensureCharacterPool(): void {
   void (async () => {
     try {
       const name = getStCharacter(charId)?.name ?? '';
-      toastr.info(`正在为「${name}」生成主题卡…`);
+      toastr.info(t`正在为「${name}」生成主题卡…`);
       const cards = await generateCharacterPool(charId);
       if (cards.length > 0) {
-        toastr.success(`「${name}」主题卡 +${cards.length} ${cards.map(c => `「${c.name}」`).join('')}`);
+        // 卡名清单先算再插值：插值里嵌反引号模板会让运行时 i18n 键与对账提取口径错位
+        const names = cards.map(c => `「${c.name}」`).join('');
+        toastr.success(t`「${name}」主题卡 +${cards.length} ${names}`);
       } else {
-        toastr.warning(`「${name}」主题卡生成失败，本次开卡包先用现有池，下次触发自动重试`);
+        toastr.warning(t`「${name}」主题卡生成失败，本次开卡包先用现有池，下次触发自动重试`);
       }
     } catch {
       /* 防御兜底：generateCharacterPool 内部已全 catch，正常不会走到 */

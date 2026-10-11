@@ -1478,7 +1478,9 @@ const suggestionTitle = (s: Suggestion | null): string => {
   const newWeightText = s.newWeight !== undefined ? ` → ${s.newWeight}` : '';
   const act = actionLabel(s);
   const manualNote = s.reason === 'recover' && s.manualLow ? t`（该权重为手动设置，回捞会覆盖手动值）` : '';
-  return t`${s.basis === '窗口' ? `近 ${s.samples} 轮` : `全量 ${s.samples} 轮`}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}${manualNote}`;
+  // 基线描述先算再插值：插值里嵌反引号模板会让运行时 i18n 键与对账工具的提取口径错位
+  const basisText = s.basis === '窗口' ? t`近 ${s.samples} 轮` : t`全量 ${s.samples} 轮`;
+  return t`${basisText}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}${manualNote}`;
 };
 
 const rowMeta = computed<Map<string, RowMeta>>(() => {

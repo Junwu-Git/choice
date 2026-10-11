@@ -307,16 +307,6 @@
   color: var(--choice-text-secondary);
 }
 
-.choice-field-label {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-}
-
-.choice-field-label label {
-  font-weight: 600;
-}
-
 .choice-field-hint {
   color: var(--choice-text-muted);
   font-size: var(--choice-text-xs);
@@ -1080,26 +1070,12 @@
   color: var(--choice-primary-hover);
 }
 
-/* 行内提示图标（风险档位图例等）：muted 图标 + hover 主色，与工具按钮同密度 */
-.choice-icon-hint {
-  padding: var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  cursor: help;
-  flex-shrink: 0;
-}
-
-.choice-icon-hint:hover {
-  color: var(--choice-primary);
-}
-
 /* FA 字形墨迹在 em 框内偏上（下缘约留 1/8em 空白），flex/inline-flex 按 em 框居中时
-   墨迹视觉偏高——「图标+文字」并排的三类容器统一下沉 0.06em 做光学修正
+   墨迹视觉偏高——「图标+文字」并排的容器统一下沉 0.06em 做光学修正
    （= FA 官方基线修正 -0.125em 的一半；不同图标墨迹范围略有差异，取通用值）。
-   手机端小字号+高 DPR 缩放下偏移肉眼可见（过滤页徽章/区域标题/tab 真机反馈） */
+   手机端小字号+高 DPR 缩放下偏移肉眼可见（过滤页徽章/区域标题真机反馈） */
 .choice-bound-badge i,
-.choice-inline-label i,
-.choice-tab i {
+.choice-inline-label i {
   transform: translateY(0.06em);
 }
 

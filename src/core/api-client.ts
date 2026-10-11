@@ -195,7 +195,7 @@ export async function callSecondaryApiWithRetry(
         // 且 toastr 已显示"正在重试"造成误导。这里提前拦截，取消立即生效。
         if (externalSignal?.aborted) throw e;
         const delaySec = Math.max(0, retryInterval);
-        if (!quiet) toastr.info(`正在重试 (${attempt + 1}/${retryCount})，${delaySec}s 后重试...`);
+        if (!quiet) toastr.info(t`正在重试 (${attempt + 1}/${retryCount})，${delaySec}s 后重试...`);
         await new Promise(resolve => setTimeout(resolve, delaySec * 1000));
         // sleep 期间若被取消则直接终止，避免醒来后又发起一次注定被 abort 的请求
         if (externalSignal?.aborted) throw e;

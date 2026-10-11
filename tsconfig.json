@@ -34,6 +34,7 @@
   "include": [
     "*.d.ts",
     "src/**/*.ts",
+    "tests/**/*.ts",
     "@types/**/*.ts"
   ],
   "exclude": ["**/node_modules/**", "**/dist/**"]

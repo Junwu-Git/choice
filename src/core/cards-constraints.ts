@@ -123,13 +123,16 @@ export const CARD_OUTCOME_CURRENCY: Readonly<Record<DiceOutcome, number>> = {
   crit_fail: -3,
 };
 
-/** 重复获得折算行动币（开卡包 3 选 1 选到已拥有卡时发放；低于对应星级价值防刷包） */
+/** 重复获得折算行动币（开卡包 3 选 1 选到已拥有卡时发放）。防刷包硬约束：按掉落权重
+ *  （CARD_DROP_WEIGHT）加权的单抽期望回币 ×3 ≈ 4.2 必须 < CARD_PACK_PRICE(5)，否则收藏
+ *  集齐后「买包→全选重复」净赚、形成货币循环——旧档（2★2/3★3/4★5/5★8）期望 ≈6.4 已踩线
+ *  收回；调档前先复核此和，每档折算也须 < 卡包价。 */
 export const CARD_DUPLICATE_VALUE: Readonly<Record<CardStar, number>> = {
   '1': 1,
-  '2': 2,
-  '3': 3,
-  '4': 5,
-  '5': 8,
+  '2': 1,
+  '3': 2,
+  '4': 3,
+  '5': 4,
 };
 
 /** 卡包恒定 5 行动币 */

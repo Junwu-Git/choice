@@ -153,7 +153,7 @@ export const usePanelStateStore = defineStore('panel-state', () => {
       activeView.value = 'options';
       if ((e as Error)?.name !== 'AbortError') {
         console.error('[Choice] 润色失败', e);
-        toastr.error(`润色失败: ${e instanceof Error ? e.message : '未知错误'}`);
+        toastr.error(t`润色失败: ${e instanceof Error ? e.message : '未知错误'}`);
       }
     } finally {
       enrichLoading.value = false;

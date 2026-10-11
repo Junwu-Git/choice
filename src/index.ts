@@ -34,7 +34,7 @@ $(() => {
       fn();
     } catch (error) {
       console.error(`[Choice] init ${name} failed`, error);
-      toastr.error(`Choice ${name}初始化失败: ${error instanceof Error ? error.message : String(error)}`);
+      toastr.error(t`Choice ${name}初始化失败: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
