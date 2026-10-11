@@ -118,7 +118,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
         id: 'pool-open',
         icon: 'fa-solid fa-database',
         title: '条目库布局与功能',
-        html: `<p>我已经帮你打开了条目库。<strong>顶部一排按钮</strong>：全部展开、新建分组、导入 / 导出文件，以及<strong>魔杖「AI 生成」</strong>——按当前角色批量生成一批条目，是扩充条目库的主力。</p>
+        html: `<p>我已经帮你打开了条目库。<strong>顶部一排按钮</strong>：全部展开、新建分组、导入 / 导出文件。</p>
 <p><strong>下方按分组存放条目</strong>：分组头可重命名、加条目、整组复制 / 删除；点条目展开可编辑<strong>类型、内容、规则</strong>，勾选框用于批量选中。</p>
 <p>看完点右上角 × 关闭，回到条目池页。</p>`,
         action: 'pool-library',
@@ -325,7 +325,7 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
       '配置从条目库中勾选条目，生成时 AI 从当前生效的配置里抽取条目作为写作素材。',
       '配置可绑定到聊天或角色，优先级：聊天绑定 > 角色绑定 > 默认配置，命中即用、不合并。',
       '操作流程：新建配置 → 「添加条目」勾选 → 绑定聊天/角色，下次生成自动生效。',
-      '全新安装已内置一组示例条目与默认配置，开箱即用；条目库的魔杖按钮可让 AI 批量生成条目。',
+      '全新安装已内置一组示例条目与默认配置，开箱即用；条目库支持导入/导出与分组管理。',
     ],
   },
   generation: {
@@ -462,8 +462,8 @@ export const PAGE_HINTS: Record<TabId, PageHint> = {
   },
 };
 
-/** 弹窗级 ❓ 指引（EntryPoolDialog / PoolGenDialog / RegexLibraryDialog 各自引用） */
-export const DIALOG_HINTS: { entryPool: PageHint; poolGen: PageHint; regexLibrary: PageHint } = {
+/** 弹窗级 ❓ 指引（EntryPoolDialog / RegexLibraryDialog 各自引用） */
+export const DIALOG_HINTS: { entryPool: PageHint; regexLibrary: PageHint } = {
   entryPool: {
     icon: 'fa-solid fa-database',
     title: '条目库',
@@ -472,18 +472,7 @@ export const DIALOG_HINTS: { entryPool: PageHint; poolGen: PageHint; regexLibrar
       '点分组名展开/折叠，分组名旁 + 加条目，📋 复制整组；空分组在关闭弹窗时自动清理。',
       '支持跨分组拖拽条目、拖拽 ☰ 调整顺序。',
       '勾选复选框后点「导出文件」只导出勾选的条目（不勾选则全量导出）。',
-      '顶部魔杖按钮按当前角色让 AI 批量生成条目；修改条目库会同步影响所有引用该条目的配置。',
-    ],
-  },
-  poolGen: {
-    icon: 'fa-solid fa-wand-magic-sparkles',
-    title: 'AI 生成条目',
-    brief: '让 AI 根据你的要求自动生成一批条目（含类型标签与补充规则）。',
-    points: [
-      '条目种类：选项指导（写给生成选项的 AI 看的指导）/ 行动方向（简洁的具体行动）/ 由 AI 判断 / 自定义种类。',
-      '参数：条目数控制数量；生成要求描述主题、字数、风格；目标分组决定存放位置；目标类型可统一四字标签。',
-      '勾选「结合近期对话」会参考最近的聊天内容，生成更贴合当前剧情的条目。',
-      '生成后勾选需要的条目点「注入」加入条目库，类型/内容/规则可在结果行直接改；未勾选的会被丢弃。',
+      '修改条目库会同步影响所有引用该条目的配置。',
     ],
   },
   regexLibrary: {

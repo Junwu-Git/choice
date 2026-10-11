@@ -25,10 +25,6 @@
             <button class="choice-icon-btn" :title="exportBtnTitle" @click="onExportPool">
               <i class="fa-solid fa-file-export"></i>
             </button>
-            <span class="choice-epool-header-divider"></span>
-            <button class="choice-icon-btn" :title="t`AI 生成`" @click="showGen = true">
-              <i class="fa-solid fa-wand-magic-sparkles"></i>
-            </button>
             <button ref="guideBtn" class="choice-icon-btn" :title="t`页面指引`" @click="showGuide = !showGuide">
               <i class="fa-solid fa-circle-question"></i>
             </button>
@@ -167,11 +163,9 @@
           </div>
           <div v-else class="choice-empty-hint">
             <i class="fa-solid fa-database"></i>
-            <span>{{ t`条目库为空，点击 + 添加或使用 AI 生成` }}</span>
+            <span>{{ t`条目库为空，点击 + 添加` }}</span>
           </div>
         </div>
-
-        <PoolGenDialog :open="showGen" :categories="categoryNames" @close="showGen = false" @confirm="onGenConfirm" />
 
         <ImportPoolDialog
           :open="showImportPool"
@@ -217,7 +211,6 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { uuidv4 } from '@sillytavern/scripts/utils';
-import PoolGenDialog from '@/components/PoolGenDialog.vue';
 import ImportPoolDialog from '@/components/ImportPoolDialog.vue';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import GuidePopover from '@/components/GuidePopover.vue';
@@ -243,7 +236,6 @@ const expandedGroups = ref<Set<string>>(new Set());
 const allGroupsExpanded = ref(false);
 const groupRenameId = ref<string | null>(null);
 const groupRenameText = ref('');
-const showGen = ref(false);
 const showImportPool = ref(false);
 const importFileData = ref<any>(null);
 const showGuide = ref(false);
@@ -576,25 +568,6 @@ const removeGroup = (group: EntryGroup) => {
   }
 };
 
-const onGenConfirm = ({
-  additions,
-  replacements,
-}: {
-  additions: PoolEntry[];
-  replacements: { id: string; type: string; content: string; rule: string }[];
-}) => {
-  for (const r of replacements) {
-    const target = masterPool.value.find(e => e.id === r.id);
-    if (target) {
-      target.type = r.type;
-      target.content = r.content;
-      target.rule = r.rule;
-    }
-  }
-  if (additions.length) masterPool.value.push(...additions);
-  showGen.value = false;
-};
-
 // 部分导出：勾选模式下仅导出勾选的条目与其所属分组；无勾选则全量导出。
 // partial 时 configs 置空并带标记——配置按 entry_id 引用条目，部分条目无法还原完整配置，
 // 导入端据此禁用"替换"选项，防止替换导入清空现有配置
@@ -694,9 +667,12 @@ const onImportMerge = ({ text }: { text: string; fileName: string }) => {
     }
   }
   showImportSource.value = false;
+  // 跳过提示先算再插值：插值里嵌反引号模板会让运行时 i18n 键与对账提取口径错位
+  const skippedNote =
+    master_pool.length - newEntries.length > 0 ? t`（${master_pool.length - newEntries.length} 条已存在，跳过）` : '';
   toastr.success(
     newEntries.length
-      ? t`已导入 ${newEntries.length} 条${master_pool.length - newEntries.length > 0 ? `（${master_pool.length - newEntries.length} 条已存在，跳过）` : ''}`
+      ? t`已导入 ${newEntries.length} 条${skippedNote}`
       : t`全部 ${master_pool.length} 条均已存在，未重复导入`,
   );
 };
@@ -773,8 +749,11 @@ const deleteDialogMessage = computed(() => {
   switch (deleteTarget.value.type) {
     case 'entry':
       return t`确定要删除条目「${deleteTarget.value.summary}」吗？此操作不可撤销。`;
-    case 'group':
-      return t`确定要删除分组「${deleteTarget.value.key || t`未分组`}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+    case 'group': {
+      // 分组名先算再插值：插值里嵌 t`` 会让运行时 i18n 键与对账提取口径错位
+      const groupName = deleteTarget.value.key || t`未分组`;
+      return t`确定要删除分组「${groupName}」及其全部 ${deleteTarget.value.count} 条条目吗？此操作不可撤销。`;
+    }
   }
 });
 
@@ -951,15 +930,6 @@ onUnmounted(() => {
   display: inline-flex;
   gap: var(--choice-space-1);
   align-items: center;
-}
-
-/* 分组分隔线：与正则库头部的分隔线同款，把"文件操作"与"AI 生成"分组 */
-.choice-epool-header-divider {
-  width: 1px;
-  align-self: stretch;
-  margin: 4px 2px;
-  background: var(--choice-border-strong);
-  flex-shrink: 0;
 }
 
 /* 头部按钮尺寸显式约定 28px（与正则库头部一致）。此前 global 40px 触控规则
