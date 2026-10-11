@@ -476,7 +476,8 @@ const rateTitle = (option: ChoiceOption): string => {
 // 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*（配色反转见 theme.css）
 const rateClass = (rate: number): string => {
   const low = gs.settings.dice.low_roll;
-  if (low) return rate < 40 ? 'choice-option-rate--high' : rate >= 70 ? 'choice-option-rate--low' : 'choice-option-rate--mid';
+  if (low)
+    return rate < 40 ? 'choice-option-rate--high' : rate >= 70 ? 'choice-option-rate--low' : 'choice-option-rate--mid';
   return rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 };
 

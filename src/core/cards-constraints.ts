@@ -234,7 +234,8 @@ export function normalizeTrigger(raw: unknown): CardTrigger {
       base.typeValue = typeof t.typeValue === 'string' ? t.typeValue : '';
       break;
     case 'grade':
-      if (['conservative', 'balanced', 'bold'].includes(t.grade as string)) base.grade = t.grade as CardTrigger['grade'];
+      if (['conservative', 'balanced', 'bold'].includes(t.grade as string))
+        base.grade = t.grade as CardTrigger['grade'];
       break;
     case 'demand':
     case 'roll': {

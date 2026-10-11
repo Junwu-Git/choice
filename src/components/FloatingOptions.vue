@@ -336,7 +336,8 @@ const rateTitle = (option: ChoiceOption): string => {
 // 分档色走 --choice-rate-*（中档 = 主色），与 risk 档位色条语义区分（同主面板，配色反转见 theme.css）
 const rateClass = (rate: number): string => {
   const low = gs.settings.dice.low_roll;
-  if (low) return rate < 40 ? 'choice-option-rate--high' : rate >= 70 ? 'choice-option-rate--low' : 'choice-option-rate--mid';
+  if (low)
+    return rate < 40 ? 'choice-option-rate--high' : rate >= 70 ? 'choice-option-rate--low' : 'choice-option-rate--mid';
   return rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 };
 
