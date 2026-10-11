@@ -19,6 +19,7 @@ import { dedupOptions } from '@/core/option-dedup';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { getShujukuTargetBook } from '@/core/shujuku-bridge';
+import { readGoldenFingerSnapshot } from '@/core/gf-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -1062,6 +1063,12 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         messages.push({ role: 'system', content: line });
       }
     };
+
+    // 金手指上下文告知（gf-bridge 检测式桥接）：宿主在金手指里绑定了系统时，把任务/身心状态
+    // 快照告知生成端，选项可与任务呼应（同下方卡牌上下文的「双向配合」思路，只告知不强制）；
+    // 未安装/总开关关闭/未绑定系统时返回 null，生成零变化。
+    const gfSnapshot = readGoldenFingerSnapshot();
+    if (gfSnapshot) appendRuntimeLine(gfSnapshot);
 
     // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
     // 指令（运行时多 token，不改用户提示词），让 AI 在相关选项上输出真实骰式。
