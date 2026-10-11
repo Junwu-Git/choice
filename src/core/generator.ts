@@ -1,5 +1,6 @@
 import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter, readCharacterFields } from '@/core/st-character';
+import { persistGateEnter, persistGateExit } from '@/core/persist-gate';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
@@ -25,6 +26,8 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import {
   getMessageSwipeId,
   getMessageChoiceData,
+  captureLayerIdentity,
+  isSameLayerIdentity,
   type ChoiceGeneration,
   type ChoiceOption,
 } from '@/core/options-store';
@@ -41,16 +44,6 @@ import type {
 import { DEFAULT_MODULES, GenerationSettings, OPTION_MATCH_THRESHOLD } from '@/type/settings';
 
 type GenerateTarget = { messageId: number; swipeId: number };
-
-/** AI 条目池生成结果项：replaceTargetId 存在则替换该已有条目（改 type/content/rule），否则为新增条目。
- *  replaceOriginal 仅用于 UI 预览被替换的原文，不参与注入逻辑。 */
-export type PoolGenItem = {
-  type: string;
-  content: string;
-  rule: string;
-  replaceTargetId?: string;
-  replaceOriginal?: string;
-};
 
 export const generatorState = reactive({ loading: false, generationId: null as string | null });
 
@@ -79,21 +72,26 @@ export const lastDedupReport = ref<
   | undefined
 >(undefined);
 
-/** 条目池生成状态：与行动选项生成的 generatorState 分离，互不干扰。
- *  独立控制器便于对话框「取消」按钮精准 abort 当次条目池生成。 */
-export const poolGenState = reactive({ loading: false });
-let poolGenController: AbortController | null = null;
+/** 单次生成选项数硬上限：count_mode 是自由文本（UI 提示「如 4 或 3-6」），用户可能
+ *  顺手填 99——上限防一次请求抽爆条目池/白耗 token。20 已远超面板可展示的舒适量。 */
+const RESOLVE_COUNT_MAX = 20;
+const RESOLVE_COUNT_DEFAULT = parseInt(GenerationSettings.parse({}).count_mode, 10) || 4;
 
+/** 解析 global_count_mode（自由文本「4」或「3-6」）：非法输入（非数字/0）此前产出 count=0
+ *  → 池抽取为空、整趟请求照发后才报「未能解析出任何选项」，把配置问题误导成模型问题；
+ *  区间 min>max（如 8-3）则乘负数得反直觉均匀分布。收敛在此规整：换序、非法/非正值
+ *  回退 schema 默认、钳上限——调用方拿到的恒为 ≥1 的可用值。 */
 export const resolveCount = (cm: string): number => {
   const s = cm.trim();
   const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
   if (rangeMatch) {
-    const min = parseInt(rangeMatch[1], 10);
-    const max = parseInt(rangeMatch[2], 10);
-    return min + Math.floor(Math.random() * (max - min + 1));
+    let min = parseInt(rangeMatch[1], 10);
+    let max = parseInt(rangeMatch[2], 10);
+    if (min > max) [min, max] = [max, min];
+    return Math.min(RESOLVE_COUNT_MAX, Math.max(1, min + Math.floor(Math.random() * (max - min + 1))));
   }
   const n = parseInt(s, 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return Number.isFinite(n) && n > 0 ? Math.min(RESOLVE_COUNT_MAX, n) : RESOLVE_COUNT_DEFAULT;
 };
 
 export { resolveCustomApi };
@@ -113,8 +111,14 @@ export async function resolveWIParticipation(
   const book = getShujukuTargetBook();
   if (book) {
     if (gs.settings.prompt_rules.shujuku_enabled) {
-      // 开关 ON：确保该书参与（未绑定时靠 applyWIExcl 的 enabled 通道临时追加到 selected_world_info）
+      // 开关 ON：确保该书参与。仅 push 进 enabled 不够——applyWIExcl 是「排除优先于启用」，
+      // 用户在全局/聊天排除过该书时「确保参与」会被静默覆盖（注释承诺落空）。桥接书是
+      // 扩展自管工作书，参与开关 ON 即参与意图的权威表达，从排除集剔除。残余：聊天侧
+      // book_entry_modes 把该书设为 off 时仍会被排除（applyWIExcl 内计算，此处够不到），
+      // 属显式 off 档语义，视为用户明确意愿。
       if (!enabled.includes(book)) enabled.push(book);
+      const exclIdx = allExcl.indexOf(book);
+      if (exclIdx !== -1) allExcl.splice(exclIdx, 1);
     } else {
       // 开关 OFF：排除该书，除非它是角色卡主世界书（避免误杀主书）
       const ch = getStCharacter(this_chid);
@@ -478,6 +482,10 @@ export const buildWI = async (): Promise<WIBuckets> => {
       .map((m: any) => m?.mes ?? '')
       .reverse();
     const ch = getStCharacter(this_chid);
+    // 角色字段走 readCharacterFields（V2 缺失时兜底顶层 V1）：直读 ch.data.* 会让 V1/浅卡
+    // 在这里看到空串——WI 关键词激活扫描拿不到角色描述，而 char_description 等提示词模块
+    // 却能（readCharacterFields 兜底），同一次生成两套口径。
+    const charFields = readCharacterFields(ch);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
     // 但行动选项是独立 API 调用，沿用 8192 会让角色世界书的大条目先耗尽预算，
@@ -488,10 +496,10 @@ export const buildWI = async (): Promise<WIBuckets> => {
     const result = await getWorldInfoPrompt(chatStrings, maxCtx, false, {
       trigger: 'normal',
       personaDescription: power_user?.persona_description ?? '',
-      characterDescription: ch?.data?.description ?? '',
-      characterPersonality: ch?.data?.personality ?? '',
+      characterDescription: charFields.description ?? '',
+      characterPersonality: charFields.personality ?? '',
       characterDepthPrompt: ch?.data?.extensions?.depth_prompt?.prompt ?? '',
-      scenario: ch?.data?.scenario ?? '',
+      scenario: charFields.scenario ?? '',
       creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
@@ -590,70 +598,95 @@ export const applyWIExcl = async (
   const hasNewEnabled = enabled.some(n => !saved.includes(n));
   if (!hasExcl && !hasMutation && !hasNewEnabled) return null;
 
-  selected_world_info.length = 0;
-  const newList = saved.filter(n => !allExcl.has(n));
-  for (const name of enabled) {
-    // 排除优先于启用：被排除的书即使仍在 enabled 列表里也不注入
-    if (!allExcl.has(name) && !newList.includes(name)) newList.push(name);
-  }
-  selected_world_info.push(...newList);
+  // 持久化闸门：窗口内的临时改写（角色/聊天绑定书置空）若被并发持久化通道序列化，
+  // 空值会落盘（内存 restore 救得回、磁盘救不回）。见 persist-gate.ts 模块注释。
+  persistGateEnter();
+  // 还原所需状态提升到 try 外：中途抛错时 catch 要做尽力还原（原缺陷：变异段无 restore
+  // 路径，全局态带伤且无法回滚——现实可达性极低，但一旦发生污染持续到下次生成）
   const cwEx = !!cw && allExcl.has(cw);
-  if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
-  // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
-  // 与角色绑定书的临时改写同一模式；restore 还原原值。
   const chatBookEx = !!chatBook && allExcl.has(chatBook);
-  if (chatBookEx) chat_metadata[METADATA_KEY] = '';
-
-  // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
-  // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
-  // （world-info.js:2041），直接变异拷贝无法影响生成。故先 loadWorldInfo 确保书已进缓存，再经
-  // Map.prototype.get.call 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
   type MutableEntry = { uid?: number | string; disable?: boolean };
   const mutated: Array<{ entry: MutableEntry; value: boolean }> = [];
-  const overrides = bookEntryOverrides ?? {};
-  for (const name of processSet) {
-    if (allExcl.has(name)) continue; // off/排除书不注入，无需条目级变异
-    const mode = modeOf(name);
-    if (mode === 'follow') continue; // follow：纯酒馆原生 disable，覆盖不生效
-    try {
-      await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
-      const data = Map.prototype.get.call(worldInfoCache, name) as
-        { entries?: Record<string, MutableEntry> } | undefined;
-      if (!data?.entries) continue;
-      const bookOverrides = overrides[name] ?? {};
-      for (const entry of Object.values(data.entries)) {
-        if (!entry || typeof entry.disable !== 'boolean') continue;
-        const uidKey = `${entry.uid}`;
-        if (mode === 'force') {
-          // force 全启用：覆盖不生效（条目勾选框显示与生成一致）
-          if (entry.disable) {
-            mutated.push({ entry, value: entry.disable });
-            entry.disable = false;
-          }
-        } else if (mode === 'custom') {
-          // custom：按覆盖逐条；快照未覆盖的条目保持酒馆原状
-          const ov = bookOverrides[uidKey];
-          if (typeof ov !== 'boolean') continue;
-          if (entry.disable === ov) {
-            mutated.push({ entry, value: entry.disable });
-            entry.disable = !ov;
+  const restoreAll = (): void => {
+    selected_world_info.length = 0;
+    selected_world_info.push(...saved);
+    if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
+    if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
+    for (const m of mutated) m.entry.disable = m.value;
+  };
+  try {
+    selected_world_info.length = 0;
+    const newList = saved.filter(n => !allExcl.has(n));
+    for (const name of enabled) {
+      // 排除优先于启用：被排除的书即使仍在 enabled 列表里也不注入
+      if (!allExcl.has(name) && !newList.includes(name)) newList.push(name);
+    }
+    selected_world_info.push(...newList);
+    if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
+    // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
+    // 与角色绑定书的临时改写同一模式；restore 还原原值。
+    if (chatBookEx) chat_metadata[METADATA_KEY] = '';
+
+    // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
+    // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
+    // （world-info.js:2041），直接变异拷贝无法影响生成。故先 loadWorldInfo 确保书已进缓存，再经
+    // Map.prototype.get.call 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
+    const overrides = bookEntryOverrides ?? {};
+    for (const name of processSet) {
+      if (allExcl.has(name)) continue; // off/排除书不注入，无需条目级变异
+      const mode = modeOf(name);
+      if (mode === 'follow') continue; // follow：纯酒馆原生 disable，覆盖不生效
+      try {
+        await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
+        const data = Map.prototype.get.call(worldInfoCache, name) as
+          { entries?: Record<string, MutableEntry> } | undefined;
+        if (!data?.entries) continue;
+        const bookOverrides = overrides[name] ?? {};
+        for (const entry of Object.values(data.entries)) {
+          if (!entry || typeof entry.disable !== 'boolean') continue;
+          const uidKey = `${entry.uid}`;
+          if (mode === 'force') {
+            // force 全启用：覆盖不生效（条目勾选框显示与生成一致）
+            if (entry.disable) {
+              mutated.push({ entry, value: entry.disable });
+              entry.disable = false;
+            }
+          } else if (mode === 'custom') {
+            // custom：按覆盖逐条；快照未覆盖的条目保持酒馆原状
+            const ov = bookOverrides[uidKey];
+            if (typeof ov !== 'boolean') continue;
+            if (entry.disable === ov) {
+              mutated.push({ entry, value: entry.disable });
+              entry.disable = !ov;
+            }
           }
         }
+      } catch (err) {
+        console.warn('[Choice] applyWIExcl 条目变异失败（保持酒馆原状）:', name, err);
       }
-    } catch (err) {
-      console.warn('[Choice] applyWIExcl 条目变异失败（保持酒馆原状）:', name, err);
     }
-  }
 
-  return {
-    restore: () => {
-      selected_world_info.length = 0;
-      selected_world_info.push(...saved);
-      if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
-      if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
-      for (const m of mutated) m.entry.disable = m.value;
-    },
-  };
+    return {
+      restore: () => {
+        try {
+          restoreAll();
+        } finally {
+          // 先还原再放行排队的持久化：放行时序列化读到的是完整还原后的状态
+          persistGateExit();
+        }
+      },
+    };
+  } catch (err) {
+    // 变异段自身抛错（理论上各写点均有守卫）：尽力还原已完成的全局改写 + 退出闸门防
+    // 持久化悬挂，再原样上抛由调用方兜底
+    try {
+      restoreAll();
+    } catch {
+      /* 还原失败仅能记录，勿吞原始异常 */
+    }
+    persistGateExit();
+    throw err;
+  }
 };
 
 /** 世界书排他窗口互斥（模块级队列）：applyWIExcl 是对酒馆全局 WI 状态（selected_world_info/
@@ -696,6 +729,37 @@ const STRIP_REASONING_TAGS_RE =
  *  （"内容A🎞️ [B]…"）也按新选项拆 */
 const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
 
+/** 字符串感知的尾随逗号清理：跳过引号区间，仅删除引号外 `,`+空白+`]`/`}` 处的逗号。
+ *  不能用全局正则 `,(\s*[\]}])` 替换——它会命中字符串值内部的 ",]"/",}" 字面量，
+ *  静默篡改选项正文（如列举示例"苹果,橘子]"）。 */
+const stripTrailingCommas = (s: string): string => {
+  let out = '';
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      out += ch;
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ',') {
+      let k = i + 1;
+      while (k < s.length && (s[k] === ' ' || s[k] === '\t' || s[k] === '\n' || s[k] === '\r')) k++;
+      if (s[k] === ']' || s[k] === '}') continue;
+    }
+    out += ch;
+  }
+  return out;
+};
+
 /** 尝试把 `<options>` 块文本当 JSON 数组解析（主路径；解析失败走括号回退）。
  *  返回解析出的选项字符串数组，或 null（非数组 / 解析失败 / 解析后全空）。
  *  兼容多种元素形态：{title,content}、纯字符串、{text}、{option}、{t,c}、{type,content}。
@@ -717,12 +781,22 @@ const parseJsonOptionArray = (c: string): string[] | null => {
           (typeof x?.text === 'string' ? x.text.trim() : null) ??
           '';
         if (title) return body ? `[${title}]${body}` : `[${title}]`;
+        // 无 title 但带 type（弱模型把方向词放进 type 字段）：映射成 [type]正文——与
+        // {title,content} 同构（本契约里括号标题就是类型词）。旧的 `${type}: ${content}`
+        // 模板分支对字符串 content 永不可达（body 已先行消费 content），类型信息丢失、
+        // 归因的前缀匹配随之失效
+        const typeAsTitle = typeof x?.type === 'string' ? x.type.trim() : '';
+        if (typeAsTitle) return body ? `[${typeAsTitle}]${body}` : `[${typeAsTitle}]`;
         return (
+          // 无 title 时回退链先查 body（已从 x.content 算出）：漏查会让
+          // [{"content":"正文"}]（弱模型漏 title 字段，常见）被静默丢弃，
+          // 与 {"text":"正文"} 可保留不对称——选项凭空变少且无提示。
+          // body 为空串时继续回退（content:'' + text:'备用' 不应丢备用）
+          (body || null) ??
           x?.text?.trim() ??
           x?.option?.trim() ??
           // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
-          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
-          (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
+          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined)
         );
       })
       .filter(Boolean);
@@ -864,6 +938,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   const gid = uuidv4();
   generatorState.loading = true;
   generatorState.generationId = gid;
+  // controller 随入口创建：WI 排他窗口构建消息（loadWorldInfo fetch/EJS 渲染）可达秒级，
+  // 此间点取消也要能 abort——此前在 API 调用前才创建，构建期取消无对象可 abort，
+  // 照发请求白耗 token（cancelGeneration 只 abort 不复位，见其注释）
+  genController = new AbortController();
+  const signal = genController.signal;
+  // 楼层身份快照：慢请求期间切聊天/删楼重编号会让 chat[messageId] 变成别的楼层，
+  // 落库前比对引用拦截（见下方 isSameLayerIdentity 校验点）
+  const layerIdentity = captureLayerIdentity(_target.messageId);
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
   try {
@@ -948,7 +1030,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     const rules = gs.settings.prompt_rules;
 
     let enabledModules = gs.sortedEnabledModules.filter(m => !m.enrich_only);
+    // 全禁用兜底：静默回退全量默认模块——用户「全部关闭」的意图被无声推翻，至少明示。
+    // 不改为「发空提示词」：那只会产出更离谱的回复且浪费一次请求。
     if (!enabledModules || enabledModules.length === 0) {
+      toastr.warning(t`提示词模块已全部禁用，本次按默认模块生成`);
       enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
     // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
@@ -1010,8 +1095,8 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return null;
     }
 
-    genController = new AbortController();
-    const signal = genController.signal;
+    // 取消早退：构建完成后、发请求前再查一次（controller 已在入口创建，abort 已生效）
+    if (cancelled) return null;
 
     const raw = await callSecondaryApiWithRetry(
       messages,
@@ -1038,6 +1123,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       let dropped = r1.droppedCount;
       let details = r1.details;
       let refilled = false;
+      // 累计解析数：refill 剔除比例的分母用累计值——旧实现固定用首批 parsed.length，
+      // 分母不随轮次增长使比例单调虚高、refill 提前放弃
+      let totalParsed = parsed.length;
       // refill 循环：直到凑够 count 条或 refill 无新产出为止，防止最终数量不足。
       // 上限 2 轮防模型持续返回重复内容导致死循环。
       let refillRound = 0;
@@ -1045,7 +1133,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       while (kept.length < count && refillRound < MAX_REFILL_ROUNDS) {
         refillRound++;
         // 若累计剔除比例 > 60%，说明模型可能整体重复，停止 refill
-        if (parsed.length > 0 && dropped / parsed.length > 0.6) break;
+        if (dropped / totalParsed > 0.6) break;
         refilled = true;
         const need = count - kept.length;
         const refillMessages: ChatMsg[] = [
@@ -1053,7 +1141,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
           { role: 'assistant', content: raw },
           {
             role: 'user',
-            content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
+            // 剔除数用当前累计值（dropped），首轮后恒等 r1 数字会与实际不符；
+            // dropped 含同批内互相重复（dedupOptions 批内互重），措辞勿只提「此前选项」
+            content: `以上 <options> 中有 ${dropped} 条重复选项已剔除（含与此前选项及同批内互相重复）。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
           },
         ];
         lastBuildMessages.value = structuredClone(refillMessages);
@@ -1066,6 +1156,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         );
         if (cancelled) return null;
         const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
+        totalParsed += refillParsed.length;
         const rNext = dedupOptions(
           refillParsed.map(o => o.text),
           [...dedupRefs, ...kept],
@@ -1125,8 +1216,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       poolEntryIds,
       scopeId,
     };
+    // 跨聊天防护：身份不符（切聊天/删楼重编号）整体丢弃——统计记账、L1 入队与消息落库
+    // 必须同进同退，否则统计已记、结果写进别家楼层的单侧分裂
+    if (!isSameLayerIdentity(layerIdentity, _target.messageId)) {
+      toastr.info(t`聊天已切换，本次生成的选项已丢弃`);
+      return null;
+    }
     // 新手引导第 8 步"去生成第一组选项"的完成信号：只在选项生成成功时置位，
-    // 润色（enrich-input）与条目生成（generatePoolEntries）不算——引导验证的是主链路
+    // 润色（enrich-input）不算——引导验证的是主链路
     lastOptionsGeneratedAt.value = Date.now();
     // 统计口径：仅行动选项生成成功（实际保留条数）计数，润色/条目生成不计入。
     // 与 lastOptionsGeneratedAt 同处成功路径，失败/取消/空解析不会走到这里；
@@ -1153,348 +1250,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
 }
 
 export function cancelGeneration() {
+  // 无生成时调用不留毒标志：cancelled 复位只发生在生成运行的 finally，若导出函数在
+  // 空闲期被置位（当前调用方均有 isGenerating 守卫，防御未来新增调用点），下一次生成
+  // 会在请求发起前与流式读取等取消检查点被静默丢弃且无任何提示。abort 空转无害。
+  if (!generatorState.loading) return;
   cancelled = true;
   genController?.abort();
   // 不复位 generatorState/genController：abort 触发的旧生成 finally 在微任务中
   // 紧随执行并负责复位。若在此同步清空，会打开「取消 → 立即重新生成」竞态窗口——
   // 旧 finally 晚于新生成同步段运行时，会把新代的 loading/controller/代 id 覆盖掉
   //（新生成实际在跑但按钮态错乱、取消失效）。复位延迟一帧（<16ms）无感知。
-}
-
-/** 条目池生成系统提示词：写死，不进 PromptEditor、不依赖预设。
- *  与行动选项生成提示词刻意分离：输出契约是 JSON 数组（type/content/rule/replace），
- *  与行动选项输出改 JSON 的决策同向，但结构不同，故不复用 parseOptions。
- *  输出格式在此钉死（四字类型/纯文本指令/可选规则），条目种类语义由弹窗自由输入并经
- *  poolGenKindBlock 注入；条目库重构后 type/rule 是一等字段，生成结果必须能落进这两个字段，
- *  否则类型标签会被塞回 content（UI 的"AI 生成指令"框）。
- *  下游会传入带序号的"当前层已有条目"，要求 AI 去重并可用 replace 字段提替换建议。 */
-const POOL_GEN_SYSTEM_PROMPT = `你是「行动条目池生成器」，负责为角色扮演对话的"行动选项"功能产出候选条目。
-
-用户消息中会给出【当前层已有条目】（带序号 1、2、3…）。
-
-【输出格式（严格 JSON）】
-只输出一个 JSON 数组，每个元素为一个对象：
-- "type"：条目类型，必须为四字中文标签（如"顺势而为"、"选项指导"），概括条目定位，逐条独立判断，不得留空。
-- "content"：AI生成指令。纯文本，直接写指令/指引/行动方向本身，禁止任何符号装饰——不得带类型前缀（如"[针锋相对]"）、序号、引号包裹、表情；类型只能写在 "type" 字段。字数与写法跟随条目种类与用户要求；未指明时默认简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。
-- "rule"：规则指导（可选）——生成对应选项时的补充约束，没有则写空字符串 ""。
-- "replace"：仅替换建议填写：要替换的【当前层已有条目】序号（数字，1-based）；新增条目必须省略此字段。
-
-【生成要求】
-1. 条目总数以用户消息为准；条目种类必须跟随用户要求——用户要"选项指导"就写指导/约束文本，要"行动方向"才写具体行动，严禁把指导类要求做成具体选项。
-2. 新增条目不得与已有条目重复或高度雷同。
-3. 若某条已有条目较弱、与其他条目重叠或表达不佳，可输出替换建议（携带 "replace" 序号），并给出新的 type/content/rule。
-4. 新增之间、以及与已有之间，切入点/情绪态度/应对策略须有明显差异，禁止同质化。
-5. 不输出思考过程、解释或前后缀语；除 JSON 数组本身（可包在代码块中）外不输出任何文字。`;
-
-/** 解析条目池生成输出：主路径 JSON（[{type,content,rule,replace?}]，与行动选项输出改 JSON 的决策同向），
- *  回退路径按行解析并提取类型前缀。与 parseOptions 刻意分离：条目池不依赖 <options> 标签，勿合并逻辑。
- *  返回 {type, content, rule, replaceTarget?}：replaceTarget 为已有条目的 1-based 序号，
- *  由 generatePoolEntries 映射为已解析的 replaceTargetId（解析器不接触 store）。
- *  键名必须与 generatePoolEntries 的消费端一致（曾因 text→type+content 迁移漏改此处
- *  导致生成条目 type/content 全为 undefined，勿再把键名单独改回）。 */
-type ParsedPoolGenItem = { type: string; content: string; rule: string; replaceTarget?: number };
-
-/** 宽松取条目对象字段：缺省字段补空串；replace 兼容数字/数字字符串，非正数视为新增 */
-const pickPoolGenFields = (x: any): ParsedPoolGenItem | null => {
-  if (!x || typeof x !== 'object') return null;
-  const type = typeof x.type === 'string' ? x.type.trim() : '';
-  const content = typeof x.content === 'string' ? x.content.trim() : '';
-  if (!type && !content) return null;
-  const replaceRaw = typeof x.replace === 'number' ? x.replace : parseInt(String(x.replace ?? ''), 10);
-  return {
-    type,
-    content,
-    rule: typeof x.rule === 'string' ? x.rule.trim() : '',
-    replaceTarget: Number.isFinite(replaceRaw) && replaceRaw >= 1 ? replaceRaw : undefined,
-  };
-};
-
-/** 字符串感知的尾随逗号清理：跳过引号区间，仅删除引号外 `,`+空白+`]`/`}` 处的逗号。
- *  不能用全局正则 `,(\s*[\]}])` 替换——它会命中字符串值内部的 ",]"/",}" 字面量，
- *  静默篡改条目正文（如列举示例"苹果,橘子]"）。 */
-const stripTrailingCommas = (s: string): string => {
-  let out = '';
-  let inStr = false;
-  let esc = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) {
-      out += ch;
-      if (esc) esc = false;
-      else if (ch === '\\') esc = true;
-      else if (ch === '"') inStr = false;
-      continue;
-    }
-    if (ch === '"') {
-      inStr = true;
-      out += ch;
-      continue;
-    }
-    if (ch === ',') {
-      let k = i + 1;
-      while (k < s.length && (s[k] === ' ' || s[k] === '\t' || s[k] === '\n' || s[k] === '\r')) k++;
-      if (s[k] === ']' || s[k] === '}') continue;
-    }
-    out += ch;
-  }
-  return out;
-};
-
-function parsePoolGenItems(text: string, count: number): ParsedPoolGenItem[] {
-  // 先去除 thinking/reasoning/thought 标签块，与 parseOptions 共用同一正则（见 STRIP_REASONING_TAGS_RE）
-  let c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
-  // 去掉可能的代码块包裹
-  c = c
-    .replace(/^```[a-zA-Z]*\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
-
-  const items: ParsedPoolGenItem[] = [];
-  const push = (item: ParsedPoolGenItem | null) => {
-    if (item && items.length < count) items.push(item);
-  };
-
-  // JSON 主路径：取首个 [ 到最后一个 ]，修尾随逗号后解析；字符串元素整条落 content
-  const arrStart = c.indexOf('[');
-  const arrEnd = c.lastIndexOf(']');
-  // 主路径与抢救路径共用的数组落地：字符串元素整条落 content，对象取字段
-  const pushFromArray = (p: unknown[]): boolean => {
-    for (const x of p) {
-      if (typeof x === 'string') {
-        const s = x.trim();
-        if (s) push({ type: '', content: s, rule: '' });
-      } else {
-        push(pickPoolGenFields(x));
-      }
-      if (items.length >= count) break;
-    }
-    return items.length > 0;
-  };
-  if (arrStart !== -1 && arrEnd > arrStart) {
-    try {
-      const p = JSON.parse(stripTrailingCommas(c.slice(arrStart, arrEnd + 1)));
-      if (Array.isArray(p)) {
-        if (pushFromArray(p)) return items;
-      }
-    } catch {
-      /* 非 JSON，走截断抢救/回退 */
-    }
-  }
-
-  // 截断抢救：流式代理可能在 JSON 中途以 finish_reason=length 掐断输出（实测假流式代理
-  // 163 token 即截断），数组没有闭合的 ']'，主路径必然失败，而按行回退解析对 JSON 碎片
-  // 只会产出垃圾条目。找字符串感知的最后一个完整对象结尾 '}'，截断到该处补 ']' 再解析——
-  // 能救回多少条算多少，救回条数少于请求数属可接受降级；仍失败才落入按行回退解析。
-  if (arrStart !== -1) {
-    let lastBrace = -1;
-    let inStr = false;
-    let esc = false;
-    for (let i = arrStart; i < c.length; i++) {
-      const ch = c[i];
-      if (inStr) {
-        if (esc) esc = false;
-        else if (ch === '\\') esc = true;
-        else if (ch === '"') inStr = false;
-        continue;
-      }
-      if (ch === '"') inStr = true;
-      else if (ch === '}') lastBrace = i;
-    }
-    if (lastBrace > arrStart) {
-      try {
-        const p = JSON.parse(stripTrailingCommas(c.slice(arrStart, lastBrace + 1) + ']'));
-        if (Array.isArray(p) && pushFromArray(p)) return items;
-      } catch {
-        /* 抢救失败，走回退 */
-      }
-    }
-  }
-
-  // 回退路径：宽松按行解析，兼容编号列表/无序列表/逐行 JSON 对象
-  // 替换前缀："替换#N：文本" 或 "替换N: 文本"（N=已有条目序号），序号后须紧跟 : 或 ：
-  const replaceRe = /^替换\s*#?(\d+)\s*[:：]\s*(.+)$/;
-  // 去掉行首编号 "1." / "2)" / "3、" 与无序列表符 "- " / "• "；
-  // 编号分隔符后须非数字，避免误吞 "10.5" 这类十进制开头的条目
-  const stripMarker = (l: string) => l.replace(/^\s*(?:\d+[.)、](?!\d)|[-•])\s*/, '').trim();
-  // 类型前缀提取：【短标签】正文 / [短标签] 正文 / 短标签：正文（标签限长，降低正文自带冒号被误判为标签的概率）。
-  // 半角方括号必须支持：renderPoolEntryLine 喂给 AI 的已有条目格式就是 [type] content，
-  // 模型在回退场景模仿该格式输出时类型才能被还原，否则丢失到 content
-  const bracketTypeRe = /^【(.{1,10}?)】\s*(.+)$/;
-  const halfBracketTypeRe = /^\[([^\][]){1,10}\]\s*(.+)$/;
-  const colonTypeRe = /^([^：:]{1,6})[：:]\s+(.+)$/;
-  for (const raw of c.split(/\r?\n/)) {
-    let l = raw.trim();
-    if (!l || /^<\/?\w+>$/i.test(l)) continue;
-    // 先剥行首列表标记，再去判别是否为替换前缀
-    l = stripMarker(l);
-    if (!l) continue;
-    // 逐行 JSON 对象兜底（模型输出 {...} 而非数组时）
-    if (l.startsWith('{') && l.endsWith('}')) {
-      try {
-        push(pickPoolGenFields(JSON.parse(l)));
-        if (items.length >= count) break;
-        continue;
-      } catch {
-        /* 普通文本行，继续按前缀解析 */
-      }
-    }
-    let type = '';
-    const rm = l.match(replaceRe);
-    if (rm) {
-      // 替换行的文本也剥一次列表标记（模型可能写 "替换#2：1. 新文本"）
-      l = stripMarker(rm[2]);
-      if (!l) continue;
-    }
-    // 类型提取须在替换判定之后：替换行正文可能自带类型前缀
-    const bm = l.match(bracketTypeRe);
-    const hm = bm ? null : l.match(halfBracketTypeRe);
-    const cm = !bm && !hm ? l.match(colonTypeRe) : null;
-    if (bm) {
-      type = bm[1].trim();
-      l = bm[2].trim();
-    } else if (hm) {
-      type = hm[1].trim();
-      l = hm[2].trim();
-    } else if (cm) {
-      type = cm[1].trim();
-      l = cm[2].trim();
-    }
-    push({ type, content: l, rule: '', replaceTarget: rm ? parseInt(rm[1], 10) : undefined });
-    if (items.length >= count) break;
-  }
-  return items;
-}
-
-/** 已有条目列表/替换预览的统一渲染：[type] content（type 空则只列 content）。
- *  该格式被回退解析器的 halfBracketTypeRe 支持往返还原——喂给 AI 的已有条目格式
- *  必须能被模型模仿输出后再解析出类型，改动渲染格式前先确认解析器覆盖。 */
-const renderPoolEntryLine = (e: { type: string; content: string }): string => {
-  const t = e.type.trim();
-  const c = e.content.trim();
-  return t ? `[${t}] ${c}` : c;
-};
-
-/** 条目种类注入块：条目库 AI 生成的种类由弹窗自由输入（预设：选项指导/行动方向/由AI判断，
- *  其他任意文本=自定义种类），不再依赖提示词兜底猜测。
- *  guide=指导AI生成选项的条目（content 是给选项生成 AI 的要求，不是具体行动），type 由 AI 逐条判断四字标签；
- *  action=简洁行动方向；由AI判断=不注入，沿用系统提示词的"跟随用户要求"兜底；
- *  自定义种类=把种类名嵌进语义块，content 按该种类定位撰写。
- *  与【生成要求】冲突时以本块为准——自由文本要求无法可靠传达种类语义，这正是本功能的由来。 */
-const poolGenKindBlock = (kind: string): string => {
-  const k = kind.trim();
-  if (k === '行动方向') {
-    return `\n\n【条目种类：行动方向】本次所有条目的 "content" 为简洁行动方向（5-25 个中文字符，只写行动方向，不写对白原文、不预判他人反应、不写动作细节描写）。`;
-  }
-  if (k === '由AI判断') {
-    return '';
-  }
-  if (k === '' || k === '选项指导') {
-    return `\n\n【条目种类：选项指导】本次所有条目都是写给"生成选项的AI"的指导，不是具体行动方向：
-- "content" 必须是对选项生成的要求/约束/取舍指引（如"每批选项中至少一条推进当前事件"、"涉及对白的选项对白不超过两句"、"出现危险情境时必须有可回避的选项"），不得是"下一步做什么"的具体行动。
-- "rule" 通常留空 ""（content 本身就是约束），确有补充约束时才写。
-本块与用户消息【生成要求】中关于条目种类的描述冲突时，以本块为准。`;
-  }
-  return `\n\n【条目种类：${k}】本次所有条目属于「${k}」类：content 按该种类的定位撰写，并结合用户消息中的生成要求；输出格式要求（四字类型、纯文本指令、可选规则指导）不变。`;
-};
-
-/** 条目池 AI 生成：复用活动 API（与 generateOptions 同一套 resolveCustomApi），
- *  始终带角色描述/性格/场景以贴合角色语气；includeContext 时纳入近 N 轮聊天历史。
- *  kind 为弹窗自由输入的条目种类（空串=选项指导；"行动方向"/"由AI判断"=专用预设；
- *  其他文本=自定义种类，语义块见 poolGenKindBlock）。
- *  targetType 非空时写入 system+user 强制所有生成条目使用该类型（显式覆盖，优先于四字判断），
- *  留空则 type 由 AI 逐条判断四字标签；不做生成后改写标签——那会给不匹配的内容错挂类型。
- *  模块一律按自身 role 发送（v69 起无预填充开关；行动选项生成同样不依赖预填充，默认
- *  起手模块为 system 指令），stream 由 api.stream 决定。 */
-export async function generatePoolEntries(params: {
-  count: number;
-  requirements: string;
-  includeContext: boolean;
-  targetType: string;
-  kind: string;
-}): Promise<PoolGenItem[]> {
-  if (poolGenState.loading) {
-    toastr.info(t`条目生成中,请稍候`);
-    return [];
-  }
-  const gs = useGlobalSettingsStore();
-  const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
-  if (!api) {
-    toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
-    return [];
-  }
-  poolGenState.loading = true;
-  poolGenController = new AbortController();
-  try {
-    // 快照总条目库已有条目：喂给 AI 的编号列表 + inject 时序号→id 映射；
-    // rule 一并快照，用于替换行在 AI 未给规则时预填原规则（避免注入时静默清空）
-    const existing = gs.settings.master_pool.map(e => ({ id: e.id, type: e.type, content: e.content, rule: e.rule }));
-    const existingList = existing.length
-      ? existing.map((e, i) => `${i + 1}. ${renderPoolEntryLine(e)}`).join('\n')
-      : '（无）';
-    const forceType = params.targetType.trim();
-    // type 一律由 AI 逐条判断四字标签（与默认条目库的四字惯例一致）；guide 不再强制统一
-    // "选项指导"——种类语义由 poolGenKindBlock 承担，手填目标类型仍是显式覆盖
-    // 强制类型双路下发（system + user）：只改 user 或只改 system 时，部分模型会忽略较弱一侧
-    const systemPrompt =
-      POOL_GEN_SYSTEM_PROMPT +
-      poolGenKindBlock(params.kind) +
-      (forceType ? `\n\n【强制类型】本次所有生成条目的 "type" 字段必须为 "${forceType}"，不得使用其他类型。` : '');
-    const messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }];
-    // 角色描述/性格/场景：贴合角色语气，与 buildMessages 同源同法（substituteParams；V1/浅卡走 readCharacterFields 兜底）
-    for (const field of Object.values(readCharacterFields(getStCharacter(this_chid)))) {
-      if (field) messages.push({ role: 'system', content: substituteParams(field) });
-    }
-    if (params.includeContext) {
-      for (const m of buildChatHistory(gs.settings.prompt_rules.context_rounds)) messages.push(m);
-    }
-    messages.push({
-      role: 'user',
-      content:
-        `请生成 ${params.count} 条行动条目建议。\n` +
-        (forceType ? `强制类型：所有生成条目的 type 必须为 "${forceType}"。\n` : '') +
-        `已有条目：\n${existingList}\n用户要求：\n${params.requirements}`,
-    });
-    const raw = await callSecondaryApiWithRetry(
-      messages,
-      api,
-      gs.settings.retry_count,
-      gs.settings.retry_interval,
-      poolGenController.signal,
-    );
-    const parsed = parsePoolGenItems(raw, params.count);
-    // 把 1-based 序号映射为已解析的 replaceTargetId + 原文；越界序号降级为新增条目
-    const items: PoolGenItem[] = parsed.map(p => {
-      const idx = p.replaceTarget;
-      if (idx !== undefined && idx >= 1 && idx <= existing.length) {
-        const tgt = existing[idx - 1];
-        return {
-          type: p.type,
-          content: p.content,
-          // 替换行规则预填：AI 未给规则时回退原条目规则，结果行所见即注入所写
-          rule: p.rule || tgt.rule,
-          replaceTargetId: tgt.id,
-          replaceOriginal: renderPoolEntryLine(tgt),
-        };
-      }
-      return { type: p.type, content: p.content, rule: p.rule };
-    });
-    if (!items.length) {
-      toastr.error(t`未解析出条目,请检查模型输出`);
-    }
-    return items;
-  } catch (e) {
-    if ((e as Error)?.name === 'AbortError') return [];
-    console.error('[Choice] pool generation failed', e);
-    toastr.error(t`条目生成失败:${e instanceof Error ? e.message : String(e)}`);
-    return [];
-  } finally {
-    poolGenController = null;
-    poolGenState.loading = false;
-  }
-}
-
-export function cancelPoolGen() {
-  poolGenController?.abort();
-  // 同 cancelGeneration：状态复位交给 generatePoolEntries 的 finally（微任务紧随执行），
-  // 避免取消后立即再次生成时旧 finally 覆盖新池生成的 loading/controller。
 }

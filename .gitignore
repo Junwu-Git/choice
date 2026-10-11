@@ -28,3 +28,6 @@ screenshot_verify.png
 .mimosa/
 tailwind.config.js
 postcss.config.js
+
+# 产物 sourcemap（约 5MB）只本地生成供排查，不进仓库——每次发布提交会让仓库膨胀几 MB
+dist/index.js.map

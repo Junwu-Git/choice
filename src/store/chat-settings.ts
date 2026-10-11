@@ -1,6 +1,7 @@
 import { chat_metadata } from '@sillytavern/script';
 import { saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import toastr from 'toastr';
+import { persistGateDeferOrRun } from '@/core/persist-gate';
 import { ChatSettings, setting_field, type WorldInfoChatSettings } from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
@@ -74,7 +75,9 @@ export const useChatSettingsStore = defineStore('chat-settings', () => {
         return;
       }
       chat_metadata[setting_field] = klona(new_settings);
-      saveMetadataDebounced();
+      // saveMetadataDebounced 触发时整体序列化 chat_metadata——WI 排他窗口内 world_info 键
+      // 被临时置空，此刻排程会把空绑定落盘，推迟到 restore 后再排程（读到的即真实状态）
+      persistGateDeferOrRun(saveMetadataDebounced);
     },
     { deep: true },
   );

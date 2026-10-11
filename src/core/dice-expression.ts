@@ -26,6 +26,60 @@ const DICE_SEGMENT_RE = /(\d+)d(\d+)(?:([kKdD])([hHlL])(\d+)?)?/g;
  *  否则占位标记里的字母会让每次校验都失败、所有骰式被误拒。 */
 const EXPR_SAFE_RE = /^(?:[\d\s+\-*/().])+$/;
 
+/** 算术残留语法校验（递归下降，只看语法不执行）：残留只含数字/四则/括号/点（无字母 →
+ *  零注入面），不用 new Function/eval 类动态执行。文法 = JS 数字字面量（含 '1.'/'.5'）+
+ *  四则 + 括号 + 一元正负号，与 compile 的 new Function 语法口径对齐（数字原子与
+ *  __d(...) 调用原子语法同构）。返回 false = compile 必然 SyntaxError。 */
+const isArithmeticSyntax = (expr: string): boolean => {
+  // JS 词法把 '--'/'++' 吃成单个自增/自减 token（maximal munch），而本字符集只有数字
+  // 字面量——自增/减的操作数必须是可赋值引用，字面量恒为早期语法错误（0--3、--0、
+  // 0+++3 均实测 SyntaxError）。递归下降按字符处理 '+'/'-' 无法表达这一词法规则，
+  // 整体拒绝：本字符集内含 '--'/'++' 的串不存在合法读法
+  if (expr.includes('--') || expr.includes('++')) return false;
+  let i = 0;
+  const n = expr.length;
+  const parseNumber = (): boolean => {
+    const start = i;
+    while (i < n && expr[i] >= '0' && expr[i] <= '9') i++;
+    if (i < n && expr[i] === '.') {
+      i++;
+      while (i < n && expr[i] >= '0' && expr[i] <= '9') i++;
+    }
+    // 至少一位数字，且 '.' 单独不成数（'1.'/'.5' 合法、'.' 非法）
+    return i > start && !(expr[start] === '.' && i === start + 1);
+  };
+  const parseFactor = (): boolean => {
+    // 一元正负号（JS 允许 1--1、(-1)）
+    while (i < n && (expr[i] === '+' || expr[i] === '-')) i++;
+    if (i >= n) return false;
+    if (expr[i] === '(') {
+      i++;
+      if (!parseExpr()) return false;
+      if (i >= n || expr[i] !== ')') return false;
+      i++;
+      return true;
+    }
+    return parseNumber();
+  };
+  const parseTerm = (): boolean => {
+    if (!parseFactor()) return false;
+    while (i < n && (expr[i] === '*' || expr[i] === '/')) {
+      i++;
+      if (!parseFactor()) return false;
+    }
+    return true;
+  };
+  const parseExpr = (): boolean => {
+    if (!parseTerm()) return false;
+    while (i < n && (expr[i] === '+' || expr[i] === '-')) {
+      i++;
+      if (!parseTerm()) return false;
+    }
+    return true;
+  };
+  return parseExpr() && i === n; // 全消费才完整（'0+' 残留在尾部检查被拒）
+};
+
 /** 判定一段文本是否为合法骰式（供选项标注识别；不含骰子段的纯算术不算）。
  *  与 compile 同口径：剥掉全部骰子段后不允许残留 k/d/h/l——如 `2d6k3`（k 后缺 h/l）
  *  能过字符集白名单但 compile 必拒，若此处放行会出现「徽标显示骰式、实际掷 D100」的
@@ -37,9 +91,21 @@ export function isDiceFormula(text: string): boolean {
   // 骰子段之外只允许数字与运算符号（k/d/h/l 已被骰子段正则消耗，见下）
   if (!/^[\d+\-*/().dkhl]+$/i.test(t)) return false;
   if (!/\d+d\d+/i.test(t)) return false;
-  // 残留检查只拒字母 k/d/h/l（如 2d6k3 段外残留 k）；残留数字是算术常量（2d6+3 的 +3），必须放行
-  if (/[dkhl]/i.test(t.replace(DICE_SEGMENT_RE, ''))) return false;
-  return true;
+  // 骰子段紧邻小数点必拒：'1.5d6' 会把 '5d6' 拆成骰子段（残留 '1.'）、'2d6.5' 残留 '.5'——
+  // 残留能过字符白名单甚至语法检查，但 compile 产物 '1.__d(...)' 是数字字面量属性访问
+  // （运行时 TypeError）、'__d(...).5' 直接语法错误，rollDiceExpression 必然 null 回退
+  // D100，形成「徽标显示骰式、实际掷 D100」的静默不一致。合法小数常量（2d6*0.5）的
+  // 小数点不紧贴骰子段，不受影响。
+  for (const m of t.matchAll(DICE_SEGMENT_RE)) {
+    if (t[m.index - 1] === '.' || t[m.index + m[0].length] === '.') return false;
+  }
+  // 残留检查：① 拒字母 k/d/h/l（如 2d6k3 段外残留 k）；残留数字是算术常量（2d6+3 的 +3），必须放行。
+  // 段位换 '0' 与 compile 把段换成 __d(...) 再白名单替换成 0 网络等效（t 中不含 __d 字面量）
+  const residual = t.replace(DICE_SEGMENT_RE, '0');
+  if (/[dkhl]/i.test(residual)) return false;
+  // ② 残留必须是语法合法的算术表达式：'2d6+'、'2d6..5' 这类残骸能过字符白名单，
+  // 但 compile 的 new Function 必然 SyntaxError → 静默回退 D100，同上不一致
+  return isArithmeticSyntax(residual);
 }
 
 const buildDiceFn =
@@ -63,6 +129,8 @@ const compile = (formula: string): ((d: RollFn) => number) | null => {
   const t = formula.replace(/\s+/g, '');
   if (!t) return null;
   const expr = t.replace(DICE_SEGMENT_RE, (_all, n, m, kd, hl, amt) => {
+    // 段参数硬钳（n≤100 / m≤1000）：防巨数骰（2000d6）拖垮随机循环与内存。注意钳制是
+    // 静默的——isDiceFormula 只对齐解析级口径，徽标仍显示原文，实际按钳后值域掷。
     const n2 = Math.min(Math.max(parseInt(n, 10) || 1, 1), 100);
     const m2 = Math.min(Math.max(parseInt(m, 10) || 1, 1), 1000);
     const kdFull: KeepDrop = kd ? ((kd.toLowerCase() + hl.toLowerCase()) as 'kh' | 'kl' | 'dh' | 'dl') : null;

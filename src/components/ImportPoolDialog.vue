@@ -105,6 +105,94 @@ const formatDate = (iso: string | undefined) => {
 </script>
 
 <style scoped>
+/* 遮罩/面板布局样式必须本组件自带：choice-cfdlg-* 的布局样式在 ConfirmDialog 的 scoped
+   块里，编译后带 data-v 属性选择器，命中不了本组件 DOM——此前本组件无定位无遮罩，
+   渲染在条目库全屏遮罩（z-index dialog token）之下，「替换导入」预览完全不可见不可点。
+   global.css 对该类名只有字号/按钮微调（全页注入不能带 scoped 限制），布局只能逐组件自带 */
+.choice-cfdlg-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  /* 同 dvh 回退：手机上 100vh 按布局视口取值，大于可视高度 */
+  height: 100vh;
+  height: 100dvh;
+  z-index: var(--choice-z-dialog);
+  background: var(--choice-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choice-cfdlg-dialog {
+  /* 420px：信息表格 + 两组单选比 ConfirmDialog 的确认文案宽一档 */
+  width: 420px;
+  max-width: 92vw;
+  background: var(--choice-bg-panel);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-lg);
+  box-shadow:
+    inset 0 1px 0 var(--choice-frost-line),
+    var(--choice-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.choice-cfdlg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--choice-space-3) var(--choice-space-4);
+  background: linear-gradient(180deg, rgba(220, 140, 80, 0.08), transparent);
+  border-bottom: 1px solid var(--choice-border);
+}
+
+.choice-cfdlg-title {
+  font-size: var(--choice-text-base);
+  font-weight: bold;
+  color: var(--choice-text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--choice-space-2);
+}
+
+.choice-cfdlg-close {
+  background: none;
+  border: none;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xl);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 var(--choice-space-1);
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background var(--choice-transition),
+    color var(--choice-transition);
+}
+
+.choice-cfdlg-close:hover {
+  background: var(--choice-bg-hover);
+  color: var(--choice-text);
+}
+
+.choice-cfdlg-body {
+  padding: var(--choice-space-4);
+}
+
+.choice-cfdlg-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--choice-space-2);
+  border-top: 1px solid var(--choice-border);
+  padding: var(--choice-space-3) var(--choice-space-4);
+}
+
 .import-dlg-info {
   width: 100%;
   border-collapse: collapse;

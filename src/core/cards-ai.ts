@@ -35,6 +35,7 @@ import {
 import {
   cardMaxDurability,
   clampEffect,
+  normalizeTrigger,
   validateCard,
   CARD_POOL_FIRST_BATCH,
   CARD_POOL_BATCH_SIZE,
@@ -71,7 +72,7 @@ const SYSTEM_PROMPT = `你是一位卡牌设计师，为特定角色的冒险主
 字段约束（结构非法/效果集为空必被作废；数值若落在范围外会被钳制到边界，仍请尽量在范围内）：
 - star: 1=最常见到 5=最稀有最强，高星卡应更强但不要每张都顶配。
 - trigger: 与五种 kind 对应的字段只填一种，其余省略。type→typeValue（选项类型关键词，用 2-4 字宽泛题材词，如 战斗/交涉/潜行/探索——过窄的具体动作词几乎匹配不到选项标题，卡将无法触发）；grade→grade（conservative/balanced/bold）；demand→min/max（需求值区间 0-100，跨度建议 ≤60）；roll→min/max（骰值区间 1-100，跨度建议 ≤60）；outcome→outcome（success/fail/crit_success/crit_fail）。
-- effects（数组，至少 1 个，最多 3 个）：{"kind":"roll_bonus","amount":±30以内} 或 {"kind":"demand_mod","amount":±40以内} 或 {"kind":"crit_window","success_delta":±5,"fail_delta":±5} 或 {"kind":"outcome_convert","from":"fail|crit_fail|crit_success","to":"success|crit_success"} 或 {"kind":"reroll","on":"fail|crit_fail"} 或 {"kind":"narrative","text":"≤40字"}。amount 可正可负，负值即代价/减益。
+- effects（数组，至少 1 个，最多 3 个）：{"kind":"roll_bonus","amount":±30以内} 或 {"kind":"demand_mod","amount":±40以内} 或 {"kind":"crit_window","success_delta":±5,"fail_delta":±5} 或 {"kind":"outcome_convert","from":"fail|crit_fail|crit_success","to":"success|crit_success"} 或 {"kind":"reroll","on":"fail|crit_fail"} 或 {"kind":"narrative","text":"≤40字"}。amount 极性约定：roll_bonus 正值=利好；demand_mod 正值=升需求=代价、负值=收益（运行时按判定方向自动换算，两种模式下设计极性一致）。
 - narrative（卡的卡面叙事文本）≤40字，体现角色特质。
 - 数值请严格落在上述范围内。`;
 
@@ -100,12 +101,23 @@ function parseCardPool(raw: string): Card[] {
 
 /** clamp 一张卡的所有效果（数值硬限 + 未知 kind 剔除）并保证必填字段存在（缺 id 补 uuid、
  *  source 补 character、归属角色 id/名回填）——角色归属字段让卡面能标明主题池，避免多池混排认不出。 */
-function sanitizeCard(input: Card, charId: string, charName: string): Card {
+function sanitizeCard(input: Card, charId: string, charName: string, takenIds?: Set<string>): Card {
   const base = { ...input };
-  if (!base.id) base.id = `char_${uuidv4()}`;
+  // id 必须收敛为字符串：弱模型偶发幻觉出 "id": 123 等非字符串，真值检查会放行入库，
+  // 下次加载 GlobalSettings 的 z.string() 解析整体失败（扩展 init 崩），故非字符串一律重发 uuid。
+  // 撞内置卡 id 前缀同样重发：mixedPoolCards 里主题卡会覆盖同 id 内置卡进抽卡池，
+  // 而 cardDefById 内置优先——两处解析口径分裂，不如从源头杜绝。
+  // 撞池内/批内已有卡 id（takenIds）也重发：输出契约不含 id 字段、回传纯属幻觉，
+  // 同 id 会静默覆盖 card_definitions 定义，isDuplicateCard 的 name/签名判重拦不住「同 id 异名」
+  base.id =
+    typeof base.id === 'string' && base.id && !base.id.startsWith('builtin_') && !takenIds?.has(base.id)
+      ? base.id
+      : `char_${uuidv4()}`;
   base.source = 'character';
   base.character_id = charId;
   base.character_name = charName;
+  // trigger 按 kind 归一（交叉字段/类型幻觉是持久化投毒的最后一个洞，见 normalizeTrigger 注释）
+  base.trigger = normalizeTrigger(base.trigger);
   base.effects = (base.effects ?? []).map(clampEffect).filter((e): e is CardEffect => !!e);
   base.narrative = (base.narrative ?? '').slice(0, 40);
   return base;
@@ -211,66 +223,70 @@ async function runPoolBatch(charId: string): Promise<Card[]> {
     }
   }
 
-  // 桶序对齐 buildMessages 的 DEFAULT_MODULES（persona 3 → wi_before 4 → 角色字段 5-7 →
-  // wi_after 8 → wi_depth_before 10 → 聊天历史 12 → wi_depth_after 13）。此前 after 桶被
-  // 放到聊天记录之后，世界书里角色设定类条目跟着跑到历史后面（即「角色定义跑到聊天记录
-  // 后面」的病灶），已按酒馆语义归位：after/depthBefore 都属历史之前的背景层。
-  const messages: ChatMsg[] = [{ role: 'system', content: SYSTEM_PROMPT }];
-  // 扮演者 persona（persona_description 模块同款措辞与位置：世界书之前）
-  const personaDesc = power_user?.persona_description;
-  if (personaDesc) {
-    messages.push({
-      role: 'system',
-      content: `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${substituteParams(personaDesc)}\n</user_persona>`,
-    });
-  }
-  // 世界书背景桶（world_info_before：before+anBefore+em）
-  if (wiBuckets) {
-    const wiBefore = [wiBuckets.before, wiBuckets.anBefore, wiBuckets.em].filter(Boolean).join('\n\n');
-    if (wiBefore) messages.push({ role: 'system', content: wiBefore });
-  }
-  // 角色背景/性格/场景：V2 data.* 优先、V1/浅卡顶层兜底（readCharacterFields），经 substituteParams 注入——与提示词模块同源同法
-  for (const field of Object.values(readCharacterFields(ch))) {
-    if (field) messages.push({ role: 'system', content: substituteParams(field) });
-  }
-  // 世界书常量桶（world_info_after：after+anAfter）——必须在聊天记录之前
-  if (wiBuckets) {
-    const wiAfter = [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n');
-    if (wiAfter) messages.push({ role: 'system', content: wiAfter });
-  }
-  // 世界书深度背景（wi_depth_before：depth ≥ 3 条目，紧挨聊天历史之前）
-  if (wiBuckets?.depthBefore) messages.push({ role: 'system', content: wiBuckets.depthBefore });
-  // 聊天记录（chat_history：保持原始 user/assistant 角色）。wrapCurrentScene=false：
-  // 卡池跨场景常驻，<current_scene> 锚定会让 AI 围绕当前剧情写卡（见 buildChatHistory）；
-  // 历史前插用途声明把「只作文风参考」的约束落在素材旁边，防弱模型远距离失忆。
-  const history = buildChatHistory(gs.settings.prompt_rules.context_rounds, false);
-  if (history.length > 0) {
-    messages.push({ role: 'system', content: CHAT_HISTORY_NOTE });
-    for (const m of history) messages.push(m);
-  }
-  // 世界书即时条目（wi_depth_after：depth ≤ 2 浅层条目，聊天历史之后贴近生成点）
-  if (wiBuckets?.depthAfter) messages.push({ role: 'system', content: wiBuckets.depthAfter });
-  // 已有卡摘要随请求下发：跨批去重的第一层靠 AI 错开题材（签名判重 isDuplicateCard 只能拦
-  // 「同构」卡，拦不住「意思重复但字段不同」的同侧面卡）；分批生成后 refCards 真实非空。
-  const refCards = (pool?.card_ids ?? []).map(id => gs.settings.card_definitions[id]).filter((c): c is Card => !!c);
-  const refLines = refCards.map(c => `- ${c.name}（${CARD_TYPE_LABEL[c.type]}·${c.star}星）`).join('\n');
-  messages.push({
-    role: 'user',
-    content:
-      `请为「${charName}」设计 ${target} 张主题效果卡` +
-      (refCards.length ? `（该角色池已有 ${refCards.length} 张，本批为补充生成）` : '（首批）') +
-      `。设计基准是角色的身份、能力体系、性格与世界整体设定——卡在其整个冒险历程中反复适用，` +
-      `不得绑定当前场景、地点、正在发生的具体事件或一次性情节道具（最近对话仅用于把握文风与人物关系）。` +
-      (refCards.length
-        ? `\n已有主题卡（本批的题材/意象/触发思路须与它们明显错开，不要重复它们已覆盖的侧面）：\n${refLines}\n` +
-          `本批可侧重近期剧情中展现的角色侧面或阶段主题切入，但卡本身仍须跨场景可复用。`
-        : '') +
-      `要求：卡名用该角色独有的词汇与意象、效果与其设定有逻辑关联、至少含 1 张双刃/代价卡` +
-      `（试炼类型优先做高风险高收益）。各张卡的触发与效果应彼此有明显差异，避免效果雷同。` +
-      `输出 JSON 数组，若无法或不全生成，数量可以更少，但必须是合法的 JSON。`,
-  });
-
+  // 消息构建与请求/落库同盖一层 try（try 原本只从 API 调用开始）：substituteParams、
+  // 正则桥接（buildChatHistory 内 getRegexedString）在保护外炸掉时，自动路径有外层兜底、
+  // 手动路径会变成无反馈的 unhandled rejection——与「内部已全 catch，静默回退现有池」
+  // 的契约矛盾。构建失败与 API 失败同口处理：返回 []，下次触发重试。
   try {
+    // 桶序对齐 buildMessages 的 DEFAULT_MODULES（persona 3 → wi_before 4 → 角色字段 5-7 →
+    // wi_after 8 → wi_depth_before 10 → 聊天历史 12 → wi_depth_after 13）。此前 after 桶被
+    // 放到聊天记录之后，世界书里角色设定类条目跟着跑到历史后面（即「角色定义跑到聊天记录
+    // 后面」的病灶），已按酒馆语义归位：after/depthBefore 都属历史之前的背景层。
+    const messages: ChatMsg[] = [{ role: 'system', content: SYSTEM_PROMPT }];
+    // 扮演者 persona（persona_description 模块同款措辞与位置：世界书之前）
+    const personaDesc = power_user?.persona_description;
+    if (personaDesc) {
+      messages.push({
+        role: 'system',
+        content: `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${substituteParams(personaDesc)}\n</user_persona>`,
+      });
+    }
+    // 世界书背景桶（world_info_before：before+anBefore+em）
+    if (wiBuckets) {
+      const wiBefore = [wiBuckets.before, wiBuckets.anBefore, wiBuckets.em].filter(Boolean).join('\n\n');
+      if (wiBefore) messages.push({ role: 'system', content: wiBefore });
+    }
+    // 角色背景/性格/场景：V2 data.* 优先、V1/浅卡顶层兜底（readCharacterFields），经 substituteParams 注入——与提示词模块同源同法
+    for (const field of Object.values(readCharacterFields(ch))) {
+      if (field) messages.push({ role: 'system', content: substituteParams(field) });
+    }
+    // 世界书常量桶（world_info_after：after+anAfter）——必须在聊天记录之前
+    if (wiBuckets) {
+      const wiAfter = [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n');
+      if (wiAfter) messages.push({ role: 'system', content: wiAfter });
+    }
+    // 世界书深度背景（wi_depth_before：depth ≥ 3 条目，紧挨聊天历史之前）
+    if (wiBuckets?.depthBefore) messages.push({ role: 'system', content: wiBuckets.depthBefore });
+    // 聊天记录（chat_history：保持原始 user/assistant 角色）。wrapCurrentScene=false：
+    // 卡池跨场景常驻，<current_scene> 锚定会让 AI 围绕当前剧情写卡（见 buildChatHistory）；
+    // 历史前插用途声明把「只作文风参考」的约束落在素材旁边，防弱模型远距离失忆。
+    const history = buildChatHistory(gs.settings.prompt_rules.context_rounds, false);
+    if (history.length > 0) {
+      messages.push({ role: 'system', content: CHAT_HISTORY_NOTE });
+      for (const m of history) messages.push(m);
+    }
+    // 世界书即时条目（wi_depth_after：depth ≤ 2 浅层条目，聊天历史之后贴近生成点）
+    if (wiBuckets?.depthAfter) messages.push({ role: 'system', content: wiBuckets.depthAfter });
+    // 已有卡摘要随请求下发：跨批去重的第一层靠 AI 错开题材（签名判重 isDuplicateCard 只能拦
+    // 「同构」卡，拦不住「意思重复但字段不同」的同侧面卡）；分批生成后 refCards 真实非空。
+    const refCards = (pool?.card_ids ?? []).map(id => gs.settings.card_definitions[id]).filter((c): c is Card => !!c);
+    const refLines = refCards.map(c => `- ${c.name}（${CARD_TYPE_LABEL[c.type]}·${c.star}星）`).join('\n');
+    messages.push({
+      role: 'user',
+      content:
+        `请为「${charName}」设计 ${target} 张主题效果卡` +
+        (refCards.length ? `（该角色池已有 ${refCards.length} 张，本批为补充生成）` : '（首批）') +
+        `。设计基准是角色的身份、能力体系、性格与世界整体设定——卡在其整个冒险历程中反复适用，` +
+        `不得绑定当前场景、地点、正在发生的具体事件或一次性情节道具（最近对话仅用于把握文风与人物关系）。` +
+        (refCards.length
+          ? `\n已有主题卡（本批的题材/意象/触发思路须与它们明显错开，不要重复它们已覆盖的侧面）：\n${refLines}\n` +
+            `本批可侧重近期剧情中展现的角色侧面或阶段主题切入，但卡本身仍须跨场景可复用。`
+          : '') +
+        `要求：卡名用该角色独有的词汇与意象、效果与其设定有逻辑关联、至少含 1 张双刃/代价卡` +
+        `（试炼类型优先做高风险高收益）。各张卡的触发与效果应彼此有明显差异，避免效果雷同。` +
+        `输出 JSON 数组，若无法或不全生成，数量可以更少，但必须是合法的 JSON。`,
+    });
+
     const raw = await callSecondaryApiWithRetry(
       messages,
       api,
@@ -280,16 +296,19 @@ async function runPoolBatch(charId: string): Promise<Card[]> {
       true, // quiet：后台任务，不 toastr 重试进度
     );
     const legal: Card[] = [];
+    // 已占用 id 集（池内既有 + 批内已保留）：sanitizeCard 撞上即重发 uuid，防同 id 覆盖定义
+    const takenIds = new Set(refCards.map(c => c.id));
     for (const c of parseCardPool(raw)) {
       // 单张异常（字段/效果畸形）只作废该张，不拖垮整批
       try {
-        const candidate = sanitizeCard(c as Card, charId, charName);
+        const candidate = sanitizeCard(c as Card, charId, charName, takenIds);
         // 批内每张校验 + 硬限；超限/非法作废该张（勿让 AI 瞎写越权卡）
         const v = validateCard(candidate);
         if (!v.ok) continue;
         // 防重复（确定性同构签名 + 请求侧已下发已有卡摘要）：与既有池卡或批内已保留卡
         // 同名/效果组合相同 → 作废该张
         if (isDuplicateCard(candidate, [...refCards, ...legal])) continue;
+        takenIds.add(candidate.id);
         legal.push(candidate);
       } catch {
         /* 单张作废 */

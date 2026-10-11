@@ -77,7 +77,12 @@ export const BUILTIN_CARDS: readonly Card[] = [
     trigger: R('roll', { min: 20, max: 100 }),
     effects: [
       { kind: 'roll_bonus', amount: 16 },
-      { kind: 'reroll', on: 'crit_fail' },
+      // on='fail' 而非 'crit_fail'：默认阈值下 high 模式 crit_fail 实际不可达——roll 触发窗
+      // （≥20/40）不含大失败区（≤critF≤10），且正 roll_bonus 使终骰 ≥21 恒在大失败阈之上。
+      // 注意 critF 是用户可调字段（上限 99）：调高使大失败区与触发窗重叠时 'crit_fail'
+      // 只是默认配置下不可达、并非结构性死火——fail ⊇ crit_fail，两种配置下触发面都更稳。
+      // fail 侧四种卡均可触发（重掷每判定至多一次，星标预算限持有量，不至失控）
+      { kind: 'reroll', on: 'fail' },
     ],
     narrative: '天秤的指针稳稳停在胜利一侧，剑锋落下无可阻挡。',
   }),
@@ -192,7 +197,8 @@ export const BUILTIN_CARDS: readonly Card[] = [
     effects: [
       { kind: 'roll_bonus', amount: 20 },
       { kind: 'crit_window', success_delta: 3, fail_delta: 3 },
-      { kind: 'reroll', on: 'crit_fail' },
+      // on='fail'：crit_fail 在 high 模式被本卡 roll_bonus 结构性堵死（见天秤裁决注释）
+      { kind: 'reroll', on: 'fail' },
     ],
     narrative: '终局的天平轰然落定，凡人的努力被推至极限之巅。',
   }),
@@ -205,7 +211,8 @@ export const BUILTIN_CARDS: readonly Card[] = [
     trigger: R('roll', { min: 40, max: 100 }),
     effects: [
       { kind: 'roll_bonus', amount: 25 },
-      { kind: 'reroll', on: 'crit_fail' },
+      // on='fail'：crit_fail 在 high 模式被触发窗+roll_bonus 双重堵死（见天秤裁决注释）
+      { kind: 'reroll', on: 'fail' },
     ],
     narrative: '王权之刃应声落下，胜局已无可逆转。',
   }),
@@ -236,7 +243,8 @@ export const BUILTIN_CARDS: readonly Card[] = [
     effects: [
       { kind: 'roll_bonus', amount: 28 },
       { kind: 'crit_window', success_delta: 3, fail_delta: 3 },
-      { kind: 'reroll', on: 'crit_fail' },
+      // on='fail'：crit_fail 在 high 模式被本卡 roll_bonus 结构性堵死（见天秤裁决注释）
+      { kind: 'reroll', on: 'fail' },
     ],
     narrative: '终焉之裁落定，万事万物的极限皆由你执掌。',
   }),

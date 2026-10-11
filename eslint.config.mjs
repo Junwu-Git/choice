@@ -81,5 +81,8 @@ export default [
     'eslint.config.mjs',
     'postcss.config.js',
     'vite.config.ts',
+    'vitest.config.ts',
+    // Node CLI 工具（i18n 对账），node: 内置模块是正常依赖
+    'tools/**',
   ]),
 ];

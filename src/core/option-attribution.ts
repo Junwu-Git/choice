@@ -51,8 +51,9 @@ export type EntryMatchSignal = {
 
 /**
  * 预计算候选匹配信号（每轮生成调用一次）：
- * type 按长度降序排序——前缀匹配循环里首个命中即「最长 type」，避免
- * 「战斗」与「战斗策略」叠加时把「战斗策略…」开头选项误配到短型。
+ * type 按长度降序排序——前缀认定在匹配端做「最长命中 type 唯一」裁决（见 matchOptionToEntry），
+ * 此排序仅为稳定遍历序、结果与顺序无关（前缀取最长唯一、Dice 平票归 null），避免
+ * 「战斗」与「战斗策略」叠加时长型歧义依赖候选序。
  */
 export function prepareMatchSignals(candidates: PoolEntry[]): EntryMatchSignal[] {
   return candidates
@@ -75,7 +76,8 @@ export type OptionMatch = {
  * 匹配单条选项到候选条目：
  * 1. 提取括号标题壳（parse 主路径会保留 [标题]/【标题】，标题即 AI 给选项起的方向名），
  *    标题与正文一起参与匹配——此前整壳剥掉会把类型信息一并丢掉、前缀匹配全部失效；
- * 2. type 前缀精确匹配（信号已按 type 长度降序，取首个命中 = 最长 type）→ 直接认定；
+ * 2. type 前缀精确匹配（信号已按 type 长度降序）：最长命中 type 唯一 → 直接认定；
+ *    同 type 多条目共享最长命中 → 前缀不可区分，落 Dice 靠分差裁决（见循环处注释）；
  * 3. 否则对全部候选算 2-gram Dice（bigram 预计算复用），最高分 ≥ threshold 且与次优
  *    分差 ≥ OPTION_MATCH_MARGIN 才认定唯一归属；分数接近的两条目归属近随机，归 null。
  */
@@ -83,11 +85,21 @@ export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal
   const raw = optionText.trim();
   if (!raw || signals.length === 0) return { id: null, via: null };
   const bracket = raw.match(/^[[【]([^\]】]+)[\]】]\s*/);
-  const title = bracket ? bracket[1].trim() : '';
+  // 标题剥双引号与展示层 parseOptionType 同规：JSON 主路径重建的 ["攻击"] 类标题若带引号，
+  // checkText 以 " 开头，type 前缀匹配全部失配、静默落 Dice 兜底（引号是弱模型高频幻觉）
+  const title = bracket ? bracket[1].replace(/"/g, '').trim() : '';
   const body = bracket ? raw.slice(bracket[0].length) : raw;
   const checkText = title ? `${title} ${body}`.trim() : raw;
-  for (const s of signals) {
-    if (startsWithType(checkText, s.type)) return { id: s.id, via: 'prefix' };
+  // type 前缀匹配只在「最长命中 type 唯一」时直接认定：type 是类别词，池内同 type 多条目
+  // 是常态，AI 标题又常直接复用 type 词——此前「首个命中即返回」在同 type 竞争时恒归
+  // 候选序靠前的条目（系统性偏差，违反「平票归属近随机归 null 宁缺勿错」），且 allPrefixMatched
+  // 快检会据此跳过 L1 AI 归因，偏差无自愈路径。改判：最长命中 type 有多条目共享时前缀
+  // 不可区分，落 Dice 分支靠分差保护（区分不开归 null）。
+  const prefixHits = signals.filter(s => startsWithType(checkText, s.type));
+  if (prefixHits.length > 0) {
+    const topLen = Math.max(...prefixHits.map(s => s.type.length));
+    const top = prefixHits.filter(s => s.type.length === topLen);
+    if (top.length === 1) return { id: top[0].id, via: 'prefix' };
   }
   const text = normalize(checkText);
   const optionBigrams = bigrams(text);

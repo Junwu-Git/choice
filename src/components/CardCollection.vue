@@ -15,7 +15,7 @@
         >
         <button
           class="choice-btn-sm choice-pack-buy"
-          :disabled="gs.settings.card_currency < CARD_PACK_PRICE"
+          :disabled="gs.settings.card_currency < CARD_PACK_PRICE || cardPack !== null"
           @click="onBuyPack"
         >
           <i class="fa-solid fa-box"></i>{{ t`开卡包（${CARD_PACK_PRICE} 币）` }}
@@ -154,7 +154,7 @@ import { isCardBroken, cardRepairCost, CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } fr
 import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool, repairCard } from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
-import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
+import { cardPack, openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
 import toastr from 'toastr';
 import type { Card, CardOwned, CardStar } from '@/type/settings';
 
@@ -190,7 +190,7 @@ const onRepair = (c: Card) => {
 const onGeneratePool = async () => {
   const cid = gs.currentCharacterId;
   if (cid == null) {
-    toastr.warning('请先打开一个角色的聊天再生成主题卡。');
+    toastr.warning(t`请先打开一个角色的聊天再生成主题卡。`);
     return;
   }
   if (generating.value) return;
@@ -199,9 +199,9 @@ const onGeneratePool = async () => {
     const cards = await generateCharacterPool(String(cid));
     if (cards.length > 0) {
       const name = getStCharacter(String(cid))?.name ?? '';
-      toastr.success(`已生成 ${cards.length} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
+      toastr.success(t`已生成 ${cards.length} 张「${name}」主题卡，已直接入收藏（卡面已标注角色归属）。`);
     } else {
-      toastr.warning('未生成主题卡——请确认已在「API 设置」配置副 API，且池未达上限，本次生成结果有效。');
+      toastr.warning(t`未生成主题卡——请确认已在「API 设置」配置副 API，且池未达上限，本次生成结果有效。`);
     }
   } finally {
     generating.value = false;

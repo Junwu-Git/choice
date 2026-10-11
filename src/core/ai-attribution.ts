@@ -102,6 +102,14 @@ async function pumpAttributionQueue(): Promise<void> {
       const job = attributionQueue.shift();
       aiAttributionState.queued = attributionQueue.length;
       if (!job) continue;
+      // 出队时复查开关（入队时查过，串行泵可能一跑数分钟）：用户中途关停后，队列残留
+      // 任务不得再发外部请求或改统计——「automation 关则 L1 全停」
+      const gs = useGlobalSettingsStore();
+      if (!gs.settings.stats_enabled || !gs.settings.automation_enabled || !gs.settings.ai_attribution_enabled) {
+        attributionQueue.length = 0;
+        aiAttributionState.queued = 0;
+        break;
+      }
       try {
         await runAttributionJob(job);
       } catch {

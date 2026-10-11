@@ -2,6 +2,7 @@ import { chat_metadata, saveCharacterDebounced, saveSettingsDebounced, this_chid
 import { extension_settings, saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 import { uuidv4 } from '@sillytavern/scripts/utils';
+import toastr from 'toastr';
 import {
   GlobalSettings,
   GenerationSettings,
@@ -324,7 +325,12 @@ import { validateInplace } from '@/util/zod';
 // schema_version=1 → 2：更新模块顺序（user_instruction 移到 system_prompt 之后）
 // schema_version=2 → 3：添加预填充模块（assistant_ack / thinking_prompt / assistant_thinking）
 // schema_version=3 → 4：聊天记录过滤由 chat_filter_regexes(string[]) 迁移为 chat_filter_rules(规则对象[])
-const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: string[]) => {
+const migratePromptModules = (
+  validated: GlobalSettingsType,
+  legacyRegexes: string[],
+  legacyExcludeHidden?: unknown,
+  legacyAllowed = true,
+) => {
   const version = validated.prompt_rules.schema_version ?? 0;
 
   if (version < 1) {
@@ -361,7 +367,7 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     // 旧字段 chat_filter_regexes(string[]) 已在 validateInplace 前被捕获，
     // 此处仅在新规则列表为空时填充，避免覆盖用户已经录入的新数据
     const legacy = legacyRegexes.filter(p => typeof p === 'string' && p);
-    if (legacy.length && validated.prompt_rules.chat_filter_rules.length === 0) {
+    if (legacyAllowed && legacy.length && validated.prompt_rules.chat_filter_rules.length === 0) {
       validated.prompt_rules.chat_filter_rules = legacy.map(p => ({ type: 'regex', pattern: p, replace: '' }));
     }
   }
@@ -418,11 +424,12 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
     }
     resetOrderFromDefaults(validated);
 
-    // 旧字段 exclude_hidden_messages → context_mode 迁移
-    const oldExclude = (validated.prompt_rules as any).exclude_hidden_messages;
-    if (oldExclude !== undefined) {
-      (validated.prompt_rules as any).context_mode = oldExclude ? 'visible_only' : 'rounds';
-      delete (validated.prompt_rules as any).exclude_hidden_messages;
+    // 旧字段 exclude_hidden_messages → context_mode 迁移。旧值是嵌套键，必须在 parse 前
+    // 从 existing 捕获（同 legacyRegexes/LegacyPreParse 的原因：validateInplace 后嵌套对象
+    // 被 strip 的新对象整体替换，parse 后再读恒 undefined——本迁移此前因此静默空转，
+    // pre-v7 存档的 context_mode 偏好落到 zod default）。坏档重置不折并（原档已弃用）。
+    if (legacyAllowed && legacyExcludeHidden !== undefined) {
+      validated.prompt_rules.context_mode = legacyExcludeHidden ? 'visible_only' : 'rounds';
     }
   }
 
@@ -499,7 +506,7 @@ const migratePromptModules = (validated: GlobalSettingsType, legacyRegexes: stri
 
   if (version < 12) {
     // v12: 新增角色卡上下文模块（描述/性格/场景），让行动选项生成时也能看到角色卡核心设定
-    // 此前这些字段只在 generatePoolEntries 中注入，generateOptions 缺失
+    // 此前这些字段只在条目库 AI 生成（v74 已移除该功能）中注入，generateOptions 缺失
     const defaults = klona(DEFAULT_MODULES);
     const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
     const CHAR_IDS = new Set(['char_description', 'char_personality', 'char_scenario']);
@@ -775,10 +782,29 @@ const rebindPromptConfigId = (removedIds: Set<string>, keptId: string) => {
   }
 };
 
-const applyDefaults = (validated: GlobalSettingsType) => {
+/** v57/v58 迁移依赖的 parse 前快照：validateInplace 用 _.assign 就地合并，「旧键残留」
+ *  只对顶层键成立——嵌套对象（dice、configs 数组元素）会被 zod strip 后的新对象整体替换，
+ *  parse 后再读 _.get(extension_settings, ...) 恒为 undefined，迁移会静默空转。
+ *  旧值必须在 validateInplace 之前从 existing 捕获，经此参数传入（legacyRegexes 同理）。 */
+type LegacyPreParse = {
+  diceSend: { success: unknown; fail: unknown };
+  configExamples: unknown[];
+};
+const applyDefaults = (
+  validated: GlobalSettingsType,
+  legacy?: LegacyPreParse,
+  opts?: { hadExistingSave?: boolean; corruptReset?: boolean },
+) => {
   if ((validated.schema_version ?? 0) < 9) {
-    // 旧三层池数据迁移：收集 → 去重 → 合并为 master_pool + 自动配置
-    const oldGlobalPool: PoolEntry[] = (_.get(extension_settings, [setting_field, 'pool']) as PoolEntry[]) ?? [];
+    // 旧三层池数据迁移：收集 → 去重 → 合并为 master_pool + 自动配置。
+    // 坏档重置不折并（v57/v58 同口径：坏档数据混进全新默认档 = 残留渗入）：三源读空即
+    // 整体跳过折并，仅走下方「空配置 → 内置默认池」兜底，视同全新首载。
+    // 旧档 pool 形态不可信（外部编辑可能混入 null/非数组），统一经 saneLegacyPool 收敛——
+    // 去重循环与 makeEntries 对非法元素抛错会让 store 初始化崩溃（此段在任何 try 之外）
+    const foldLegacy = !opts?.corruptReset;
+    const saneLegacyPool = (v: unknown): PoolEntry[] =>
+      foldLegacy && Array.isArray(v) ? v.filter((e): e is PoolEntry => !!e && typeof e === 'object') : [];
+    const oldGlobalPool: PoolEntry[] = saneLegacyPool(_.get(extension_settings, [setting_field, 'pool']));
     const oldGlobalGen = _.get(extension_settings, [setting_field, 'generation']);
     let charName = '';
     let oldCharPool: PoolEntry[] = [];
@@ -786,7 +812,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
       const ch = getStCharacter(this_chid);
       if (ch) {
         charName = ch.name || '';
-        oldCharPool = (_.get(ch, ['data', 'extensions', setting_field, 'pool']) as PoolEntry[]) ?? [];
+        oldCharPool = saneLegacyPool(_.get(ch, ['data', 'extensions', setting_field, 'pool']));
       }
     } catch {
       // 角色数据不可用时跳过
@@ -795,7 +821,7 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     try {
       const cMeta = chat_metadata?.[setting_field];
       if (cMeta) {
-        oldChatPool = (cMeta.pool as PoolEntry[]) ?? [];
+        oldChatPool = saneLegacyPool(cMeta.pool);
       }
     } catch {
       // 聊天元数据不可用时跳过
@@ -825,8 +851,12 @@ const applyDefaults = (validated: GlobalSettingsType) => {
         entries: makeEntries(oldGlobalPool),
         is_default: true,
         rules: '',
-        // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）
-        generation: (oldGlobalGen as any) ?? GenerationSettings.parse({}),
+        // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）。
+        // 旧 generation 对象经 parse 补齐后增字段（oversample_pct/dedup_* 等）——直接透传原始
+        // 对象会让本会话内消费端读到 undefined（generator 对 dedup_enabled 无 ?? 兜底，去重
+        // 静默失效），重载后才被 zod prefault 自愈；解析失败（旧档字段形态漂移）回退全默认。
+        generation:
+          GenerationSettings.safeParse(oldGlobalGen ?? {}).data ?? GenerationSettings.parse({}),
       });
     }
 
@@ -971,7 +1001,10 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // v18: 旧 theme 字段迁移到 theme_mode
   if ((validated.schema_version ?? 0) < 18) {
     const oldTheme = (validated.ui as any).theme;
-    if (oldTheme && (validated.ui as any).theme_mode === undefined) {
+    // 判据必须是 'auto'：theme_mode 有 zod default('auto')，parse 后恒为字符串，
+    // `=== undefined` 永假（死迁移）——旧档手动主题会被静默重置。pre-v18 存档没有
+    // theme_mode 概念，parse 出的 'auto' 即「未设置」态。
+    if (oldTheme && (validated.ui as any).theme_mode === 'auto') {
       (validated.ui as any).theme_mode = oldTheme;
     }
   }
@@ -1315,12 +1348,14 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
     if (validated.prompt_rules.context_mode === 'visible_only') {
       validated.prompt_rules.context_mode = 'rounds';
-      validated.prompt_rules.context_rounds = validated.prompt_rules.context_rounds ?? 8;
+      // 直接置 8：context_rounds 有 zod default(10)，parse 后永不为 undefined，
+      // `?? 8` 是死分支——迁移意图就是「默认历史改 rounds/8 轮」，显式赋值才生效
+      validated.prompt_rules.context_rounds = 8;
     }
     for (const cfg of validated.prompt_configs) {
       if (cfg.context_mode === 'visible_only') {
         cfg.context_mode = 'rounds';
-        cfg.context_rounds = cfg.context_rounds ?? 8;
+        cfg.context_rounds = 8;
       }
     }
 
@@ -1454,11 +1489,13 @@ const applyDefaults = (validated: GlobalSettingsType) => {
   // 升级必须零行为变化（收走在用的 tab 比多显示几个更糟）；简化模式只面向全新档
   // （走 UISettings 的 zod default(false)）。
   // 老档判据不能只看 schema_version：全新首载 parse 出的 default 同样是 0，也会进本迁移链
-  // （needsMigration 对 schema_version=0 恒真）。以 extension_settings 里是否已存在本扩展
-  // 的原始存档区分"老档升级"与"全新首载"——此时 validated 尚未回写，原始存档仍是旧貌。
+  // （needsMigration 对 schema_version=0 恒真）。用调用方传入的 hadExistingSave（读自本流程
+  // 改写前的 extension_settings）区分"老档升级"与"全新首载"——不能在此读
+  // _.get(extension_settings, setting_field)：全新首载时 promptNeedsMigration 分支
+  // （0<17 恒真）会先把默认对象回写进 extension_settings，此处读到的必非空，
+  // 判据被自己的前置回写污染，所有新用户首启即高级模式并持久化。
   if ((validated.schema_version ?? 0) < 43) {
-    const rawSave: unknown = _.get(extension_settings, setting_field);
-    if (rawSave != null && typeof rawSave === 'object') {
+    if (opts?.hadExistingSave) {
       validated.ui.advanced_features_enabled = true;
     }
   }
@@ -2011,37 +2048,35 @@ const applyDefaults = (validated: GlobalSettingsType) => {
 
   // v57：骰子成功/失败模板按程度档位拆分。旧单条 success_send_template / fail_send_template
   // 语义最接近 mid 档（「顺利达成」/「事与愿违」），迁到 *_send_mid_template；
-  // low/high 档为空（回退该结局短文案）。dice 对象 prefault({}) 已在 zod 补齐为新默认，
-  // 但旧键被 strip 前仍在 extension_settings 里——此处显式读取并回写 mid，
-  // 避免用户自定义过的旧模板在拆档后丢失（zod default 只补缺失、不覆盖已存值）。
+  // low/high 档为空（回退该结局短文案）。旧值是嵌套键，须由调用方在 parse 前捕获
+  // （legacySnapshot，原因见 LegacyPreParse 注释）——parse 后读 extension_settings 恒为
+  // undefined，用户自定义过的旧模板会在拆档后静默丢失。
   // v56 及以前无 low/mid/high 拆分字段，用户不可能在本版本改过 mid，直接覆盖即可。
-  if ((validated.schema_version ?? 0) < 57) {
+  // 坏档重置不折并（legacySnapshot 来自已弃用的坏档，混进全新默认档 = 残留渗入）。
+  if ((validated.schema_version ?? 0) < 57 && !opts?.corruptReset) {
     const dice = validated.dice as any;
-    const oldSuccess = _.get(extension_settings, [setting_field, 'dice', 'success_send_template']);
+    const oldSuccess = legacy?.diceSend.success;
     if (typeof oldSuccess === 'string' && oldSuccess.trim()) {
       dice.success_send_mid_template = oldSuccess;
     }
-    const oldFail = _.get(extension_settings, [setting_field, 'dice', 'fail_send_template']);
+    const oldFail = legacy?.diceSend.fail;
     if (typeof oldFail === 'string' && oldFail.trim()) {
       dice.fail_send_mid_template = oldFail;
     }
   }
 
   // v58：PoolConfig 的 rules/examples 两字段合并为单一自由文本 rules。examples 已从 schema
-  // 删除、被 zod strip 掉，parse 后 validated.configs 里已无它——必须读原始存档（同 v57 dice 先例），
-  // 把老档 examples 内容折并进 rules，避免用户写的样例丢失。
-  if ((validated.schema_version ?? 0) < 58) {
-    const rawConfigs: unknown = _.get(extension_settings, [setting_field, 'configs']);
-    if (Array.isArray(rawConfigs)) {
-      rawConfigs.forEach((raw, i) => {
-        const dst = validated.configs[i];
-        if (!dst || !raw || typeof raw !== 'object') return;
-        const examples = (raw as any).examples;
-        if (typeof examples === 'string' && examples.trim()) {
-          dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
-        }
-      });
-    }
+  // 删除，且 configs 数组元素属嵌套对象——validateInplace 后被 strip 对象整体替换，
+  // 必须用 parse 前捕获的 legacySnapshot.configExamples 折并进 rules（同 v57 dice），
+  // 避免用户写的样例丢失。快照按下标与 validated.configs 对齐。
+  if ((validated.schema_version ?? 0) < 58 && !opts?.corruptReset) {
+    legacy?.configExamples.forEach((examples, i) => {
+      const dst = validated.configs[i];
+      if (!dst) return;
+      if (typeof examples === 'string' && examples.trim()) {
+        dst.rules = [dst.rules, examples].filter(Boolean).join('\n\n');
+      }
+    });
   }
 
   // v59：新增「认知边界（非全知）」模块补建——缓解"选项太过全知"（用了角色不该知道的
@@ -2089,7 +2124,9 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     const obtained = validated.card_obtained ?? {};
     for (const [id, owned] of Object.entries(validated.card_collection ?? {})) {
       if (obtained[id]) continue;
-      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at ?? Date.now(), count: 1 };
+      // obtained_at 有 zod default(0)，旧档缺失字段在 parse 时已被补 0——`?? Date.now()`
+      // 的兜底会被 0 截胡永不可达；0（epoch 1970）也绝非合法获得时间，按缺失处理
+      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at || Date.now(), count: 1 };
     }
     validated.card_obtained = obtained;
   }
@@ -2290,6 +2327,63 @@ const applyDefaults = (validated: GlobalSettingsType) => {
     for (const cfg of validated.prompt_configs) fixModuleSet(cfg.modules);
   }
 
+  // v74：提示词自检强化——防全知与难度判定。三处缺陷：
+  // ① thinking_prompt 思考框架没有认知边界核查步骤——knowledge_boundary 让模型「在 <thinking>
+  //    里自问」，但框架步骤里没这一步，模型跟着框架走会跳过检查，防全知只剩单句约束；
+  // ② thinking_prompt 需求值核对句「与档位风险趋同（越难越高）」与 difficulty_rules 的
+  //    「档位和需求值可以各走各的」直接矛盾（两模块同批下发，弱模型无所适从），改为一致口径；
+  // ③ 他人内心/意图的直接断言（「他心虚了」「她打算瞒住」）是全知句高频形态，knowledge_boundary
+  //    与 core_rules 均未覆盖，补「只写可观察迹象」禁令。
+  // exact-match（内容 === 旧默认字面量才换，同 v69/v71 模式）保证用户自定义过的模块不动；
+  // to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 74) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V74_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v73 及以前的默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'knowledge_boundary',
+        `【认知边界：非全知约束】
+以下规则高于本批候选的一切信息来源约束：
+
+1. 信息分层：你读到的全部内容里，只有两类能被候选直接依赖——①此刻可感知：当前场景里该主体眼前能看到、耳边能听到、能碰到、能闻到的具体细节（道具、在场者状态与台词、空间特征）；②该主体已知：角色设定与经历中明确属于该主体早已知道的事（自己的名字、与在场者既有关系、亲历过的往事）。其余一律视为该主体此刻不知道——包括世界书/背景里只有读者能看到的信息（他人秘密计划、远方发生的事、尚未公开的真相、角色未被告知的身份）。
+
+2. 禁止越界：候选不得让该主体直接使用它看不到、不知道的信息作为依据；不得对视线外/未被当面告知的事物行动（不许「去后门堵住他」这类）。若确要推动一条隐藏线索，必须通过此刻可见的钩子触发——看见异样、听见动静、被当面告知、从某个细节察觉——并写成「因注意到…/因怀疑…而行动」。
+
+3. 逐条核查：每条候选落地前，在 <thinking> 里自问——这条依赖的信息，是该主体此刻能感知的、还是早已知道的？若依赖了只有读者能看到的信息，把它改成由可感知钩子触发，或直接删除该候选。`,
+        newContentById.get('knowledge_boundary') ?? '',
+      ],
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与需求值（见输出格式），档位整批尽量错开、需求值随难度区分。
+
+输出格式是硬约束：全部候选输出成 <options> 内的 JSON 数组，数组用 [ ] 包裹、每个候选是一个对象、元素间用逗号分隔，对象形如 {"title":"标题|档位|需求值","content":"正文"}。title 是简洁行动标题，可用竖线追加标注：第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；第二条竖线后为 0-100 的需求值整数，代表达成该选项所需的骰子点数下限（掷出 ≥ 需求值才算成功、点数越大越好）——行动越难、成功把握越低，标得越高；拿不准档位或需求值就省略对应竖线段，不许乱标。content 是候选正文字符串，每条 {{min_chars}}-{{max_chars}} 字；content 用单个 JSON 字符串表示、不要在其中换行，可含任意字符（包括 []、【】），一切结构只由外层 JSON 承担，不要用括号在正文里做任何标记。只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？需求值（0-100 的整数）是否按难度给出、与档位风险趋同（越难越高）？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV74 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V74_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV74(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV74(cfg.modules);
+  }
+
   // v70：恢复卡牌触发磨损与破损修复——CardOwned 新增 durability/max_durability/broken。
   // 老档（v66 起删除了 level/durability/max_durability，v70 重新引入）无这些字段：
   // zod 解析会把缺失字段补上 schema 默认值（durability=0 / max_durability=1），
@@ -2326,22 +2420,45 @@ const copyPromptRulesSubset = (src: PromptRulesSubset, dst: PromptRulesSubset) =
   dst.modules = klona(src.modules);
 };
 
-export const useGlobalSettingsStore = defineStore('global-settings', () => {
-  // 迁移逻辑处理的是未经 Zod 验证的旧存档，字段形态不可知，显式 any；
-  // 且 extension_settings 的类型声明不含 choice 命名空间键，_.get 会推断成 undefined/never
-  const existing = _.get(extension_settings, setting_field) as any;
+/**
+ * parse 前的迁移输入捕获与就地预处理（v7/v57/v58 嵌套键捕获、entry_ids→entries 转换、
+ * v14 text→type、enrich_count/theme 归一、v71 prefill 残留清除、字数钳制）。
+ * 处理对象是未经 zod 验证的旧档、字段形态不可信——任一段抛错（如 master_pool 混入 null）
+ * 由调用方统一走 corruptReset（备份 + 全默认档），与 validateInplace 失败同路，不许绕过。
+ */
+const preparseLegacySettings = (existing: any) => {
   // 旧字段 chat_filter_regexes 已被新 schema 移除，Zod 解析会将其剥离，
   // 因此必须在 validateInplace 之前捕获，供迁移使用
   const legacyRegexes: string[] = _.get(existing, 'prompt_rules.chat_filter_regexes', []) ?? [];
+  // v7 迁移的 parse 前捕获（同上：嵌套键 parse 后被 strip 对象顶掉，迁移会静默空转）
+  const legacyExcludeHidden: unknown = _.get(existing, 'prompt_rules.exclude_hidden_messages');
+  // v57/v58 同款 parse 前捕获（原因见 LegacyPreParse 注释）：dice 模板与 configs[].examples
+  // 都是嵌套键，validateInplace 后已被 strip 对象顶掉；必须先于下方 entry_ids→entries
+  // 转换等任何对 existing.configs 的就地改写
+  const legacySnapshot: LegacyPreParse = {
+    diceSend: {
+      success: _.get(existing, 'dice.success_send_template'),
+      fail: _.get(existing, 'dice.fail_send_template'),
+    },
+    configExamples: Array.isArray(_.get(existing, 'configs'))
+      ? (_.get(existing, 'configs') as unknown[]).map(c =>
+          c && typeof c === 'object' ? (c as Record<string, unknown>).examples : undefined,
+        )
+      : [],
+  };
 
   // 旧 entry_ids → entries 格式转换：必须在 Zod 验证之前执行，
   // 否则 Zod 会因 entries 为 undefined 而报错
   const rawConfigs: any[] = _.get(existing, 'configs', []) ?? [];
-  const needsConversion = rawConfigs.some((c: any) => c.entry_ids !== undefined || c.entries === undefined);
+  // configs 元素可能是 null/原始值（外部编辑坏档），先收窄再读字段，防预处理自身崩溃
+  const needsConversion = rawConfigs.some(
+    (c: any) => !!c && typeof c === 'object' && (c.entry_ids !== undefined || c.entries === undefined),
+  );
   if (needsConversion && rawConfigs.length > 0) {
     const masterPool: PoolEntry[] = (_.get(existing, 'master_pool') as PoolEntry[]) ?? [];
     const masterMap = new Map(masterPool.map(e => [e.id, e]));
     for (const cfg of rawConfigs) {
+      if (!cfg || typeof cfg !== 'object') continue;
       // 如果存在旧格式 entry_ids，转换为 entries
       if (Array.isArray(cfg.entry_ids)) {
         cfg.entries = cfg.entry_ids.map((id: string) => {
@@ -2366,8 +2483,9 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
 
   // v14 迁移（必须在 Zod 验证前执行，因为 schema 已将 text 改为 type）
   const rawPool = _.get(existing, 'master_pool');
-  if (Array.isArray(rawPool) && rawPool.length > 0 && rawPool[0].text !== undefined) {
+  if (Array.isArray(rawPool) && rawPool.length > 0 && rawPool[0]?.text !== undefined) {
     for (const e of rawPool) {
+      if (!e || typeof e !== 'object') continue;
       e.type = e.text ?? '';
       e.content = '';
       e.rule = '';
@@ -2411,8 +2529,46 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // 下次加载即整扩展崩溃。就地修正后由后续 saveSettingsDebounced 持久化，坏档自愈。
   sanitizePromptRulesChars(existing);
 
-  const validated = validateInplace(GlobalSettings, existing);
-  if (removedThemeNormalized) {
+  return {
+    regexes: legacyRegexes,
+    excludeHidden: legacyExcludeHidden,
+    snapshot: legacySnapshot,
+    themeNormalized: removedThemeNormalized,
+  };
+};
+
+export const useGlobalSettingsStore = defineStore('global-settings', () => {
+  // 迁移逻辑处理的是未经 Zod 验证的旧存档，字段形态不可知，显式 any；
+  // 且 extension_settings 的类型声明不含 choice 命名空间键，_.get 会推断成 undefined/never
+  const existing = _.get(extension_settings, setting_field) as any;
+  // parse 前预处理（迁移输入捕获/就地转换/字数钳制，见 preparseLegacySettings）与
+  // validateInplace 处理的都是形态不可信的旧档——数组元素非法（外部编辑/同步工具写坏档：
+  // master_pool 混入 null 等）在 preprocess 或 zod parse 任一段抛错，都会让 store 初始化
+  // 崩溃、扩展整体不可用。共用一个大 try：失败走同一套 corruptReset——原档备份到旁路键
+  //（防被默认档覆盖后无法找回）+ 全默认档启动，坏档自愈、扩展保活。
+  let pre = {
+    regexes: [] as string[],
+    excludeHidden: undefined as unknown,
+    snapshot: { diceSend: { success: undefined, fail: undefined }, configExamples: [] } as LegacyPreParse,
+    themeNormalized: false,
+  };
+  let corruptReset = false;
+  let validated: GlobalSettingsType;
+  try {
+    pre = preparseLegacySettings(existing);
+    validated = validateInplace(GlobalSettings, existing);
+  } catch (err) {
+    corruptReset = true;
+    console.error('[Choice] 设置档解析失败，已备份原档并使用默认设置启动', err, existing);
+    try {
+      _.set(extension_settings, `${setting_field}_corrupt_backup`, klona(existing));
+      toastr.error(t`扩展设置档已损坏，已重置为默认（原档备份在控制台与 choice_corrupt_backup 键）`);
+    } catch {
+      /* 备份/提示失败不阻塞启动 */
+    }
+    validated = validateInplace(GlobalSettings, undefined);
+  }
+  if (pre.themeNormalized) {
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
@@ -2420,22 +2576,24 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
   // v19 提示词配置创建的分流依据，必须在 applyDefaults 置 SCHEMA_VERSION 前捕获：
   // 有旧存档（existing 非空）→ 经典 = 用户已有提示词的存档 + 简洁默认；
   // 全新档 → 仅一个简洁默认配置，不造经典（内置默认不该伪装成用户存档）
+  // 坏档重置视同全新首载（原档已弃用，不走「老档」分流与 v43 高级模式置位）
   const wasPreV19 = (validated.schema_version ?? 0) < 19;
-  const hadExistingSave = existing !== undefined && existing !== null;
+  const hadExistingSave = existing !== undefined && existing !== null && !corruptReset;
 
   // 提示词模块化迁移与全局 schema_version 无关，每次初始化都检查。
   // 必须先于 applyDefaults 执行：v19 的经典/简洁配置快照依赖迁移后填充完整的 pr.modules，
   // 顺序颠倒时全新档会把空 modules 快照进两个配置（历史 bug）
   const promptNeedsMigration = (validated.prompt_rules.schema_version ?? 0) < 17;
   if (promptNeedsMigration) {
-    migratePromptModules(validated, legacyRegexes);
+    // 坏档重置不折并旧档遗留（legacyRegexes/excludeHidden 来自已弃用的坏档）
+    migratePromptModules(validated, pre.regexes, pre.excludeHidden, !corruptReset);
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
 
   const needsMigration = (validated.schema_version ?? 0) < SCHEMA_VERSION;
   if (needsMigration) {
-    applyDefaults(validated);
+    applyDefaults(validated, pre.snapshot, { hadExistingSave, corruptReset });
     _.set(extension_settings, setting_field, klona(validated));
     saveSettingsDebounced();
   }
@@ -3056,6 +3214,11 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
     fresh.schema_version = SCHEMA_VERSION;
     fresh.prompt_rules.schema_version = 17;
     fresh.prompt_rules.modules = klona(DEFAULT_MODULES);
+    // 上下文模式对齐全新首载终态：schema default 是 visible_only/10，但全新首载会经 v39
+    // 迁移块改为 rounds/8（「默认历史改 rounds/8 轮」）。恢复出厂置最新版本号跳过迁移链，
+    // 必须在此显式补齐，否则两条「新档」路径行为分叉。
+    fresh.prompt_rules.context_mode = 'rounds';
+    fresh.prompt_rules.context_rounds = 8;
     // 不能整体覆盖 filter_settings：validateInplace 产出的对象带 Zod 默认字段，
     // 若覆盖成缺 library_groups 的裸对象，之后 RegexLibraryDialog.createGroup 的 `?? []`
     // 兜底会拿到临时数组，新建分组写入静默丢失（直到刷新页面才恢复）

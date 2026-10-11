@@ -8,6 +8,7 @@
  * 收藏页可重开）——购买路径已扣币，丢弃 offer 即白扣。不持有任何持久状态。
  */
 
+import toastr from 'toastr';
 import type { CardOffer } from '@/core/cards';
 
 export type PackVia = 'lucky' | 'shop';
@@ -20,8 +21,14 @@ export const cardPack = ref<{ offer: CardOffer; via: PackVia } | null>(null);
  *  一个（再挂起覆盖旧的；开新包不影响已挂起的）。 */
 export const parkedCardPack = ref<{ offer: CardOffer; via: PackVia } | null>(null);
 
-/** 打开一次开卡包弹窗（幸运/每日/商店统一入口）。 */
+/** 打开一次开卡包弹窗（幸运/每日/商店统一入口）。
+ *  已有弹窗时先走挂起管线（保留先挂的/丢弃明示），勿静默覆盖——购买双击（弹窗遮罩
+ *  渲染前的竞态窗口）等场景下第二个包照常展示、第一个包进挂起槽可重开，
+ *  已扣币的 offer 不再凭空蒸发（module 头注释「丢弃必须可见」承诺同样适用此路径）。 */
 export function openCardPack(offer: CardOffer, via: PackVia = 'lucky'): void {
+  if (cardPack.value && parkCardPack() === 'discarded') {
+    toastr.warning(t`已有挂起中的卡包，先到的卡包被丢弃（若为购买所得即已扣币损失）`);
+  }
   cardPack.value = { offer, via };
 }
 
@@ -45,9 +52,14 @@ export function parkCardPack(): 'parked' | 'discarded' | 'none' {
   return 'parked';
 }
 
-/** 重开挂起的卡包（收藏页入口）。无挂起返回 false。 */
+/** 重开挂起的卡包（收藏页入口）。无挂起返回 false。
+ *  弹窗已在开时先走挂起管线再重开（与 openCardPack 同一闸门）——直接覆盖会把在开
+ *  offer 凭空蒸发。当前全屏遮罩下此入口不可达，纯防御缺口对齐。 */
 export function reopenParkedPack(): boolean {
   if (!parkedCardPack.value) return false;
+  if (cardPack.value && parkCardPack() === 'discarded') {
+    toastr.warning(t`已有挂起中的卡包，先到的卡包被丢弃（若为购买所得即已扣币损失）`);
+  }
   cardPack.value = parkedCardPack.value;
   parkedCardPack.value = null;
   return true;
