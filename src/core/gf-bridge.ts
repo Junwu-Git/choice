@@ -140,7 +140,9 @@ export function readGoldenFingerSnapshot(): string | null {
       lines.push('宿主身心状态：', ...stateLines);
     }
 
-    lines.push('出选项时可让部分选项自然呼应上述任务或身心状态；无合适契机则照常，不必强凑，也不要在选项里提及「任务」「系统」等字眼。');
+    lines.push(
+      '出选项时可让部分选项自然呼应上述任务或身心状态；无合适契机则照常，不必强凑，也不要在选项里提及「任务」「系统」等字眼。',
+    );
     return lines.join('\n');
   } catch {
     // 桥接绝不能影响选项生成主链路
