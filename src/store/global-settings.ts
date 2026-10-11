@@ -855,8 +855,7 @@ const applyDefaults = (
         // 旧 generation 对象经 parse 补齐后增字段（oversample_pct/dedup_* 等）——直接透传原始
         // 对象会让本会话内消费端读到 undefined（generator 对 dedup_enabled 无 ?? 兜底，去重
         // 静默失效），重载后才被 zod prefault 自愈；解析失败（旧档字段形态漂移）回退全默认。
-        generation:
-          GenerationSettings.safeParse(oldGlobalGen ?? {}).data ?? GenerationSettings.parse({}),
+        generation: GenerationSettings.safeParse(oldGlobalGen ?? {}).data ?? GenerationSettings.parse({}),
       });
     }
 

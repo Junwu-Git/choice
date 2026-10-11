@@ -16,12 +16,7 @@ import {
   type DiceOutcome,
   type DiceRollMode,
 } from '@/core/dice';
-import {
-  armDiceTurnPrompt,
-  clearDiceTurnPrompt,
-  clearPendingTurn,
-  stagePendingTurn,
-} from '@/core/dice-contract';
+import { armDiceTurnPrompt, clearDiceTurnPrompt, clearPendingTurn, stagePendingTurn } from '@/core/dice-contract';
 import { rollDiceExpression, mapProxyToRange } from '@/core/dice-expression';
 import { sanitizeNarrative } from '@/core/cards-constraints';
 import { resolveCardRoll, commitCardRun, type CardResolution } from '@/core/cards';

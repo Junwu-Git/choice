@@ -688,7 +688,9 @@ const sanitizeImportedEntry = (raw: unknown): PoolEntry | null => {
  *  条目全无效时返回 null（调用方提示取消）。 */
 const sanitizeImportData = (raw: any): { master_pool: PoolEntry[]; configs: any[]; group_order: string[] } | null => {
   const masterPool = Array.isArray(raw?.master_pool) ? raw.master_pool : [];
-  const pool: PoolEntry[] = masterPool.map(sanitizeImportedEntry).filter((e: PoolEntry | null): e is PoolEntry => e !== null);
+  const pool: PoolEntry[] = masterPool
+    .map(sanitizeImportedEntry)
+    .filter((e: PoolEntry | null): e is PoolEntry => e !== null);
   if (!pool.length) return null;
   const configs = Array.isArray(raw?.configs)
     ? raw.configs
