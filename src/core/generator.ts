@@ -1,5 +1,6 @@
 import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter, readCharacterFields } from '@/core/st-character';
+import { persistGateEnter, persistGateExit } from '@/core/persist-gate';
 import toastr from 'toastr';
 import {
   getWorldInfoPrompt,
@@ -71,16 +72,26 @@ export const lastDedupReport = ref<
   | undefined
 >(undefined);
 
+/** 单次生成选项数硬上限：count_mode 是自由文本（UI 提示「如 4 或 3-6」），用户可能
+ *  顺手填 99——上限防一次请求抽爆条目池/白耗 token。20 已远超面板可展示的舒适量。 */
+const RESOLVE_COUNT_MAX = 20;
+const RESOLVE_COUNT_DEFAULT = parseInt(GenerationSettings.parse({}).count_mode, 10) || 4;
+
+/** 解析 global_count_mode（自由文本「4」或「3-6」）：非法输入（非数字/0）此前产出 count=0
+ *  → 池抽取为空、整趟请求照发后才报「未能解析出任何选项」，把配置问题误导成模型问题；
+ *  区间 min>max（如 8-3）则乘负数得反直觉均匀分布。收敛在此规整：换序、非法/非正值
+ *  回退 schema 默认、钳上限——调用方拿到的恒为 ≥1 的可用值。 */
 export const resolveCount = (cm: string): number => {
   const s = cm.trim();
   const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
   if (rangeMatch) {
-    const min = parseInt(rangeMatch[1], 10);
-    const max = parseInt(rangeMatch[2], 10);
-    return min + Math.floor(Math.random() * (max - min + 1));
+    let min = parseInt(rangeMatch[1], 10);
+    let max = parseInt(rangeMatch[2], 10);
+    if (min > max) [min, max] = [max, min];
+    return Math.min(RESOLVE_COUNT_MAX, Math.max(1, min + Math.floor(Math.random() * (max - min + 1))));
   }
   const n = parseInt(s, 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
+  return Number.isFinite(n) && n > 0 ? Math.min(RESOLVE_COUNT_MAX, n) : RESOLVE_COUNT_DEFAULT;
 };
 
 export { resolveCustomApi };
@@ -100,8 +111,14 @@ export async function resolveWIParticipation(
   const book = getShujukuTargetBook();
   if (book) {
     if (gs.settings.prompt_rules.shujuku_enabled) {
-      // 开关 ON：确保该书参与（未绑定时靠 applyWIExcl 的 enabled 通道临时追加到 selected_world_info）
+      // 开关 ON：确保该书参与。仅 push 进 enabled 不够——applyWIExcl 是「排除优先于启用」，
+      // 用户在全局/聊天排除过该书时「确保参与」会被静默覆盖（注释承诺落空）。桥接书是
+      // 扩展自管工作书，参与开关 ON 即参与意图的权威表达，从排除集剔除。残余：聊天侧
+      // book_entry_modes 把该书设为 off 时仍会被排除（applyWIExcl 内计算，此处够不到），
+      // 属显式 off 档语义，视为用户明确意愿。
       if (!enabled.includes(book)) enabled.push(book);
+      const exclIdx = allExcl.indexOf(book);
+      if (exclIdx !== -1) allExcl.splice(exclIdx, 1);
     } else {
       // 开关 OFF：排除该书，除非它是角色卡主世界书（避免误杀主书）
       const ch = getStCharacter(this_chid);
@@ -465,6 +482,10 @@ export const buildWI = async (): Promise<WIBuckets> => {
       .map((m: any) => m?.mes ?? '')
       .reverse();
     const ch = getStCharacter(this_chid);
+    // 角色字段走 readCharacterFields（V2 缺失时兜底顶层 V1）：直读 ch.data.* 会让 V1/浅卡
+    // 在这里看到空串——WI 关键词激活扫描拿不到角色描述，而 char_description 等提示词模块
+    // 却能（readCharacterFields 兜底），同一次生成两套口径。
+    const charFields = readCharacterFields(ch);
 
     // 世界书预算 = world_info_budget(%) × maxContext。ST 主生成用 ctx.maxContext(如 8192) 算预算，
     // 但行动选项是独立 API 调用，沿用 8192 会让角色世界书的大条目先耗尽预算，
@@ -475,10 +496,10 @@ export const buildWI = async (): Promise<WIBuckets> => {
     const result = await getWorldInfoPrompt(chatStrings, maxCtx, false, {
       trigger: 'normal',
       personaDescription: power_user?.persona_description ?? '',
-      characterDescription: ch?.data?.description ?? '',
-      characterPersonality: ch?.data?.personality ?? '',
+      characterDescription: charFields.description ?? '',
+      characterPersonality: charFields.personality ?? '',
       characterDepthPrompt: ch?.data?.extensions?.depth_prompt?.prompt ?? '',
-      scenario: ch?.data?.scenario ?? '',
+      scenario: charFields.scenario ?? '',
       creatorNotes: ch?.data?.creator_notes ?? '',
     });
 
@@ -577,70 +598,95 @@ export const applyWIExcl = async (
   const hasNewEnabled = enabled.some(n => !saved.includes(n));
   if (!hasExcl && !hasMutation && !hasNewEnabled) return null;
 
-  selected_world_info.length = 0;
-  const newList = saved.filter(n => !allExcl.has(n));
-  for (const name of enabled) {
-    // 排除优先于启用：被排除的书即使仍在 enabled 列表里也不注入
-    if (!allExcl.has(name) && !newList.includes(name)) newList.push(name);
-  }
-  selected_world_info.push(...newList);
+  // 持久化闸门：窗口内的临时改写（角色/聊天绑定书置空）若被并发持久化通道序列化，
+  // 空值会落盘（内存 restore 救得回、磁盘救不回）。见 persist-gate.ts 模块注释。
+  persistGateEnter();
+  // 还原所需状态提升到 try 外：中途抛错时 catch 要做尽力还原（原缺陷：变异段无 restore
+  // 路径，全局态带伤且无法回滚——现实可达性极低，但一旦发生污染持续到下次生成）
   const cwEx = !!cw && allExcl.has(cw);
-  if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
-  // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
-  // 与角色绑定书的临时改写同一模式；restore 还原原值。
   const chatBookEx = !!chatBook && allExcl.has(chatBook);
-  if (chatBookEx) chat_metadata[METADATA_KEY] = '';
-
-  // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
-  // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
-  // （world-info.js:2041），直接变异拷贝无法影响生成。故先 loadWorldInfo 确保书已进缓存，再经
-  // Map.prototype.get.call 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
   type MutableEntry = { uid?: number | string; disable?: boolean };
   const mutated: Array<{ entry: MutableEntry; value: boolean }> = [];
-  const overrides = bookEntryOverrides ?? {};
-  for (const name of processSet) {
-    if (allExcl.has(name)) continue; // off/排除书不注入，无需条目级变异
-    const mode = modeOf(name);
-    if (mode === 'follow') continue; // follow：纯酒馆原生 disable，覆盖不生效
-    try {
-      await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
-      const data = Map.prototype.get.call(worldInfoCache, name) as
-        { entries?: Record<string, MutableEntry> } | undefined;
-      if (!data?.entries) continue;
-      const bookOverrides = overrides[name] ?? {};
-      for (const entry of Object.values(data.entries)) {
-        if (!entry || typeof entry.disable !== 'boolean') continue;
-        const uidKey = `${entry.uid}`;
-        if (mode === 'force') {
-          // force 全启用：覆盖不生效（条目勾选框显示与生成一致）
-          if (entry.disable) {
-            mutated.push({ entry, value: entry.disable });
-            entry.disable = false;
-          }
-        } else if (mode === 'custom') {
-          // custom：按覆盖逐条；快照未覆盖的条目保持酒馆原状
-          const ov = bookOverrides[uidKey];
-          if (typeof ov !== 'boolean') continue;
-          if (entry.disable === ov) {
-            mutated.push({ entry, value: entry.disable });
-            entry.disable = !ov;
+  const restoreAll = (): void => {
+    selected_world_info.length = 0;
+    selected_world_info.push(...saved);
+    if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
+    if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
+    for (const m of mutated) m.entry.disable = m.value;
+  };
+  try {
+    selected_world_info.length = 0;
+    const newList = saved.filter(n => !allExcl.has(n));
+    for (const name of enabled) {
+      // 排除优先于启用：被排除的书即使仍在 enabled 列表里也不注入
+      if (!allExcl.has(name) && !newList.includes(name)) newList.push(name);
+    }
+    selected_world_info.push(...newList);
+    if (cwEx && ch?.data?.extensions) ch.data.extensions.world = '';
+    // 聊天绑定书被排除/off：临时清空 chat_metadata[METADATA_KEY]，getChatLore 读到空串即返回 []（:4435）。
+    // 与角色绑定书的临时改写同一模式；restore 还原原值。
+    if (chatBookEx) chat_metadata[METADATA_KEY] = '';
+
+    // 条目级 disable 变异：worldInfoCache 是 StructuredCloneMap 且 cloneOnGet:true
+    // （world-info.js:882，已核实）——loadWorldInfo 命中缓存走 worldInfoCache.get 返回深拷贝
+    // （world-info.js:2041），直接变异拷贝无法影响生成。故先 loadWorldInfo 确保书已进缓存，再经
+    // Map.prototype.get.call 绕过 clone-on-get 拿到缓存内原始引用变异，restore 逐条还原。
+    const overrides = bookEntryOverrides ?? {};
+    for (const name of processSet) {
+      if (allExcl.has(name)) continue; // off/排除书不注入，无需条目级变异
+      const mode = modeOf(name);
+      if (mode === 'follow') continue; // follow：纯酒馆原生 disable，覆盖不生效
+      try {
+        await loadWorldInfo(name); // 确保书已进缓存（其 set 为 cloneOnSet:false，存引用本身）
+        const data = Map.prototype.get.call(worldInfoCache, name) as
+          { entries?: Record<string, MutableEntry> } | undefined;
+        if (!data?.entries) continue;
+        const bookOverrides = overrides[name] ?? {};
+        for (const entry of Object.values(data.entries)) {
+          if (!entry || typeof entry.disable !== 'boolean') continue;
+          const uidKey = `${entry.uid}`;
+          if (mode === 'force') {
+            // force 全启用：覆盖不生效（条目勾选框显示与生成一致）
+            if (entry.disable) {
+              mutated.push({ entry, value: entry.disable });
+              entry.disable = false;
+            }
+          } else if (mode === 'custom') {
+            // custom：按覆盖逐条；快照未覆盖的条目保持酒馆原状
+            const ov = bookOverrides[uidKey];
+            if (typeof ov !== 'boolean') continue;
+            if (entry.disable === ov) {
+              mutated.push({ entry, value: entry.disable });
+              entry.disable = !ov;
+            }
           }
         }
+      } catch (err) {
+        console.warn('[Choice] applyWIExcl 条目变异失败（保持酒馆原状）:', name, err);
       }
-    } catch (err) {
-      console.warn('[Choice] applyWIExcl 条目变异失败（保持酒馆原状）:', name, err);
     }
-  }
 
-  return {
-    restore: () => {
-      selected_world_info.length = 0;
-      selected_world_info.push(...saved);
-      if (cwEx && ch?.data?.extensions) ch.data.extensions.world = cw;
-      if (chatBookEx) chat_metadata[METADATA_KEY] = chatBook;
-      for (const m of mutated) m.entry.disable = m.value;
-    },
-  };
+    return {
+      restore: () => {
+        try {
+          restoreAll();
+        } finally {
+          // 先还原再放行排队的持久化：放行时序列化读到的是完整还原后的状态
+          persistGateExit();
+        }
+      },
+    };
+  } catch (err) {
+    // 变异段自身抛错（理论上各写点均有守卫）：尽力还原已完成的全局改写 + 退出闸门防
+    // 持久化悬挂，再原样上抛由调用方兜底
+    try {
+      restoreAll();
+    } catch {
+      /* 还原失败仅能记录，勿吞原始异常 */
+    }
+    persistGateExit();
+    throw err;
+  }
 };
 
 /** 世界书排他窗口互斥（模块级队列）：applyWIExcl 是对酒馆全局 WI 状态（selected_world_info/
@@ -735,12 +781,22 @@ const parseJsonOptionArray = (c: string): string[] | null => {
           (typeof x?.text === 'string' ? x.text.trim() : null) ??
           '';
         if (title) return body ? `[${title}]${body}` : `[${title}]`;
+        // 无 title 但带 type（弱模型把方向词放进 type 字段）：映射成 [type]正文——与
+        // {title,content} 同构（本契约里括号标题就是类型词）。旧的 `${type}: ${content}`
+        // 模板分支对字符串 content 永不可达（body 已先行消费 content），类型信息丢失、
+        // 归因的前缀匹配随之失效
+        const typeAsTitle = typeof x?.type === 'string' ? x.type.trim() : '';
+        if (typeAsTitle) return body ? `[${typeAsTitle}]${body}` : `[${typeAsTitle}]`;
         return (
+          // 无 title 时回退链先查 body（已从 x.content 算出）：漏查会让
+          // [{"content":"正文"}]（弱模型漏 title 字段，常见）被静默丢弃，
+          // 与 {"text":"正文"} 可保留不对称——选项凭空变少且无提示。
+          // body 为空串时继续回退（content:'' + text:'备用' 不应丢备用）
+          (body || null) ??
           x?.text?.trim() ??
           x?.option?.trim() ??
           // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
-          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined) ??
-          (x?.type && x?.content ? `${x.type}: ${x.content}` : undefined)
+          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined)
         );
       })
       .filter(Boolean);
@@ -974,7 +1030,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     const rules = gs.settings.prompt_rules;
 
     let enabledModules = gs.sortedEnabledModules.filter(m => !m.enrich_only);
+    // 全禁用兜底：静默回退全量默认模块——用户「全部关闭」的意图被无声推翻，至少明示。
+    // 不改为「发空提示词」：那只会产出更离谱的回复且浪费一次请求。
     if (!enabledModules || enabledModules.length === 0) {
+      toastr.warning(t`提示词模块已全部禁用，本次按默认模块生成`);
       enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
     }
     // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
@@ -1064,6 +1123,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       let dropped = r1.droppedCount;
       let details = r1.details;
       let refilled = false;
+      // 累计解析数：refill 剔除比例的分母用累计值——旧实现固定用首批 parsed.length，
+      // 分母不随轮次增长使比例单调虚高、refill 提前放弃
+      let totalParsed = parsed.length;
       // refill 循环：直到凑够 count 条或 refill 无新产出为止，防止最终数量不足。
       // 上限 2 轮防模型持续返回重复内容导致死循环。
       let refillRound = 0;
@@ -1071,7 +1133,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       while (kept.length < count && refillRound < MAX_REFILL_ROUNDS) {
         refillRound++;
         // 若累计剔除比例 > 60%，说明模型可能整体重复，停止 refill
-        if (parsed.length > 0 && dropped / parsed.length > 0.6) break;
+        if (dropped / totalParsed > 0.6) break;
         refilled = true;
         const need = count - kept.length;
         const refillMessages: ChatMsg[] = [
@@ -1079,7 +1141,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
           { role: 'assistant', content: raw },
           {
             role: 'user',
-            content: `以上 <options> 中有 ${parsed.length - r1.kept.length} 条与此前选项重复，已剔除。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
+            // 剔除数用当前累计值（dropped），首轮后恒等 r1 数字会与实际不符；
+            // dropped 含同批内互相重复（dedupOptions 批内互重），措辞勿只提「此前选项」
+            content: `以上 <options> 中有 ${dropped} 条重复选项已剔除（含与此前选项及同批内互相重复）。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
           },
         ];
         lastBuildMessages.value = structuredClone(refillMessages);
@@ -1092,6 +1156,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         );
         if (cancelled) return null;
         const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
+        totalParsed += refillParsed.length;
         const rNext = dedupOptions(
           refillParsed.map(o => o.text),
           [...dedupRefs, ...kept],
@@ -1185,6 +1250,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
 }
 
 export function cancelGeneration() {
+  // 无生成时调用不留毒标志：cancelled 复位只发生在生成运行的 finally，若导出函数在
+  // 空闲期被置位（当前调用方均有 isGenerating 守卫，防御未来新增调用点），下一次生成
+  // 会在请求发起前与流式读取等取消检查点被静默丢弃且无任何提示。abort 空转无害。
+  if (!generatorState.loading) return;
   cancelled = true;
   genController?.abort();
   // 不复位 generatorState/genController：abort 触发的旧生成 finally 在微任务中

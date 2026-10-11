@@ -38,6 +38,7 @@ import {
   type EquippedCard,
 } from '@/core/cards-deck';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import { parkedCardPack } from '@/core/card-pack-state';
 import toastr from 'toastr';
 import { resolveCustomApi } from '@/core/api-client';
 import { getStCharacter } from '@/core/st-character';
@@ -281,6 +282,11 @@ export function resolveCardRoll(
   let critS = crits.success;
   let critF = crits.fail;
   let rollBonus = 0;
+  // 数值效果极性约定（两模式一致）：正 roll_bonus = 利好、正 demand_mod = 代价。
+  // low 模式成功 = roll ≤ 需求：利好 = 降骰/升需求，故施加前按判定方向取反
+  // （crit_window 的 applyCritWindow 本就模式感知，这里补齐 roll_bonus/demand_mod 同等待遇）。
+  // 卡面 effectSummary 展示的是设计原值；机制行 note 展示实际施加方向（含前后值）。
+  const modeSign = mode === 'low' ? -1 : 1;
   const preFired: EquippedCard[] = [];
   // 每张触发卡的效果摘要（v67 机制行的素材）：有前后值的补「（前→后）」，
   // 正文 AI 才能理解数值因果；掷前触发卡还没掷骰，只列效果本身。
@@ -302,12 +308,12 @@ export function resolveCardRoll(
         const eff = clampEffect(raw);
         if (!eff) continue;
         if (eff.kind === 'roll_bonus') {
-          rollBonus += eff.amount;
-          note(eq, `骰值${signed(eff.amount)}`);
+          rollBonus += eff.amount * modeSign;
+          note(eq, `骰值${signed(eff.amount * modeSign)}`);
         } else if (eff.kind === 'demand_mod') {
           const before = rate;
-          rate = clamp0100(rate + eff.amount);
-          note(eq, `需求${signed(eff.amount)}（${before}→${rate}）`);
+          rate = clamp0100(rate + eff.amount * modeSign);
+          note(eq, `需求${signed(eff.amount * modeSign)}（${before}→${rate}）`);
         } else if (eff.kind === 'crit_window') {
           ({ critS, critF } = applyCritWindow(critS, critF, eff.success_delta, eff.fail_delta, mode));
           note(eq, effectSummary(eff));
@@ -343,14 +349,14 @@ export function resolveCardRoll(
       if (!eff) continue;
       if (eff.kind === 'roll_bonus') {
         const before = roll;
-        postRollBonus += eff.amount;
-        roll = clamp0100(roll + eff.amount);
-        note(eq, `骰值${signed(eff.amount)}（${before}→${roll}）`);
+        postRollBonus += eff.amount * modeSign;
+        roll = clamp0100(roll + eff.amount * modeSign);
+        note(eq, `骰值${signed(eff.amount * modeSign)}（${before}→${roll}）`);
         postModified = true;
       } else if (eff.kind === 'demand_mod') {
         const before = rate;
-        rate = clamp0100(rate + eff.amount);
-        note(eq, `需求${signed(eff.amount)}（${before}→${rate}）`);
+        rate = clamp0100(rate + eff.amount * modeSign);
+        note(eq, `需求${signed(eff.amount * modeSign)}（${before}→${rate}）`);
         postModified = true;
       } else if (eff.kind === 'crit_window') {
         ({ critS, critF } = applyCritWindow(critS, critF, eff.success_delta, eff.fail_delta, mode));
@@ -685,7 +691,10 @@ export function buyPack(configId: string): { ok: boolean; errors: string[]; offe
 // ── 角色主题池懒生成（§6，见 cards-ai.ts） ───────────────────────────────
 
 /** 清空某角色的主题池及其关联卡数据（定义/收藏/历史获得）——供「重新生成」测试/换新风格用。
- *  破坏性：会删除已收集的该角色主题卡；调用方须先确认。 */
+ *  破坏性：会删除已收集的该角色主题卡；调用方须先确认。
+ *  挂起的卡包（parkedCardPack）持有的卡来自旧池：清池后卡定义已删，重开选中会让
+ *  acquireOrConvert 为已无定义的卡新建收藏条目（永不掉落/展示的僵尸条目），故一并作废
+ *  并明示——幸运包无成本，购买包已扣币属极端时序（先挂起再清池），toast 说明。 */
 export function clearCharacterPool(charId: string): void {
   const gs = useGlobalSettingsStore();
   const pool = gs.settings.card_character_pools[charId];
@@ -696,6 +705,12 @@ export function clearCharacterPool(charId: string): void {
     delete gs.settings.card_obtained[id];
   }
   delete gs.settings.card_character_pools[charId];
+  // 仅当挂起包的候选卡确属被清角色时才作废：其他角色的挂起包不受本次清池影响，误丢即是白扣
+  const parked = parkedCardPack.value;
+  if (parked && parked.offer.options.some(o => o.card.character_id === charId)) {
+    parkedCardPack.value = null;
+    toastr.info(t`挂起中的卡包已随清池作废`);
+  }
 }
 
 let poolGenRunning = false;

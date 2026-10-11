@@ -53,6 +53,11 @@ export function dedupOptions(candidates: string[], references: string[], thresho
   };
   // 标题精确匹配后增加内容 bigram Jaccard 门槛（>0.4），避免 type 相同但内容不同的选项被误杀。
   const isDup = (cand: string, ref: string): { dup: boolean; detail?: DedupDetail } => {
+    // 归一化全文恒等 = 完全重复：bigram 集对 1 字符内容为空集（Jaccard 恒 0），
+    // 不短路会让两条完全相同的单字选项同时保留
+    if (normalize(cand) !== '' && normalize(cand) === normalize(ref)) {
+      return { dup: true, detail: { candidate: cand, reason: 'jaccard', matchedRef: ref, score: 1 } };
+    }
     const ct = titleOf(cand);
     const rt = titleOf(ref);
     if (ct && rt && ct === rt) {
@@ -72,10 +77,14 @@ export function dedupOptions(candidates: string[], references: string[], thresho
   const kept: string[] = [];
   let dropped = 0;
   const details: DedupDetail[] = [];
+  // 参照集 = 外部参照 + 本批已保留：AI 单次响应内的重复/近似选项（弱模型高发）此前只对
+  // 批外参照查重，批内互重全部漏过（重复按钮直接进面板）。收敛在实现里，调用方无需拼
+  // 已保留集（generator 的 refill 轮手动传 [...refs, ...kept] 与此兼容，仅冗余）。
+  const refs = [...references];
   for (const cand of candidates) {
     let dup = false;
     let detail: DedupDetail | undefined;
-    for (const ref of references) {
+    for (const ref of refs) {
       const result = isDup(cand, ref);
       if (result.dup) {
         dup = true;
@@ -88,6 +97,7 @@ export function dedupOptions(candidates: string[], references: string[], thresho
       if (detail) details.push(detail);
     } else {
       kept.push(cand);
+      refs.push(cand);
     }
   }
   return { kept, droppedCount: dropped, details };

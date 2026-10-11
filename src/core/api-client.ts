@@ -108,18 +108,25 @@ async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?:
       if (json?.error) throw new Error(json.error.message || 'API 流式返回错误');
       full += json?.choices?.[0]?.delta?.content ?? json?.choices?.[0]?.message?.content ?? '';
     };
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      buffer += chunk;
-      const lines = buffer.split('\n');
-      // 最后一行可能不完整（跨 chunk 边界），保留到下次再拼接
-      buffer = lines.pop() || '';
-      for (const line of lines) consumeLine(line);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        const lines = buffer.split('\n');
+        // 最后一行可能不完整（跨 chunk 边界），保留到下次再拼接
+        buffer = lines.pop() || '';
+        for (const line of lines) consumeLine(line);
+      }
+      // 残余 buffer：无尾换行的最后一行（部分代理不发送结束换行），不消费会丢最后一段正文
+      if (buffer) consumeLine(buffer);
+    } catch (err) {
+      // API 级错误（json.error）/读流异常时主动释放响应体：不 cancel 会让 SSE 连接挂到
+      // GC 才关闭，长会话下累积占用。用户取消路径 fetch 信号已拆连接，cancel 空转无害。
+      reader.cancel().catch(() => {});
+      throw err;
     }
-    // 残余 buffer：无尾换行的最后一行（部分代理不发送结束换行），不消费会丢最后一段正文
-    if (buffer) consumeLine(buffer);
     return full;
   }
 
@@ -141,7 +148,12 @@ async function callSecondaryApi(messages: ChatMsg[], api: SecondaryApi, signal?:
  *  仅 TypeError/5xx 进入重试路径。 */
 function isRetryableError(e: unknown): boolean {
   if (e instanceof DOMException && e.name === 'AbortError') return false;
-  if (e instanceof TypeError) return true;
+  // 仅网络型 TypeError（fetch 资源加载失败）可重试：TypeError 同样是编程错误（属性访问
+  // 出错等）的常态类型，无差别放行会把真实异常掩盖成「重试耗尽」。message 形态覆盖
+  // Chrome「Failed to fetch」/Firefox「NetworkError…」/Safari「Load failed」/Node「fetch failed」
+  if (e instanceof TypeError && /failed to fetch|networkerror|load failed|fetch failed/i.test(e.message)) {
+    return true;
+  }
   if (e instanceof Error) {
     const m = e.message.match(/^API 请求失败 \((\d{3})\)/);
     if (m) {

@@ -1,7 +1,7 @@
 import type { ChoiceOption } from '@/core/options-store';
 import { isCardSettled, markCardSettled } from '@/core/options-store';
 import toastr from 'toastr';
-import { sendTextareaMessage } from '@sillytavern/script';
+import { chat, sendTextareaMessage } from '@sillytavern/script';
 import { parseOptionContent, parseOptionDice, parseOptionType } from '@/util/option-format';
 import { resolveOptionSuccessRateWithAttr } from '@/core/attribute-dc';
 import { getStCharacter } from '@/core/st-character';
@@ -16,7 +16,12 @@ import {
   type DiceOutcome,
   type DiceRollMode,
 } from '@/core/dice';
-import { armDiceTurnPrompt, clearDiceTurnPrompt, stagePendingTurn } from '@/core/dice-contract';
+import {
+  armDiceTurnPrompt,
+  clearDiceTurnPrompt,
+  clearPendingTurn,
+  stagePendingTurn,
+} from '@/core/dice-contract';
 import { rollDiceExpression, mapProxyToRange } from '@/core/dice-expression';
 import { sanitizeNarrative } from '@/core/cards-constraints';
 import { resolveCardRoll, commitCardRun, type CardResolution } from '@/core/cards';
@@ -369,22 +374,40 @@ async function applyOptionBehaviorInner(
     // 发送：输入框此刻只含纯正文（判定注释已挂起，发送管线内由 MESSAGE_SENT 回写）。
     // 异常（发送被拦截/网络失败等）时输入框兜底恢复纯正文，保证可手动重试；
     // 挂起判定保留——用户随后手动发送同一正文时回写仍然生效。
+    // 发送成败判据 = 聊天数组是否变化（发送前快照，成功必新增玩家消息或改写末条）。
+    // 不能用「输入框非空」判断：sendTextareaMessage 会横跨整个 AI 生成（Generate resolve
+    // 才返回），生成期间输入框可编辑——用户等待回复时新打的草稿会被误判成「发送未发生」
+    // 而遭选项正文整体覆盖（用户输入丢失）。
+    const chatLenBefore = chat.length;
+    // ChatMessage 壳类型不带 mes 字段，取实际消息体需 cast（与 dice-contract.ts 同款）
+    const lastMes = (): string => String((chat[chat.length - 1] as StChatMessage | undefined)?.mes ?? '');
+    const lastMesBefore = lastMes();
     try {
       await sendTextareaMessage();
     } catch (err) {
       clearDiceTurnPrompt();
-      $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+      // 与下方 sent 同判据：发送可能已发生、生成中途才抛错（此时 MESSAGE_SENT 已回写
+      // 判定注释、输入框归用户），只有确认聊天未变才兜底恢复纯正文
+      if (chat.length === chatLenBefore && lastMes() === lastMesBefore) {
+        $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+      }
       throw err;
     }
-    // 非空 = 本次发送未真正发生（正常路径酒馆已清空输入框）：恢复纯正文兜底 +
-    // 撤下动态摘要槽（防过期裁定污染无关生成）；挂起判定同上保留待手动发送。
-    const current = String($textarea.val() ?? '');
-    if (current !== '') {
-      if (current !== content) {
+    const sent = chat.length !== chatLenBefore || lastMes() !== lastMesBefore;
+    if (!sent) {
+      // 发送未真正发生（守卫拦截 / 空正文且未配 send_if_empty，酒馆已清空输入框）：
+      // 恢复纯正文兜底 + 撤下动态摘要槽（本次没有生成消费它，防过期裁定污染下一次无关生成）。
+      if (content !== '') {
         $textarea.val(content)[0].dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        // 空正文没有可匹配载体（flushPendingTurnMarker 的 needle 为空恒不命中），
+        // 挂起判定永远无法回写，直接清槽防陈旧残留。
+        clearPendingTurn();
       }
       clearDiceTurnPrompt();
     }
+    // 发送成功：输入框不打扰——生成等待期间玩家可能已在新打草稿（酒馆在发送管线开头
+    // 清空输入框，此后输入框归用户所有），判定注释已由 MESSAGE_SENT 回写进新消息。
   }
   // 骰子战绩埋点：应用成功后（发送框可用 + 行为已执行）按判定结果记账；
   // 发送框不可用早退路径已提前 return，不计数（与应用口径一致）。v61 起记录

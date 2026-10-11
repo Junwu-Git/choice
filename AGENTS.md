@@ -21,7 +21,7 @@ SillyTavern 第三方扩展。核心：单独调用 API 异步生成行动选项
 - **楼层持久化挂消息对象**：结果写 `message.extra['choice']`，按 `swipe_id` 分层；同楼多次生成用 `generations[] + currentIndex` 翻页，润色另用 `enrichGenerations`/`enrichCurrentIndex`。
 - **第三方桥接可选**（`baibai/ejs/shujuku-bridge` 等），不可用时主体功能照常。
 - **生成模块是可排序可启停管线**：`prompt_rules.modules` 用 `order/enabled/enrich_only` 控制；`enrich` 必须排在 assistant 相关模块之前。
-- ⚠️ **世界书临时改写走互斥窗口**：`applyWIExcl` 是对酒馆全局 WI 状态的 save/restore，选项/润色/卡牌池三条生成链路一律经 `generator.runWIExclWindow` 包裹 resolve→apply→构建消息（构建完即还原——副 API 直连不再读酒馆世界书，排他态勿持有到请求结束）；新链路绕过它会在并发时 restore 交错践踏酒馆 WI 状态。
+- ⚠️ **世界书临时改写走互斥窗口**：`applyWIExcl` 是对酒馆全局 WI 状态的 save/restore，选项/润色/卡牌池三条生成链路一律经 `generator.runWIExclWindow` 包裹 resolve→apply→构建消息（构建完即还原——副 API 直连不再读酒馆世界书，排他态勿持有到请求结束）；新链路绕过它会在并发时 restore 交错践踏酒馆 WI 状态。窗口期经 `persist-gate.ts` 闸门推迟扩展自身两条持久化通道（`character-bindings` 的 persistCharacter、chat-settings 的 `saveMetadataDebounced`）到 restore 后放行——窗口内角色/聊天绑定书被临时置空，此刻序列化会把空绑定落盘；闸门不覆盖酒馆原生面板触发的保存（残余风险已在模块注释声明）。
 - **酒馆 API 隔离**：版本敏感 API 只出现在 `src/core/`、`src/store/` 与根入口 `src/index.ts`；组件层一律经桥接层中转（`this_chid`/`eventSource` 等走 st-world-info 再导出）。放行清单：`uuidv4`（稳定 util 任意层可用）；`util/character-bindings.ts`（绑定持久化单一通道）与 `util/option-action.ts`（共享点击层）可直接导入 `@sillytavern/script`。
 - **i18n 键 = 中文原文**：`i18n/en.json` 以中文源串做键；标签模板 `` t`xx:${v}` `` 的插值在酒馆侧转成 `${N}` 占位符参与查找（i18n.js:81 已核对）。改 UI 文案收尾跑 `pnpm i18n:check`（`tools/check-i18n.mjs`）对账：缺失/孤儿键必须归零，新键经 `--merge` 合入（守卫拒收代码未用的笔误键）。两约束：插值里**勿嵌反引号模板**（会让运行时键与提取口径错位，先算再插值）；多行键用真实换行（模板内写 `\n` 转义也可以，两者烤制后同键）。模板静态中文属性（`ChoiceSectionCard title="…"` 等 ~300 处）**尚未参与 i18n**，属已知债务，改造需逐处过浏览器验证，工具只做计数提示。
 
@@ -31,7 +31,7 @@ SillyTavern 第三方扩展。核心：单独调用 API 异步生成行动选项
 
 - 双开关均默认关：`stats_enabled`（采集）、`automation_enabled`（自动化，关则建议/阵容/L1/L2 全停）。只计「选项视图」，润色不计。
 - v51 起按 config 维度记 `stats.entries`（键 = 生效 `config.id`，无 config = `'__none__'`）。
-- 归因：**参与** = 进候选（每轮 `poolEntryIds` 全记含 pinned）；**命中** = 精确文本匹配——生成时写 `options[].matchedEntryId` 随消息持久化，本地匹配 = type 前缀优先 → bigram Dice ≥0.25 **且最优-次优分差 ≥ `OPTION_MATCH_MARGIN`(0.05)**，平票归属近随机归 null（宁缺勿错）；点击只对匹配条目计命中，AI 舍弃候选与匹配不上的选项不产生命中。
+- 归因：**参与** = 进候选（每轮 `poolEntryIds` 全记含 pinned）；**命中** = 精确文本匹配——生成时写 `options[].matchedEntryId` 随消息持久化，本地匹配 = type 前缀优先 → bigram Dice ≥0.25 **且最优-次优分差 ≥ `OPTION_MATCH_MARGIN`(0.05)**，平票归属近随机归 null（宁缺勿错）；前缀认定要求**最长命中 type 唯一**——同 type 多条目竞争时前缀不可区分，一律落 Dice 靠分差裁决（首个前缀命中即返回会恒归候选序靠前者，系统性偏差）；点击只对匹配条目计命中，AI 舍弃候选与匹配不上的选项不产生命中。
 - **期望** = 采纳感知随机基线（只在该条目被采纳输出的轮次累计 `matched/count`），固定阈值已废弃；窗口口径按 **scope 平均点选数 m̄ 校正**（`ScopeStats.total_rounds/picks_total` 计数、总轮数 ≥`AVG_PICKS_MIN_ROUNDS` 才启用，超几何 `randomPickHitProb`——多点选用户单点模型偏提权）；全量 `expected_sum` 保持单点模型，混合口径属可接受过渡。
 - 滑动窗口 `recent`（FIFO 50）。
 - **建议引擎永不停用——动作只有 down/up 改权重，绝不置 enabled=false**。降/提阈值 = 固定阈值(−0.2/+0.15) 与 SE×1.5 取大（`SUGGEST_THRESHOLD_SE_FACTOR`，样本越少门槛越高）+ 中性带回捞（`manualLow` 标记手动低权重，仅展示提示）；pinned/停用/删除跳过；权重到下限仍持续低迷 → 引擎沉默，由「已到下限」洞察徽标引导走阵容（勿当 bug 修回出建议）。
@@ -51,12 +51,12 @@ SillyTavern 第三方扩展。核心：单独调用 API 异步生成行动选项
 - 四种行为（send/fill/insert/append）输入框一律只放纯正文；注释经挂起判定（dice-contract.ts `stagePendingTurn`）在玩家消息真正发出时由 MESSAGE_SENT 回写进该消息 mes（时序早于 Generate 提示词构建）；发送失败/未发送则挂起保留至同内容后发或下次点选覆盖，CHAT_CHANGED 清空防跨聊天误挂。AI 请求原样携带、聊天渲染与输入框均不可见、随消息持久化。
 - `main_ai_awareness`（默认开）双通道注入，均收敛在 `dice-contract.ts`：① 常驻契约 `syncDiceContractPrompt`（key `choice_dice_contract`，IN_CHAT depth 4 system）教「消息开头注释是骰子裁定指令」；② 每回合动态槽 `armDiceTurnPrompt`/`clearDiceTurnPrompt`（key `choice_dice_turn`，IN_CHAT depth 1 system）挂「本回合已裁定：结局（程度）」即时摘要（贴近生成点，不依赖注释在历史中存活；fill/insert/append 由 `flushPendingTurnMarker` 回写成功后挂同一份）。AI 回复落地/中止即清空（`index.ts` 订阅 GENERATION_ENDED/GENERATION_STOPPED/MESSAGE_RECEIVED），send 异常/取消同步撤下，开关关闭即置空撤销——**两个槽 + MESSAGE_SENT 消息内回写是扩展对正文 AI 请求的全部注入通道，新增注入必须收敛进 dice-contract.ts**。
 - `low_roll` 开启时生成端运行时追加 COC 语义教学行（覆盖 core_rules 默认的「越难标得越高」，否则难度反转）。
-- 需求值徽标 + 行内判定 chip（结局+差值、3s 淡出、内存态不持久化）在主面板与悬浮球同步实现——**判定 chip 的内存态逻辑两处各自实现，属既定并行模式，改动需两处同步**；判定不弹 toastr。
+- 需求值徽标 + 行内判定 chip（结局+差值、3s 淡出、内存态不持久化）在主面板与悬浮球同步实现——**判定 chip 的内存态逻辑两处各自实现，属既定并行模式，改动需两处同步**；判定不弹 toastr。需求值徽标语义色（`rateClass`）按判定方向分档（low 镜像：值越大越易），两处同款实现同步改。
 
 ### 卡牌系统（`GlobalSettings.card_*`，`card_enabled` 默认关）
 
 - 判定管线叠加层，只在 `card_enabled=true` 且非骰式（`allow_formula`）路径生效（`resolveCardRoll`），关则零回归。4 类型槽（武器/法术/祝福/试炼）+ 星级预算（3★≤2/4★≤1/5★≤1）。
-- 效果分预掷（roll_bonus/demand_mod/crit_window/success_delta/fail_delta，正向 delta = 扩彩蛋窗口，按判定方向模式感知升降阈值，掷前施加）与后置（outcome_convert/reroll/narrative）——掷后触发卡（roll/outcome 触发）的修正型效果**补算到已掷结果上并重判结局**（两遍后置：先补算重判、再转化/重掷）。
+- 效果分预掷（roll_bonus/demand_mod/crit_window/success_delta/fail_delta，正向 delta = 扩彩蛋窗口，按判定方向模式感知升降阈值，掷前施加）与后置（outcome_convert/reroll/narrative）——掷后触发卡（roll/outcome 触发）的修正型效果**补算到已掷结果上并重判结局**（两遍后置：先补算重判、再转化/重掷）。数值效果极性约定（`resolveCardRoll` 的 `modeSign`）：**正 roll_bonus = 利好、正 demand_mod = 代价，两模式一致**——low 模式施加前按判定方向取反（利好 = 降骰/升需求）；卡面 `effectSummary` 显示设计原值，机制行 note 显示实际施加方向。
 - **卡牌叙事不注入正文 AI**：narrative 效果类型与 Card.narrative 字段保留（卡面/卡组展示、AI 生成引导、校验/判重照常），判定注释只注入**机制行**（触发卡效果摘要，含前后值「前→后」，前置定位语「机制记录（仅供理解因果，演绎时转化为剧情表现，勿在正文写数值）」）——演出/叙事行、满编共鸣叙事句已移除不注入，防弱模型生搬卡名/台词进正文。
 - **机械机制行（v67 起、v69 全量）**：`resolveCardRoll` 按效果收集 `effectNotes`（有前后值补「前→后」），**所有触发卡**（不限无叙事卡——避免「有描写、无因果」）产出「「卡名」发动：效果摘要」行。生成端（与骰式行/COC 行共用 `appendRuntimeLine`）在 card_enabled+骰子开+非骰式时追加 `equippedCardsPromptLine`：告知装备卡与发动面 + 三条互动手法（demand 触发卡→需求值标进触发区间；type/grade 触发→题材/档位呼应；效果方向作选项张力来源），只告知不强制。
 - **永久收藏 + v70 磨损/修复**：每次触发判定扣 1 耐久，归零破损自动卸下禁装，行动币修复回满（耐久 = 星级基础×功能修正，修复成本按星级递增）。破损过滤统一在 `resolveEquippedCards`/`autoDeckCards`/`equipCard`，选卡器不列破损卡；耐久消耗在 `commitCardRun` 内与 `trigger_count` 同门控（同层只扣一次、预览/首掷 stage 不扣），破损即时 chip+toastr。重复获得折算 `CARD_DUPLICATE_VALUE` 行动币；破损卡抽到照常折算、不刷新破损（防免费刷新绕开修复经济）。
@@ -66,7 +66,7 @@ SillyTavern 第三方扩展。核心：单独调用 API 异步生成行动选项
 - 保底/商店/每日任务/分解/血战/副本/技能卡/诅咒已在 v66 裁撤，套装与收藏成就已在 v68 裁撤，勿回填。
 - **角色主题池 AI 分批生成**（`cards-ai.ts`，触发点 = 开启卡牌开关/幸运开包/购买开包，经 `ensureCharacterPool`）：首批 `CARD_POOL_FIRST_BATCH=4`（池空）、每批 `CARD_POOL_BATCH_SIZE=2`、上限 `CARD_POOL_MAX_CARDS=12`（满池停自动补充，「重新生成」清池重来）；`generated=true` = 池已初始化（首批后置位），此后只追加。`generateCharacterPool` 入口**串行排队**（手动/自动两套调用方闸门互不相通，并行批会双双超上限 + 跨批判重互看不到——每批实际开跑才读池快照）、单批超量截断到 target、落库再钳上限。**勿拆串行链、勿改回一次性整池**——每批吃触发时刻的剧情上下文，池随剧情阶段变宽，一次全生成只反映开局面导致内容窄化。生成过程 toastr 提示（未配副 API 静默 = 功能未启用常态）。
 - 生成请求注入与选项生成**同源同法**，桶序对齐 DEFAULT_MODULES：persona → 世界书 before 桶 → 角色字段（`readCharacterFields` 含 V1 兜底）→ **世界书 after 桶 → depthBefore 桶 → 聊天记录 → depthAfter 桶**（after/depthBefore 属历史之前的背景层，放历史后会让设定条目跑到聊天后面）+ 世界书全套 buckets（先 `resolveWIParticipation`→`applyWIExcl` 激活、`finally restore`；`world_info.enabled` 关则跳过）——复用 `generator.ts` 导出的 `buildWI`/`buildChatHistory`/`applyWIExcl`/`resolveWIParticipation`，不另写一份。聊天走 `buildChatHistory(context_rounds, false)`（不包裹 `<current_scene>`）且历史前插用途声明：「不得绑定当前场景/事件」约束在 SYSTEM_PROMPT、历史前声明、user 任务三处同发（防弱模型把卡写成当前剧情专用）。
-- 生成结果防重复（`normalizeName`/`cardSignature`/`isDuplicateCard`）：name 归一相同 或 type+trigger+effects 签名相同即剔除；参照 = 同批已保留 + 该角色池既有卡（跨批判重真实生效；不含内置/其它角色）；已有卡摘要随请求下发要求题材错开。数值越界由 `clampEffect` **静默钳到上限并据此判重**（非作废）；结构非法（缺名/枚举非法/效果集滤空）与 `validateCard` 硬校验（效果数 >3、outcome_convert `from===to` 恒等、demand/roll 跨度 ≥80 且 star≥3 且效果全为正向数值）→ 该张作废、整批保留合法张（全作废不置位 `generated`，下次掉落重试）。生成引导：typeValue 用 2-4 字宽泛题材词（窄词匹配不到选项标题 = 死卡占池）、demand/roll 跨度建议 ≤60；题材贴合角色背景 + 双刃/代价卡（试炼槽 amount 可负即 debuff，重点是代价+收益组合）。
+- 生成结果防重复（`normalizeName`/`cardSignature`/`isDuplicateCard`）：name 归一相同 或 type+trigger+effects 签名相同即剔除；参照 = 同批已保留 + 该角色池既有卡（跨批判重真实生效；不含内置/其它角色）；已有卡摘要随请求下发要求题材错开。数值越界由 `clampEffect` **静默钳到上限并据此判重**（非作废）；trigger 交叉字段幻觉由 `normalizeTrigger` 按 kind 只留相关字段（id/name/trigger/effects 是持久化投毒的四个栅栏——枚举外值落库会让下次加载 zod 整档崩）；结构非法（缺名/枚举非法/效果集滤空）与 `validateCard` 硬校验（效果数 >3、outcome_convert `from===to` 恒等、demand/roll 跨度 ≥80 且 star≥3 且效果全为利好向——极性按「正 roll_bonus=利好/正 demand_mod=代价」判，见 `isAllPositiveNumeric`）→ 该张作废、整批保留合法张（全作废不置位 `generated`，下次掉落重试）。生成引导：typeValue 用 2-4 字宽泛题材词（窄词匹配不到选项标题 = 死卡占池）、demand/roll 跨度建议 ≤60；题材贴合角色背景 + 双刃/代价卡（试炼槽 amount 可负即 debuff，重点是代价+收益组合）。
 - 主题卡带归属字段 `character_id/character_name`（CardFace 显示角标；旧主题卡由 `cardDefById` 幂等回填）。
 - **卡定义/卡组解析簇在 `cards-deck.ts`**（`cardDefById`/`resolveEquippedCards`/`autoDeckCards`/`resolveDeckSlots`/`currentCardConfigId` 等）：拆分动机是 `cards.ts → cards-ai.ts → generator.ts` 循环依赖——generator 需要装备卡摘要做生成注入，不能 import cards.ts；cards.ts 对公开名 re-export 保持既有 import 点零改动，勿反向接回。`effectSummary`（效果文案）单一来源在 `cards-meta.ts`，勿在别处再写。`outcome_convert.from` 枚举含 `crit_fail`（5★ 万象归元：大失败→大成功）。
 

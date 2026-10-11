@@ -1,4 +1,5 @@
 import { characters } from '@sillytavern/script';
+import { isPersistGateActive, persistGateDeferOrRun } from '@/core/persist-gate';
 import { setting_field } from '@/type/settings';
 
 /** 绑定类型：pool = 条目池配置（CharacterSettings.config_id），prompt = 提示词配置（prompt_config_id） */
@@ -117,6 +118,13 @@ export function scheduleCharacterPersist(ch: StCharacter, onComplete?: (ok: bool
   }
   queue.revision++;
   const run = () => {
+    // WI 排他窗口期推迟：窗口内 ch.data.extensions 的绑定书字段被临时置空（applyWIExcl），
+    // 此刻序列化会把空绑定落盘。persistCharacter 执行时读 live 状态，推迟到 restore 后
+    // 跑只改时机不丢最新值（revision 合并语义不变）。见 persist-gate.ts 模块注释。
+    if (isPersistGateActive()) {
+      persistGateDeferOrRun(run);
+      return;
+    }
     queue!.scheduled = false;
     if (queue!.running) return;
     const revision = queue!.revision;

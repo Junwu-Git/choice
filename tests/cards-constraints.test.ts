@@ -10,6 +10,7 @@ import {
   clampEffect,
   isCardBroken,
   isHighStar,
+  normalizeTrigger,
   sanitizeNarrative,
   validateCard,
 } from '@/core/cards-constraints';
@@ -88,9 +89,16 @@ describe('validateCard（AI 生成卡硬校验）', () => {
   it('字段缺失/枚举非法逐项报错', () => {
     const r = validateCard(mkCard({ id: '', name: '', type: 'sword' as Card['type'] }));
     expect(r.ok).toBe(false);
-    expect(r.errors).toContain('缺少 id');
-    expect(r.errors).toContain('缺少名称');
+    expect(r.errors).toContain('缺少 id 或 id 非字符串');
+    expect(r.errors).toContain('缺少名称或名称非字符串');
     expect(r.errors.some(e => e.includes('类型非法'))).toBe(true);
+  });
+
+  it('id/name 非字符串（弱模型幻觉数字形态）拒绝：防 z.string() 解析崩档', () => {
+    const r = validateCard(mkCard({ id: 123 as unknown as string, name: 456 as unknown as string }));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain('缺少 id 或 id 非字符串');
+    expect(r.errors).toContain('缺少名称或名称非字符串');
   });
 
   it('效果集为空 / 超过 3 个拒绝', () => {
@@ -137,7 +145,16 @@ describe('validateCard（AI 生成卡硬校验）', () => {
     expect(validateCard(wide('3', [{ kind: 'roll_bonus', amount: 10 }])).errors).toContain(
       '宽触发区间的高星卡必须带代价或负向效果',
     );
-    expect(validateCard(wide('3', [{ kind: 'demand_mod', amount: -10 }])).ok).toBe(true);
+    // 极性约定：demand_mod 正值 = 升需求 = 代价（放行），负值 = 降需求 = 纯利好（拒）
+    expect(validateCard(wide('3', [{ kind: 'demand_mod', amount: 10 }])).ok).toBe(true);
+    expect(validateCard(wide('3', [{ kind: 'demand_mod', amount: -10 }])).errors).toContain(
+      '宽触发区间的高星卡必须带代价或负向效果',
+    );
+    // fail_delta 正值 = 扩大失败彩蛋窗 = 代价向，不算纯利好
+    expect(
+      validateCard(wide('3', [{ kind: 'roll_bonus', amount: 10 }, { kind: 'crit_window', success_delta: 0, fail_delta: 3 }]))
+        .ok,
+    ).toBe(true);
     expect(validateCard(wide('2', [{ kind: 'roll_bonus', amount: 10 }])).ok).toBe(true);
   });
 
@@ -150,6 +167,45 @@ describe('validateCard（AI 生成卡硬校验）', () => {
 
   it('叙事超长拒绝', () => {
     expect(validateCard(mkCard({ narrative: '长'.repeat(41) })).errors.some(e => e.includes('叙事超过'))).toBe(true);
+  });
+});
+
+describe('normalizeTrigger（AI 卡 trigger 交叉字段归一）', () => {
+  it('交叉字段幻觉按 kind 归一：只留相关字段，类型错乱落默认', () => {
+    // kind=type 上幻觉出 grade:"x"（枚举外字符串）与 min:"30"（非数字）——
+    // 原样落库会让下次加载 zod 解析崩档（CardTrigger 字段无 .catch）
+    expect(normalizeTrigger({ kind: 'type', typeValue: '战斗', grade: 'x', min: '30' })).toEqual({
+      kind: 'type',
+      typeValue: '战斗',
+      grade: null,
+      min: 0,
+      max: 0,
+      outcome: null,
+    });
+  });
+
+  it('roll 区间钳 0-100、min>max 换序；kind 非法落 type', () => {
+    expect(normalizeTrigger({ kind: 'roll', min: 120, max: -5 })).toEqual({
+      kind: 'roll',
+      typeValue: '',
+      grade: null,
+      min: 0,
+      max: 100,
+      outcome: null,
+    });
+    expect(normalizeTrigger({ kind: 'demand', min: 80, max: 20 })).toMatchObject({ kind: 'demand', min: 20, max: 80 });
+    expect(normalizeTrigger({ kind: 'nope' }).kind).toBe('type');
+    expect(normalizeTrigger(null).kind).toBe('type');
+  });
+
+  it('grade/outcome 合法值保留、非法值落 null（validateCard 再拒）', () => {
+    expect(normalizeTrigger({ kind: 'grade', grade: 'bold' })).toMatchObject({ kind: 'grade', grade: 'bold' });
+    expect(normalizeTrigger({ kind: 'grade', grade: 'nope' })).toMatchObject({ kind: 'grade', grade: null });
+    expect(normalizeTrigger({ kind: 'outcome', outcome: 'crit_success' })).toMatchObject({
+      kind: 'outcome',
+      outcome: 'crit_success',
+    });
+    expect(normalizeTrigger({ kind: 'outcome', outcome: 'nope' })).toMatchObject({ kind: 'outcome', outcome: null });
   });
 });
 

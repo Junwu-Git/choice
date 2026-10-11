@@ -71,7 +71,7 @@ function aiAnalysisNeeded(
   if (!gs.settings.ai_analysis_enabled) return false;
   const cached = gs.settings.stats.ai_analysis[scopeId];
   // 廉价前置：维度级无新活动（updated_at 未增长）→ 不需要重算，避免 collectSuggestionRows
-  // 全量扫描（runAiAnalysis 也做了同源前置检查；此处供外部调用方复用同一短路）
+  // 全量扫描（runAiAnalysis 内部同源前置检查，本函数未导出、仅模块内复用）
   if (cached && scopeUpdatedAt(scopeId, view) <= cached.data_updated_at) return false;
   const suggestions = rows ?? collectSuggestionRows(scopeId, view);
   if (suggestions.length === 0) return false;

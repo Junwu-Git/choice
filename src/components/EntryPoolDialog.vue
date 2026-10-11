@@ -217,7 +217,7 @@ import GuidePopover from '@/components/GuidePopover.vue';
 import { DIALOG_HINTS } from '@/core/guide-content';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import type { PoolEntry } from '@/type/settings';
+import { PoolConfig, type PoolEntry } from '@/type/settings';
 import { DRAG_HANDLE_SELECTOR, draggableFilterOptions } from '@/util/sortable';
 import { isoTimestamp } from '@/util/time';
 import ImportSourceDialog from '@/components/shared/ImportSourceDialog.vue';
@@ -316,12 +316,27 @@ const groupedEntries = computed<EntryGroup[]>(() => {
   for (const [key, entries] of map) {
     groups.push({ key, entries });
   }
-  groups.sort((a, b) => {
-    if (!a.key) return 1;
-    if (!b.key) return -1;
-    return a.key.localeCompare(b.key);
-  });
-  return groups;
+  // 显示顺序与 group_order 对齐（拖拽排序的读取端，此前只写不读——拖完任何重算即回弹，
+  // 且二次拖动用 DOM 索引 splice 字母序数组会把 group_order 写错）：group_order 命中的
+  // 分组按其顺序在前，未收录的分组（新建/导入/重命名遗留）按字母序补后，「未分组」恒最后。
+  // 与统计侧 entryGroups 的排序语义同源，防同一份 group_order 两套口径。
+  const used = new Set<string>();
+  const ordered: EntryGroup[] = [];
+  for (const key of globalStore.settings.group_order) {
+    // 未分组恒最后、由下方统一追加：历史 group_order 可能含 ''（旧版拖拽把未分组键一并写入），
+    // 在此收录会让「未分组」出现两次、v-for :key 撞车
+    if (key === '') continue;
+    // 历史坏数据可能把同一分组写进 order 两次（旧拖拽 bug 的产物），跳过重复防 v-for :key 撞车
+    if (used.has(key)) continue;
+    const g = groups.find(x => x.key === key);
+    if (g) {
+      ordered.push(g);
+      used.add(g.key);
+    }
+  }
+  const rest = groups.filter(g => !used.has(g.key) && g.key !== '').sort((a, b) => a.key.localeCompare(b.key));
+  const ungrouped = groups.find(g => g.key === '');
+  return [...ordered, ...rest, ...(ungrouped ? [ungrouped] : [])];
 });
 
 // ── 统计页「定位条目」实现（须在 groupedEntries 之后定义，避免 TDZ） ──
@@ -537,12 +552,19 @@ const addEntryToGroup = (groupKey: string) => {
 
 const removeEntry = (id: string) => {
   const idx = masterPool.value.findIndex(e => e.id === id);
+  const cat = idx !== -1 ? masterPool.value[idx].category.trim() || '' : '';
   if (idx !== -1) masterPool.value.splice(idx, 1);
   expanded.value.delete(id);
   deleteTarget.value = null;
   for (const cfg of configs.value) {
     const eidx = cfg.entries.findIndex(e => e.entry_id === id);
     if (eidx !== -1) cfg.entries.splice(eidx, 1);
+  }
+  // 删空且非挂起的分组从 group_order 清除：残留键会成为导出文件/统计侧的幽灵分组
+  // （移动走最后一条走 addPendingGroup 保组，此处删空不保——与既有行为一致）
+  if (cat !== '' && !hasPendingGroup(cat) && !masterPool.value.some(e => (e.category.trim() || '') === cat)) {
+    const oi = globalStore.settings.group_order.indexOf(cat);
+    if (oi !== -1) globalStore.settings.group_order.splice(oi, 1);
   }
 };
 
@@ -559,6 +581,9 @@ const removeGroup = (group: EntryGroup) => {
   expandedGroups.value.delete(group.key);
   removePendingGroup(group.key);
   deleteTarget.value = null;
+  // 同步清理持久化排序键：残留会成为导出文件/统计侧的幽灵分组（分组数虚高、重命名静默无效）
+  const orderIdx = globalStore.settings.group_order.indexOf(group.key);
+  if (orderIdx !== -1) globalStore.settings.group_order.splice(orderIdx, 1);
   for (const cfg of configs.value) {
     for (let i = cfg.entries.length - 1; i >= 0; i--) {
       if (ids.has(cfg.entries[i].entry_id)) {
@@ -638,28 +663,71 @@ const parseImportText = (text: string): any | null => {
   return data;
 };
 
+/** 导入条目清洗：外部文件可能手工编辑/截断——缺 id 会毁掉模板 :key 与配置引用、
+ *  字段类型漂移会进 store 持久化并在下次加载被 zod 拒收。逐字段归一；正文与类型
+ *  双空的条目作废（无内容条目无意义），id 缺失/非字符串补 uuid。 */
+const sanitizeImportedEntry = (raw: unknown): PoolEntry | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const content = typeof r.content === 'string' ? r.content : '';
+  const type = typeof r.type === 'string' ? r.type.trim() : '';
+  if (!content.trim() && !type) return null;
+  return {
+    id: typeof r.id === 'string' && r.id ? r.id : uuidv4(),
+    type,
+    content,
+    rule: typeof r.rule === 'string' ? r.rule : '',
+    pinned: !!r.pinned,
+    weight: Number.isFinite(r.weight) ? Math.max(0, Number(r.weight)) : 1,
+    category: typeof r.category === 'string' ? r.category : '',
+  };
+};
+
+/** 导入数据整体清洗：条目逐张清洗、配置走 PoolConfig zod 校验（带 defaults，旧版本
+ *  导出缺新字段时自动补齐）、group_order 只收字符串。返回清洗后的可导入数据，
+ *  条目全无效时返回 null（调用方提示取消）。 */
+const sanitizeImportData = (raw: any): { master_pool: PoolEntry[]; configs: any[]; group_order: string[] } | null => {
+  const masterPool = Array.isArray(raw?.master_pool) ? raw.master_pool : [];
+  const pool: PoolEntry[] = masterPool.map(sanitizeImportedEntry).filter((e: PoolEntry | null): e is PoolEntry => e !== null);
+  if (!pool.length) return null;
+  const configs = Array.isArray(raw?.configs)
+    ? raw.configs
+        .map((c: unknown) => (c && typeof c === 'object' ? PoolConfig.safeParse(c) : null))
+        .filter((p: any): p is { success: true; data: any } => !!p?.success)
+        .map((p: any) => p.data)
+    : [];
+  // group_order 只收「清洗后条目里真实存在的具名分组」：文件里的残留键（条目被清洗掉/
+  // 导出源就有的幽灵分组）会经导出/统计侧再次扩散；「未分组」（''）不是用户分组，恒不收
+  const cats = new Set(pool.map(e => e.category.trim() || ''));
+  const group_order = (Array.isArray(raw?.group_order) ? (raw.group_order as unknown[]) : []).filter(
+    (g): g is string => typeof g === 'string' && g !== '' && cats.has(g),
+  );
+  return { master_pool: pool, configs, group_order };
+};
+
 // 合并导入：直接落库，条目立刻出现（按 id 去重，重复文件不会产生重复条目）
 const onImportMerge = ({ text }: { text: string; fileName: string }) => {
   importSourceError.value = '';
   const data = parseImportText(text);
   if (!data) return;
-  const { master_pool, configs, group_order } = data.data ?? {};
+  const clean = sanitizeImportData(data.data);
   // 空条目文件防护：空库时期导出的文件导入后"成功"却什么都没有（死亡循环），直接阻止
-  if (!master_pool?.length) {
-    importSourceError.value = t`该文件不包含任何条目（master_pool 为空），无法导入`;
+  if (!clean) {
+    importSourceError.value = t`该文件不包含任何可识别的有效条目（master_pool 为空或条目缺正文/类型），无法导入`;
     return;
   }
+  const { master_pool, configs, group_order } = clean;
   const existingIds = new Set(globalStore.settings.master_pool.map(e => e.id));
-  const newEntries = master_pool.filter((e: PoolEntry) => !existingIds.has(e.id));
+  const newEntries = master_pool.filter(e => !existingIds.has(e.id));
   if (newEntries.length) globalStore.settings.master_pool.push(...newEntries);
-  if (configs?.length) {
+  if (configs.length) {
     for (const cfg of configs) {
       if (!globalStore.settings.configs.some(c => c.name === cfg.name)) {
         globalStore.settings.configs.push(cfg);
       }
     }
   }
-  if (group_order?.length) {
+  if (group_order.length) {
     for (const g of group_order) {
       if (!globalStore.settings.group_order.includes(g)) {
         globalStore.settings.group_order.push(g);
@@ -682,12 +750,13 @@ const onImportReplace = ({ text, fileName }: { text: string; fileName: string })
   importSourceError.value = '';
   const data = parseImportText(text);
   if (!data) return;
-  const { master_pool } = data.data ?? {};
-  if (!master_pool?.length) {
-    importSourceError.value = t`该文件不包含任何条目（master_pool 为空），无法导入`;
+  const clean = sanitizeImportData(data.data);
+  if (!clean) {
+    importSourceError.value = t`该文件不包含任何可识别的有效条目（master_pool 为空或条目缺正文/类型），无法导入`;
     return;
   }
-  importFileData.value = { ...data.data, partial: !!data.partial, fileName, exportedAt: data.exportedAt };
+  // 预览与最终确认共用清洗后的数据：预览看到的就是将要落库的
+  importFileData.value = { ...data.data, ...clean, partial: !!data.partial, fileName, exportedAt: data.exportedAt };
   showImportSource.value = false;
   showImportPool.value = true;
 };
@@ -791,7 +860,9 @@ const initGroupSortable = () => {
       const keys = groupedEntries.value.map(g => g.key);
       const [moved] = keys.splice(evt.oldIndex, 1);
       keys.splice(evt.newIndex, 0, moved);
-      globalStore.settings.group_order = keys;
+      // group_order 只存具名分组：「未分组」（''）不是用户分组、显示端恒最后，写进去
+      // 会成为导出文件与统计侧的幽灵分组键
+      globalStore.settings.group_order = keys.filter(k => k !== '');
     },
   });
 };

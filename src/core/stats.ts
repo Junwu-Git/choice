@@ -377,7 +377,9 @@ export function recordCurrencySpent(amount: number): void {
  *  - 命中迁移（保守规则）：仅当「旧归属条目在该 gid 上被匹配的选项数恰好为 1」
  *    且该条选项被移走、且该 gid 已有点击命中时，才把命中从旧条目迁到新条目
  *    （matched==1 时命中必来自这条唯一被匹配的选项，迁移无歧义）；matched>1 属歧义
- *    不迁移（宁缺勿错）。迁移连带 rounds_with_selection 与最近选中单槽。
+ *    不迁移（宁缺勿错）。迁移连带 rounds_with_selection，但不动最近选中单槽
+ *    （last_selected_text/at 是跨代展示记录、无法定位属于哪一代——L1 积压期间可能
+ *    已被更新的代改写，搬走/清空都会失真，见迁移处注释）。
  *  aiAttribution 缺 index 的选项视为保持 Dice 结果（解析层已校验，此处防御）。
  *  不修改消息层（写回由调用方经 options-store 的 writeBackOptionAttribution 完成）。 */
 export function reconcileAttribution(
@@ -440,13 +442,13 @@ export function reconcileAttribution(
         if (newRec && !newRec.hit) {
           newRec.hit = true;
           newE.rounds_with_selection += 1;
-          newE.last_selected_text = oldE.last_selected_text;
-          newE.last_selected_at = oldE.last_selected_at;
         }
       }
-      // 旧条目的最近选中单槽随命中迁走清空（该命中已不属于它；见函数头注释的口径说明）
-      oldE.last_selected_text = '';
-      oldE.last_selected_at = 0;
+      // 最近选中单槽（last_selected_text/at）不随命中迁移：它是跨代「最近任意一次命中」
+      // 的展示记录，而本迁移守卫只保证该代内无歧义——L1 单飞队列积压数分钟是常态，
+      // 迁移执行时单槽可能已被更新的代改写（搬走 → 目标条目显示用户从未在它上面选过的
+      // 文本；清空 → 新代的真实记录被抹）。两处失真都比不迁移更糟：计数迁移照常
+      // （per-generation 的 rec.hit 无歧义），展示槽留在原条目、由下次真实点击自然刷新。
     }
   }
   return { adjusted, migrated };
@@ -796,7 +798,9 @@ export function fullExpectedRate(row: Pick<EntryRankRow, 'rounds_included' | 'ex
  *  调整后窗口新数据不足 SUGGEST_MIN_SAMPLES 轮即视为冷却中；但距调整超过
  *  SUGGEST_COOLDOWN_MAX_MS 且已有 ≥ SUGGEST_COOLDOWN_MIN_POST 轮新数据时放宽——
  *  低权重条目参与频率近似正比权重，纯按参与轮数等门槛会形成「权重越低观察期越长」的
- *  冷却黑洞，墙钟上限兜底；放宽后的小样本噪声由 entrySuggestion 的 SE 自适应阈值兜住 */
+ *  冷却黑洞，墙钟上限兜底；放宽后的小样本噪声由 entrySuggestion 的 SE 自适应阈值兜住
+ *  （已知边界：rate=0 纯落空时 SE=0、阈值回落固定 −0.2，3 轮纯落空即可出降权——
+ *  settings.ts 常量注释已声明的取舍，宁早降权勿恒提权） */
 function cooldownStillActive(changedAt: number, postLen: number): boolean {
   if (postLen >= SUGGEST_MIN_SAMPLES) return false;
   if (postLen >= SUGGEST_COOLDOWN_MIN_POST && Date.now() - changedAt > SUGGEST_COOLDOWN_MAX_MS) return false;
@@ -897,6 +901,11 @@ export function suggestionKey(s: Suggestion): string {
   return `${s.action}:${s.newWeight}:${s.basis}:${s.excess.toFixed(2)}:${s.currentWeight}`;
 }
 
+/** 建议调权结果规整：×1.5 的二进制长尾（0.2×1.5=0.30000000000000004）会原样进
+ *  权重持久化与建议/历史文案（「权重 0.2 → 0.30000000000000004」），量化到 0.01 步长。
+ *  ×0.5 是精确指数除法无需规整，统一过一遍无害。 */
+const roundWeight = (w: number): number => Math.round(w * 100) / 100;
+
 /** 单条目建议（纯函数）：数据源优先窗口（recent ≥ SUGGEST_MIN_SAMPLES），否则全量
  *  （rounds_included ≥ SUGGEST_MIN_SAMPLES），样本不足返回 null。
  *  阈值（超额命中率 = rate - expected）：≤ SUGGEST_DOWNGRADE_EXCESS(-0.2) → 降权
@@ -952,23 +961,25 @@ export function entrySuggestion(
   const downThreshold = Math.min(SUGGEST_DOWNGRADE_EXCESS, -(se * SUGGEST_THRESHOLD_SE_FACTOR));
   const upThreshold = Math.max(SUGGEST_UPGRADE_EXCESS, se * SUGGEST_THRESHOLD_SE_FACTOR);
   if (excess <= downThreshold) {
-    const newWeight = Math.max(SUGGEST_WEIGHT_MIN, row.effectiveWeight * 0.5);
-    // 权重已在下限边界时降权无实际变化：返回 null 而非零差异建议，
+    // 已在下限或之下时降权无实际变化（w < MIN 时 max 会反向抬权——「表现最差反被提权」，
+    // 且语义与建议方向颠倒）：>= 判空一并覆盖，交由「已到下限」洞察引导手动处理
+    // （floor 徽标条件是 ≤MIN，天然覆盖 w<MIN）。返回 null 而非零差异/反向建议，
     // 否则应用会产生「0 条变更」历史批次并误刷冷却（建议→应用→冷却→再建议空转）
-    if (newWeight === row.effectiveWeight) return null;
+    const newWeight = roundWeight(Math.max(SUGGEST_WEIGHT_MIN, row.effectiveWeight * 0.5));
+    if (newWeight >= row.effectiveWeight) return null;
     return { ...base, action: 'down', newWeight };
   }
   if (excess >= upThreshold) {
     // 提权按 SUGGEST_UPGRADE_MULTIPLIER 保守倍率（1.5，非翻倍）：期望基线不随权重变化，
     // 翻倍会让高权重条目更快向 SUGGEST_WEIGHT_MAX 收敛，权重分散度劣化（见 settings.ts 常量注释）
-    const newWeight = Math.min(SUGGEST_WEIGHT_MAX, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
+    const newWeight = Math.min(SUGGEST_WEIGHT_MAX, roundWeight(row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER));
     if (newWeight === row.effectiveWeight) return null;
     return { ...base, action: 'up', newWeight, reason: 'upgrade' };
   }
   // 中性带（未差到降权、也未好到提权）：低于默认权重 → 回捞一步向默认回升，保持多样性。
   // 低于默认权重的条目（含已降权到下限的）会随冷却周期逐步回升，不再永久困在低位。
   if (row.effectiveWeight < SUGGEST_WEIGHT_DEFAULT) {
-    const newWeight = Math.min(SUGGEST_WEIGHT_DEFAULT, row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER);
+    const newWeight = Math.min(SUGGEST_WEIGHT_DEFAULT, roundWeight(row.effectiveWeight * SUGGEST_UPGRADE_MULTIPLIER));
     if (newWeight === row.effectiveWeight) return null;
     return {
       ...base,
@@ -1011,6 +1022,10 @@ export function entryInsight(
 ): EntryInsight {
   if (row.deleted) return null;
   if (!row.effectiveEnabled) return 'disabled';
+  // pinned 条目不挂质量徽标：entrySuggestion 对 pinned 返回 null 的原因是「固定必发、
+  // 权重调整无意义」，而下方 floor/cooldown/insufficient 的语义前提是「建议引擎因数据/
+  // 下限沉默」——对 pinned 不成立，挂上只会引导用户去做对 pinned 无效的权重操作
+  if (row.effectivePinned) return null;
   const s = suggestion !== undefined ? suggestion : entrySuggestion(row, avgPicks);
   if (s) return s.action === 'down' ? 'downgrade' : s.reason === 'recover' ? 'recover' : 'good';
   // 已到下限：权重在自动化下限且无建议——降权分支因零差异返回 null、回捞要求超额进入
@@ -1085,7 +1100,8 @@ const snapshotEntryRefs = (entries: PoolConfigEntry[], ids: string[]): PoolConfi
 };
 
 /** 收集受影响条目应用前的 last_weight_changed_at 快照（undo 时连带回滚冷却标记）。
- *  条目统计记录不存在（从未参与）则不入快照——undo 时也无需回滚。 */
+ *  记录不存在时以 0 入快照（touchChangedMarker 经 getEntryStats 创建记录，undo 需要把
+ *  新写入的冷却标记清回 0——不存在 ≠ 无需回滚）。 */
 function collectMarkersBefore(
   gs: ReturnType<typeof useGlobalSettingsStore>,
   scopeId: string,

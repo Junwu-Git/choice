@@ -470,10 +470,15 @@ const rateTitle = (option: ChoiceOption): string => {
   if (gs.settings.dice.low_roll) return t`COC：掷出 ≤ 该值才算成功`;
   return t`DND：掷出 ≥ 该值才算成功`;
 };
-// 徽标语义色按需求值分档（v56 难度制）：高需求（≥70）难=橙 / 中（40-69）蓝 / 低（<40）易=绿——
+// 徽标语义色按需求值分档：high 难度制（≥70 难=橙 / 40-69 蓝 / <40 易=绿，v56）；
+// low（COC）需求值 = 能力值（值越大越易），色档随方向镜像（<40 难 / ≥70 易）——
+// 与 rateTitle 的方向说明同源，防「说明写 ≤成功、颜色却按 ≥ 难度」倒挂。
 // 与风险档位色条（表达风险）语义不同，不混用 --choice-risk-*（配色反转见 theme.css）
-const rateClass = (rate: number): string =>
-  rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
+const rateClass = (rate: number): string => {
+  const low = gs.settings.dice.low_roll;
+  if (low) return rate < 40 ? 'choice-option-rate--high' : rate >= 70 ? 'choice-option-rate--low' : 'choice-option-rate--mid';
+  return rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
+};
 
 // 楼层是否已结算卡牌经济（预掷/重掷与判定路径同门控）。结算态非响应式，
 // 依赖追踪靠 cardSettleEpoch（markCardSettled 自增，跨组件结算也会触发重算）。
@@ -824,16 +829,26 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     }
   }
   const preRolled = willRoll && d.reroll_enabled ? (stagedFull.value.get(key) ?? null) : undefined;
-  const dice = await applyOptionBehavior(option, behavior.value, {
-    view: isEnrich ? 'enrich' : 'options',
-    poolEntryIds: gen?.poolEntryIds ?? [],
-    generationId: gen?.id,
-    matchedEntryId: option.matchedEntryId,
-    scopeId: gen?.scopeId,
-    messageId: panelStore.messageId ?? undefined,
-    swipeId: panelStore.swipeId,
-    ...(preRolled ? { preRolled } : {}),
-  });
+  let dice: DiceRollResult | null = null;
+  try {
+    dice = await applyOptionBehavior(option, behavior.value, {
+      view: isEnrich ? 'enrich' : 'options',
+      poolEntryIds: gen?.poolEntryIds ?? [],
+      generationId: gen?.id,
+      matchedEntryId: option.matchedEntryId,
+      scopeId: gen?.scopeId,
+      messageId: panelStore.messageId ?? undefined,
+      swipeId: panelStore.swipeId,
+      ...(preRolled ? { preRolled } : {}),
+    });
+  } catch (err) {
+    // send 路径发送失败（共享层按聊天快照判定是否兜底恢复后重抛）：吞掉会变 unhandled rejection 且
+    // 跳过选中收尾。保留重掷 stage 态——再次点击即用同一判定结果重试应用。
+    // 文案按行为分流：send 才涉及「是否已发出」，其余行为失败与发送无关
+    console.warn('[Choice] 选项应用失败', err);
+    toastr.error(behavior.value === 'send' ? t`发送失败，请查看聊天记录确认是否已发出` : t`选项应用失败，请重试`);
+    return;
+  }
   // 行内判定 chip（v57 骰子结果：结局+差值；润色视图恒返回 null，不标记）
   if (dice) {
     rollResults.value = new Map(rollResults.value).set(key, {

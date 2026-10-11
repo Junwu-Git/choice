@@ -15,7 +15,7 @@
         >
         <button
           class="choice-btn-sm choice-pack-buy"
-          :disabled="gs.settings.card_currency < CARD_PACK_PRICE"
+          :disabled="gs.settings.card_currency < CARD_PACK_PRICE || cardPack !== null"
           @click="onBuyPack"
         >
           <i class="fa-solid fa-box"></i>{{ t`开卡包（${CARD_PACK_PRICE} 币）` }}
@@ -154,7 +154,7 @@ import { isCardBroken, cardRepairCost, CARD_PACK_PRICE, CARD_POOL_MAX_CARDS } fr
 import { collectedCardIds, buyPack, currentCardConfigId, clearCharacterPool, repairCard } from '@/core/cards';
 import { generateCharacterPool } from '@/core/cards-ai';
 import { getStCharacter } from '@/core/st-character';
-import { openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
+import { cardPack, openCardPack, parkedCardPack, reopenParkedPack } from '@/core/card-pack-state';
 import toastr from 'toastr';
 import type { Card, CardOwned, CardStar } from '@/type/settings';
 

@@ -8,7 +8,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css,scss,html,vue}\"",
     "lint": "eslint",
     "lint:fix": "eslint --fix",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "i18n:check": "node tools/check-i18n.mjs"
   },
   "browserslist": [
     "defaults and partially supports es6-module"

@@ -14,7 +14,7 @@ const mkEntry = (over: Partial<PoolEntry> & Pick<PoolEntry, 'id' | 'type' | 'con
 });
 
 describe('prepareMatchSignals', () => {
-  it('type 按长度降序，前缀循环首个命中即最长 type', () => {
+  it('type 按长度降序排序（前缀认定在匹配端取最长唯一，遍历序仅辅助）', () => {
     const signals = prepareMatchSignals([
       mkEntry({ id: 'short', type: '战斗', content: '内容' }),
       mkEntry({ id: 'long', type: '战斗策略', content: '内容' }),
@@ -52,6 +52,23 @@ describe('matchOptionToEntry', () => {
       mkEntry({ id: 'y', type: '遭遇', content: '黑森林夜间遭遇狼群' }),
     ]);
     expect(matchOptionToEntry('[黑森林]夜间与狼群正面相遇', tie, THRESHOLD)).toEqual({ id: null, via: null });
+  });
+
+  it('同 type 多条目竞争：前缀不可区分，落 Dice 按内容分差裁决', () => {
+    // 旧实现「首个前缀命中即返回」会恒归候选序靠前的 p（系统性偏差）；现落 Dice 分支
+    const same = prepareMatchSignals([
+      mkEntry({ id: 'p', type: '探索', content: '搜索废墟里的残留物资' }),
+      mkEntry({ id: 'q', type: '探索', content: '探索追踪兽群留下的蹄印' }),
+    ]);
+    expect(matchOptionToEntry('[探索]追踪兽群的蹄印', same, THRESHOLD)).toEqual({ id: 'q', via: 'dice' });
+  });
+
+  it('同 type 多条目竞争且 Dice 也区分不开（分差 < margin）→ null', () => {
+    const same = prepareMatchSignals([
+      mkEntry({ id: 'p', type: '探索', content: '搜索废墟里的残留物资' }),
+      mkEntry({ id: 'q', type: '探索', content: '搜索废墟里的残留物资金' }),
+    ]);
+    expect(matchOptionToEntry('[探索]搜索废墟里的残留物资', same, THRESHOLD)).toEqual({ id: null, via: null });
   });
 
   it('低于阈值不归属', () => {

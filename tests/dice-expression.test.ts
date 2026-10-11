@@ -13,6 +13,32 @@ describe('isDiceFormula', () => {
       expect(isDiceFormula(f), f).toBe(false);
     }
   });
+
+  it('骰段紧邻小数点必拒（compile 产物是属性访问/语法错误，回退 D100 造成徽标与实际不一致）', () => {
+    for (const f of ['1.5d6', '2d6.5', '.5d6', '1.5d6.5', '2d6..5']) {
+      expect(isDiceFormula(f), f).toBe(false);
+    }
+  });
+
+  it('合法小数常量不紧贴骰段 → 放行', () => {
+    expect(isDiceFormula('2d6*0.5')).toBe(true);
+    expect(isDiceFormula('1d100+2.5')).toBe(true);
+  });
+
+  it('残留必须语法合法：截断/括号残骸过字符白名单但 compile 必 SyntaxError', () => {
+    for (const f of ['2d6+', '(2d6', '2d6)(']) {
+      expect(isDiceFormula(f), f).toBe(false);
+    }
+  });
+
+  it("'--'/'++' 被 JS 词法吃成单个自增/减 token，纯字面量残留恒为语法错误 → 必拒", () => {
+    for (const f of ['2d6--3', '2d6++3', '--2d6', '++2d6', '2d6+--3']) {
+      expect(isDiceFormula(f), f).toBe(false);
+    }
+    // 相邻单目符号不构成 token 的读法仍合法
+    expect(isDiceFormula('2d6-(-3)')).toBe(true);
+    expect(isDiceFormula('2d6+-3')).toBe(true);
+  });
 });
 
 describe('rollDiceExpression', () => {

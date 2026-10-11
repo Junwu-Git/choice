@@ -342,7 +342,6 @@
   "已导出全部 ${0} 条": "Exported all ${0} entries",
   "JSON 解析失败：${0}。请确认粘贴的是导出文件的完整内容（从 { 到 }）": "JSON parse failed: ${0}. Make sure the pasted content is the complete export file (from { to })",
   "文件格式不正确：type=${0}，需要 choice-pool-export（条目库导出的文件）。正则库导出的文件不能导入条目库": "Invalid file format: type=${0}, expected choice-pool-export (an entry pool export file). Regex library exports cannot be imported into the entry pool",
-  "该文件不包含任何条目（master_pool 为空），无法导入": "This file contains no entries (empty master_pool), cannot import",
   "已导入 ${0} 条${1}": "Imported ${0} entries${1}",
   "（${0} 条已存在，跳过）": " (${0} already existed, skipped)",
   "全部 ${0} 条均已存在，未重复导入": "All ${0} entries already exist. Nothing imported",
@@ -869,5 +868,12 @@
   "每条字数上限——选项/润色各自取各自的设置": "Per-option character cap — options and enrichment each use their own setting",
   "每条字数下限——选项/润色各自取各自的设置": "Per-option character floor — options and enrichment each use their own setting",
   "勉强得手": "Barely made it",
-  "条目库为空，点击 + 添加": "Entry pool is empty. Click + to add"
+  "条目库为空，点击 + 添加": "Entry pool is empty. Click + to add",
+  "发送失败，请查看聊天记录确认是否已发出": "Send failed — check the chat log to confirm whether it was sent",
+  "该文件不包含任何可识别的有效条目（master_pool 为空或条目缺正文/类型），无法导入": "No recognizable valid entries in this file (master_pool empty or entries missing content/type); cannot import",
+  "扩展设置档已损坏，已重置为默认（原档备份在控制台与 choice_corrupt_backup 键）": "Extension settings file is corrupted and has been reset to defaults (original backed up in console and under the choice_corrupt_backup key)",
+  "已有挂起中的卡包，先到的卡包被丢弃（若为购买所得即已扣币损失）": "A pack is already parked; the earlier pack was discarded (if purchased, its cost is lost)",
+  "挂起中的卡包已随清池作废": "Parked card pack discarded along with the cleared pool",
+  "提示词模块已全部禁用，本次按默认模块生成": "All prompt modules are disabled — generating with the default modules this time",
+  "选项应用失败，请重试": "Failed to apply option — please try again"
 }

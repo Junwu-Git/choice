@@ -11,7 +11,15 @@
  * v70 起恢复触发磨损（耐久归零破损、行动币修复回满），重复获得折算 CARD_DUPLICATE_VALUE 行动币。
  */
 
-import { CARD_STARS, CARD_TYPES, type Card, type CardEffect, type CardStar, type CardType } from '@/type/settings';
+import {
+  CARD_STARS,
+  CARD_TYPES,
+  type Card,
+  type CardEffect,
+  type CardStar,
+  type CardTrigger,
+  type CardType,
+} from '@/type/settings';
 import type { DiceOutcome } from '@/core/dice';
 
 // ── 效果硬限 ─────────────────────────────────────────────────────────────
@@ -196,17 +204,57 @@ export function clampEffect(e: CardEffect): CardEffect | null {
   }
 }
 
-/** 效果集是否全为「正向数值效果」（roll_bonus/demand_mod/crit_window 且数值 > 0）：
- *  宽触发区间 + 纯利好高星卡的拒绝判据。reroll/outcome_convert/narrative 属保命/展示
- *  效果不算纯正向，出现即放行（内置卡深渊凝视 roll 1-99 仅 reroll 即此形态）。 */
+/** 效果集是否全为「正向数值效果」（利好向）：宽触发区间 + 纯利好高星卡的拒绝判据。
+ *  极性约定（运行时按判定方向换算后两模式一致，见 resolveCardRoll 的 modeSign）：
+ *  roll_bonus 正值 = 利好；demand_mod 正值 = 升需求 = 代价、负值 = 利好；
+ *  crit_window 仅 success_delta 正值算利好（fail_delta 正值 = 扩大失败彩蛋窗 = 代价向）。
+ *  reroll/outcome_convert/narrative 属保命/展示效果不算利好，出现即放行
+ *  （内置卡深渊凝视 roll 1-99 仅 reroll 即此形态）。 */
 const isAllPositiveNumeric = (effects: CardEffect[]): boolean =>
   effects.length > 0 &&
   effects.every(
     e =>
       (e.kind === 'roll_bonus' && e.amount > 0) ||
-      (e.kind === 'demand_mod' && e.amount > 0) ||
-      (e.kind === 'crit_window' && (e.success_delta > 0 || e.fail_delta > 0)),
+      (e.kind === 'demand_mod' && e.amount < 0) ||
+      (e.kind === 'crit_window' && e.success_delta > 0),
   );
+
+/** trigger 交叉字段归一：弱模型会在一种 kind 上幻觉出别种 kind 的字段且类型错乱
+ *  （如 {"kind":"type","grade":"x","min":"30"}）。CardTrigger schema 各字段无 .catch()，
+ *  这类值若放行落库，下次加载 GlobalSettings 解析整体失败（扩展 init 崩）——与 id/name/
+ *  effects 的栅栏同类，这是 trigger 侧的最后一道。按 kind 只保留相关字段，非法值落
+ *  schema 默认（后续 validateCard 会对空 typeValue/null grade/死区间再拒）。min/max
+ *  钳 0-100 并换序（钳制哲学同 clampEffect：收敛而非作废，死区间仍由 validateCard 拒）。 */
+export function normalizeTrigger(raw: unknown): CardTrigger {
+  const t = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const kind = TRIGGER_KINDS.includes(t.kind as CardTrigger['kind']) ? (t.kind as CardTrigger['kind']) : 'type';
+  const base: CardTrigger = { kind, typeValue: '', grade: null, min: 0, max: 0, outcome: null };
+  switch (kind) {
+    case 'type':
+      base.typeValue = typeof t.typeValue === 'string' ? t.typeValue : '';
+      break;
+    case 'grade':
+      if (['conservative', 'balanced', 'bold'].includes(t.grade as string)) base.grade = t.grade as CardTrigger['grade'];
+      break;
+    case 'demand':
+    case 'roll': {
+      const clamp0100 = (v: unknown): number => {
+        if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
+        return Math.min(100, Math.max(0, Math.round(v)));
+      };
+      const min = clamp0100(t.min);
+      const max = clamp0100(t.max);
+      base.min = Math.min(min, max);
+      base.max = Math.max(min, max);
+      break;
+    }
+    case 'outcome':
+      if (['success', 'fail', 'crit_success', 'crit_fail'].includes(t.outcome as string))
+        base.outcome = t.outcome as CardTrigger['outcome'];
+      break;
+  }
+  return base;
+}
 
 /** 校验一张卡（AI 角色卡入库前）：字段缺失 / 枚举越界 / 数值超限 / 效果数超 3 /
  *  恒等转化 / 宽触发区间纯利好高星 → 拒绝并给错误。
@@ -215,8 +263,10 @@ const isAllPositiveNumeric = (effects: CardEffect[]): boolean =>
  *  枚举外的值会让下次加载的 GlobalSettings Zod 解析整体失败（扩展 init 崩）。 */
 export function validateCard(card: Card): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
-  if (!card.id) errors.push('缺少 id');
-  if (!card.name) errors.push('缺少名称');
+  // id/name 必须是字符串：这两字段会随卡定义持久化，Card schema 是 z.string()——
+  // 弱模型幻觉出数字/对象形态时真值检查放行，下次加载 GlobalSettings 解析整体失败（扩展 init 崩）
+  if (typeof card.id !== 'string' || !card.id) errors.push('缺少 id 或 id 非字符串');
+  if (typeof card.name !== 'string' || !card.name) errors.push('缺少名称或名称非字符串');
   if (!CARD_TYPES.includes(card.type)) errors.push(`类型非法：${String(card.type)}`);
   if (!CARD_STARS.includes(card.star)) errors.push(`星级非法：${String(card.star)}`);
   const trigger = card.trigger;
