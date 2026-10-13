@@ -13,6 +13,7 @@ import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensio
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
+import { resolveCount } from '@/core/resolve-count';
 import { equippedCardsPromptLine } from '@/core/cards-deck';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
 import { dedupOptions } from '@/core/option-dedup';
@@ -73,27 +74,9 @@ export const lastDedupReport = ref<
   | undefined
 >(undefined);
 
-/** 单次生成选项数硬上限：count_mode 是自由文本（UI 提示「如 4 或 3-6」），用户可能
- *  顺手填 99——上限防一次请求抽爆条目池/白耗 token。20 已远超面板可展示的舒适量。 */
-const RESOLVE_COUNT_MAX = 20;
-const RESOLVE_COUNT_DEFAULT = parseInt(GenerationSettings.parse({}).count_mode, 10) || 4;
-
-/** 解析 global_count_mode（自由文本「4」或「3-6」）：非法输入（非数字/0）此前产出 count=0
- *  → 池抽取为空、整趟请求照发后才报「未能解析出任何选项」，把配置问题误导成模型问题；
- *  区间 min>max（如 8-3）则乘负数得反直觉均匀分布。收敛在此规整：换序、非法/非正值
- *  回退 schema 默认、钳上限——调用方拿到的恒为 ≥1 的可用值。 */
-export const resolveCount = (cm: string): number => {
-  const s = cm.trim();
-  const rangeMatch = s.match(/^(\d+)\s*-\s*(\d+)$/);
-  if (rangeMatch) {
-    let min = parseInt(rangeMatch[1], 10);
-    let max = parseInt(rangeMatch[2], 10);
-    if (min > max) [min, max] = [max, min];
-    return Math.min(RESOLVE_COUNT_MAX, Math.max(1, min + Math.floor(Math.random() * (max - min + 1))));
-  }
-  const n = parseInt(s, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(RESOLVE_COUNT_MAX, n) : RESOLVE_COUNT_DEFAULT;
-};
+// resolveCount 抽到纯模块 @/core/resolve-count（可单测兜底）；此处 re-export 保
+// 持既有 import { resolveCount } from './generator' 调用点（enrich-input 等）零改动
+export { resolveCount };
 
 export { resolveCustomApi };
 
