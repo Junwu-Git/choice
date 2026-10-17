@@ -30,6 +30,9 @@ interface GfGameStateLike {
   currencyName?: unknown;
   tasks?: unknown;
   passiveStates?: unknown;
+  attributes?: unknown;
+  usedItems?: unknown;
+  recentPurchases?: unknown;
 }
 
 interface GfSettingsLike {
@@ -43,6 +46,22 @@ interface GfTaskShape {
   requirements?: unknown;
   status?: unknown;
   deadline?: unknown;
+}
+
+/** 背包/痕迹条目的防御性形状（pick 用） */
+interface GfRecordShape {
+  name?: unknown;
+  note?: unknown;
+  description?: unknown;
+}
+
+/** 身体改造属性的防御性形状（pick 用） */
+interface GfAttrShape {
+  target?: unknown;
+  name?: unknown;
+  value?: unknown;
+  unit?: unknown;
+  tiers?: unknown;
 }
 
 /** 宽松字段读取：类型对得上才返回，否则兜底 */
@@ -80,6 +99,20 @@ function deadlineTag(deadline: unknown, now: number): string {
   const remainMs = deadline - now;
   if (remainMs <= 0) return '[已逾期]';
   return `[剩余约${Math.max(1, Math.ceil(remainMs / 60000))}分钟]`;
+}
+
+/** 面板状态条用的紧凑快照（UI 展示，字段比 AI 面少而精） */
+export interface GfHudSnapshot {
+  systemName: string;
+  level: number;
+  currencyName: string;
+  points: number;
+  /** 进行中任务数（active） */
+  activeTasks: number;
+  /** 最近一个进行中任务标题（供 tooltip，无任务为 ''） */
+  firstTaskTitle: string;
+  /** 被动身心状态条目数 */
+  stateCount: number;
 }
 
 /**
@@ -140,12 +173,109 @@ export function readGoldenFingerSnapshot(): string | null {
       lines.push('宿主身心状态：', ...stateLines);
     }
 
+    // 身体改造数值属性（attribute 类物品使用后的持久改造）：选项的可行性/代价应与改造后
+    // 的身体相称（如「逃跑」对被改造束缚的宿主不再轻松）
+    const attrs = Array.isArray(game.attributes) ? game.attributes : [];
+    const attrLines = attrs
+      .slice(0, 8)
+      .map(a => {
+        if (!a || typeof a !== 'object') return '';
+        const attr = a as GfAttrShape;
+        const name = asString(attr.name).trim();
+        if (!name) return '';
+        const value = Math.floor(asNumber(attr.value));
+        const unit = asString(attr.unit).trim();
+        // tiers 存在时以 value 作下标取档位标签（镜像金手指 attrText 展示规则）
+        const tiers = Array.isArray(attr.tiers) ? attr.tiers.filter((t): t is string => typeof t === 'string') : [];
+        const label =
+          tiers.length > 0
+            ? (tiers[Math.min(Math.max(value, 0), tiers.length - 1)] ?? String(value))
+            : `${value}${unit}`;
+        const target = asString(attr.target).trim();
+        return `- ${target ? `${target}·` : ''}${name} ${label}`;
+      })
+      .filter(Boolean);
+    if (attrLines.length) {
+      lines.push('身体改造（持久，非状态）：', ...attrLines);
+    }
+
+    // 刚使用的物品（金手指本地结算的使用痕迹，正文 AI 正在被要求演出其效果）：
+    // 选项应避开与药效/变身进行中的行动直接冲突，或自然利用它
+    const used = Array.isArray(game.usedItems) ? game.usedItems : [];
+    const usedLines = used
+      .slice(0, 5)
+      .map(u => {
+        if (!u || typeof u !== 'object') return '';
+        const rec = u as GfRecordShape;
+        const name = asString(rec.name).trim();
+        if (!name) return '';
+        const note = asString(rec.note).trim();
+        return `- ${name}${note ? `：${note}` : ''}`;
+      })
+      .filter(Boolean);
+    if (usedLines.length) {
+      lines.push('宿主刚使用的物品（效果正在生效，剧情正在演出）：', ...usedLines);
+    }
+
+    // 最近购入（金手指商店刚买到、还没用的东西）：选项可让剧情自然呼应新入手的物件
+    const purchased = Array.isArray(game.recentPurchases) ? game.recentPurchases : [];
+    const purchaseLines = purchased
+      .slice(0, 5)
+      .map(p => {
+        if (!p || typeof p !== 'object') return '';
+        const rec = p as GfRecordShape;
+        const name = asString(rec.name).trim();
+        if (!name) return '';
+        // 购入记录的 note=商品说明；老字段兜底 description
+        const desc = asString(rec.note).trim() || asString(rec.description).trim();
+        return `- ${name}${desc ? `：${desc}` : ''}`;
+      })
+      .filter(Boolean);
+    if (purchaseLines.length) {
+      lines.push('宿主最近购入（尚未使用）：', ...purchaseLines);
+    }
+
     lines.push(
       '出选项时可让部分选项自然呼应上述任务或身心状态；无合适契机则照常，不必强凑，也不要在选项里提及「任务」「系统」等字眼。',
     );
     return lines.join('\n');
   } catch {
     // 桥接绝不能影响选项生成主链路
+    return null;
+  }
+}
+
+/**
+ * 面板状态条用的结构化快照（只读、fail-safe 同上）。null 语义与 AI 面一致：
+ * 未安装/总开关关/未绑定系统。任务/状态计数与 AI 面共用同一读取路径，口径不漂移。
+ */
+export function readGoldenFingerHud(): GfHudSnapshot | null {
+  try {
+    const gs = readGfSettings();
+    if (gs?.enabled === false) return null;
+    const game = readGfGameState();
+    if (!game) return null;
+    const systemId = asString(game.activeSystemId);
+    if (!systemId) return null;
+
+    const tasks = Array.isArray(game.tasks) ? game.tasks : [];
+    const active = tasks.filter(
+      t => t && typeof t === 'object' && (t as GfTaskShape).status === 'active',
+    ) as GfTaskShape[];
+    const states = Array.isArray(game.passiveStates) ? game.passiveStates : [];
+    return {
+      systemName: resolveSystemName(systemId),
+      level: Math.max(1, Math.floor(asNumber(game.level, 1))),
+      currencyName: asString(game.currencyName, '积分'),
+      points: asNumber(game.points),
+      activeTasks: active.length,
+      firstTaskTitle: asString(active[0]?.title).trim(),
+      stateCount: states.filter(s => {
+        if (!s || typeof s !== 'object') return false;
+        return asString((s as { name?: unknown }).name).trim() !== '';
+      }).length,
+    };
+  } catch {
     return null;
   }
 }

@@ -1073,7 +1073,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 74;
+export const SCHEMA_VERSION = 76;
 
 // ── 统计滑动窗口与建议引擎常量（单一事实来源，组件/统计核心共用）───────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1879,6 +1879,46 @@ export const GlobalSettings = z
     // api-client.ts 注释）。ST 后端仅在 tools 非空数组时才转发该字段，故它到不了上游，
     // 对生成行为与未启用此类脚本的场景完全无影响；不用 Kemini 类预设时保持默认开即可
     api_tool_choice_none: z.boolean().default(true),
+    // ── 提示词来源（选项生成 / 润色的上下文来源）────────
+    /**
+     * 'extension' = 用本扩展提示词模块（现状，默认）；'st_preset' = 借用酒馆当前
+     * Chat Completion 预设的提示词栈（prompts + prompt_order）作为叙事上下文来源。
+     * 预设模式下仍追加本扩展的任务模块（输出契约/条目池素材），缺了功能不成立。
+     * 老档由 default('extension') 补齐，无需 bump schema_version。
+     */
+    prompt_source: z.enum(['extension', 'st_preset']).default('extension').catch('extension'),
+    /** 预设名：'' = 跟随酒馆当前选中的预设；非空 = 固定用该预设。 */
+    st_preset_name: z.string().default(''),
+    /** 采样参数跟随预设（默认开）：temperature/top_p/惩罚项/max_tokens 取预设值覆盖副 API 配置；
+     *  关 = 用副 API 自己的采样参数（预设只提供提示词）。连接层（地址/密钥/模型）始终用副 API。 */
+    st_preset_sampling: z.boolean().default(true),
+    /** 提示词后处理跟随（默认开，仅预设模式生效）：custom_prompt_post_processing 按取值链解析
+     *  （SPreset ForcedPostProcessing → 预设顶层字段 → 酒馆实时设置）后透传给副 API 请求体，
+     *  由酒馆后端 /generate 统一执行；扩展模式不发送。老档由 default 补齐，无需 bump schema_version。 */
+    st_preset_post_processing: z.boolean().default(true),
+    /** 预设脚本层（默认关，仅预设模式生效）：off = 不触发任何脚本事件；prompt_ready = 仅广播
+     *  CHAT_COMPLETION_PROMPT_READY（aether 类提示词改写脚本生效，MVU/QR 等生命周期类不感知）；
+     *  tavern_helper = 经酒馆助手 generateRaw 管线发送（GENERATE_AFTER_DATA/SETTINGS_READY 等
+     *  载荷级脚本生效——SPreset 类；GENERATION_STARTED 层的入口条件/工具注册/输出侧不武装，
+     *  后处理与 SPreset 配置跟随酒馆当前选中预设）。老档由 default 补齐，无需 bump schema_version。 */
+    st_preset_script_processing: z.enum(['off', 'prompt_ready', 'tavern_helper']).default('off').catch('off'),
+    /**
+     * 预设条目覆盖层（键 = 条目 identifier）：在不改酒馆预设文件的前提下，对预设条目做
+     * 插件侧的禁用 / 内容覆盖。disabled=true 跳过该条目；content 存在（含空串）即替换
+     * 条目原内容。8 个原生 marker 槽位（chatHistory 等）由运行时填充，覆盖对它们无效。
+     * 原生条目 id（main/nsfw/jailbreak…）全预设通用，覆盖作用于所有含该 id 的预设；
+     * UUID 自定义条目天然只命中其所属预设。老档由 default({}) 补齐，无需 bump schema_version。
+     */
+    st_preset_overrides: z
+      .record(
+        z.string(),
+        z.object({
+          disabled: z.boolean().optional(),
+          content: z.string().optional(),
+        }),
+      )
+      .default({})
+      .catch({}),
     global_count_mode: z.string().default('4'),
     auto_generate: z.boolean().default(true),
     behavior: z.enum(['send', 'fill', 'append', 'insert']).default('send'),

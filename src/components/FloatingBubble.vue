@@ -104,7 +104,13 @@ const clearSuppressSelect = () => {
   for (const prop of SUPPRESS_SELECT_PROPS) document.body.style.removeProperty(prop);
 };
 
-const isGenerating = computed(() => generatorState.loading);
+const isGenerating = computed(() => {
+  // 生成态合并（共存协议，零硬依赖）：金手指在任务/商店生成时把 __gf_generating__
+  // 置 true（同款 window 键镜像），本球环脉动一并点亮——两个扩展共用一个球时
+  // 「正在生成」不能只看 option 侧。金手指未暴露时读 undefined，恒 false
+  const gfGenerating = (window as unknown as Record<string, unknown>)['__gf_generating__'] === true;
+  return generatorState.loading || gfGenerating;
+});
 
 // 紧凑小点样式（ui.bubble_style='compact'）：直径由 floating-state.bubbleSize 统一
 // 处理，这里只挂视觉类（内环保留度/呼吸节奏走本组件样式表）

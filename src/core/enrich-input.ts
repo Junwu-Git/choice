@@ -1,6 +1,7 @@
-import { callSecondaryApiWithRetry } from './api-client';
+import { callSecondaryApiWithRetry, type PresetScriptLayer, type SamplingOverride } from './api-client';
 import {
   buildMessages,
+  buildPresetModeMessages,
   resolveCustomApi,
   applyWIExcl,
   parseOptions,
@@ -8,7 +9,9 @@ import {
   resolveWIParticipation,
   runWIExclWindow,
 } from './generator';
-import type { Ctx } from './generator';
+import type { Ctx, PromptModule } from './generator';
+import { readActiveStPreset } from './st-preset-source';
+import { resolvePresetPostProcessing } from './st-preset-scripts';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
@@ -32,21 +35,33 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     throw new Error('未配置生成 API');
   }
 
-  const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
-  let modules = sourceModules;
+  const enrichCount = resolveCount(gs.settings.ui.enrich_count);
+  const pr = gs.settings.prompt_rules;
 
-  // 若 enrich_prompt 模块被禁用或不存在，从 DEFAULT_MODULES 临时注入其 JSON 默认内容。
-  // 不再用代码常量覆盖 content：JSON 是模块内容的单一事实源（choice-prompts-optimized.json），
-  // 代码常量会让此路径回退到早已演进的旧文案，与编辑器/生成链路出现双来源漂移
-  if (!modules.some(m => m.id === 'enrich_prompt')) {
-    const defaultEnrich = DEFAULT_MODULES.find(m => m.id === 'enrich_prompt');
-    if (defaultEnrich) {
-      modules = [...modules, { ...defaultEnrich }];
+  // 提示词来源与选项生成同口径：'st_preset' 时只用酒馆预设 + 内置润色任务指令
+  // （完全不读本扩展模块）；未找到预设时抛错由调用方提示，不静默降级
+  const presetMode = gs.settings.prompt_source === 'st_preset';
+  const presetSnapshot = presetMode ? readActiveStPreset(gs.settings.st_preset_name) : null;
+  if (presetMode && (!presetSnapshot || !presetSnapshot.prompts.length)) {
+    throw new Error('未找到可用的酒馆预设，请检查酒馆的 Chat Completion 预设，或改回本扩展提示词');
+  }
+
+  // 模块只在扩展模式参与（预设模式走内置任务指令）
+  let modules: PromptModule[] = [];
+  if (!presetSnapshot) {
+    const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
+    modules = sourceModules;
+    // 若 enrich_prompt 模块被禁用或不存在，从 DEFAULT_MODULES 临时注入其 JSON 默认内容。
+    // 不再用代码常量覆盖 content：JSON 是模块内容的单一事实源（choice-prompts-optimized.json），
+    // 代码常量会让此路径回退到早已演进的旧文案，与编辑器/生成链路出现双来源漂移
+    if (!modules.some(m => m.id === 'enrich_prompt')) {
+      const defaultEnrich = DEFAULT_MODULES.find(m => m.id === 'enrich_prompt');
+      if (defaultEnrich) {
+        modules = [...modules, { ...defaultEnrich }];
+      }
     }
   }
 
-  const enrichCount = resolveCount(gs.settings.ui.enrich_count);
-  const pr = gs.settings.prompt_rules;
   const enrichCtx: Ctx = {
     count: enrichCount,
     pinnedCount: 0,
@@ -79,18 +94,32 @@ export async function enrichUserInput(input: string): Promise<string[]> {
         ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
         : null;
       try {
-        return await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
+        return presetSnapshot
+          ? await buildPresetModeMessages(enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, presetSnapshot, true)
+          : await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
       } finally {
         restore?.restore();
       }
     });
 
+    const sampling: SamplingOverride | undefined =
+      presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined;
+    // 后处理透传与脚本层档位（仅预设模式；扩展模式恒不生效），与 generateOptions 同口径
+    const postProcessing =
+      presetSnapshot && gs.settings.st_preset_post_processing
+        ? resolvePresetPostProcessing(gs.settings.st_preset_name, presetSnapshot.postProcessing)
+        : undefined;
+    const scriptLayer: PresetScriptLayer = presetSnapshot ? gs.settings.st_preset_script_processing : 'off';
     const raw = await callSecondaryApiWithRetry(
       messages,
       api,
       gs.settings.retry_count,
       gs.settings.retry_interval,
       signal,
+      false,
+      sampling,
+      postProcessing,
+      scriptLayer,
     );
     return parseOptions(raw, enrichCount);
   } catch (e) {

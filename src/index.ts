@@ -3,6 +3,7 @@ import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
 import { initWandMenu } from '@/core/wand-menu';
+import { TAVERN_HELPER_GENERATION_ID_PREFIX } from '@/core/api-client';
 import {
   syncDiceContractPrompt,
   clearDiceTurnPrompt,
@@ -69,7 +70,13 @@ $(() => {
       },
     );
     eventSource.on(event_types.GENERATION_ENDED, clearDiceTurnPrompt);
-    eventSource.on(event_types.GENERATION_STOPPED, clearDiceTurnPrompt);
+    // GENERATION_STOPPED 过滤：酒馆主管线 emit 时不带参（script.js:5559），而酒馆助手
+    // stopGenerationById 带 generation id——本扩展 B 通路取消副请求时也走它，按
+    // choice- 前缀识别并跳过，防误清在飞主生成刚挂上的骰子回合槽
+    eventSource.on(event_types.GENERATION_STOPPED, (generationId?: unknown) => {
+      if (typeof generationId === 'string' && generationId.startsWith(TAVERN_HELPER_GENERATION_ID_PREFIX)) return;
+      clearDiceTurnPrompt();
+    });
     eventSource.on(event_types.MESSAGE_RECEIVED, clearDiceTurnPrompt);
     eventSource.on(event_types.MESSAGE_SENT, (chatId: number) => flushPendingTurnMarker(chatId));
   });

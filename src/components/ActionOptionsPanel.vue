@@ -20,6 +20,29 @@
           enrichGenerations.length
         }}</span>
       </span>
+      <!-- 金手指状态条（gf-bridge 共存感知，只读）：金手指在玩时显示等级/货币/任务/状态计数，
+           让「选项生成已感知金手指状态」对玩家可见；未安装/未绑定时整个 chip 不渲染。
+           点击直达金手指面板（window 钩子，未暴露时无 pointer 事件仅展示） -->
+      <span
+        v-if="gfHud"
+        class="choice-gf-hud"
+        :class="{ 'choice-gf-hud--clickable': gfClickable }"
+        :title="gfHudTitle"
+        @click.stop="onOpenGfPanel"
+      >
+        <i class="fa-solid fa-dice-d20 choice-gf-hud-icon"></i>
+        <span>Lv.{{ gfHud.level }}</span>
+        <span class="choice-gf-hud-sep">·</span>
+        <span>{{ gfHud.currencyName }}×{{ gfHud.points }}</span>
+        <template v-if="gfHud.activeTasks > 0">
+          <span class="choice-gf-hud-sep">·</span>
+          <span>{{ t`任务 ${gfHud.activeTasks}` }}</span>
+        </template>
+        <template v-if="gfHud.stateCount > 0">
+          <span class="choice-gf-hud-sep">·</span>
+          <span>{{ t`状态 ${gfHud.stateCount}` }}</span>
+        </template>
+      </span>
       <div class="choice-panel-tools" @click.stop>
         <!-- 润色视图：取消（loading）按钮 -->
         <button
@@ -281,6 +304,7 @@ import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice 
 import { applyOptionBehavior, isOptionApplyBusy, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { openCardPack } from '@/core/card-pack-state';
+import { readGoldenFingerHud, type GfHudSnapshot } from '@/core/gf-bridge';
 import { previewTriggeredCards, type CardResolution } from '@/core/cards';
 import { effectSummary } from '@/core/cards-meta';
 import type { Card } from '@/type/settings';
@@ -317,6 +341,65 @@ const {
 const isGenerating = computed(() => generatorState.loading);
 
 const gs = useGlobalSettingsStore();
+
+// ── 金手指状态条（gf-bridge 共存感知）────────────────────────────────────────────
+// 桥接是纯读取，无响应式源（chat_metadata 不被 Vue 追踪）：轮询刷新即可——面板本就随
+// 楼层/折叠反复重渲染，浅轮询 2s 只在值变化时触发更新，开销可忽略
+const gfHud = ref<GfHudSnapshot | null>(readGoldenFingerHud());
+let gfHudTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  gfHudTimer = setInterval(() => {
+    const next = readGoldenFingerHud();
+    const prev = gfHud.value;
+    // 浅比较防每 2s 无效重渲（六字段全等才跳过）
+    if (
+      next?.points !== prev?.points ||
+      next?.level !== prev?.level ||
+      next?.activeTasks !== prev?.activeTasks ||
+      next?.stateCount !== prev?.stateCount ||
+      next?.currencyName !== prev?.currencyName ||
+      next?.systemName !== prev?.systemName ||
+      next?.firstTaskTitle !== prev?.firstTaskTitle
+    ) {
+      gfHud.value = next;
+    }
+  }, 2000);
+});
+onUnmounted(() => {
+  if (gfHudTimer !== null) clearInterval(gfHudTimer);
+});
+
+const gfHudTitle = computed(() => {
+  const hud = gfHud.value;
+  if (!hud) return '';
+  const parts = [
+    hud.systemName ? t`金手指「${hud.systemName}」` : t`金手指系统`,
+    t`等级 ${hud.level}`,
+    `${hud.currencyName}×${hud.points}`,
+  ];
+  if (hud.firstTaskTitle) {
+    parts.push(t`进行中：${hud.firstTaskTitle}`);
+  } else {
+    parts.push(t`暂无进行中任务`);
+  }
+  if (hud.stateCount > 0) {
+    parts.push(t`身心状态 ${hud.stateCount} 项`);
+  }
+  return parts.join('｜');
+});
+
+// 点击状态条直达金手指面板：金手指暴露 window 钩子（__gf_open_panel__，共存协议）
+// 才可点开；未暴露（旧版/未装）时 chip 仅展示，无 hover 手型
+const gfClickable = ref(false);
+onMounted(() => {
+  gfClickable.value = typeof (window as unknown as Record<string, unknown>)['__gf_open_panel__'] === 'function';
+});
+const onOpenGfPanel = () => {
+  const raw = (window as unknown as Record<string, unknown>)['__gf_open_panel__'];
+  if (typeof raw === 'function') {
+    (raw as () => void)();
+  }
+};
 
 // ── 调整模式（组件内存态，不持久化）─────────────────────────────────────────────
 // 标题栏「调整」按钮进入：选项与行为栏禁用、仅显示字号档与高度拖动条，退出即恢复。
@@ -978,6 +1061,52 @@ const onReroll = (option: ChoiceOption, index: number) => {
   display: inline-flex;
   align-items: center;
   gap: var(--choice-space-2);
+}
+
+/* ===== 金手指状态条（gf-bridge 共存感知，只读）=====
+   挤在标题与工具区之间，flex:1 占中段富余宽、min-width:0 溢出省略——
+   窄面板（手机 dense）时优先保住标题与工具按钮，chip 自己截断 */
+.choice-gf-hud {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: center;
+  margin-left: var(--choice-space-2);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: var(--choice-text-xs);
+  line-height: 1.5;
+  color: var(--choice-text-secondary);
+  background: color-mix(in srgb, var(--choice-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--choice-primary) 25%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 钩子存在（金手指新版）才给手型与悬停增强：仅展示时保持静态徽章语义。
+   钩子探测走 CSS 不行，由组件在 mounted 后给容器挂 gf-hud--clickable 类 */
+.choice-gf-hud.choice-gf-hud--clickable {
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .choice-gf-hud.choice-gf-hud--clickable:hover {
+    color: var(--choice-text);
+    background: color-mix(in srgb, var(--choice-primary) 14%, transparent);
+  }
+}
+
+.choice-gf-hud-icon {
+  color: var(--choice-primary);
+  font-size: calc(var(--choice-text-xs) * 0.9);
+  flex-shrink: 0;
+}
+
+.choice-gf-hud-sep {
+  opacity: 0.5;
 }
 
 .choice-panel-tools {

@@ -15,9 +15,18 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
 import { resolveCount } from '@/core/resolve-count';
 import { equippedCardsPromptLine } from '@/core/cards-deck';
-import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
+import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg, type PresetScriptLayer } from '@/core/api-client';
+import { resolvePresetPostProcessing } from '@/core/st-preset-scripts';
+import {
+  buildPresetMessages as expandPresetMessages,
+  type InChatInjection,
+  type PresetSlotContents,
+} from '@/core/preset-messages';
+import { renderPresetTask, renderBaiBaiSummaryContent } from '@/core/preset-task';
+import { readActiveStPreset, type StPresetSnapshot } from '@/core/st-preset-source';
 import { dedupOptions } from '@/core/option-dedup';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
+import { parseOptions } from '@/core/option-parse';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
 import { getShujukuTargetBook } from '@/core/shujuku-bridge';
 import { readGoldenFingerSnapshot } from '@/core/gf-bridge';
@@ -44,6 +53,8 @@ import type {
   WorldInfoGlobalSettings,
 } from '@/type/settings';
 import { DEFAULT_MODULES, GenerationSettings, OPTION_MATCH_THRESHOLD } from '@/type/settings';
+// re-export 供润色链路复用（enrich-input 不重复 import 类型来源）
+export type { PromptModule };
 
 type GenerateTarget = { messageId: number; swipeId: number };
 
@@ -242,10 +253,8 @@ export const buildMessages = async (
         if (!gs.settings.prompt_rules.baibai_enabled) break;
         const text = getBaiBaiSummary();
         if (text) {
-          msgs.push({
-            role: 'system',
-            content: `<baibai_summary>\n以下为记忆系统对已发生剧情的压缩摘要，记录的是已离开当前上下文窗口、不再直接可见的历史角色扮演事件。仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_summary>`,
-          });
+          // 包装文案单一来源在 preset-task.ts（预设模式附加消息共用，防两处漂移）
+          msgs.push({ role: 'system', content: renderBaiBaiSummaryContent(text) });
         }
         break;
       }
@@ -278,6 +287,122 @@ export const buildMessages = async (
   // 同为 user 时会把「生成任务」混进历史正文——user 角色消息在提示词里代表独立的输入
   // 边界，合并会模糊"这是用户说的话"还是"这是任务指令"；system/assistant 相邻（多为
   // 内置模块拼接）仍合并以减少首尾噪音
+  const merged: ChatMsg[] = [];
+  for (const msg of msgs) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === msg.role && msg.role !== 'user') {
+      last.content = last.content + '\n\n' + msg.content;
+    } else {
+      merged.push({ ...msg });
+    }
+  }
+  lastBuildMessages.value = structuredClone(merged);
+  return merged;
+};
+
+/** 预设模式下由本扩展承担的槽位内容：预设决定"这些资料放在哪、什么顺序"，
+ *  内容由本扩展按当前场景实时取（与酒馆主生成同源：世界书/历史/角色卡/persona）。 */
+const buildPresetSlots = async (
+  wi: WorldInfoGlobalSettings,
+  contextRounds: number,
+): Promise<{ slots: PresetSlotContents; depthInjections: InChatInjection[] }> => {
+  const wiBuckets = wi.enabled ? await buildWI() : null;
+  const ch = getStCharacter(this_chid);
+  const fields = readCharacterFields(ch);
+  const personaDesc = power_user?.persona_description ?? '';
+  // 示例对话：角色卡 mes_example 按 <START> 切分为多段示例，与酒馆 dialogueExamples 槽位同源。
+  // 内容为空时槽位整体不产生消息（由 buildPresetMessages 的 pushContent 兜底）。
+  const rawExamples = String((ch as { mes_example?: string } | undefined)?.mes_example ?? '');
+  const examples = rawExamples
+    .split(/<START>/i)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .join('\n\n');
+  // 世界书深度条目（atDepth）没有对应的预设槽位——预设只声明 before/after 两处。
+  // 不额外注入会让用户在「世界书」页配置的深度条目在预设模式下静默消失，
+  // 故按现有分桶（D0-D2 贴近生成点 / D3+ 靠前）作为额外深度注入补进历史块。
+  const depthInjections: InChatInjection[] = [];
+  if (wiBuckets?.depthAfter) {
+    depthInjections.push({ depth: 0, order: 100, role: 'system', content: wiBuckets.depthAfter });
+  }
+  if (wiBuckets?.depthBefore) {
+    depthInjections.push({ depth: 4, order: 100, role: 'system', content: wiBuckets.depthBefore });
+  }
+  return {
+    slots: {
+      worldInfoBefore: wiBuckets
+        ? [wiBuckets.before, wiBuckets.anBefore, wiBuckets.em].filter(Boolean).join('\n\n')
+        : '',
+      worldInfoAfter: wiBuckets ? [wiBuckets.after, wiBuckets.anAfter].filter(Boolean).join('\n\n') : '',
+      // 槽位内容不做宏替换：统一由 expandPresetMessages 的 substitute 处理（含预设自定义条目的宏），
+      // 此处再替换一次会让含 {{...}} 字面量的角色描述被二次解释
+      charDescription: fields.description ?? '',
+      charPersonality: fields.personality ?? '',
+      scenario: fields.scenario ?? '',
+      personaDescription: personaDesc,
+      dialogueExamples: examples,
+      // 预设模式的历史不包 <current_scene>：预设里可能已有自己的场景锚定条目，
+      // 再包一层会与预设风格冲突；当前场景由任务模块的说明行声明
+      chatHistory: buildChatHistory(contextRounds, false),
+    },
+    depthInjections,
+  };
+};
+
+/** 预设模式的任务区起手说明：压制预设"续写正文/扮演角色"的定位与本轮任务的冲突。 */
+const PRESET_TASK_BRIDGE = `【本轮任务说明】以上是本次会话的背景资料与写作规则，请全部作为参考吸收；但本轮不续写正文、不扮演角色。本轮的具体任务与输出格式以下方内容为准（当前场景即最后一条对话消息）。`;
+
+/** 预设模式的组装：**只用酒馆预设 + 内置任务指令，完全不读本扩展的提示词模块**。
+ *  预设提供叙事上下文（世界观/文风/角色扮演规则），本扩展只补一份自包含的任务契约
+ *  （输出格式 <options> JSON、防全知、难度标注、条目池素材）——二者职责分离、互不糅合。
+ *  任务指令是内置常量（preset-task.ts），与用户的模块配置彻底解耦：预设模式下改提示词页
+ *  的模块不产生任何效果（UI 已明示），这是刻意的设计而非缺陷。 */
+export const buildPresetModeMessages = async (
+  ctx: Ctx,
+  wi: WorldInfoGlobalSettings,
+  contextRounds: number,
+  preset: StPresetSnapshot,
+  isEnrich = false,
+): Promise<ChatMsg[]> => {
+  const { slots, depthInjections } = await buildPresetSlots(wi, contextRounds);
+  const gs = useGlobalSettingsStore();
+  const pr = gs.settings.prompt_rules;
+  const presetMsgs = expandPresetMessages(preset, slots, {
+    generationType: 'normal',
+    substitute: text => substituteParams(text),
+    extraInjections: depthInjections,
+    // 插件侧覆盖层：不改酒馆预设文件的前提下禁用/替换预设条目（PromptEditor「预设条目」区块）
+    overrides: gs.settings.st_preset_overrides,
+  });
+  const msgs: ChatMsg[] = [...presetMsgs];
+
+  // 柏宝书记忆（预设模式补缺）：柏宝书扩展的摘要是注入酒馆正文管线的（setExtensionPrompt），
+  // 本扩展副 API 直连看不到那条通道——预设模式又不读模块管线，不开此口柏宝书记忆会静默缺席。
+  // 与扩展模式的 baibai_summary 模块同源同包装（preset-task.ts 单一来源），位置在预设内容之后、
+  // 任务起手说明之前：BRIDGE 的「以上是背景资料」把摘要一并涵盖。
+  if (pr.baibai_enabled) {
+    const summary = getBaiBaiSummary();
+    if (summary) msgs.push({ role: 'system', content: renderBaiBaiSummaryContent(summary) });
+  }
+
+  // 任务区起手说明（紧跟预设内容，声明本轮性质）——压制预设"续写正文/扮演角色"的定位冲突
+  if (presetMsgs.length) msgs.push({ role: 'system', content: PRESET_TASK_BRIDGE });
+
+  // 内置任务指令（system 规则 + user 素材，口径与插件模块管线无关）
+  const task = renderPresetTask(isEnrich ? 'enrich' : 'option', {
+    count: ctx.count,
+    pinned: ctx.pinned,
+    poolSelected: ctx.poolSelected,
+    input: ctx.input,
+    minChars: isEnrich ? pr.enrich_min_chars : pr.option_min_chars,
+    maxChars: isEnrich ? pr.enrich_max_chars : pr.option_max_chars,
+    optionPerson: pr.option_person || '第三人称',
+    enrichPerson: pr.enrich_person || '第三人称',
+  });
+  msgs.push({ role: 'system', content: task.system });
+  msgs.push({ role: 'user', content: task.user });
+
+  // 合并相邻同 role 消息（user 不合并，理由同 buildMessages）
   const merged: ChatMsg[] = [];
   for (const msg of msgs) {
     const last = merged[merged.length - 1];
@@ -691,220 +816,10 @@ export async function runWIExclWindow<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
-/** 思维链标签块剥离正则：parseOptions 共用。
- *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
- *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-const STRIP_REASONING_TAGS_RE =
-  /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
-
-/** 标签堆叠间隙判定：标题括号闭合后到同一下一个括号之间，仅含空白和/或 emoji 才算堆叠。
- *  输出契约是 "[标题]emoji 内容"，emoji 紧跟标题括号，AI 无视禁令在正文开头再加场景头
- *  括号时间隙就是"emoji+空白"（实测："[回溯闪回]🎞️ [记忆片段·三年前] 正文"曾被切成
- *  "[回溯闪回]🎞️" 和 "[记忆片段·三年前] 正文" 两条）。emoji 用 Unicode
- *  Extended_Pictographic 属性类 + 变体选择符/ZWJ/肤色修饰符，不枚举具体 emoji 码位
- *  （新 emoji 不断新增，枚举必漏）。修饰符不写成字符类 [\uFE0F\u200D…]*：字符类按码位
- *  逐一匹配，组合序列（旗子成对 Regional Indicator、修饰符必须紧跟基字符）会被错误放行，
- *  no-misleading-character-class 正是拦这个误用——修饰符只能紧跟 emoji，故用非捕获组
- *  列举修饰符码位（肤色五个码位用 \p{Emoji_Modifier} 涵盖，与 1F3FB-1F3FF 精确等价）。
- *  不用 v flag 字符类集合语法：ES2024，移动端 WebView 内核滞后不兼容。关键取舍：间隙里
- *  出现任何正文文字仍判为新选项——AI 把两条选项挤在一行（"[A]内容A [B]内容B"）必须
- *  拆开，区分依据是位置：场景头只会出现在任何正文之前（紧跟标题的 emoji 是格式的一部分），
- *  正文都写完了才出现的括号只可能是下一条选项的标题，哪怕内容以 emoji 收尾
- *  （"内容A🎞️ [B]…"）也按新选项拆 */
-const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200D|\u20E3|\p{Emoji_Modifier})*)*$/u;
-
-/** 字符串感知的尾随逗号清理：跳过引号区间，仅删除引号外 `,`+空白+`]`/`}` 处的逗号。
- *  不能用全局正则 `,(\s*[\]}])` 替换——它会命中字符串值内部的 ",]"/",}" 字面量，
- *  静默篡改选项正文（如列举示例"苹果,橘子]"）。 */
-const stripTrailingCommas = (s: string): string => {
-  let out = '';
-  let inStr = false;
-  let esc = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (inStr) {
-      out += ch;
-      if (esc) esc = false;
-      else if (ch === '\\') esc = true;
-      else if (ch === '"') inStr = false;
-      continue;
-    }
-    if (ch === '"') {
-      inStr = true;
-      out += ch;
-      continue;
-    }
-    if (ch === ',') {
-      let k = i + 1;
-      while (k < s.length && (s[k] === ' ' || s[k] === '\t' || s[k] === '\n' || s[k] === '\r')) k++;
-      if (s[k] === ']' || s[k] === '}') continue;
-    }
-    out += ch;
-  }
-  return out;
-};
-
-/** 尝试把 `<options>` 块文本当 JSON 数组解析（主路径；解析失败走括号回退）。
- *  返回解析出的选项字符串数组，或 null（非数组 / 解析失败 / 解析后全空）。
- *  兼容多种元素形态：{title,content}、纯字符串、{text}、{option}、{t,c}、{type,content}。
- *  有 title 时重建为 `[title]content`（title 可带 |档位|需求值 标注，供骰子/档位消费）；
- *  内容含 []/【】/换行等任意字符都在 content 字符串里、依赖下游 ^ 锚定解析当内容处理，不切分。
- *  纯提取自 parseOptions 的 JSON 分支，便于复用与单测 */
-const parseJsonOptionArray = (c: string): string[] | null => {
-  try {
-    // 处理 JSON 尾随逗号（LLM 常见错误）：复用条目池路径的字符串感知版本——全局正则
-    // `,(\s*[\]}])` 会命中字符串值内部的 ",]"/",}" 字面量，静默篡改选项正文
-    const p = JSON.parse(stripTrailingCommas(c));
-    if (!Array.isArray(p)) return null;
-    const items = p
-      .map(x => {
-        if (typeof x === 'string') return x.trim();
-        const title = typeof x?.title === 'string' ? x.title.trim() : '';
-        const body =
-          (typeof x?.content === 'string' ? x.content.trim() : null) ??
-          (typeof x?.text === 'string' ? x.text.trim() : null) ??
-          '';
-        if (title) return body ? `[${title}]${body}` : `[${title}]`;
-        // 无 title 但带 type（弱模型把方向词放进 type 字段）：映射成 [type]正文——与
-        // {title,content} 同构（本契约里括号标题就是类型词）。旧的 `${type}: ${content}`
-        // 模板分支对字符串 content 永不可达（body 已先行消费 content），类型信息丢失、
-        // 归因的前缀匹配随之失效
-        const typeAsTitle = typeof x?.type === 'string' ? x.type.trim() : '';
-        if (typeAsTitle) return body ? `[${typeAsTitle}]${body}` : `[${typeAsTitle}]`;
-        return (
-          // 无 title 时回退链先查 body（已从 x.content 算出）：漏查会让
-          // [{"content":"正文"}]（弱模型漏 title 字段，常见）被静默丢弃，
-          // 与 {"text":"正文"} 可保留不对称——选项凭空变少且无提示。
-          // body 为空串时继续回退（content:'' + text:'备用' 不应丢备用）
-          (body || null) ??
-          x?.text?.trim() ??
-          x?.option?.trim() ??
-          // ?? 右侧用 undefined 而非 ''，确保 '' 假值时链继续回退
-          (x?.t && x?.c ? `${x.t}: ${x.c}` : undefined)
-        );
-      })
-      .filter(Boolean);
-    return items.length ? items : null;
-  } catch {
-    /* not JSON */
-    return null;
-  }
-};
-
-export function parseOptions(text: string, count: number): string[] {
-  // 找到最后一个思维链闭合标签，丢弃它之前的所有内容
-  // 原因：AI 可能在思维链中以文本形式提到 <options>（如"格式：<options> 标签内..."），
-  // 直接在原始文本中 matchAll <options> 会误匹配到这些文本引用，导致提取错误
-  const closeTagRe = /<\/(?:think(?:ing)?|reasoning|thought)>/gi;
-  const closeMatches = [...text.matchAll(closeTagRe)];
-  let c: string;
-
-  if (closeMatches.length > 0) {
-    const lastClose = closeMatches[closeMatches.length - 1];
-    c = text.slice(lastClose.index! + lastClose[0].length).trim();
-  } else {
-    // 没有思维链闭合标签，剥离配对的思维链标签后使用全文
-    c = text.replace(STRIP_REASONING_TAGS_RE, '').trim();
-  }
-
-  // 从剩余文本中提取 <options> 块
-  const m = c.match(/<options>([\s\S]*?)<\/options>/i);
-  if (m) {
-    c = m[1].trim();
-  } else {
-    const openTagIdx = c.search(/<options>/i);
-    if (openTagIdx !== -1) {
-      c = c.slice(openTagIdx + '<options>'.length).trim();
-    }
-  }
-
-  // 剥离 markdown 代码块（LLM 可能输出 ```json...```）
-  c = c
-    .replace(/^```[a-zA-Z]*\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim();
-
-  // 主路径：JSON 数组（prompt 契约要求）。AI 输出以 `[` 开头即优先按 JSON 解析；
-  // 结构读出内容（含 []/【】/换行都安全）。解析失败落到下面的括号回退。
-  if (c.startsWith('[')) {
-    const jsonParsed = parseJsonOptionArray(c);
-    if (jsonParsed) return jsonParsed.slice(0, count);
-  }
-
-  // 回退路径（非 JSON 产出者，如旧提示词快照/老模型）：【】或 [] 格式——标题用【】或 []
-  // 包裹，后续文本为内容，跨行自动合并。此路径下内容里再出现 []/【】仍可能被切（接受范围，
-  // 历史上为兼容 run-on 与 【标题】 容错而保留）。边界判定按提示词契约"每条选项独占一行"
-  // 做行锚定：只有行首（间隙含换行或正文）的
-  // 括号才开启新选项。同一行内紧邻/仅隔空白或 emoji 的连续括号是"标签堆叠"（如
-  // "[回溯闪回]🎞️ [记忆片段·三年前] 正文"、"[回溯闪回]【三年前·初二暑假】正文"），
-  // 必须并入同一条——AI 常无视禁令在正文里用【】/[]写场景头，若把每个括号都当边界，
-  // 一条选项会被切成 "[标签]" 和 "[场景头]正文" 两条（实测发生过，emoji 变体亦然）。
-  // 间隙含正文文字则仍拆分（AI 挤行的两条选项），见 TAG_STACK_GAP_RE 注释
-  const bracketTitleRe = /[[【]([^\]】]+?)[\]】]\s*/g;
-  const bracketMatches = [...c.matchAll(bracketTitleRe)];
-  if (bracketMatches.length > 0) {
-    const result: string[] = [];
-    // 上一个匹配里闭合括号之后的位置。match[0] 末尾的 \s* 会吞掉行尾换行，
-    // 必须用 trimEnd 去掉后计算，否则换行被吞、无法判断下个括号是否在行首
-    let prevCloseEnd = 0;
-    // 最后一条已入列选项的括号起始位置：堆叠合并时从它整体重切片。不能用
-    // "result[last] += gap + option" 拼接——那是纯空白间隙时代的写法，依赖"option 尾部被
-    // trim 掉的空白恰好等于 gap"才不出错；emoji 间隙下 option 尾部带着 emoji、gap 又拼一遍，
-    // 会产出 "[回溯闪回]🎞️🎞️ …" 这种 emoji 重复（实测发生过）
-    let lastOptStart = 0;
-    for (let i = 0; i < bracketMatches.length; i++) {
-      const m = bracketMatches[i];
-      const start = m.index!;
-      const end = i + 1 < bracketMatches.length ? bracketMatches[i + 1].index! : c.length;
-      const option = c.slice(start, end).replace(/\r?\n/g, '').trim();
-      // 间隙 = 上个闭合括号到本括号开头之间的文本。空白/emoji（含空串）→
-      // 同一行标签堆叠，并入上一条；含换行或正文 → 新选项（保持既有跨行行为）
-      const gap = c.slice(prevCloseEnd, start);
-      const isTagStack = TAG_STACK_GAP_RE.test(gap);
-      if (i > 0 && isTagStack && result.length > 0) {
-        result[result.length - 1] = c.slice(lastOptStart, end).replace(/\r?\n/g, '').trim();
-      } else if (option) {
-        result.push(option);
-        lastOptStart = start;
-      }
-      prevCloseEnd = start + m[0].trimEnd().length;
-    }
-    return result.slice(0, count);
-  }
-
-  // 回退：旧格式 "标题: 内容"，按行解析
-  // 先按换行分割，再在每行内按 "标题: 内容" 模式拆分，处理模型将多个选项写在同一行的情况
-  const lines = c
-    .split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l.length > 0 && !/^<\/?\w+>$/i.test(l));
-  // 标题格式：2-5 个汉字后跟 ": " 或 "： "（\s* 兼容零空格/双空格/制表符等容错）
-  const titleRe = /([\u4e00-\u9fff]{2,5})[:：]\s*/g;
-  // 行首 emoji 判定：v23 放开"内容开头可带 emoji"后，模型偶尔违规输出无 [标题] 的
-  // emoji 行（如 "😏 提醒她：该吃饭了"）——"提醒她"命中 titleRe 会被误拆成两条。
-  // 行首为 emoji 时整行保留，跳过标题拆分（纯容错，正常 "[标题]emoji 内容" 走主路径）
-  const leadingEmojiRe = /^\p{Extended_Pictographic}/u;
-  const result: string[] = [];
-  for (const line of lines) {
-    if (leadingEmojiRe.test(line)) {
-      result.push(line);
-      continue;
-    }
-    // 用 matchAll 获取所有标题匹配位置，按相邻匹配区间切片
-    // 替换原有的 lastIdx 算法，解决第一个标题在 index 0 时后续选项丢失的 bug
-    const matches = [...line.matchAll(titleRe)];
-    if (matches.length === 0) {
-      result.push(line);
-      continue;
-    }
-    for (let i = 0; i < matches.length; i++) {
-      const start = matches[i].index!;
-      const end = i + 1 < matches.length ? matches[i + 1].index! : line.length;
-      result.push(line.slice(start, end).trim());
-    }
-  }
-  return result.slice(0, count);
-}
+/** parseOptions 已整体迁至 @/core/option-parse（纯函数、可单测）——此处 re-export 保持
+ *  既有 import 点（enrich-input 等）零改动。迁移动机：提取起点出过实测事故，必须有
+ *  vitest 覆盖，而 generator 依赖酒馆运行时无法直接单测。 */
+export { parseOptions };
 
 // 该配置的规则/示例自由文本：用户自行书写、无固定结构、不加任何标签，AI 原样读取。
 // 空串返回 ''（不注入，通用行为零变化）；非空时由调用方原样拼到候选条目之后。
@@ -1013,13 +928,31 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     };
     const rules = gs.settings.prompt_rules;
 
-    let enabledModules = gs.sortedEnabledModules.filter(m => !m.enrich_only);
-    // 全禁用兜底：静默回退全量默认模块——用户「全部关闭」的意图被无声推翻，至少明示。
-    // 不改为「发空提示词」：那只会产出更离谱的回复且浪费一次请求。
-    if (!enabledModules || enabledModules.length === 0) {
-      toastr.warning(t`提示词模块已全部禁用，本次按默认模块生成`);
-      enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
+    // 提示词来源（prompt_source）：'extension' = 本扩展模块管线（现状）；'st_preset' = 只用
+    // 酒馆 CC 预设 + 内置任务指令（完全不读本扩展模块）。两条路径共用同一 WI 窗口——
+    // 预设的 worldInfoBefore/After 槽位同样要按本扩展的参与范围扫描世界书
+    const presetMode = gs.settings.prompt_source === 'st_preset';
+    let presetSnapshot: StPresetSnapshot | null = null;
+    if (presetMode) {
+      presetSnapshot = readActiveStPreset(gs.settings.st_preset_name);
+      if (!presetSnapshot || !presetSnapshot.prompts.length) {
+        toastr.error(t`未找到可用的酒馆预设，请检查酒馆的 Chat Completion 预设，或改回本扩展提示词`);
+        return null;
+      }
     }
+
+    // 模块管线只在扩展模式参与：预设模式不读模块，故不计算、也不弹「全禁用」提示
+    let enabledModules: PromptModule[] = [];
+    if (!presetSnapshot) {
+      enabledModules = gs.sortedEnabledModules.filter(m => !m.enrich_only);
+      // 全禁用兜底：静默回退全量默认模块——用户「全部关闭」的意图被无声推翻，至少明示。
+      // 不改为「发空提示词」：那只会产出更离谱的回复且浪费一次请求。
+      if (!enabledModules || enabledModules.length === 0) {
+        toastr.warning(t`提示词模块已全部禁用，本次按默认模块生成`);
+        enabledModules = [...DEFAULT_MODULES].filter(m => !m.enrich_only).sort((a, b) => a.order - b.order);
+      }
+    }
+
     // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
     // 副 API 直连不再读——构建完成立即还原，不再持有到请求结束。此前 applyWIExcl 悬在 try 外
     // （抛错绕过 finally、loading 永久卡死），且排他态持有整个生成期（酒馆 WI 面板读到临时改写态）
@@ -1029,7 +962,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
         : null;
       try {
-        return await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+        return presetSnapshot
+          ? await buildPresetModeMessages(c, gwi, rules.context_rounds, presetSnapshot)
+          : await buildMessages(enabledModules, c, gwi, rules.context_rounds);
       } finally {
         wiRestore?.restore();
       }
@@ -1085,6 +1020,16 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       return null;
     }
 
+    // 预设采样跟随（st_preset_sampling）：只覆盖采样项，连接层仍用副 API 配置
+    const sampling = presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined;
+    // 提示词后处理透传（取值链：SPreset ForcedPostProcessing → 预设顶层 → 酒馆实时）
+    // 与脚本层档位——仅预设模式；扩展模式两者恒不生效
+    const postProcessing =
+      presetSnapshot && gs.settings.st_preset_post_processing
+        ? resolvePresetPostProcessing(gs.settings.st_preset_name, presetSnapshot.postProcessing)
+        : undefined;
+    const scriptLayer: PresetScriptLayer = presetSnapshot ? gs.settings.st_preset_script_processing : 'off';
+
     // 取消早退：构建完成后、发请求前再查一次（controller 已在入口创建，abort 已生效）
     if (cancelled) return null;
 
@@ -1094,6 +1039,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       gs.settings.retry_count,
       gs.settings.retry_interval,
       signal,
+      false,
+      sampling,
+      postProcessing,
+      scriptLayer,
     );
     if (cancelled) return null;
     const parsed = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
@@ -1143,6 +1092,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
           gs.settings.retry_count,
           gs.settings.retry_interval,
           signal,
+          false,
+          sampling,
+          postProcessing,
+          scriptLayer,
         );
         if (cancelled) return null;
         const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
