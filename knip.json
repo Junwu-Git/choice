@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/index.ts"],
   "project": ["src/**/*.{ts,vue}"],
-  // 模块内自用的语义导出（如 dice.ts 的 marginDegree/DEGREE_*、cards.ts 的 matchTrigger 等）
+  // 模块内自用的语义导出（如 dice.ts 的 marginDegree/DEGREE_* 等）
   // 不报「未使用导出」：它们刻意 export 保持单一事实源边界，仅在定义文件内消费
   "ignoreExportsUsedInFile": true,
   "ignoreDependencies": [

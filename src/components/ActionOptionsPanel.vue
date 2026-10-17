@@ -20,29 +20,6 @@
           enrichGenerations.length
         }}</span>
       </span>
-      <!-- 金手指状态条（gf-bridge 共存感知，只读）：金手指在玩时显示等级/货币/任务/状态计数，
-           让「选项生成已感知金手指状态」对玩家可见；未安装/未绑定时整个 chip 不渲染。
-           点击直达金手指面板（window 钩子，未暴露时无 pointer 事件仅展示） -->
-      <span
-        v-if="gfHud"
-        class="choice-gf-hud"
-        :class="{ 'choice-gf-hud--clickable': gfClickable }"
-        :title="gfHudTitle"
-        @click.stop="onOpenGfPanel"
-      >
-        <i class="fa-solid fa-dice-d20 choice-gf-hud-icon"></i>
-        <span>Lv.{{ gfHud.level }}</span>
-        <span class="choice-gf-hud-sep">·</span>
-        <span>{{ gfHud.currencyName }}×{{ gfHud.points }}</span>
-        <template v-if="gfHud.activeTasks > 0">
-          <span class="choice-gf-hud-sep">·</span>
-          <span>{{ t`任务 ${gfHud.activeTasks}` }}</span>
-        </template>
-        <template v-if="gfHud.stateCount > 0">
-          <span class="choice-gf-hud-sep">·</span>
-          <span>{{ t`状态 ${gfHud.stateCount}` }}</span>
-        </template>
-      </span>
       <div class="choice-panel-tools" @click.stop>
         <!-- 润色视图：取消（loading）按钮 -->
         <button
@@ -225,31 +202,9 @@
           >
           <span class="choice-option-content"
             >{{ parseOptionContent(option.text)
-            }}<template v-if="!rollOf(index) && previewOf(index).length"
-              ><span class="choice-card-tag-row"
-                ><span
-                  v-for="pc in previewOf(index)"
-                  :key="pc.id"
-                  class="choice-card-tag choice-card-tag--preview"
-                  :class="`choice-card-star--${pc.star}`"
-                  :title="`${pc.name}：${t`判定可触发`} · ${pc.effects.map(effectSummary).join('·')}`"
-                  ><i class="fa-solid fa-bolt"></i>{{ pc.name }}</span
-                ></span
-              ></template
-            ><i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
-              rollChipText(rollOf(index)!) + brokenText(rollOf(index)!)
+            }}<i v-if="rollOf(index)" class="choice-roll-chip" :class="`choice-roll-chip--${rollOf(index)!.outcome}`">{{
+              rollChipText(rollOf(index)!)
             }}</i
-            ><template v-if="rollOf(index)?.cards?.triggered?.length"
-              ><span class="choice-card-tag-row"
-                ><span
-                  v-for="tc in rollOf(index)!.cards!.triggered"
-                  :key="tc.card.id"
-                  class="choice-card-tag"
-                  :class="`choice-card-star--${tc.card.star}`"
-                  :title="`${tc.card.name}：${tc.summary}`"
-                  ><i class="fa-solid fa-id-badge"></i>{{ tc.card.name }}</span
-                ></span
-              ></template
             ><span
               v-if="isPending(index)"
               class="choice-roll-reroll"
@@ -292,7 +247,7 @@
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { cancelEnrich } from '@/core/enrich-input';
-import { storeGeneration, isCardSettled, cardSettleEpoch } from '@/core/options-store';
+import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -303,11 +258,6 @@ import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
 import { applyOptionBehavior, isOptionApplyBusy, rollOptionDice, type DiceRollResult } from '@/util/option-action';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
-import { openCardPack } from '@/core/card-pack-state';
-import { readGoldenFingerHud, type GfHudSnapshot } from '@/core/gf-bridge';
-import { previewTriggeredCards, type CardResolution } from '@/core/cards';
-import { effectSummary } from '@/core/cards-meta';
-import type { Card } from '@/type/settings';
 import { getStCharacter } from '@/core/st-character';
 import type { DiceOutcome } from '@/core/dice';
 import { OPTION_FONT_SCALE } from '@/core/constants';
@@ -341,65 +291,6 @@ const {
 const isGenerating = computed(() => generatorState.loading);
 
 const gs = useGlobalSettingsStore();
-
-// ── 金手指状态条（gf-bridge 共存感知）────────────────────────────────────────────
-// 桥接是纯读取，无响应式源（chat_metadata 不被 Vue 追踪）：轮询刷新即可——面板本就随
-// 楼层/折叠反复重渲染，浅轮询 2s 只在值变化时触发更新，开销可忽略
-const gfHud = ref<GfHudSnapshot | null>(readGoldenFingerHud());
-let gfHudTimer: ReturnType<typeof setInterval> | null = null;
-onMounted(() => {
-  gfHudTimer = setInterval(() => {
-    const next = readGoldenFingerHud();
-    const prev = gfHud.value;
-    // 浅比较防每 2s 无效重渲（六字段全等才跳过）
-    if (
-      next?.points !== prev?.points ||
-      next?.level !== prev?.level ||
-      next?.activeTasks !== prev?.activeTasks ||
-      next?.stateCount !== prev?.stateCount ||
-      next?.currencyName !== prev?.currencyName ||
-      next?.systemName !== prev?.systemName ||
-      next?.firstTaskTitle !== prev?.firstTaskTitle
-    ) {
-      gfHud.value = next;
-    }
-  }, 2000);
-});
-onUnmounted(() => {
-  if (gfHudTimer !== null) clearInterval(gfHudTimer);
-});
-
-const gfHudTitle = computed(() => {
-  const hud = gfHud.value;
-  if (!hud) return '';
-  const parts = [
-    hud.systemName ? t`金手指「${hud.systemName}」` : t`金手指系统`,
-    t`等级 ${hud.level}`,
-    `${hud.currencyName}×${hud.points}`,
-  ];
-  if (hud.firstTaskTitle) {
-    parts.push(t`进行中：${hud.firstTaskTitle}`);
-  } else {
-    parts.push(t`暂无进行中任务`);
-  }
-  if (hud.stateCount > 0) {
-    parts.push(t`身心状态 ${hud.stateCount} 项`);
-  }
-  return parts.join('｜');
-});
-
-// 点击状态条直达金手指面板：金手指暴露 window 钩子（__gf_open_panel__，共存协议）
-// 才可点开；未暴露（旧版/未装）时 chip 仅展示，无 hover 手型
-const gfClickable = ref(false);
-onMounted(() => {
-  gfClickable.value = typeof (window as unknown as Record<string, unknown>)['__gf_open_panel__'] === 'function';
-});
-const onOpenGfPanel = () => {
-  const raw = (window as unknown as Record<string, unknown>)['__gf_open_panel__'];
-  if (typeof raw === 'function') {
-    (raw as () => void)();
-  }
-};
 
 // ── 调整模式（组件内存态，不持久化）─────────────────────────────────────────────
 // 标题栏「调整」按钮进入：选项与行为栏禁用、仅显示字号档与高度拖动条，退出即恢复。
@@ -564,36 +455,11 @@ const rateClass = (rate: number): string => {
   return rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 };
 
-// 楼层是否已结算卡牌经济（预掷/重掷与判定路径同门控）。结算态非响应式，
-// 依赖追踪靠 cardSettleEpoch（markCardSettled 自增，跨组件结算也会触发重算）。
-const layerSettled = (): boolean =>
-  panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId);
-
-// v66 点选前触发预览：card_enabled 开且骰子判定可用（enabled、非骰式）时对每个选项预匹配
-// 掷前可知触发（type/grade/demand），行内显示空心「可触发」卡 chip；roll/outcome 类触发需
-// 掷后结果，不预告。整表算一次缓存，避免每行重复 attr 解析。点选判定后由判定 chip 与已触发
-// 实心 chip 接管，两者不同时出现。仅选项视图（润色视图不掷骰、口径与判定分支一致）。
-// 楼层已结算（cardSettled）后点选不再走卡路径——同层其余行的预告同样撤下。
-// 主面板与悬浮球两处同构（并行模式）。
-const cardPreviews = computed<Card[][]>(() => {
-  void cardSettleEpoch.value;
-  if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
-  if (activeView.value !== 'options') return [];
-  if (layerSettled()) return [];
-  return visibleOptions.value.map(o =>
-    previewTriggeredCards(o.text, currentChar.value, {
-      attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
-      low_roll: gs.settings.dice.low_roll,
-    }),
-  );
-});
-const previewOf = (index: number): Card[] => cardPreviews.value[index] ?? [];
-
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代/翻页自然失效（同 selectedKeys 机制）。
 // v57：差值 = 判定 margin；v61 起 margin 由 option-action 经 diceMargin 归一化（成功侧为正），
 // chip 显示「结局+差值」如「成功 +18」「失败 −38」。
-type RollResult = { outcome: DiceOutcome; margin: number; cards?: CardResolution };
+type RollResult = { outcome: DiceOutcome; margin: number };
 const rollResults = ref<ReadonlyMap<string, RollResult>>(new Map());
 // v61 就地重掷两步流状态：stagedFull = 已 stage 未应用的完整判定结果（含 roll/rate 供 marker），
 // pendingApply = 已 stage 未应用的 key 集合（决定是否显示 ↻）。正常流程（reroll 关）不写这两个。
@@ -607,13 +473,6 @@ const rollLabel = (o: DiceOutcome): string =>
 // 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
 const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
 const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
-// v70 触发磨损破损短提示：仅应用后的判定结果带 brokenCards（预览/首掷 stage 为空，
-// 不提示——破损只在 commit 落库时产生）；chip 追加卡名提示玩家去修复/换卡。
-const brokenText = (r: RollResult): string => {
-  const broken = r.cards?.brokenCards ?? [];
-  if (broken.length === 0) return '';
-  return ` · ${broken.map(b => b.card.name).join('、')}耐久耗尽`;
-};
 
 // 与 generateOptions 内部同一套 API 校验：口径一致（空状态按钮的显隐、生成的
 // 前置拦截都看它），避免"按钮亮了但生成报未配置"的分裂。
@@ -899,13 +758,11 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 再次点击 = 用已 stage 结果应用。正常流程（reroll 关）保持原「点击即掷+应用」。
   const willRoll = !isEnrich && d.enabled && resolveRateForDisplay(option.text, currentChar.value, d) !== null;
   if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
-    // 预掷与判定路径同结算门控：已结算楼层走非卡路径，防预告的卡触发在实际应用时被剥除
-    const staged = rollOptionDice(option.text, { cardDisabled: layerSettled() });
+    const staged = rollOptionDice(option.text);
     if (staged) {
       rollResults.value = new Map(rollResults.value).set(key, {
         outcome: staged.outcome,
         margin: staged.margin,
-        cards: staged.cards,
       });
       stagedFull.value = new Map(stagedFull.value).set(key, staged);
       pendingApply.value = new Set(pendingApply.value).add(key);
@@ -938,11 +795,7 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     rollResults.value = new Map(rollResults.value).set(key, {
       outcome: dice.outcome,
       margin: dice.margin,
-      cards: dice.cards,
     });
-    // v62 幸运数命中 → 开卡包弹窗（applyOptionBehavior 已把卡机制行并入注释、commit 已在共享层完成，
-    // 组件只需把 offer 交由全局弹窗消费；幸运数开包与每日/商店共用同一弹窗信号）
-    if (dice.cards?.packOffer) openCardPack(dice.cards.packOffer, 'lucky');
   }
   // 重掷流已应用：清 stage 态（↻ 消失，保留 chip 作为本次判定反馈）
   if (willRoll && d.reroll_enabled) {
@@ -961,15 +814,14 @@ const onSelect = async (option: ChoiceOption, index: number) => {
 };
 
 // v61 就地重掷：重掷当前选项（重新掷骰并更新 chip 与 stage 结果），不应用不发送。
-// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）；与判定路径同结算门控。
+// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）。
 const onReroll = (option: ChoiceOption, index: number) => {
-  const full = rollOptionDice(option.text, { cardDisabled: layerSettled() });
+  const full = rollOptionDice(option.text);
   if (!full) return;
   const key = keyOf(index);
   rollResults.value = new Map(rollResults.value).set(key, {
     outcome: full.outcome,
     margin: full.margin,
-    cards: full.cards,
   });
   stagedFull.value = new Map(stagedFull.value).set(key, full);
 };
@@ -1061,52 +913,6 @@ const onReroll = (option: ChoiceOption, index: number) => {
   display: inline-flex;
   align-items: center;
   gap: var(--choice-space-2);
-}
-
-/* ===== 金手指状态条（gf-bridge 共存感知，只读）=====
-   挤在标题与工具区之间，flex:1 占中段富余宽、min-width:0 溢出省略——
-   窄面板（手机 dense）时优先保住标题与工具按钮，chip 自己截断 */
-.choice-gf-hud {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  justify-self: center;
-  margin-left: var(--choice-space-2);
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: var(--choice-text-xs);
-  line-height: 1.5;
-  color: var(--choice-text-secondary);
-  background: color-mix(in srgb, var(--choice-primary) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--choice-primary) 25%, transparent);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* 钩子存在（金手指新版）才给手型与悬停增强：仅展示时保持静态徽章语义。
-   钩子探测走 CSS 不行，由组件在 mounted 后给容器挂 gf-hud--clickable 类 */
-.choice-gf-hud.choice-gf-hud--clickable {
-  cursor: pointer;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .choice-gf-hud.choice-gf-hud--clickable:hover {
-    color: var(--choice-text);
-    background: color-mix(in srgb, var(--choice-primary) 14%, transparent);
-  }
-}
-
-.choice-gf-hud-icon {
-  color: var(--choice-primary);
-  font-size: calc(var(--choice-text-xs) * 0.9);
-  flex-shrink: 0;
-}
-
-.choice-gf-hud-sep {
-  opacity: 0.5;
 }
 
 .choice-panel-tools {

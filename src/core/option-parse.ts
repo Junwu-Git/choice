@@ -10,10 +10,10 @@
 
 import { repairOptionArrayJson } from '@/core/option-json-repair';
 
-/** 思维链标签块剥离正则：parseOptions 共用。
+/** 思维链标签块剥离正则：parseOptions 与条目库 AI 生成的 parsePoolGenItems 共用。
  *  新增模型思维标签（如 <reasoning_content>/<antThinking>）时只改这一处即可同步，
  *  避免只补一处而另一处静默漏处理。String.replace 对 /g 正则不保留 lastIndex 状态，跨调用共享安全。 */
-const STRIP_REASONING_TAGS_RE =
+export const STRIP_REASONING_TAGS_RE =
   /<(?:think(?:ing)?|reasoning|thought)>[\s\S]*?<\/(?:think(?:ing)?|reasoning|thought)>/gi;
 
 /** 标签堆叠间隙判定：标题括号闭合后到同一下一个括号之间，仅含空白和/或 emoji 才算堆叠。
@@ -34,8 +34,8 @@ const TAG_STACK_GAP_RE = /^(?:[^\S\r\n]|\p{Extended_Pictographic}(?:\uFE0F|\u200
 
 /** 字符串感知的尾随逗号清理：跳过引号区间，仅删除引号外 `,`+空白+`]`/`}` 处的逗号。
  *  不能用全局正则 `,(\s*[\]}])` 替换——它会命中字符串值内部的 ",]"/",}" 字面量，
- *  静默篡改选项正文（如列举示例"苹果,橘子]"）。 */
-const stripTrailingCommas = (s: string): string => {
+ *  静默篡改选项正文（如列举示例"苹果,橘子]"）。parsePoolGenItems（条目库 AI 生成）共用。 */
+export const stripTrailingCommas = (s: string): string => {
   let out = '';
   let inStr = false;
   let esc = false;

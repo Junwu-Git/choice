@@ -4,7 +4,6 @@ interface BaiBaiBookApi {
   capabilities: Record<string, boolean>;
   getSnapshot(options?: { floor?: number; at?: 'before' | 'after' }): BaiBaiSnapshot | null;
   getHistory(options: { before: number }): BaiBaiHistory | null;
-  getInjectedHistory(): BaiBaiHistory | null;
   getContextAtFloor(options: { floor: number }): BaiBaiContext | null;
 }
 
@@ -46,23 +45,23 @@ function getApi(): BaiBaiBookApi | null {
   return (globalThis as any).STBaiBaiBook ?? null;
 }
 
-/** 获取柏宝书摘要/历史剧情文本（使用注入口径，与正常记忆注入同规则）。
- *  优先 getInjectedHistory()（跳过滑动窗口内仍发全文的摘要），
- *  降级为 getHistory()（从最开始到最新楼的全部历史）。 */
-export function getBaiBaiSummary(): string | null {
+/** 获取柏宝书摘要文本：楼层 [0, windowStart) 的压缩摘要。windowStart = 本扩展聊天历史
+ *  窗口首楼的原始下标（正文层起点）；-1 = 本扩展不发任何正文 → before 取全部楼层，
+ *  摘要顶替整段历史。对齐柏宝书自身注入模型「摘要[0,keepStart) + 正文[keepStart,end)
+ *  顺序相接零重复」：before 是排他截止楼层，getHistory 跨边界自动拆节点、不受柏宝书
+ *  自身滑动窗口限制。旧实现 getInjectedHistory()（柏宝书自己的隐藏楼层集合）与全量
+ *  降级的边界都跟本扩展正文窗口无关——全量降级会把最近楼层「摘要+全文」各发一遍。 */
+export function getBaiBaiSummary(windowStart: number): string | null {
   const api = getApi();
   if (!api) return null;
   try {
-    const injected = api.getInjectedHistory();
-    if (injected?.relativeText) return injected.relativeText;
-    // 降级：取全部历史（截止到最新楼）
     const chat = window.SillyTavern?.getContext?.()?.chat;
     const len = chat?.length ?? 0;
-    if (len > 0) {
-      const hist = api.getHistory({ before: len });
-      if (hist?.relativeText) return hist.relativeText;
-    }
+    if (len <= 0) return null;
+    const hist = api.getHistory({ before: windowStart < 0 ? len : windowStart });
+    return hist?.relativeText || null;
   } catch (e) {
+    // getHistory 对越界 before 抛 RangeError——windowStart 源自 chat 下标本不该越界，兜一层
     console.warn('[Choice][BaiBaiBook] 获取摘要失败:', e);
   }
   return null;

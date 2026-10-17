@@ -55,8 +55,7 @@ const countArray = (value: unknown): unknown[] => (Array.isArray(value) ? value 
 const isHelperScopeEnabled = (presetName: string): boolean => {
   try {
     const th = (extension_settings as Record<string, unknown> | undefined)?.tavern_helper as
-      | { script?: { enabled?: { presets?: unknown } } }
-      | undefined;
+      { script?: { enabled?: { presets?: unknown } } } | undefined;
     const list = th?.script?.enabled?.presets;
     return Array.isArray(list) && list.map(String).includes(presetName);
   } catch {
@@ -79,8 +78,7 @@ export function readSpresetForcedPostProcessing(presetName: string): string | un
   if (!preset) return undefined;
   try {
     const spreset = ((preset.extensions ?? null) as Record<string, unknown> | null)?.SPreset as
-      | { ForcedPostProcessing?: { enabled?: unknown; mode?: unknown } }
-      | undefined;
+      { ForcedPostProcessing?: { enabled?: unknown; mode?: unknown } } | undefined;
     const forced = spreset?.ForcedPostProcessing;
     if (forced?.enabled !== true) return undefined;
     return isPresetPostProcessingMode(forced.mode) && forced.mode !== '' ? forced.mode : undefined;
@@ -115,7 +113,8 @@ export function readPresetCompanionScripts(configured: string): PresetCompanionS
       const bindingCount = countArray(spreset.RegexBinding?.regexes).length;
       if (bindingCount > 0) spresetModules.push(`动态正则 ×${bindingCount}`);
       if (spreset.OutputPreprocessing?.enabled === true) spresetModules.push('输出预处理');
-      const toolBindings = spreset.ToolBindings && typeof spreset.ToolBindings === 'object' ? Object.values(spreset.ToolBindings) : [];
+      const toolBindings =
+        spreset.ToolBindings && typeof spreset.ToolBindings === 'object' ? Object.values(spreset.ToolBindings) : [];
       if (toolBindings.some((t: any) => t?.enabled === true)) spresetModules.push('工具绑定');
     }
 

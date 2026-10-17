@@ -4,8 +4,7 @@ import type { SecondaryApi } from '@/type/settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { emitPresetPromptReady, isTavernHelperInstalled } from '@/core/st-preset-scripts';
 
-/** 按 active_api_id 解析启用的副 API（cards-ai 等仅需一次解析的模块经此取；generator 也用它）。
- *  放在 api-client（统一副 AI 请求装配入口）避免 cards-ai → generator → cards 的依赖环。 */
+/** 按 active_api_id 解析启用的副 API（generator 等仅需一次解析的模块经此取）。 */
 export const resolveCustomApi = (id: string, apis: SecondaryApi[]): SecondaryApi | undefined =>
   id ? apis.find(a => a.id === id) : undefined;
 
@@ -81,8 +80,7 @@ async function callSecondaryApiDirect(
   // 报错无指向）——入口拦截，与 ApiEditor 保存校验双保险
   if (!api.apiurl.trim()) throw new Error('副 API 地址为空，请先在 API 设置中填写 API 地址');
   // prompt_ready 脚本层：深拷贝广播后以（可能被脚本改写过的）克隆发送
-  const outgoing =
-    scriptLayer === 'prompt_ready' ? ((await emitPresetPromptReady(messages)) as ChatMsg[]) : messages;
+  const outgoing = scriptLayer === 'prompt_ready' ? ((await emitPresetPromptReady(messages)) as ChatMsg[]) : messages;
   const body: Record<string, unknown> = {
     chat_completion_source: 'openai',
     reverse_proxy: normalizeApiUrl(api.apiurl),
@@ -321,8 +319,7 @@ function isRetryableError(e: unknown): boolean {
 /** 带重试的副 API 调用入口：根据 retryCount 自动重试可恢复错误。
  *  每次尝试独立 AbortController + 超时，外部取消信号联动所有尝试。
  *  重试间隔由 retryInterval（秒）控制，失败时通过 toastr 提示进度。
- *  quiet=true：重试进度不 toastr（供后台 fire-and-forget 任务使用——L1 归因/L2 理由
- *  是后台增强，重试提示会打扰用户，且其失败已由各自模块级状态留痕）。
+ *  quiet=true：重试进度不 toastr（供不想被打扰的调用方使用；失败反馈方式由调用方决定）。
  *  postProcessing/scriptLayer 仅预设模式传入（见 generator/enrich）：前者透传后处理字段，
  *  后者选择脚本层档位与发送通路。 */
 export async function callSecondaryApiWithRetry(

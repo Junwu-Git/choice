@@ -36,10 +36,11 @@ export type PresetSlotContents = {
   chatHistory: PresetChatMsg[];
 };
 
-/** 预设条目覆盖层（插件侧，不动酒馆预设文件）：disabled=true 整条跳过；content 存在
- *  （含空串）即替换条目原内容。键 = 条目 identifier，与 GlobalSettings.st_preset_overrides
- *  同构（就地定义结构类型：本模块保持纯函数，不拉 settings 的 zod 运行时）。 */
-export type StPresetEntryOverride = { disabled?: boolean; content?: string };
+/** 预设条目覆盖层（插件侧，不动酒馆预设文件）：disabled=true 整条跳过；enabled=true 强制
+ *  参与组装（用于开启酒馆预设里已停用的条目）；content 存在（含空串）即替换条目原内容。
+ *  键 = 条目 identifier，与 GlobalSettings.st_preset_overrides 同构（就地定义结构类型：
+ *  本模块保持纯函数，不拉 settings 的 zod 运行时）。 */
+export type StPresetEntryOverride = { disabled?: boolean; enabled?: boolean; content?: string };
 
 export type BuildPresetOptions = {
   /** 生成类型，用于 injection_trigger 过滤。默认 'normal'（预设主要为正文生成设计）。 */
@@ -55,6 +56,20 @@ export type BuildPresetOptions = {
 const MARKER_SET = new Set<string>(NATIVE_MARKER_SLOTS);
 
 const isMarkerSlot = (identifier: string): identifier is NativeMarkerSlot => MARKER_SET.has(identifier);
+
+/** 条目是否参与组装：酒馆 prompt_order 的 enabled=false 默认跳过，但覆盖层 enabled=true
+ *  可强制开启（插件内开启酒馆预设里已停用的条目）；disabled=true 永远优先。
+ *  原生 marker 槽位例外——运行时填充，覆盖层的禁用/启用对它一律无效。 */
+const isEntryActive = (
+  entry: StPresetOrderEntry | undefined,
+  overrides: Record<string, StPresetEntryOverride> | undefined,
+  identifier: string,
+): boolean => {
+  const ov = overrides?.[identifier];
+  if (ov?.disabled && !isMarkerSlot(identifier)) return false;
+  if (ov?.enabled) return true;
+  return entry?.enabled !== false;
+};
 
 const normalizeRole = (role: unknown): PresetChatMsg['role'] => {
   const value = String(role ?? '').toLowerCase();
@@ -124,7 +139,7 @@ export function buildPresetMessages(
   const injections: InChatInjection[] = [...(options.extraInjections ?? [])];
   for (const entry of order) {
     const identifier = String(entry?.identifier ?? '').trim();
-    if (!identifier || entry?.enabled === false) continue;
+    if (!identifier || !isEntryActive(entry, options.overrides, identifier)) continue;
     const prompt = promptMap.get(identifier);
     if (!prompt || prompt.extension === true) continue;
     if (isMarkerSlot(identifier)) continue;
@@ -156,7 +171,7 @@ export function buildPresetMessages(
 
   for (const entry of order) {
     const identifier = String(entry?.identifier ?? '').trim();
-    if (!identifier || entry?.enabled === false) continue;
+    if (!identifier || !isEntryActive(entry, options.overrides, identifier)) continue;
     const prompt = promptMap.get(identifier);
     if (!prompt) continue;
     if (prompt.extension === true) continue;

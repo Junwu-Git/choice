@@ -20,7 +20,6 @@ import {
   PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
-  type Card,
   type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
@@ -40,8 +39,6 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
 import { scheduleCharacterPersist } from '@/util/character-bindings';
-import { BUILTIN_CARDS } from '@/core/cards-builtin';
-import { cardMaxDurability } from '@/core/cards-constraints';
 
 /**
  * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
@@ -805,7 +802,6 @@ const applyDefaults = (
     const saneLegacyPool = (v: unknown): PoolEntry[] =>
       foldLegacy && Array.isArray(v) ? v.filter((e): e is PoolEntry => !!e && typeof e === 'object') : [];
     const oldGlobalPool: PoolEntry[] = saneLegacyPool(_.get(extension_settings, [setting_field, 'pool']));
-    const oldGlobalGen = _.get(extension_settings, [setting_field, 'generation']);
     let charName = '';
     let oldCharPool: PoolEntry[] = [];
     try {
@@ -851,11 +847,6 @@ const applyDefaults = (
         entries: makeEntries(oldGlobalPool),
         is_default: true,
         rules: '',
-        // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）。
-        // 旧 generation 对象经 parse 补齐后增字段（oversample_pct/dedup_* 等）——直接透传原始
-        // 对象会让本会话内消费端读到 undefined（generator 对 dedup_enabled 无 ?? 兜底，去重
-        // 静默失效），重载后才被 zod prefault 自愈；解析失败（旧档字段形态漂移）回退全默认。
-        generation: GenerationSettings.safeParse(oldGlobalGen ?? {}).data ?? GenerationSettings.parse({}),
       });
     }
 
@@ -867,7 +858,6 @@ const applyDefaults = (
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
       try {
         const ch = getStCharacter(this_chid);
@@ -894,7 +884,6 @@ const applyDefaults = (
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
       try {
         const cMeta = chat_metadata?.[setting_field];
@@ -926,7 +915,6 @@ const applyDefaults = (
         })),
         is_default: true,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
     }
 
@@ -952,10 +940,6 @@ const applyDefaults = (
   }
 
   if ((validated.schema_version ?? 0) < 10) {
-    // 移除 pinned_follows_condition（条件改为 AI 判断）
-    for (const cfg of validated.configs) {
-      delete (cfg.generation as any).pinned_follows_condition;
-    }
     // 填充 group_order：从现有条目的 category 去重后按字母排序
     if (!validated.group_order || validated.group_order.length === 0) {
       const cats = new Set<string>();
@@ -991,7 +975,6 @@ const applyDefaults = (
           })),
           is_default: true,
           rules: '',
-          generation: GenerationSettings.parse({}),
         },
       ];
     }
@@ -1216,9 +1199,8 @@ const applyDefaults = (
   // v35: 配置彻底解耦为"独立模块"——条目池配置只管条目引用、提示词配置只管提示词文本
   // （modules/person_style/option_rules），人称/字数/轮数/预填充/柏宝书/抽取参数全部收归全局。
   // 两步自愈，把历史耦合期被改写的用户值还原：
-  // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）从默认
-  //    条目池配置的 generation 快照播种——历史上生成设置页冗余比例读生效池配置，切池配置
-  //    即跳变；generator 与生成设置页已改读全局。
+  // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）落地全局
+  //    ——历史上生成设置页冗余比例读生效池配置，切池配置即跳变；generator 与生成设置页已改读全局。
   // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/柏宝书抄回
   //    prompt_rules——历史上切换提示词配置全量换入这些字段，用户自定义润色字数被洗成 30/80、
   //    人称跟着跳变。默认提示词配置的快照是用户真实值的可靠来源：切换链路只会把 pr 写回
@@ -1227,9 +1209,10 @@ const applyDefaults = (
   // pr，本 heal 会回退那次未同步的编辑——属可接受代价（切配置的连带污染远高频，且字段
   // 现已全局化，用户改回一次即永久生效）。幂等：v35 只跑一次（schema_version 守卫）。
   if ((validated.schema_version ?? 0) < 35) {
-    // ① 全局抽取参数播种（无任何池配置的极端态回退 schema 默认）
-    const defPool = validated.configs.find(c => c.is_default) ?? validated.configs[0] ?? null;
-    validated.generation = defPool ? klona(defPool.generation) : GenerationSettings.parse({});
+    // ① 全局抽取参数播种。曾从默认池配置的 generation 快照取值；v81 起该字段已删除
+    //    （zod strip 先于迁移运行，老值不可达），冻结在 v35 前的远古档直升时回退 schema
+    //    默认——与 v35 自身「旧 generation 形态漂移则回退全默认」的既定口径一致
+    validated.generation = GenerationSettings.parse({});
 
     // ② 提示词全局字段还原
     const defPrompt = validated.prompt_configs.find(c => c.is_default);
@@ -2115,27 +2098,23 @@ const applyDefaults = (
     }
   }
 
-  // v61：新增 card_obtained（历史获得记录，独立于当前持有 card_collection）。收藏进度/成就/套装
-  // 改以其为准，分解只删持有、不抹掉图鉴。老存档无此字段：把存量收藏补种为历史（obtained_at 沿用
-  // CardOwned 里已有的 obtained_at，count=1），这样已持有的卡立即计入；已分解的卡历史无法回溯，
-  // 从升级起对未来获得生效（zod prefault 保证 card_obtained 恒为对象）。
-  if ((validated.schema_version ?? 0) < 61) {
-    const obtained = validated.card_obtained ?? {};
-    for (const [id, owned] of Object.entries(validated.card_collection ?? {})) {
-      if (obtained[id]) continue;
-      // obtained_at 有 zod default(0)，旧档缺失字段在 parse 时已被补 0——`?? Date.now()`
-      // 的兜底会被 0 截胡永不可达；0（epoch 1970）也绝非合法获得时间，按缺失处理
-      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at || Date.now(), count: 1 };
-    }
-    validated.card_obtained = obtained;
-  }
-
-  // v66 卡牌瘦身：删除血战/副本、诅咒、每日任务、保底与耐久/等级。zod 解析会 strip 新 schema
-  // 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象——旧键会残留在运行时对象里
-  // 并被 deep watch 继续落盘，必须在此显式 delete 才算清干净。card_collection 条目内的
-  // level/durability/max_durability 与 stats.card 的废弃计数字段同理。
-  if ((validated.schema_version ?? 0) < 66) {
-    const legacyKeys = [
+  // v77：卡牌系统整体移除（判定管线叠加层/卡组/收藏/行动币/开包/角色主题池/统计分区）。
+  // zod 解析会 strip 新 schema 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象
+  // ——旧键会残留在运行时对象里并被 deep watch 继续落盘，必须在此显式 delete 才算清干净
+  // （同 v66 先例）。清单一并覆盖各历史版本残留（battle_* 血战、card_debuffs/pity/daily、
+  // card_achievements，原 v61/v66/v68 迁移清理的键），老档从任意版本直升都被清干净。
+  if ((validated.schema_version ?? 0) < 77) {
+    const cardKeys = [
+      'card_enabled',
+      'card_collection',
+      'card_obtained',
+      'card_decks',
+      'card_definitions',
+      'card_character_pools',
+      'card_currency',
+      'auto_deck_enabled',
+      'card_starter_granted',
+      // 更早期卡牌 subsystem（血战/副本/诅咒/保底/每日/成就）的遗留键，原 v66/v68 块清理对象
       'battle_enabled',
       'battle_player_hp',
       'battle_player_max_hp',
@@ -2148,15 +2127,42 @@ const applyDefaults = (
       'card_debuffs',
       'card_pity',
       'card_daily',
+      'card_achievements',
+      // 更早期卡牌迭代的散键（幸运数阈值/开包份数），代码史无记录、仅个别老档残留
+      'card_lucky_number',
+      'card_pack_offer',
     ];
-    for (const key of legacyKeys) delete (validated as Record<string, unknown>)[key];
-    for (const owned of Object.values(validated.card_collection ?? {})) {
-      delete (owned as Record<string, unknown>).level;
-      delete (owned as Record<string, unknown>).durability;
-      delete (owned as Record<string, unknown>).max_durability;
+    for (const key of cardKeys) delete (validated as Record<string, unknown>)[key];
+    delete (validated.stats as Record<string, unknown>).card;
+  }
+
+  // v78：自动化系统整体移除（建议引擎/阵容计划/L1 AI 归因/L2 AI 建议理由/应用撤销槽）。
+  // zod 解析会 strip 新 schema 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象
+  // ——旧键会残留在运行时对象里并被 deep watch 继续落盘，必须在此显式 delete 才算清干净
+  // （同 v66/v77 先例）。顶层 6 个自动化字段 + stats.ai_analysis（L2 理由缓存）+ 各条目
+  // last_weight_changed_at（建议/阵容冷却标记，唯一消费方已删），老档从任意版本直升都被清干净。
+  if ((validated.schema_version ?? 0) < 78) {
+    for (const key of [
+      'automation_enabled',
+      'roster_size',
+      'roster_enabled',
+      'ai_attribution_enabled',
+      'ai_analysis_enabled',
+      'apply_history',
+    ]) {
+      delete (validated as Record<string, unknown>)[key];
     }
-    const legacyStatKeys = ['pity_epicplus_hits', 'daily_rewards_claimed'] as const;
-    for (const key of legacyStatKeys) delete (validated.stats.card as Record<string, unknown>)[key];
+    const stats = validated.stats as Record<string, unknown> | undefined;
+    if (stats) {
+      delete stats.ai_analysis;
+      const entries = stats.entries as
+        Record<string, { by_entry?: Record<string, Record<string, unknown>> }> | undefined;
+      for (const scope of Object.values(entries ?? {})) {
+        for (const e of Object.values(scope?.by_entry ?? {})) {
+          delete e.last_weight_changed_at;
+        }
+      }
+    }
   }
 
   // v67：判定注释改版——结构化头部（点数/需求/差值/程度）与纪律尾注改由代码层固定拼装
@@ -2215,30 +2221,6 @@ const applyDefaults = (
       const current = dice[field];
       if (typeof current !== 'string' || !froms.includes(current)) continue;
       dice[field] = SEND_TEMPLATE_DEFAULTS[field as keyof typeof SEND_TEMPLATE_DEFAULTS];
-    }
-  }
-
-  // v68 卡牌再瘦身：移除套装系统（CARD_SETS + 10 张 set_ 内置卡 + 套装共鸣）与收藏成就。
-  // 同 v66 的坑——zod 解析会 strip 不认识的键，但 validateInplace 用 _.assign 就地合并回
-  // 原对象，旧键会残留并被 deep watch 继续落盘，必须显式 delete：
-  // ① card_achievements 整键；② 收藏/图鉴里的 set_ 前缀套装卡条目（卡定义已不存在，
-  // 留着会虚增图鉴计数）；③ 卡组槽位里指向套装卡的 card_id（置空，槽位随 normalize 补空）；
-  // ④ card_definitions 条目内的 set 残留字段（Card 类型已删该字段）。
-  if ((validated.schema_version ?? 0) < 68) {
-    delete (validated as Record<string, unknown>).card_achievements;
-    const isLegacySetCard = (id: string): boolean => typeof id === 'string' && id.startsWith('set_');
-    for (const record of [validated.card_collection, validated.card_obtained]) {
-      for (const id of Object.keys(record ?? {})) {
-        if (isLegacySetCard(id)) delete (record as Record<string, unknown>)[id];
-      }
-    }
-    for (const deck of Object.values(validated.card_decks ?? {})) {
-      for (const slot of (deck as { slots?: Array<{ card_id: string }> })?.slots ?? []) {
-        if (isLegacySetCard(slot.card_id)) slot.card_id = '';
-      }
-    }
-    for (const def of Object.values(validated.card_definitions ?? {})) {
-      delete (def as Record<string, unknown>).set;
     }
   }
 
@@ -2505,26 +2487,23 @@ const applyDefaults = (
     delete (validated.prompt_rules as Record<string, unknown>).option_style;
   }
 
-  // v70：恢复卡牌触发磨损与破损修复——CardOwned 新增 durability/max_durability/broken。
-  // 老档（v66 起删除了 level/durability/max_durability，v70 重新引入）无这些字段：
-  // zod 解析会把缺失字段补上 schema 默认值（durability=0 / max_durability=1），
-  // 无法用「字段是否缺失」区分旧档与新卡——以 max_durability 为哨兵：新卡恒为真实
-  // 满耐久（cardMaxDurability 钳制 ≥10），旧档被补成 1。max_durability ≤1 即旧档，
-  // 按卡定义补满耐久（内置卡 BUILTIN_CARDS ∪ card_definitions 角色主题卡，都含 star/type）、
-  // broken=false——零行为变化，后续正常触发磨损。
-  if ((validated.schema_version ?? 0) < 70) {
-    const defById = new Map<string, { star: Card['star']; type: Card['type'] }>();
-    for (const c of BUILTIN_CARDS) defById.set(c.id, { star: c.star, type: c.type });
-    for (const [id, def] of Object.entries(validated.card_definitions ?? {})) {
-      if (def) defById.set(id, { star: def.star, type: def.type });
+  // v80：死设置字段清理——ui.opacity（外观页透明度滑条，UI 已删）与 ui.panel_height
+  // （旧「行内设置面板高度」，真身是 ui.option_panel_height）。两字段全仓库零读写，
+  // zod strip 后 validateInplace 仍会把旧键就地合并回来，必须显式 delete（同 v66/v77/v78 先例）。
+  if ((validated.schema_version ?? 0) < 80) {
+    const ui = validated.ui as Record<string, unknown> | undefined;
+    if (ui) {
+      delete ui.opacity;
+      delete ui.panel_height;
     }
-    for (const owned of Object.values(validated.card_collection ?? {})) {
-      if (!owned || owned.max_durability > 1) continue; // 已是 v70 新卡，跳过
-      const def = defById.get(owned.card_id);
-      const max = def ? cardMaxDurability(def) : 1;
-      owned.max_durability = max;
-      owned.durability = max;
-      owned.broken = false;
+  }
+
+  // v81：PoolConfig.generation 死数据清除——v35 起抽取参数收归全局 settings.generation，
+  // 池配置上的 generation 快照自此无人读取（PoolEditor 曾在新建时持续写入）。zod strip 后
+  // validateInplace 仍会把旧键就地合并回来，必须显式 delete（同 v66/v77/v78 先例）。
+  if ((validated.schema_version ?? 0) < 81) {
+    for (const cfg of validated.configs) {
+      delete (cfg as Record<string, unknown>).generation;
     }
   }
 
@@ -3368,7 +3347,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         })),
         is_default: true,
         rules: '',
-        generation: GenerationSettings.parse({}),
       },
     ];
 

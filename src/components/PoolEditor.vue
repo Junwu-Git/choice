@@ -261,7 +261,6 @@ import { usePoolSelectorStore } from '@/store/pool-selector';
 import { onboardingPendingAction } from '@/core/onboarding';
 import { focusPoolEntryId } from '@/core/floating-state';
 import type { PoolConfig, PoolEntry } from '@/type/settings';
-import { GenerationSettings } from '@/type/settings';
 import { toggleChatBinding, toggleCharacterBinding } from '@/core/bindings';
 import DragHandle from '@/components/shared/DragHandle.vue';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
@@ -343,8 +342,6 @@ const onCreateConfig = (payload: { name: string; isDefault: boolean; bindChat: b
     entries: [],
     is_default: payload.isDefault || configs.value.length === 0,
     rules: '',
-    // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode）与默认值漂移
-    generation: GenerationSettings.parse({}),
   };
   if (payload.isDefault) {
     for (const cfg of configs.value) {

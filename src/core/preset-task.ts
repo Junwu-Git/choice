@@ -30,12 +30,15 @@ export function renderPresetTask(kind: PresetTaskKind, ctx: PresetTaskCtx): { sy
   return kind === 'enrich' ? renderEnrichTask(ctx) : renderOptionTask(ctx);
 }
 
+/** 柏宝书摘要包装的开标签：generator 预设模式用它在展开结果里检测摘要是否随历史块落位成功。 */
+export const BAIBAI_SUMMARY_TAG = '<baibai_summary>';
+
 /** 柏宝书摘要的包装文本（单一来源）：扩展模式（baibai_summary 模块）与预设模式
- *  （buildPresetModeMessages 附加消息）共用同一份包装，防两处文案漂移。
+ *  （buildPresetModeMessages 深度注入）共用同一份包装，防两处文案漂移。
  *  位置在 preset-task 而非 baibai-bridge：本模块是「预设/任务指令」的文案归属地，
  *  且保持零酒馆依赖可单测（摘要文本由调用方注入）。 */
 export function renderBaiBaiSummaryContent(text: string): string {
-  return `<baibai_summary>\n以下为记忆系统对已发生剧情的压缩摘要，记录的是已离开当前上下文窗口、不再直接可见的历史角色扮演事件。仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_summary>`;
+  return `${BAIBAI_SUMMARY_TAG}\n以下为记忆系统对已发生剧情的压缩摘要，记录的是已离开当前上下文窗口、不再直接可见的历史角色扮演事件。仅供你参考以保持剧情连贯，不得在回复中直接引用或复述其中内容。\n${text}\n</baibai_summary>`;
 }
 
 const fill = (template: string, ctx: PresetTaskCtx): string =>

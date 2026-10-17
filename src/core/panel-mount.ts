@@ -4,10 +4,10 @@ import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
+import { maybeAutoAnalyze } from '@/core/knowledge-analysis';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
-import { setAttributionPanelRefreshHook } from '@/core/ai-attribution';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 
 export function initPanelMount() {
@@ -19,9 +19,6 @@ export function initPanelMount() {
   app.mount($container[0]);
 
   const panelStore = usePanelStateStore(pinia);
-  // 注册 L1 归因写回后的面板刷新钩子：ai-attribution 不直接 import panel-state（会成环），
-  // 改由面板层在此注入 refreshFromMessageIfCurrent，写回消息后同步面板持有的 generation 副本
-  setAttributionPanelRefreshHook((messageId, swipeId) => panelStore.refreshFromMessageIfCurrent(messageId, swipeId));
 
   const getPanelMessageId = (): number | null => {
     try {
@@ -102,6 +99,10 @@ export function initPanelMount() {
         // 0 楼通常是开场白（greeting）：无玩家输入语境，自动生成无意义，跳过
         return;
       }
+      // 知识边界自动刷新：与自动生成并行（fire-and-forget），本轮选项用上一份报告、
+      // 下一轮用新报告，不额外增加出选项的等待时间。不 await 的理由同上——ST 的
+      // eventSource.emit 会串行 await 监听器，返回 Promise 会拖住后续渲染事件。
+      maybeAutoAnalyze();
       const gs = useGlobalSettingsStore(pinia);
       if (!gs.settings.auto_generate) {
         return;

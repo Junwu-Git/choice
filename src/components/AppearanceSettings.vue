@@ -273,25 +273,6 @@ const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
   flex-wrap: wrap;
 }
 
-.choice-enrich-count {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  background: var(--choice-bg-card);
-  border-radius: var(--choice-radius-md);
-}
-
-.choice-appearance-label {
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text-secondary);
-}
-
-.choice-appearance-value {
-  color: var(--choice-primary);
-  font-weight: bold;
-}
-
 /* 预设主题按钮的色点：颜色来自 THEME_OPTIONS.swatch（与 theme.css 主色手工同步），
    走 Vue :style 绑定而非写死 CSS——注册表增删主题时按钮无需改样式。
    分段容器/按钮本体走 global.css 的 .choice-seg/.choice-seg-btn 原子 */
@@ -302,43 +283,5 @@ const onPickFontSize = (size: 'small' | 'medium' | 'large') => {
   flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.35);
   box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.3);
-}
-
-.choice-opacity-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--choice-bg-element);
-  appearance: none;
-  -webkit-appearance: none;
-  outline: none;
-  cursor: pointer;
-}
-
-.choice-opacity-slider::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--choice-primary);
-  border: 2px solid var(--choice-bg-panel);
-  box-shadow: 0 0 8px var(--choice-primary-glow);
-  cursor: pointer;
-  transition: transform var(--choice-transition);
-}
-
-.choice-opacity-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-
-.choice-opacity-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--choice-primary);
-  border: 2px solid var(--choice-bg-panel);
-  box-shadow: 0 0 8px var(--choice-primary-glow);
-  cursor: pointer;
 }
 </style>

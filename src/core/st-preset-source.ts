@@ -89,8 +89,7 @@ export function readStPresetByName(name: string): StPresetSnapshot | null {
 export function readLivePostProcessingType(): string {
   try {
     const settings = window.SillyTavern?.getContext?.()?.chatCompletionSettings as
-      | { custom_prompt_post_processing?: unknown }
-      | undefined;
+      { custom_prompt_post_processing?: unknown } | undefined;
     const value = settings?.custom_prompt_post_processing;
     return isPresetPostProcessingMode(value) ? value : '';
   } catch {

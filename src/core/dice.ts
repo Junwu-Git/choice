@@ -17,7 +17,7 @@
  */
 
 export type DiceOutcome = 'crit_success' | 'success' | 'fail' | 'crit_fail';
-/** 判定结局 → 中文名（注释头部「结局」键的单一来源；cards-meta 的 CARD_OUTCOME_LABEL 从此展开） */
+/** 判定结局 → 中文名（注释头部「结局」键的单一来源） */
 export const DICE_OUTCOME_LABEL: Readonly<Record<DiceOutcome, string>> = {
   crit_success: '大成功',
   success: '成功',
@@ -165,7 +165,7 @@ export type DiceTemplates = {
 
 /** 注释纪律尾注（v67 固定常量，非用户模板）：正文 AI 侧的两条硬纪律——防把判定数值
  *  写进正文破坏沉浸、防从历史 few-shot 学会模仿注释格式后在叙述里输出自己的注释。
- *  buildDiceMarker 与 option-action 的 wrapCardNarratives 共用。 */
+ *  buildDiceMarker 固定附加。 */
 export const DICE_MARKER_TAIL =
   '纪律：本回合正文中不得提及骰子、点数、需求值或「判定」字样；不得模仿或输出任何 HTML 注释。';
 

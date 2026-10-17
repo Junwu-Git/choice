@@ -75,9 +75,15 @@
             {{ t`酒馆助手` }}
           </button>
         </div>
-        <span class="choice-field-hint">{{
-          t`决定预设配套脚本是否参与选项生成：关闭=不触发任何脚本事件（现状）；仅广播=把最终提示词广播给提示词就绪事件的改写脚本（aether 类生效，变量/自动执行类不感知）；酒馆助手=整条请求经酒馆助手管线发送，条件合并与强制后处理等载荷级处理生效（需安装酒馆助手；入口条件与输出侧不生效，后处理跟随酒馆当前选中的预设）`
-        }}</span>
+        <span
+          class="choice-field-hint"
+          :title="
+            t`仅广播只对监听提示词就绪事件的改写脚本生效（变量/自动执行类不感知）；酒馆助手档的条件合并与强制后处理生效，入口条件与输出侧任何档位都不执行，后处理跟随酒馆当前选中的预设`
+          "
+          >{{
+            t`预设自带的脚本默认不参与选项生成。关闭＝不带；仅广播＝改写提示词的脚本生效；酒馆助手＝交给酒馆助手插件执行（需安装）`
+          }}</span
+        >
         <div v-if="companionHint" class="choice-preset-companion" :title="companionHintTitle">
           <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
           <span>{{ companionHint }}</span>
@@ -89,7 +95,7 @@
     <div v-if="globalStore.settings.prompt_source === 'st_preset'" class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`预设条目` }}</h4>
       <span class="choice-field-hint">{{
-        t`列出当前生效预设的全部条目：可在此禁用与预设冲突的条目、或用插件内容替换条目原文——酒馆预设文件本身不被修改，恢复后即回到预设原样。标记为「运行时填充」的条目由本扩展按当前场景实时填入，不可禁用或覆盖`
+        t`列出当前生效预设的全部条目：可禁用、用插件内容替换条目原文，也可开启酒馆里已停用的条目——这些改动只影响选项生成，酒馆预设文件本身不被修改，恢复后即回到预设原样。标记为「运行时填充」的条目由本扩展按当前场景实时填入，不可禁用或覆盖`
       }}</span>
       <div v-if="presetEntries.length === 0" class="choice-field-hint">{{ t`未读取到预设条目` }}</div>
       <div v-else class="choice-preset-entry-list">
@@ -97,7 +103,9 @@
           v-for="(entry, idx) in presetEntries"
           :key="entry.identifier"
           class="choice-preset-entry"
-          :class="{ 'choice-preset-entry--disabled': entry.stDisabled || entry.pluginDisabled }"
+          :class="{
+            'choice-preset-entry--disabled': entry.pluginDisabled || (entry.stDisabled && !entry.forceEnabled),
+          }"
         >
           <div class="choice-preset-entry-row">
             <span class="choice-preset-entry-idx">{{ idx + 1 }}</span>
@@ -108,15 +116,33 @@
               entry.title || entry.identifier
             }}</span>
             <span v-if="entry.isMarker" class="choice-preset-entry-badge">{{ t`运行时填充` }}</span>
+            <span v-else-if="entry.pluginDisabled" class="choice-preset-entry-badge choice-preset-entry-badge--off">{{
+              t`已禁用`
+            }}</span>
+            <span
+              v-else-if="entry.stDisabled && entry.forceEnabled"
+              class="choice-preset-entry-badge choice-preset-entry-badge--on"
+              >{{ t`已启用` }}</span
+            >
             <span v-else-if="entry.stDisabled" class="choice-preset-entry-badge">{{ t`酒馆已停用` }}</span>
             <span v-else-if="entry.overridden" class="choice-preset-entry-badge choice-preset-entry-badge--on">{{
               t`已覆盖`
             }}</span>
-            <span v-else-if="entry.pluginDisabled" class="choice-preset-entry-badge choice-preset-entry-badge--off">{{
-              t`已禁用`
-            }}</span>
             <span class="choice-preset-entry-actions">
               <template v-if="!entry.isMarker">
+                <button
+                  v-if="entry.stDisabled"
+                  class="choice-btn-sm"
+                  :class="{ active: entry.forceEnabled }"
+                  :title="
+                    entry.forceEnabled
+                      ? t`取消强制启用，回到酒馆的停用状态`
+                      : t`在插件内强制启用（不改酒馆预设，仅选项生成生效）`
+                  "
+                  @click="togglePresetEntryForce(entry.identifier)"
+                >
+                  <i :class="entry.forceEnabled ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off'"></i>
+                </button>
                 <button
                   class="choice-btn-sm"
                   :title="entry.pluginDisabled ? t`恢复该条目参与组装` : t`禁用该条目（本扩展侧，不改酒馆预设）`"
@@ -603,8 +629,8 @@ const companionHint = computed(() => {
   if (info.regexCount > 0) parts.push(t`预设正则 ×${info.regexCount}`);
   if (info.helperTotal > 0) {
     const helperActive = info.helperInstalled && info.helperScopeEnabled && info.helperEnabled > 0;
-    if (helperActive) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（仅在酒馆主生成中执行，选项生成不经过）`);
-    else if (info.helperEnabled > 0) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（酒馆助手侧未启用，暂不生效）`);
+    if (helperActive) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（仅主对话执行）`);
+    else if (info.helperEnabled > 0) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（酒馆助手未启用）`);
     else parts.push(t`酒馆助手脚本 ×${info.helperTotal}（均已停用）`);
   }
   if (info.spresetPresent) {
@@ -614,7 +640,7 @@ const companionHint = computed(() => {
         : t`SPreset 框架（未启用处理模块）`,
     );
   }
-  return parts.length ? t`该预设附带：${parts.join('；')}` : '';
+  return parts.length ? t`该预设自带：${parts.join('；')}` : '';
 });
 
 const companionHintTitle = computed(() => {
@@ -626,9 +652,7 @@ const companionHintTitle = computed(() => {
     t`SPreset 框架的强制后处理模式已由「提示词后处理跟随预设」自动采用；其余载荷级处理（条件合并等）仅在脚本层「酒馆助手」档生效，入口条件与输出侧处理在任何档位都不执行。`,
   ];
   if (info.differsFromSelected) {
-    lines.push(
-      t`注意：当前固定使用的预设与酒馆选中的预设不同——提示词取固定预设，而预设正则仍跟随酒馆选中的预设。`,
-    );
+    lines.push(t`注意：当前固定使用的预设与酒馆选中的预设不同——提示词取固定预设，而预设正则仍跟随酒馆选中的预设。`);
   }
   return lines.join('\n');
 });
@@ -641,8 +665,10 @@ type PresetEntryRow = {
   title: string;
   role: string;
   isMarker: boolean;
-  /** 酒馆侧 prompt_order.enabled === false（酒馆自己停用的条目，本就静止默组装）。 */
+  /** 酒馆侧 prompt_order.enabled === false（酒馆自己停用的条目，默认不参与组装）。 */
   stDisabled: boolean;
+  /** 覆盖层 enabled=true：插件内强制开启酒馆已停用的条目。 */
+  forceEnabled: boolean;
   originalContent: string;
   expanded: boolean;
   pluginDisabled: boolean;
@@ -670,6 +696,7 @@ const presetEntries = computed<PresetEntryRow[]>(() => {
       role: String(prompt.role ?? 'system').toLowerCase(),
       isMarker: prompt.marker === true || (NATIVE_MARKER_SLOTS as readonly string[]).includes(id),
       stDisabled: entry?.enabled === false,
+      forceEnabled: ov?.enabled === true,
       originalContent: String(prompt.content ?? ''),
       expanded: expandedEntries.value.has(rows.length),
       pluginDisabled: ov?.disabled === true,
@@ -679,16 +706,30 @@ const presetEntries = computed<PresetEntryRow[]>(() => {
   return rows;
 });
 
-/** 禁用/恢复条目（本扩展侧覆盖层，酒馆预设不动）。已有内容覆盖时仅翻 disabled 位，
- *  内容覆盖保留——「恢复原样」由清除覆盖负责。 */
+/** 禁用/恢复条目（本扩展侧覆盖层，酒馆预设不动）。已有内容/强制启用覆盖时只翻 disabled 位，
+ *  其余覆盖保留——「恢复原样」由清除覆盖负责。 */
 const togglePresetEntry = (id: string): void => {
   const ov = globalStore.settings.st_preset_overrides;
   const cur = ov[id];
   if (cur?.disabled) {
-    if (cur.content !== undefined) ov[id] = { ...cur, disabled: false };
+    const { disabled: _disabled, ...rest } = cur;
+    if (Object.keys(rest).length) ov[id] = rest;
     else delete ov[id];
   } else {
     ov[id] = { ...(cur ?? {}), disabled: true };
+  }
+};
+
+/** 强制启用/取消（仅对酒馆已停用的条目显示）：插件侧开启不改酒馆预设，只影响选项生成。 */
+const togglePresetEntryForce = (id: string): void => {
+  const ov = globalStore.settings.st_preset_overrides;
+  const cur = ov[id];
+  if (cur?.enabled) {
+    const { enabled: _enabled, ...rest } = cur;
+    if (Object.keys(rest).length) ov[id] = rest;
+    else delete ov[id];
+  } else {
+    ov[id] = { ...(cur ?? {}), enabled: true };
   }
 };
 
@@ -713,7 +754,8 @@ const clearPresetEntryContent = (id: string): void => {
   const ov = globalStore.settings.st_preset_overrides;
   const cur = ov[id];
   if (!cur) return;
-  if (cur.disabled) ov[id] = { disabled: true };
+  const { content: _content, ...rest } = cur;
+  if (Object.keys(rest).length) ov[id] = rest;
   else delete ov[id];
 };
 
@@ -1482,34 +1524,6 @@ onUnmounted(() => {
   justify-content: space-between;
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
-}
-
-.choice-beginner-section {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  overflow: hidden;
-}
-
-.choice-beginner-body {
-  padding: var(--choice-space-2) var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-  border-top: 1px solid var(--choice-border);
-}
-
-.choice-field-module {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  background: var(--choice-bg-card);
-  padding: 1px var(--choice-space-2);
-  border-radius: var(--choice-radius-full);
-}
-
-.choice-restore-btn {
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-2);
-  margin-left: auto;
 }
 
 .choice-enrich-badge-sm {

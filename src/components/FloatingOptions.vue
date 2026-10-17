@@ -38,33 +38,11 @@
             -->
             <span class="choice-option-content"
               >{{ parseOptionContent(option.text)
-              }}<template v-if="!rollOf(index) && previewOf(index).length"
-                ><span class="choice-card-tag-row"
-                  ><span
-                    v-for="pc in previewOf(index)"
-                    :key="pc.id"
-                    class="choice-card-tag choice-card-tag--preview"
-                    :class="`choice-card-star--${pc.star}`"
-                    :title="`${pc.name}：${t`判定可触发`} · ${pc.effects.map(effectSummary).join('·')}`"
-                    ><i class="fa-solid fa-bolt"></i>{{ pc.name }}</span
-                  ></span
-                ></template
-              ><i
+              }}<i
                 v-if="rollOf(index)"
                 class="choice-roll-chip"
                 :class="`choice-roll-chip--${rollOf(index)!.outcome}`"
-                >{{ rollChipText(rollOf(index)!) + brokenText(rollOf(index)!) }}</i
-              ><template v-if="rollOf(index)?.cards?.triggered?.length"
-                ><span class="choice-card-tag-row"
-                  ><span
-                    v-for="tc in rollOf(index)!.cards!.triggered"
-                    :key="tc.card.id"
-                    class="choice-card-tag"
-                    :class="`choice-card-star--${tc.card.star}`"
-                    :title="`${tc.card.name}：${tc.summary}`"
-                    ><i class="fa-solid fa-id-badge"></i>{{ tc.card.name }}</span
-                  ></span
-                ></template
+                >{{ rollChipText(rollOf(index)!) }}</i
               ><span
                 v-if="isPending(index)"
                 class="choice-roll-reroll"
@@ -200,7 +178,7 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
-import { storeGeneration, isCardSettled, cardSettleEpoch } from '@/core/options-store';
+import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -208,10 +186,6 @@ import { openApiOnboarding, autoOpenApiOnboarding } from '@/core/onboarding';
 import { openSettings, closeBubbleOptions, isSettingsOpen, bubbleX, bubbleY, bubbleSize } from '@/core/floating-state';
 import { parseOptionType, parseOptionContent, parseOptionStyle, parseOptionDice } from '@/util/option-format';
 import { applyOptionBehavior, isOptionApplyBusy, rollOptionDice, type DiceRollResult } from '@/util/option-action';
-import { openCardPack } from '@/core/card-pack-state';
-import { previewTriggeredCards, type CardResolution } from '@/core/cards';
-import { effectSummary } from '@/core/cards-meta';
-import type { Card } from '@/type/settings';
 import { resolveRateForDisplay } from '@/core/attribute-dc';
 import { getStCharacter } from '@/core/st-character';
 import type { DiceOutcome } from '@/core/dice';
@@ -341,32 +315,11 @@ const rateClass = (rate: number): string => {
   return rate >= 70 ? 'choice-option-rate--high' : rate >= 40 ? 'choice-option-rate--mid' : 'choice-option-rate--low';
 };
 
-// 楼层是否已结算卡牌经济（预掷/重掷与判定路径同门控）。结算态非响应式，
-// 依赖追踪靠 cardSettleEpoch（markCardSettled 自增，跨组件结算也会触发重算）
-const layerSettled = (): boolean =>
-  panelStore.messageId != null && isCardSettled(panelStore.messageId, panelStore.swipeId);
-
-// v66 点选前触发预览：与主面板 ActionOptionsPanel 同构（并行模式，两处需同步改动）。
-// 弹窗只有选项视图、无润色概念，故不做 activeView 门控；骰子可用性门控与主面板一致。
-// 整表算一次缓存。
-const cardPreviews = computed<Card[][]>(() => {
-  void cardSettleEpoch.value;
-  if (!gs.settings.card_enabled || !diceEnabled.value || gs.settings.dice.allow_formula) return [];
-  if (layerSettled()) return [];
-  return options.value.map(o =>
-    previewTriggeredCards(o.text, currentChar.value, {
-      attr_dc_enabled: gs.settings.dice.attr_dc_enabled,
-      low_roll: gs.settings.dice.low_roll,
-    }),
-  );
-});
-const previewOf = (index: number): Card[] => cardPreviews.value[index] ?? [];
-
 // 行内判定反馈：同代内点过的选项记一次判定结局+差值（纯视觉，不持久化），
 // key 用「generation id + 行号」，切代自然失效（同 selectedKeys 机制）。
 // v57：差值 = 判定 margin；v61 起 margin 由 option-action 经 diceMargin 归一化（成功侧为正），
 // chip 显示「结局+差值」如「成功 +18」「失败 −38」。
-type RollResult = { outcome: DiceOutcome; margin: number; cards?: CardResolution };
+type RollResult = { outcome: DiceOutcome; margin: number };
 const rollResults = ref<ReadonlyMap<string, RollResult>>(new Map());
 // v61 就地重掷两步流状态：stagedFull = 已 stage 未应用的完整判定结果（含 roll/rate 供 marker），
 // pendingApply = 已 stage 未应用的 key 集合（决定是否显示 ↻）。正常流程（reroll 关）不写这两个。
@@ -380,13 +333,6 @@ const rollLabel = (o: DiceOutcome): string =>
 // 带符号差值：正数加 +、0 显示 0（恰好达标），负数为 −
 const fmtMargin = (m: number): string => (m > 0 ? `+${m}` : String(m));
 const rollChipText = (r: RollResult): string => `${rollLabel(r.outcome)} ${fmtMargin(r.margin)}`;
-// v70 触发磨损破损短提示：仅应用后的判定结果带 brokenCards（预览/首掷 stage 为空，
-// 不提示——破损只在 commit 落库时产生）；chip 追加卡名提示玩家去修复/换卡。
-const brokenText = (r: RollResult): string => {
-  const broken = r.cards?.brokenCards ?? [];
-  if (broken.length === 0) return '';
-  return ` · ${broken.map(b => b.card.name).join('、')}耐久耗尽`;
-};
 
 // 关闭淡化瞬间若正处于半透明态，立即恢复不透明：避免"关了开关但弹窗还淡着"
 watch(dimEnabled, enabled => {
@@ -452,13 +398,11 @@ const onSelect = async (option: ChoiceOption, index: number) => {
   // 再次点击 = 用已 stage 结果应用。正常流程（reroll 关）保持原「点击即掷+应用」。
   const willRoll = d.enabled && resolveRateForDisplay(option.text, currentChar.value, d) !== null;
   if (willRoll && d.reroll_enabled && !pendingApply.value.has(key)) {
-    // 预掷与判定路径同结算门控：已结算楼层走非卡路径，防预告的卡触发在实际应用时被剥除
-    const staged = rollOptionDice(option.text, { cardDisabled: layerSettled() });
+    const staged = rollOptionDice(option.text);
     if (staged) {
       rollResults.value = new Map(rollResults.value).set(key, {
         outcome: staged.outcome,
         margin: staged.margin,
-        cards: staged.cards,
       });
       stagedFull.value = new Map(stagedFull.value).set(key, staged);
       pendingApply.value = new Set(pendingApply.value).add(key);
@@ -491,10 +435,7 @@ const onSelect = async (option: ChoiceOption, index: number) => {
     rollResults.value = new Map(rollResults.value).set(key, {
       outcome: dice.outcome,
       margin: dice.margin,
-      cards: dice.cards,
     });
-    // v62 幸运数命中 → 开卡包弹窗（与主面板共用同一弹窗信号，双实现不冲突）
-    if (dice.cards?.packOffer) openCardPack(dice.cards.packOffer, 'lucky');
   }
   // 重掷流已应用：清 stage 态（↻ 消失，保留 chip 作为本次判定反馈）
   if (willRoll && d.reroll_enabled) {
@@ -515,15 +456,14 @@ const onSelect = async (option: ChoiceOption, index: number) => {
 };
 
 // v61 就地重掷：重掷当前选项（重新掷骰并更新 chip 与 stage 结果），不应用不发送。
-// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）；与判定路径同结算门控。
+// 由 chip 旁的 ↻ 触发（@click.stop，避免误触选项本体）。
 const onReroll = (option: ChoiceOption, index: number) => {
-  const full = rollOptionDice(option.text, { cardDisabled: layerSettled() });
+  const full = rollOptionDice(option.text);
   if (!full) return;
   const key = keyOf(index);
   rollResults.value = new Map(rollResults.value).set(key, {
     outcome: full.outcome,
     margin: full.margin,
-    cards: full.cards,
   });
   stagedFull.value = new Map(stagedFull.value).set(key, full);
 };

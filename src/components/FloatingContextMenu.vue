@@ -12,12 +12,6 @@
         <i class="fa-solid fa-chess"></i>
         {{ t`查看行动选项` }}
       </button>
-      <!-- 金手指面板入口（共存协议，零硬依赖）：金手指暴露 window.__gf_open_panel__
-           函数钩子才显示此项（未装/旧版/合并开关关闭时钩子不存在，菜单照旧） -->
-      <button v-if="gfPanelAvailable" class="choice-menu-item" @click.stop="onOpenGfPanel">
-        <i class="fa-solid fa-dice-d20"></i>
-        {{ t`打开金手指面板` }}
-      </button>
       <button class="choice-menu-item" @click.stop="onOpenSettings">
         <i class="fa-solid fa-gear"></i>
         {{ t`打开设置` }}
@@ -42,13 +36,10 @@ import {
 import { setEntryVisible } from '@/core/entry-points';
 
 const MENU_WIDTH = 140;
-// 金手指面板入口探测（共存协议）：金手指暴露 window.__gf_open_panel__ 函数（已装且
-// 开了「并入 choice 悬浮球」）才显项。零硬依赖：不 import 金手指源码，只探测 window 键
-const gfPanelAvailable = typeof (window as unknown as Record<string, unknown>)['__gf_open_panel__'] === 'function';
-// 菜单估高（项高 ~40px + 上下 padding）：金手指项在场时多一项（约 +40px），
+// 菜单估高（项高 ~40px + 上下 padding）：
 // 仅用于底部视口钳制；与实际渲染高度略有出入可接受——钳制目标是「打开设置/隐藏
 // 悬浮球」可达而非像素级贴边
-const MENU_HEIGHT_EST = gfPanelAvailable ? 172 : 132;
+const MENU_HEIGHT_EST = 132;
 
 const menuEl = ref<HTMLElement | null>(null);
 
@@ -77,14 +68,6 @@ const menuY = computed(() => {
 const onShowOptions = () => {
   isBubbleContextMenuOpen.value = false;
   isBubbleOptionsOpen.value = true;
-};
-
-const onOpenGfPanel = () => {
-  isBubbleContextMenuOpen.value = false;
-  const open = (window as unknown as Record<string, unknown>)['__gf_open_panel__'];
-  if (typeof open === 'function') {
-    open();
-  }
 };
 
 const onOpenSettings = () => {

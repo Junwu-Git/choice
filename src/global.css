@@ -11,8 +11,6 @@
 .choice-sedlg-overlay .menu_button,
 .choice-cfdlg-overlay .menu_button,
 .choice-ccdlg-overlay .menu_button,
-.choice-cardpack-overlay .menu_button,
-.choice-slotpicker-overlay .menu_button,
 .choice-strdlg-overlay .menu_button,
 .choice-regexlib-overlay .menu_button,
 .choice-dialog-overlay .menu_button,
@@ -137,8 +135,6 @@
 .choice-sedlg-overlay *:focus-visible,
 .choice-cfdlg-overlay *:focus-visible,
 .choice-ccdlg-overlay *:focus-visible,
-.choice-cardpack-overlay *:focus-visible,
-.choice-slotpicker-overlay *:focus-visible,
 .choice-strdlg-overlay *:focus-visible,
 .choice-regexlib-overlay *:focus-visible,
 .choice-dialog-overlay *:focus-visible,
@@ -908,56 +904,6 @@
 /* v61 骰式表达式：骰式选项的徽标用独立强调色（区别于纯需求值分档），提示「这是骰式而非 D100」 */
 .choice-option-rate--formula {
   color: var(--choice-color-info);
-}
-
-/* v62 卡牌：星级专用色板（判定行内触发卡 chip 的左缘色条）。
-   取 theme.css 的 --choice-star-N（卡面 CardFace 自用同一色板，经自身注入 var，不依赖此处左缘单条） */
-.choice-card-star--1 {
-  border-left-color: var(--choice-star-1);
-}
-.choice-card-star--2 {
-  border-left-color: var(--choice-star-2);
-}
-.choice-card-star--3 {
-  border-left-color: var(--choice-star-3);
-}
-.choice-card-star--4 {
-  border-left-color: var(--choice-star-4);
-}
-.choice-card-star--5 {
-  border-left-color: var(--choice-star-5);
-}
-
-/* v62 判定行内触发卡徽标（主面板/悬浮球共用）：chip 旁显示触发卡的图徽/名称 */
-.choice-card-tag-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  vertical-align: middle;
-}
-
-.choice-card-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: var(--choice-text-xs);
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--choice-border-strong);
-  border-left-width: 3px;
-  background: var(--choice-bg-element);
-  color: var(--choice-text-secondary);
-  white-space: nowrap;
-}
-
-/* v66 点选前「可触发」预览 chip：空心虚线区分于点选后已触发的实心 chip（同一行内、
- * 判定后由后者接管，两者不会同时出现） */
-.choice-card-tag--preview {
-  background: transparent;
-  border-style: dashed;
-  border-left-style: dashed;
-  opacity: 0.8;
 }
 
 /* 行内判定 chip：绝对定位在行尾（不占内容流），点选后淡出到半透明滞留 */

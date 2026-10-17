@@ -87,7 +87,7 @@ export async function enrichUserInput(input: string): Promise<string[]> {
 
   try {
     // WI 排他窗口（互斥 + 即用即还，见 generator.runWIExclWindow）：仅消息构建读取世界书，
-    // 构建完成立即还原，与选项生成/卡牌池链路并发时不再交错践踏全局 WI 状态
+    // 构建完成立即还原，与选项生成/润色链路并发时不再交错践踏全局 WI 状态
     const messages = await runWIExclWindow(async () => {
       const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
       const restore = gwi.enabled

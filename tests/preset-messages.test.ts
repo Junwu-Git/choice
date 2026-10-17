@@ -249,6 +249,45 @@ describe('buildPresetMessages — 插件侧条目覆盖层（不改酒馆预设�
     expect(out.map(m => m.content)).toEqual(['AAA']);
   });
 
+  it('enabled 覆盖可强制开启酒馆已停用的条目（只影响本扩展）', () => {
+    const preset = {
+      prompts: [mkPrompt('a', { content: 'AAA' }), mkPrompt('b', { content: 'BBB' })],
+      order: [
+        { identifier: 'a', enabled: true },
+        { identifier: 'b', enabled: false },
+      ],
+    };
+    // 无覆盖：酒馆停用的 b 不参与
+    expect(buildPresetMessages(preset, slots()).map(m => m.content)).toEqual(['AAA']);
+    // 强制开启：b 参与
+    const forced = buildPresetMessages(preset, slots(), { overrides: { b: { enabled: true } } });
+    expect(forced.map(m => m.content)).toEqual(['AAA', 'BBB']);
+  });
+
+  it('disabled 优先于 enabled（同一覆盖内互斥时以禁用为准）', () => {
+    const preset = {
+      prompts: [mkPrompt('a', { content: 'AAA' })],
+      order: [{ identifier: 'a', enabled: true }],
+    };
+    const out = buildPresetMessages(preset, slots(), { overrides: { a: { disabled: true, enabled: true } } });
+    expect(out).toEqual([]);
+  });
+
+  it('in-chat 注入条目同样支持强制开启', () => {
+    const prompt = mkPrompt('injectA', { content: '注入内容', injection_position: 1, injection_depth: 1 });
+    const preset = {
+      prompts: [prompt, mkPrompt('chatHistory')],
+      order: [
+        { identifier: 'chatHistory', enabled: true },
+        { identifier: 'injectA', enabled: false },
+      ],
+    };
+    const out = buildPresetMessages(preset, slots({ chatHistory: history('u1', 'a1') }), {
+      overrides: { injectA: { enabled: true } },
+    });
+    expect(out.map(m => m.content)).toContain('注入内容');
+  });
+
   it('content 覆盖替换条目原文（先替换后宏替换）', () => {
     const preset = {
       prompts: [mkPrompt('a', { content: '原文 {{char}} 行为' })],

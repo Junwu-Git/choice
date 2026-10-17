@@ -221,14 +221,6 @@
           </span>
         </label>
       </div>
-      <!-- 互斥警示：骰式路径不经过卡牌管线，两开关同开时卡牌静默停摆，提前说明防困惑 -->
-      <small
-        v-if="gs.settings.dice.allow_formula && gs.settings.card_enabled"
-        class="choice-field-hint choice-dice-crit-warn"
-      >
-        <i class="fa-solid fa-triangle-exclamation"></i
-        >{{ t`卡牌系统已开启：骰式判定路径不经过卡牌，卡触发、行动币与幸运开包将停摆；如需卡牌玩法请关闭骰式表达式` }}
-      </small>
       <!-- 演绎文案模板：收进可折叠「高级」区，减轻主体卡片负担 -->
       <ChoiceSectionCard title="演绎文案模板（高级）" icon="fa-solid fa-comment">
         <small class="choice-field-hint">{{
@@ -592,7 +584,7 @@ const clampDiceThreshold = (e: Event, lo: number, hi: number): number => {
 
 // 彩蛋窗口有效性警示：两阈值经 judgeOutcome 的 clamp 后重叠（DND：大失败上限≥大成功下限；
 // COC：大成功上限≥大失败下限）→ 大成功/大失败双双失效退化为纯成败判定。提前警示，
-// 避免「设了极端阈值/装了扩窗卡却再无彩蛋」的无感知困惑。
+// 避免「设了极端阈值却再无彩蛋」的无感知困惑。
 const critOverlapWarning = computed(() => {
   const d = gs.settings.dice;
   const critS = d.low_roll
@@ -612,22 +604,6 @@ const critOverlapWarning = computed(() => {
   flex-direction: column;
   /* 页级分区间距统一 space-4（与外观/统计页一致，滚动节奏统一） */
   gap: var(--choice-space-4);
-}
-
-.choice-generation-status {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  background: var(--choice-bg-card);
-  border-radius: var(--choice-radius-md);
-  font-size: var(--choice-text-xs);
-}
-
-.choice-config-status-label {
-  font-weight: 600;
-  color: var(--choice-primary);
-  white-space: nowrap;
 }
 
 .choice-count-row {
