@@ -36,7 +36,7 @@
         {{ t`请求附带 tool_choice:none` }}
       </label>
       <span class="choice-field-hint">{{
-        t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
+        t`绕过预设防截断类脚本对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
       }}</span>
     </ChoiceSectionCard>
 

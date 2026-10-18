@@ -59,7 +59,7 @@ export function normalizeApiUrl(url: string): string {
  *  例外：scriptLayer='prompt_ready'（预设模式脚本层，用户显式开启）时发送前广播
  *  PROMPT_READY，「最终入参」以（可能被脚本改写过的）广播结果为准——见 emitPresetPromptReady。
  *
- *  但事件层绕不开 fetch 层：酒馆助手预设脚本（如 Aether 防截断）会从 iframe patch
+ *  但事件层绕不开 fetch 层：外部预设脚本（如防截断类）会从 iframe patch
  *  主窗口 window.fetch，拦截一切 backends generate 端点请求并改写请求体（注入
  *  工具调用指令）。tool_choice:"none" 是这类脚本 callerControlsTools 的设计内绕过
  *  信号（"tools-disabled-by-caller" → bypass 原样转发），语义上也正确——本扩展只要
@@ -211,8 +211,8 @@ function normalizeTavernHelperError(e: unknown): unknown {
   return e instanceof Error ? e : new Error(message);
 }
 
-/** 从酒馆助手返回值提取正文：字符串直返；详情对象取 content。tool_calls 形态（模型把正文
- *  塞进工具参数，如 SPreset ToolBindings——B 通路下其注册层不武装，理论到不了这里）
+/** 从外部脚本执行器返回值提取正文：字符串直返；详情对象取 content。tool_calls 形态（模型把正文
+ *  塞进工具参数，如预设框架的 ToolBindings——B 通路下其注册层不武装，理论到不了这里）
  *  防御性解析 arguments.content。 */
 function extractTavernHelperText(raw: unknown): string {
   if (typeof raw === 'string') return raw;
@@ -232,13 +232,13 @@ function extractTavernHelperText(raw: unknown): string {
   return '';
 }
 
-/** B 通路：经酒馆助手 generateRaw 管线发送。与直连的差异（AGENTS.md 双轨段落有完整记录）：
- *  - GENERATE_AFTER_DATA/SETTINGS_READY/PROMPT_READY 会触发 → SPreset 类载荷级脚本生效；
- *  - GENERATION_STARTED 不触发（TH 只发自有 js_generation_* 事件）→ SPreset 入口条件/
+/** B 通路：经外部脚本执行器 generateRaw 管线发送。与直连的差异（AGENTS.md 双轨段落有完整记录）：
+ *  - GENERATE_AFTER_DATA/SETTINGS_READY/PROMPT_READY 会触发 → 载荷级脚本生效；
+ *  - GENERATION_STARTED 不触发（执行器只发自有 js_generation_* 事件）→ 入口条件/
  *    工具注册/输出侧钩子不武装；
- *  - custom_prompt_post_processing 不可显式指定（TH 按 oai_settings 发送，SPreset 再于
- *    SETTINGS_READY 强制覆盖）——跟随酒馆当前选中预设，与 SPreset 框架自身口径一致；
- *  - exclude_params 不生效（TH 仅在 source='custom' 时透传 exclude_body，而副 API 走 openai 源）。 */
+ *  - custom_prompt_post_processing 不可显式指定（执行器按 oai_settings 发送，预设框架再于
+ *    SETTINGS_READY 强制覆盖）——跟随酒馆当前选中预设，与预设框架自身口径一致；
+ *  - exclude_params 不生效（执行器仅在 source='custom' 时透传 exclude_body，而副 API 走 openai 源）。 */
 async function callSecondaryApiViaTavernHelper(
   messages: ChatMsg[],
   api: SecondaryApi,

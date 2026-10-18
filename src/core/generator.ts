@@ -21,10 +21,10 @@ import {
   type InChatInjection,
   type PresetSlotContents,
 } from '@/core/preset-messages';
-import { renderPresetTask, renderBaiBaiSummaryContent, BAIBAI_SUMMARY_TAG } from '@/core/preset-task';
+import { renderPresetTask, renderMemorySummaryContent, MEMORY_SUMMARY_TAG } from '@/core/preset-task';
 import { readActiveStPreset, type StPresetSnapshot } from '@/core/st-preset-source';
 import { dedupOptions } from '@/core/option-dedup';
-import { buildSceneText, injectKnowledgeBlock, renderKnowledgeInjection } from '@/core/knowledge-injection';
+import { buildSceneText, injectKnowledgeBlock, renderKnowledgeInjectionDetailed } from '@/core/knowledge-injection';
 import { commitKnowledgePatches, isKnowledgeReportStale, knowledgeState, takeSnapshot } from '@/core/knowledge-state';
 import {
   adaptPromptForMerge,
@@ -37,8 +37,8 @@ import {
 import { renderExistingTable } from '@/core/knowledge-report';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { parseOptions, STRIP_REASONING_TAGS_RE, stripTrailingCommas } from '@/core/option-parse';
-import { getBaiBaiSummary } from '@/core/baibai-bridge';
-import { getShujukuTargetBook } from '@/core/shujuku-bridge';
+import { getExternalSummary } from '@/core/memory-summary-bridge';
+import { getExternalStructuredBook } from '@/core/structured-memory-bridge';
 import { renderWorldInfoContent } from '@/core/ejs-bridge';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
@@ -81,6 +81,18 @@ export const lastOptionsGeneratedAt = ref(0);
 /** 最近一次 buildMessages 的完整产物（调试用），DebugSettings 渲染；undefined = 尚未生成过。 */
 export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
 
+/** 最近一次知识边界注入的统计（调试用）：注入了哪些条目、多少条因预算省略。
+ *  undefined = 本轮未注入（功能关闭 / 报告为空）。 */
+export const lastKnowledgeInjection = ref<
+  | {
+      chosen: { id: string; topic: string; status: string }[];
+      omitted: number;
+      usedChars: number;
+      total: number;
+    }
+  | undefined
+>(undefined);
+
 /** 最近一次去重报告（调试用），DebugSettings 渲染；undefined = 尚未生成过或去重未启用。 */
 export const lastDedupReport = ref<
   | {
@@ -111,7 +123,7 @@ export async function resolveWIParticipation(
   const allExcl = [...new Set([...gwi.global_excluded_books, ...cwi.excluded_books])];
   const enabled = [...cwi.enabled_books];
 
-  const book = getShujukuTargetBook();
+  const book = getExternalStructuredBook();
   if (book) {
     if (gs.settings.prompt_rules.shujuku_enabled) {
       // 开关 ON：确保该书参与。仅 push 进 enabled 不够——applyWIExcl 是「排除优先于启用」，
@@ -186,8 +198,8 @@ export const buildMessages = async (
   };
   const msgs: ChatMsg[] = [];
   const wiBuckets = wi.enabled ? await buildWI() : null;
-  // 柏宝书摘要的正文边界（窗口首楼原始下标），模块循环前算一次——baibai_summary 模块
-  // 在用户可调序的模块列表里，可能在 chat_history 之前渲染，不能依赖后者先算好
+  // 记忆摘要的正文边界（窗口首楼原始下标），模块循环前算一次——摘要模块在用户可调序的
+  // 模块列表里，可能在 chat_history 之前渲染，不能依赖后者先算好
   const histStart = historyWindowStart(contextRounds);
 
   const sorted = [...modules].sort((a, b) => a.order - b.order);
@@ -270,10 +282,10 @@ export const buildMessages = async (
       }
       case 'baibai_summary': {
         if (!gs.settings.prompt_rules.baibai_enabled) break;
-        const text = getBaiBaiSummary(histStart);
+        const text = getExternalSummary(histStart);
         if (text) {
           // 包装文案单一来源在 preset-task.ts（预设模式附加消息共用，防两处漂移）
-          msgs.push({ role: 'system', content: renderBaiBaiSummaryContent(text) });
+          msgs.push({ role: 'system', content: renderMemorySummaryContent(text) });
         }
         break;
       }
@@ -394,21 +406,21 @@ export const buildPresetModeMessages = async (
   const { slots, depthInjections } = await buildPresetSlots(wi, contextRounds);
   const gs = useGlobalSettingsStore();
   const pr = gs.settings.prompt_rules;
-  // 柏宝书记忆（预设模式补缺）：柏宝书扩展的摘要是注入酒馆正文管线的（setExtensionPrompt），
-  // 本扩展副 API 直连看不到那条通道——预设模式又不读模块管线，不开此口柏宝书记忆会静默缺席。
+  // 记忆摘要（预设模式补缺）：外部记忆系统把摘要注入酒馆正文管线（setExtensionPrompt），
+  // 本扩展副 API 直连看不到那条通道——预设模式又不读模块管线，不开此口摘要会静默缺席。
   // 走深度注入、depth = 历史条数 → 落在历史块最前端（最旧端），时间线 [旧事件摘要] → [可见对话]，
-  // 对齐扩展模式 baibai_summary 模块（order 11）在 chat_history 之前的既有位置——此前末尾追加
-  // 会把「已离开上下文的旧事件」摆到比全部对话更新的位置，时间线反了。包装同源（preset-task.ts）。
-  let baibaiMsg: ChatMsg | null = null;
+  // 对齐扩展模式摘要模块在 chat_history 之前的既有位置——此前末尾追加会把「已离开上下文的
+  // 旧事件」摆到比全部对话更新的位置，时间线反了。包装同源（preset-task.ts）。
+  let summaryMsg: ChatMsg | null = null;
   if (pr.baibai_enabled) {
-    const summary = getBaiBaiSummary(historyWindowStart(contextRounds));
+    const summary = getExternalSummary(historyWindowStart(contextRounds));
     if (summary) {
-      baibaiMsg = { role: 'system', content: renderBaiBaiSummaryContent(summary) };
+      summaryMsg = { role: 'system', content: renderMemorySummaryContent(summary) };
       depthInjections.push({
         depth: slots.chatHistory.filter(m => m.content?.trim()).length,
         order: 100,
         role: 'system',
-        content: baibaiMsg.content,
+        content: summaryMsg.content,
       });
     }
   }
@@ -422,8 +434,8 @@ export const buildPresetModeMessages = async (
   const msgs: ChatMsg[] = [...presetMsgs];
   // 兜底：深度注入落在历史块内部，历史块为空或预设缺 chatHistory 槽位时注入被整体丢弃——
   // 此时退回末尾追加，守住「不静默缺席」底线；按自有包装标签检测，正常路径不会重复
-  if (baibaiMsg && !presetMsgs.some(m => m.content.includes(BAIBAI_SUMMARY_TAG))) {
-    msgs.push(baibaiMsg);
+  if (summaryMsg && !presetMsgs.some(m => m.content.includes(MEMORY_SUMMARY_TAG))) {
+    msgs.push(summaryMsg);
   }
 
   // 任务区起手说明（紧跟预设内容，声明本轮性质）——压制预设"续写正文/扮演角色"的定位冲突
@@ -463,11 +475,11 @@ export const buildPresetModeMessages = async (
 
 /**
  * 本扩展聊天历史窗口首楼的原始下标（正文层起点）：与 buildChatHistory 同一套选取
- * （is_system 过滤 + rounds 截尾），供柏宝书摘要作 before 边界——摘要层 [0, start)
- * 与正文层 [start, 末尾) 顺序相接不重复，对齐柏宝书自身「摘要+原生历史」两层注入模型。
+ * （is_system 过滤 + rounds 截尾），供记忆摘要作 before 边界——摘要层 [0, start)
+ * 与正文层 [start, 末尾) 顺序相接不重复，对齐「摘要+原生历史」两层记忆模型。
  * 两处窗口选取逻辑必须同步改。窗口为空（无可发正文）返回 -1。
  */
-const historyWindowStart = (contextRounds: number): number => {
+export const historyWindowStart = (contextRounds: number): number => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -1065,13 +1077,20 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     if (gs.settings.knowledge.enabled && gs.settings.knowledge.inject_enabled) {
       // chat 的导出类型是 TavernHelper 子集（message/role），运行时是 ST 原生楼层
       // （mes/is_user/is_system）——与 panel-mount 同款断言
-      const block = renderKnowledgeInjection(cs.settings.knowledge_report, {
+      const injection = renderKnowledgeInjectionDetailed(cs.settings.knowledge_report, {
         sceneText: buildSceneText(chat as unknown as StChatMessage[], 4),
         maxEntries: gs.settings.knowledge.inject_max_entries,
         charBudget: gs.settings.knowledge.inject_char_budget,
       });
-      if (block) {
-        injectKnowledgeBlock(messages, substituteParams(block));
+      if (injection.block) {
+        injectKnowledgeBlock(messages, substituteParams(injection.block));
+        // 调试页据此核对「注入了哪些条目、哪些因预算省略」
+        lastKnowledgeInjection.value = {
+          chosen: injection.chosen.map(e => ({ id: e.id, topic: e.topic, status: e.status })),
+          omitted: injection.omitted,
+          usedChars: injection.usedChars,
+          total: injection.total,
+        };
         // 调试页快照在 buildMessages 内就已拍下（不含本次注入），此处覆盖为注入后的最终形态
         lastBuildMessages.value = structuredClone(messages);
       }
@@ -1118,8 +1137,14 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     }
 
     // 预设采样跟随（st_preset_sampling）：只覆盖采样项，连接层仍用副 API 配置
-    const sampling = presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined;
-    // 提示词后处理透传（取值链：SPreset ForcedPostProcessing → 预设顶层 → 酒馆实时）
+    let sampling = presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined;
+    // 合并模式要多输出一块知识补丁：max_tokens 若沿用预设值，最可能被截断的是末尾的
+    // <options>（补丁在它之前，反而能保住）——补丁写成了、选项没了，用户看到的是生成失败。
+    // 预留 800 token 给补丁块；预设没声明 max_tokens 时不猜（让上游用自己的默认值）。
+    if (knowledgeMerge && sampling?.max_tokens) {
+      sampling = { ...sampling, max_tokens: sampling.max_tokens + 800 };
+    }
+    // 提示词后处理透传（取值链：预设框架 ForcedPostProcessing → 预设顶层 → 酒馆实时）
     // 与脚本层档位——仅预设模式；扩展模式两者恒不生效
     const postProcessing =
       presetSnapshot && gs.settings.st_preset_post_processing
@@ -1147,8 +1172,11 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 守卫失败（期间切聊天/改楼/手动改报告）静默丢弃，绝不把旧结论写进新内容。
     if (knowledgeMerge) {
       const patch = parseMergedKnowledge(raw);
-      if (patch) {
-        commitKnowledgePatches(patch.patches, knowledgeMerge, cs.settings.knowledge_report.entries);
+      // 修订号明确不符说明模型拿的是旧表（或自行编造）：补丁丢弃，选项照常保留。
+      // null = 弱模型漏传修订号，不据此丢弃（本地 revision 守卫仍然有效）。
+      if (patch && (patch.baseRevision === null || patch.baseRevision === knowledgeMerge.revision)) {
+        // 基线由 commitKnowledgePatches 取 snapshot.entries（= 请求发出时的那张表）
+        commitKnowledgePatches(patch.patches, knowledgeMerge);
         knowledgeState.tick += 1;
       }
     }
@@ -1182,14 +1210,18 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         if (dropped / totalParsed > 0.6) break;
         refilled = true;
         const need = count - kept.length;
+        // 补丁只在首轮提交一次：把带 <knowledge_patch> 的原始输出当 assistant 历史会
+        // 诱导模型重复判定（补丁会被剥离丢弃，白耗输出），且等于告诉它「这种输出被接受」。
+        // 仅在合并模式下追加这句——普通生成没有补丁任务，多一句反而制造不存在的契约。
+        const noPatchHint = knowledgeMerge ? '本轮不要再输出知识边界补丁。' : '';
         const refillMessages: ChatMsg[] = [
           ...messages,
-          { role: 'assistant', content: raw },
+          { role: 'assistant', content: stripMergedKnowledge(raw) },
           {
             role: 'user',
             // 剔除数用当前累计值（dropped），首轮后恒等 r1 数字会与实际不符；
             // dropped 含同批内互相重复（dedupOptions 批内互重），措辞勿只提「此前选项」
-            content: `以上 <options> 中有 ${dropped} 条重复选项已剔除（含与此前选项及同批内互相重复）。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。`,
+            content: `以上 <options> 中有 ${dropped} 条重复选项已剔除（含与此前选项及同批内互相重复）。请再生成恰好 ${need} 条新的行动选项，不得与已给选项及此前方向重复；格式、人称、场景锚定要求不变，先 <thinking> 后 <options>。${noPatchHint}`,
           },
         ];
         lastBuildMessages.value = structuredClone(refillMessages);

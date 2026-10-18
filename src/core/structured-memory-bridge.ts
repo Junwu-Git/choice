@@ -1,15 +1,15 @@
 /**
- * core/shujuku-bridge.ts — SP·数据库 检测式桥接（只读、fail-safe，绝不写 SP·数据库 状态）
+ * 结构化记忆源检测式桥接（只读、fail-safe，绝不写对方状态）
  *
- * 职责：识别 SP·数据库 当前角色的注入目标世界书名，供 choice 的「数据库」开关与世界书页徽章使用。
- * 隔离原则：不依赖 SP·数据库 内部模块（不 import shujuku 源码）；只读 `extension_settings`
- * 的 userscripts 命名空间，解析路径完全镜像 SP·数据库 自身的 tavern-storage.ts，
- * 任何环节失败均静默返回 null。
+ * 职责：识别外部结构化记忆插件为当前角色指定的注入目标世界书名，供本扩展的
+ * 「结构化记忆」开关与世界书页徽章使用。
+ * 隔离原则：不依赖对方内部模块（不 import 其源码）；只读宿主 extensionSettings
+ * 的 userscripts 命名空间，解析路径按已核实的第三方存储布局实现，任何环节失败
+ * 均静默返回 null。
  *
- * 设置存储路径（已从 shujuku 源码核实）：
- *   extension_settings.__userscripts['shujuku_v120__userscript_settings_v1']['shujuku_v120_allSettings_v2']
- *    → JSON 字符串（setItem 时 String(value) 序列化）
- *    → Settings_ACU
+ * 设置存储路径（运行时契约，名称由对方定义，不可改）：
+ *   extension_settings.__userscripts[<命名空间>][<键>]
+ *    → JSON 字符串（对方写入时做了字符串序列化）
  *    → characterSettings[<scopeKey>].worldbookConfig.injectionTarget
  *
  * scopeKey 优先级：group:<id> > char:<avatar> > charname:<name>
@@ -20,40 +20,39 @@ import { this_chid } from '@sillytavern/script';
 import { world_names } from '@sillytavern/scripts/world-info';
 import { getStCharacter } from '@/core/st-character';
 
-// ── 存储路径常量（与 shujuku 的 STORAGE_KEY_ALL_SETTINGS_ACU / TAVERN_SETTINGS_NAMESPACE_ACU 完全对齐）──
-const SHUJUKU_NS = 'shujuku_v120__userscript_settings_v1';
-const SHUJUKU_KEY = 'shujuku_v120_allSettings_v2';
+// ── 存储路径常量（运行时契约：命名空间与键名由对方定义，不能改）──
+const EXTERNAL_MEMORY_NS = 'shujuku_v120__userscript_settings_v1';
+const EXTERNAL_MEMORY_KEY = 'shujuku_v120_allSettings_v2';
 
-interface ShujukuWorldbookConfig {
+interface ExternalWorldbookConfig {
   injectionTarget?: string;
   source?: string;
 }
 
-interface ShujukuSettings {
-  characterSettings?: Record<string, { worldbookConfig?: ShujukuWorldbookConfig }>;
+interface ExternalMemorySettings {
+  characterSettings?: Record<string, { worldbookConfig?: ExternalWorldbookConfig }>;
 }
 
 /**
- * 读取 SP·数据库 的设置根对象（JSON 字符串 → 对象）。
- * 与 shujuku 的 tavern-storage.ts getConfigStorage_ACU() 路径一致：
- *   extension_settings.__userscripts[SHUJUKU_NS][SHUJUKU_KEY]
+ * 读取对方的设置根对象（JSON 字符串 → 对象）。
+ * 路径：extension_settings.__userscripts[EXTERNAL_MEMORY_NS][EXTERNAL_MEMORY_KEY]
  */
-function readShujukuSettings(): ShujukuSettings | null {
+function readExternalSettings(): ExternalMemorySettings | null {
   try {
     const ext: any = (window as any).SillyTavern?.getContext?.()?.extensionSettings;
     if (!ext) return null;
-    const ns = ext?.__userscripts?.[SHUJUKU_NS];
+    const ns = ext?.__userscripts?.[EXTERNAL_MEMORY_NS];
     if (!ns) return null;
-    const raw = ns[SHUJUKU_KEY];
+    const raw = ns[EXTERNAL_MEMORY_KEY];
     if (raw == null) return null;
-    return typeof raw === 'string' ? JSON.parse(raw) : (raw as ShujukuSettings);
+    return typeof raw === 'string' ? JSON.parse(raw) : (raw as ExternalMemorySettings);
   } catch {
     return null;
   }
 }
 
 /**
- * 解析当前角色卡作用域键（镜像 shujuku 的 getCurrentCharacterCardKey_ACU 优先级）。
+ * 解析当前角色卡作用域键（优先级：群聊 > 角色卡 > 角色名）。
  * 1. 群聊：group:<groupId>
  * 2. 角色卡：char:<avatar 文件名>
  * 3. 回退：charname:<角色名>
@@ -79,17 +78,17 @@ function resolveScopeKey(): string | null {
 }
 
 /**
- * 解析 SP·数据库 当前角色的注入目标世界书名。
+ * 解析当前角色的注入目标世界书名。
  *
- * injectionTarget 语义（来自 shujuku settings-model.ts）：
+ * injectionTarget 语义：
  *   - 'character' → 角色卡主世界书（character.data.extensions.world）
  *   - 显式书名 → 该书必须存在于 world_names 中才返回
  *
- * 任何环节失败返回 null（fail-safe，绝不抛错、绝不修改 SP·数据库 数据）。
+ * 任何环节失败返回 null（fail-safe，绝不抛错、绝不修改对方数据）。
  */
-export function getShujukuTargetBook(): string | null {
+export function getExternalStructuredBook(): string | null {
   try {
-    const settings = readShujukuSettings();
+    const settings = readExternalSettings();
     if (!settings?.characterSettings) return null;
 
     const scopeKey = resolveScopeKey();

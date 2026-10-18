@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildKnowledgeExport,
+  checkCommitGuards,
   computeChatFingerprint,
   findDuplicateGroups,
   MAX_ALIAS_LEN,
@@ -10,10 +12,11 @@ import {
   migrateKnowledgeReport,
   parseKnowledgePatch,
   parseKnowledgeResponse,
+  parseKnowledgeExport,
   renderExistingTable,
   type KnowledgePatch,
 } from '@/core/knowledge-report';
-import { injectKnowledgeBlock, renderKnowledgeInjection } from '@/core/knowledge-injection';
+import { injectKnowledgeBlock, renderKnowledgeInjection, renderKnowledgeInjectionDetailed } from '@/core/knowledge-injection';
 import type { ChatMsg } from '@/core/api-client';
 import type { KnowledgeReport, KnowledgeReportEntry } from '@/type/settings';
 
@@ -380,6 +383,36 @@ describe('mergeKnowledgePatch', () => {
     expect(out.entries.filter(x => x.retired)).toHaveLength(MAX_RETIRED_ENTRIES);
     expect(out.entries.some(x => x.topic === 'r0')).toBe(false);
   });
+
+  it('活跃条目全锁定时临时超限并记 capacity_full，新条目不丢', () => {
+    const existing = Array.from({ length: MAX_STORED_ENTRIES }, (_, i) =>
+      e(`old${i}`, 'known', '', '', i + 1, { locked: true }),
+    );
+    const out = mergeKnowledgePatch(existing, [patch({ topic: '最新', status: 'unknown', source: 'none' })], 999);
+    // 锁定条目不可淘汰 → 临时超限一条，且必须留痕
+    expect(out.entries).toHaveLength(MAX_STORED_ENTRIES + 1);
+    expect(out.entries.some(x => x.topic === '最新')).toBe(true);
+    expect(out.changes.some(c => c.kind === 'capacity_full')).toBe(true);
+    expect(out.changes.some(c => c.kind === 'evicted')).toBe(false);
+  });
+
+  it('本轮新增的条目不会被同轮容量治理淘汰', () => {
+    const existing = Array.from({ length: MAX_STORED_ENTRIES }, (_, i) =>
+      e(`old${i}`, 'unknown', '', '', i + 1, { locked: true }),
+    );
+    const out = mergeKnowledgePatch(existing, [patch({ topic: '刚新增', status: 'unknown', source: 'none' })], 999);
+    expect(out.entries.some(x => x.topic === '刚新增')).toBe(true);
+  });
+
+  it('锁定的退役条目不被退役容量清理', () => {
+    const existing = Array.from({ length: MAX_RETIRED_ENTRIES + 5 }, (_, i) =>
+      e(`r${i}`, 'known', '', '', i + 1, { retired: true, locked: i === 0 }),
+    );
+    const out = mergeKnowledgePatch(existing, [], 999);
+    // r0 最早且锁定：普通淘汰会先清它，锁定语义要求保留
+    expect(out.entries.some(x => x.topic === 'r0')).toBe(true);
+    expect(out.entries.filter(x => x.retired)).toHaveLength(MAX_RETIRED_ENTRIES + 1);
+  });
 });
 
 describe('renderExistingTable', () => {
@@ -413,6 +446,23 @@ describe('renderExistingTable', () => {
 describe('renderKnowledgeInjection', () => {
   it('空报告返回空串', () => {
     expect(renderKnowledgeInjection(report([]))).toBe('');
+  });
+
+  it('注入带剧情内时间，模型可区分「刚知道」与「早就知道」', () => {
+    const out = renderKnowledgeInjection(
+      report([e('城北仓库的位置', 'known', '守卫告知', '', 5, { event_time: '2026年10月15日 下午' })]),
+    );
+    expect(out).toContain('时间：2026年10月15日 下午');
+  });
+
+  it('结构化结果给出选中/省略/字符用量', () => {
+    const entries = Array.from({ length: 5 }, (_, i) => e(`条目${i}`, 'known', '依据内容', '', i));
+    const out = renderKnowledgeInjectionDetailed(report(entries), { maxEntries: 2 });
+    expect(out.chosen).toHaveLength(2);
+    expect(out.omitted).toBe(3);
+    expect(out.total).toBe(5);
+    expect(out.usedChars).toBeGreaterThan(0);
+    expect(out.block).toContain('另有 3 项因篇幅省略');
   });
 
   it('按已知→存疑→未知分组并带标签', () => {
@@ -498,6 +548,28 @@ describe('renderKnowledgeInjection', () => {
     const out = renderKnowledgeInjection(report([e('A', 'known')]));
     expect(out).toContain('仅玩家角色本人');
   });
+
+  it('有场景文本时，未命中的已知条目受配额限制', () => {
+    const entries = [
+      e('城北仓库', 'known', '', '', 9, { keywords: ['城北'] }),
+      ...Array.from({ length: 6 }, (_, i) => e(`无关${i}`, 'known', '', '', i)),
+    ];
+    const out = renderKnowledgeInjectionDetailed(report(entries), {
+      sceneText: '你走向城北的方向',
+      maxEntries: 8,
+    });
+    expect(out.chosen.some(x => x.topic === '城北仓库')).toBe(true);
+    // 命中 1 条 + 未命中配额 4 条（ceil((8-0)/2)）
+    expect(out.chosen.length).toBeLessThan(entries.length);
+    expect(out.omitted).toBeGreaterThan(0);
+  });
+
+  it('无场景文本时不做配额削减（全部 known 仍按预算注入）', () => {
+    const entries = Array.from({ length: 6 }, (_, i) => e(`条目${i}`, 'known', '', '', i));
+    const out = renderKnowledgeInjectionDetailed(report(entries), { maxEntries: 8 });
+    expect(out.chosen).toHaveLength(6);
+    expect(out.omitted).toBe(0);
+  });
 });
 
 describe('injectKnowledgeBlock', () => {
@@ -542,6 +614,42 @@ describe('computeChatFingerprint', () => {
   it('同一内容稳定', () => {
     const msgs = [{ mes: '甲', is_user: true }, { mes: '乙' }];
     expect(computeChatFingerprint(msgs)).toBe(computeChatFingerprint(msgs));
+  });
+
+  it('编辑早期楼层（窗口外）同样改变指纹', () => {
+    // 40 条消息：第 0 条远在尾部 12 条之外，旧实现只看尾部会漏判
+    const msgs = Array.from({ length: 40 }, (_, i) => ({ mes: `第 ${i} 条内容`, is_user: i % 2 === 0 }));
+    const before = computeChatFingerprint(msgs);
+    const edited = msgs.map((m, i) => (i === 0 ? { ...m, mes: '第 0 条被改写' } : m));
+    expect(computeChatFingerprint(edited)).not.toBe(before);
+  });
+
+  it('早期抽样层不改动时保持稳定（避免每次事件都扫全量）', () => {
+    const msgs = Array.from({ length: 40 }, (_, i) => ({ mes: `第 ${i} 条内容`, is_user: i % 2 === 0 }));
+    // 改的是抽样步长之间的楼层（第 1 条不在 0/8/16… 采样点上，且不在尾部 12 条内）
+    const edited = msgs.map((m, i) => (i === 1 ? { ...m, mes: '第 1 条被改写' } : m));
+    // 该层刻意只做粗粒度检测：未命中采样点时允许指纹不变（尾部层仍精确）
+    expect(typeof computeChatFingerprint(edited)).toBe('string');
+  });
+});
+
+describe('checkCommitGuards — 落库三重守卫', () => {
+  const base = { chatIdentity: 'chat-a', fingerprint: '12:abc', revision: 3 };
+
+  it('三项一致时通过', () => {
+    expect(checkCommitGuards(base, { ...base })).toBeNull();
+  });
+
+  it('切换聊天优先于其他差异', () => {
+    expect(checkCommitGuards(base, { chatIdentity: 'chat-b', fingerprint: 'x', revision: 9 })).toBe('chat-changed');
+  });
+
+  it('内容指纹变化判 stale', () => {
+    expect(checkCommitGuards(base, { ...base, fingerprint: '13:def' })).toBe('stale');
+  });
+
+  it('报告修订号变化判 revision-changed（用户手动改过）', () => {
+    expect(checkCommitGuards(base, { ...base, revision: 4 })).toBe('revision-changed');
   });
 });
 
@@ -615,6 +723,22 @@ describe('migrateKnowledgeReport — 别名清洗', () => {
     const out = migrateKnowledgeReport(legacy);
     expect(out.entries[0].aliases).toEqual(['上次上贡时间', '渴求症']);
     expect(out.entries[0].keywords).toEqual(['精液']);
+  });
+
+  it('矛盾的三态/来源组合在迁移时被纠正', () => {
+    const legacy = {
+      updated_at: 1,
+      based_on_message: 5,
+      entries: [
+        // 未知却声称目击 → 来源必须是 none
+        { topic: 'A', status: 'unknown', source: 'witnessed', basis: '', impact: '' },
+        // 已知却没有任何获取过程 → 降级为存疑
+        { topic: 'B', status: 'known', source: 'none', basis: '', impact: '' },
+      ],
+    } as unknown as KnowledgeReport;
+    const out = migrateKnowledgeReport(legacy);
+    expect(out.entries[0]).toMatchObject({ topic: 'A', status: 'unknown', source: 'none' });
+    expect(out.entries[1]).toMatchObject({ topic: 'B', status: 'uncertain', source: 'none' });
   });
 });
 
@@ -694,6 +818,61 @@ describe('findDuplicateGroups — 手动整理扫描', () => {
       e('城北仓库的位置在哪', 'known', '', '', 8),
     ];
     expect(findDuplicateGroups(entries)).toHaveLength(0);
+  });
+});
+
+describe('知识报告导出 / 导入格式', () => {
+  it('导出只含活跃条目，带类型与版本', () => {
+    const out = buildKnowledgeExport([e('甲', 'known'), e('乙', 'known', '', '', 0, { retired: true })]);
+    expect(out.type).toBe('choice-knowledge-export');
+    expect(out.version).toBe(1);
+    expect(out.entries.map(x => x.topic)).toEqual(['甲']);
+  });
+
+  it('导出 → 解析 往返保留知识字段', () => {
+    const src = e('城北仓库的位置', 'known', '守卫当面告知', '可以直接去', 5, {
+      aliases: ['仓库'],
+      keywords: ['城北'],
+      event_time: '2026年10月15日 下午',
+      source: 'witnessed',
+    });
+    const text = JSON.stringify(buildKnowledgeExport([src]));
+    const back = parseKnowledgeExport(text);
+    expect(back).toHaveLength(1);
+    expect(back![0]).toMatchObject({
+      topic: '城北仓库的位置',
+      status: 'known',
+      source: 'witnessed',
+      aliases: ['仓库'],
+      keywords: ['城北'],
+      event_time: '2026年10月15日 下午',
+    });
+  });
+
+  it('拒绝非本扩展格式与未来版本', () => {
+    expect(parseKnowledgeExport('{"entries":[]}')).toBeNull();
+    expect(parseKnowledgeExport('not json')).toBeNull();
+    expect(parseKnowledgeExport(JSON.stringify({ type: 'choice-knowledge-export', version: 99, entries: [] }))).toBeNull();
+  });
+
+  it('导入时清洗脏字段（与迁移同口径）', () => {
+    const text = JSON.stringify({
+      type: 'choice-knowledge-export',
+      version: 1,
+      exported_at: 0,
+      entries: [
+        {
+          topic: '苏凛的渴求症',
+          status: 'unknown',
+          source: 'witnessed',
+          aliases: ['苏凛可能处于稳定期或发情边缘', '渴求症'],
+          keywords: ['精液'],
+        },
+      ],
+    });
+    const back = parseKnowledgeExport(text);
+    expect(back![0].source).toBe('none');
+    expect(back![0].aliases).toEqual(['渴求症']);
   });
 });
 

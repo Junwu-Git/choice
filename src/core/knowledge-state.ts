@@ -10,8 +10,14 @@
  */
 
 import { chat } from '@sillytavern/script';
-import { computeChatFingerprint, mergeKnowledgePatch, type KnowledgePatch } from '@/core/knowledge-report';
+import {
+  checkCommitGuards,
+  computeChatFingerprint,
+  mergeKnowledgePatch,
+  type KnowledgePatch,
+} from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
+import type { KnowledgeReportEntry } from '@/type/settings';
 
 /** 分析请求状态：面板据此切「分析/取消」按钮，与 generatorState/poolGenState 分离。
  *  tick 在每次调度/分析完成后自增，供面板的过期提示重新计算（聊天数组不是响应式）。
@@ -24,6 +30,10 @@ export type AnalysisSnapshot = {
   messageCount: number;
   fingerprint: string;
   revision: number;
+  /** 拍快照时的报告表（深拷贝）。合并请求的响应要等数秒，期间表可能被手动操作改过；
+   *  落库必须基于「发给模型的那张表」，否则会用新表的 updated_at_message 配旧快照的
+   *  messageCount，写出错误的时间戳。 */
+  entries: KnowledgeReportEntry[];
 };
 
 /** 当前聊天身份快照：请求可能跨秒级，期间切聊天会把结果写进错的聊天。
@@ -52,11 +62,13 @@ export function currentMessageCount(): number {
 
 export function takeSnapshot(): AnalysisSnapshot {
   const messages = currentChat();
+  const report = useChatSettingsStore().settings.knowledge_report;
   return {
     chatIdentity: snapshotChatIdentity(),
     messageCount: messages.length,
     fingerprint: computeChatFingerprint(messages),
-    revision: useChatSettingsStore().settings.knowledge_report.revision,
+    revision: report.revision,
+    entries: report.entries.map(e => ({ ...e, aliases: [...e.aliases], keywords: [...e.keywords] })),
   };
 }
 
@@ -93,22 +105,20 @@ export type CommitOutcome = 'committed' | 'stale' | 'chat-changed' | 'revision-c
 /**
  * 落库一份知识补丁。快照在请求前拍下，这里只负责「守卫 + 合并 + 写入」。
  *
- * 三种守卫的语义不同，不能合并：
- *  - chatIdentity：跨聊天写错文件，必须丢弃且无法补偿；
- *  - fingerprint：聊天内容变了，旧结论已不适用；
- *  - revision：用户手动改过报告，以用户为准。
- * previous 由调用方给出（重建时为空表），避免重建语义散落两处。
+ * 合并基线一律取 snapshot.entries（= 发给模型的那张表），不读当前 store：
+ * 响应回来时表可能已被手动编辑改过，用新表合并会让旧快照的 messageCount 覆盖
+ * 新条目的 updated_at_message。重建时调用方传 rebuild=true，基线为空表。
  */
 export function commitKnowledgePatches(
   patches: KnowledgePatch[],
   snapshot: AnalysisSnapshot,
-  previous: Parameters<typeof mergeKnowledgePatch>[0],
+  previous: Parameters<typeof mergeKnowledgePatch>[0] = snapshot.entries,
   rebuild = false,
 ): CommitOutcome {
+  // 守卫只需四项标量，不复制 entries（面板可能已把表撑到 60 条）
   const after = takeSnapshot();
-  if (after.chatIdentity !== snapshot.chatIdentity) return 'chat-changed';
-  if (after.fingerprint !== snapshot.fingerprint) return 'stale';
-  if (after.revision !== snapshot.revision) return 'revision-changed';
+  const rejected = checkCommitGuards(snapshot, after);
+  if (rejected) return rejected;
 
   const cs = useChatSettingsStore();
   const merged = mergeKnowledgePatch(previous, patches, snapshot.messageCount);

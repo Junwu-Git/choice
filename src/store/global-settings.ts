@@ -411,7 +411,7 @@ const migratePromptModules = (
   }
 
   if (version < 7) {
-    // v7: 追加柏宝书记忆源模块（baibai_summary、baibai_state）
+    // v7: 追加记忆摘要源模块（baibai_summary、baibai_state）
     const defaults = klona(DEFAULT_MODULES);
     const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
     for (const d of defaults) {
@@ -490,7 +490,7 @@ const migratePromptModules = (
   }
 
   if (version < 11) {
-    // v11: 柏宝书模块默认启用，调整顺序
+    // v11: 记忆摘要模块默认启用，调整顺序
     const baibaiSummary = validated.prompt_rules.modules.find(m => m.id === 'baibai_summary');
     if (baibaiSummary) baibaiSummary.enabled = true;
     resetOrderFromDefaults(validated);
@@ -1197,11 +1197,11 @@ const applyDefaults = (
   // 建配置/补标记/去重自愈/修字数四块对全向已无意义，全向配置与条目由 v44 迁移块统一清理）。
 
   // v35: 配置彻底解耦为"独立模块"——条目池配置只管条目引用、提示词配置只管提示词文本
-  // （modules/person_style/option_rules），人称/字数/轮数/预填充/柏宝书/抽取参数全部收归全局。
+  // （modules/person_style/option_rules），人称/字数/轮数/预填充/记忆摘要/抽取参数全部收归全局。
   // 两步自愈，把历史耦合期被改写的用户值还原：
   // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）落地全局
   //    ——历史上生成设置页冗余比例读生效池配置，切池配置即跳变；generator 与生成设置页已改读全局。
-  // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/柏宝书抄回
+  // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/记忆摘要抄回
   //    prompt_rules——历史上切换提示词配置全量换入这些字段，用户自定义润色字数被洗成 30/80、
   //    人称跟着跳变。默认提示词配置的快照是用户真实值的可靠来源：切换链路只会把 pr 写回
   //    "正在离开的配置"，离开简洁时 pr 必为简洁自己的值，故简洁快照从未被污染。
@@ -1619,7 +1619,7 @@ const applyDefaults = (
     for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
   }
 
-  // v45: 柏宝书摘要 marker 从「世界书深度（历史前）」之上移到其下——两者都注入在聊天历史之前，
+  // v45: 记忆摘要 marker 从「世界书深度（历史前）」之上移到其下——两者都注入在聊天历史之前，
   // 按"静态世界设定 → 历史记忆摘要 → 当前对话"的信息流重排（摘要是"发生过的事件"，比世界书
   // 设定更贴近时间线末端）。只交换这两个模块的 order，且仅在它们仍处于旧相邻关系（摘要恰好
   // 紧挨在世界书深度之上）时生效：用户已手动移动过任一 marker 的不动，同 v41/v42「用户自定义
@@ -2511,7 +2511,7 @@ const applyDefaults = (
 };
 
 // PromptConfig 与 PromptRules 共有、切换配置时需同步的字段集。
-// 提示词降复杂化后，仅 modules 随配置切换同步；人称/字数/上下文轮数与模式/预填充/柏宝书
+// 提示词降复杂化后，仅 modules 随配置切换同步；人称/字数/上下文轮数与模式/预填充/记忆摘要
 // 是全局生成设置（prompt_rules 单一来源），严禁随配置切换——历史上全量同步曾把用户自定义的
 // 润色字数洗成 30/80、人称跟着配置跳变（用户实测连环踩雷）。显式逐字段赋值：新增需同步字段时
 // vue-tsc 会在此处报缺字段，避免静默丢失——新增"生成侧"字段时严禁加进本集合。

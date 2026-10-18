@@ -1,4 +1,4 @@
-// 读取生效预设的「配套脚本」元数据（预设绑定正则 + 酒馆助手预设脚本 + SPreset 框架配置），
+// 读取生效预设的「配套脚本」元数据（预设绑定正则 + 外部脚本执行器预设脚本 + 预设框架配置），
 // 并承载预设模式的两个宿主桥：PROMPT_READY 脚本层广播与提示词后处理取值链。
 //
 // 边界（与 preset-extract 白名单同源的安全自觉）：只读 preset.extensions 里的数组长度、
@@ -6,14 +6,13 @@
 // 本模块返回值只被 UI 展示与请求体枚举字段消费，不进 StPresetSnapshot。
 //
 // 闸门口径（实现前已核实）：
-//  - 酒馆助手预设脚本生效条件 = extension_settings.tavern_helper.script.enabled.presets
-//    含该预设名（JS-Slash-Runner store/scripts.ts:33）；未安装酒馆助手（window.TavernHelper
-//    不存在，function/index.ts:478 才挂载）时预设内嵌脚本整体惰性。
+//  - 外部脚本执行器的预设脚本生效条件 = extension_settings.tavern_helper.script.enabled.presets
+//    含该预设名；未安装该执行器（window.TavernHelper 不存在）时预设内嵌脚本整体惰性。
 //  - 预设绑定正则由酒馆正则扩展自动并入运行时（regex/engine.js:126 readPresetExtensionField），
 //    其中 promptOnly 部分已随本扩展 buildChatHistory 的 getRegexedString 生效；但它读的是
 //    「酒馆当前选中」的预设——固定了别的预设名时正则仍随选中预设走，返回值用
 //    differsFromSelected 把这个错位暴露给提示层。
-//  - SPreset 框架（配置内嵌 extensions.SPreset、运行时为预设脚本注入的远程脚本）在载荷层
+//  - 预设框架（配置内嵌 extensions.SPreset、运行时为预设脚本注入的远程脚本）在载荷层
 //    处理：挂 GENERATE_AFTER_DATA + SETTINGS_READY + GENERATION_STARTED，不挂 PROMPT_READY。
 //    ForcedPostProcessing.mode 是声明式后处理意图，无需执行脚本即可读取。
 import { eventSource, event_types } from '@sillytavern/script';
@@ -31,27 +30,27 @@ export type PresetCompanionScripts = {
   presetName: string;
   /** 预设绑定正则数量（extensions.regex_scripts）。 */
   regexCount: number;
-  /** 酒馆助手预设脚本总数（extensions.tavern_helper.scripts）。 */
+  /** 外部脚本执行器的预设脚本总数（extensions.tavern_helper.scripts）。 */
   helperTotal: number;
   /** 其中单脚本开关为启用的数量。 */
   helperEnabled: number;
-  /** 酒馆助手是否已安装并激活（window.TavernHelper 探测）。 */
+  /** 外部脚本执行器是否已安装并激活（window.TavernHelper 探测）。 */
   helperInstalled: boolean;
-  /** 酒馆助手「预设脚本」作用域对该预设是否开启。 */
+  /** 外部脚本执行器的「预设脚本」作用域对该预设是否开启。 */
   helperScopeEnabled: boolean;
   /** 生效预设 ≠ 酒馆当前选中预设（预设正则与部分宿主行为仍跟随选中预设）。 */
   differsFromSelected: boolean;
-  /** SPreset 框架配置是否存在（extensions.SPreset）。 */
+  /** 预设框架配置是否存在（extensions.SPreset 键名由预设包定义，属运行时契约）。 */
   spresetPresent: boolean;
-  /** SPreset 启用中的处理模块（中文名，有界；供提示条展示）。 */
+  /** 预设框架启用中的处理模块（中文名，有界；供提示条展示）。 */
   spresetModules: string[];
-  /** SPreset ForcedPostProcessing 声明的后处理模式（enabled 且模式合法时给出）。 */
+  /** 预设框架 ForcedPostProcessing 声明的后处理模式（enabled 且模式合法时给出）。 */
   spresetForcedPostProcessing?: string;
 };
 
 const countArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
-/** 酒馆助手 settings 里「该预设的脚本作用域是否启用」。 */
+/** 外部脚本执行器 settings 里「该预设的脚本作用域是否启用」。 */
 const isHelperScopeEnabled = (presetName: string): boolean => {
   try {
     const th = (extension_settings as Record<string, unknown> | undefined)?.tavern_helper as
@@ -63,7 +62,7 @@ const isHelperScopeEnabled = (presetName: string): boolean => {
   }
 };
 
-/** 酒馆助手是否激活：window.TavernHelper 由其入口挂载（function/index.ts:478）。 */
+/** 外部脚本执行器是否激活：window.TavernHelper 由其入口挂载。 */
 export const isTavernHelperInstalled = (): boolean => {
   try {
     return typeof window !== 'undefined' && (window as { TavernHelper?: unknown }).TavernHelper != null;
@@ -72,7 +71,7 @@ export const isTavernHelperInstalled = (): boolean => {
   }
 };
 
-/** SPreset ForcedPostProcessing 声明的后处理模式（enabled 且模式合法 → 模式；否则 undefined）。 */
+/** 预设框架 ForcedPostProcessing 声明的后处理模式（enabled 且模式合法 → 模式；否则 undefined）。 */
 export function readSpresetForcedPostProcessing(presetName: string): string | undefined {
   const preset = readRawStPresetByName(presetName);
   if (!preset) return undefined;
@@ -104,7 +103,7 @@ export function readPresetCompanionScripts(configured: string): PresetCompanionS
       if ((script as { enabled?: unknown } | null)?.enabled === true) helperEnabled += 1;
     }
 
-    // SPreset 模块启用态（只读布尔/计数，模块键名有界）
+    // 预设框架模块启用态（只读布尔/计数，模块键名有界）
     const spreset = (extensions?.SPreset ?? null) as Record<string, any> | null;
     const spresetModules: string[] = [];
     if (spreset) {
@@ -159,7 +158,7 @@ export async function emitPresetPromptReady(messages: readonly CompanionChatMsg[
   }
 }
 
-/** 提示词后处理取值链（仅预设模式、开关开启时调用）：SPreset ForcedPostProcessing →
+/** 提示词后处理取值链（仅预设模式、开关开启时调用）：预设框架 ForcedPostProcessing →
  *  预设顶层字段（undefined = 未声明；显式空串 = 预设明确不处理）→ 酒馆实时设置。
  *  返回 '' 表示不透传该字段。 */
 export function resolvePresetPostProcessing(configured: string, snapshotPostProcessing?: string): string {

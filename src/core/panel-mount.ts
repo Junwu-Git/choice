@@ -84,8 +84,7 @@ export function initPanelMount() {
 
   // 不能把 generateOptions 的 await 留在监听器里：ST 的 eventSource.emit 串行 await
   // 每个监听器（public/lib/eventemitter.js），而 MESSAGE_RECEIVED 之后紧接着才 emit
-  // CHARACTER_MESSAGE_RENDERED——酒馆助手前端卡渲染正挂在该事件上
-  // （JS-Slash-Runner src/store/iframe_runtimes/message.ts）。监听器不返回就会把
+  // CHARACTER_MESSAGE_RENDERED——第三方前端卡渲染正挂在该事件上。监听器不返回就会把
   // 整次二次 API 调用的耗时推迟到正文卡片渲染之前。故通过检查后脱钩 fire-and-forget：
   //   - storeGeneration 内部自带 saveChatDebounced（options-store.ts），落盘不依赖
   //     ST 主保存时序；

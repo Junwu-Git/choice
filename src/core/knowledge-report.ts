@@ -158,8 +158,9 @@ const toStringArray = (v: unknown, max: number, maxLen: number): string[] => {
  *  - 含时间推进或否定式的叙述（「前日…今日」「未…」「已经…了」）——
  *    这类是事件描述，不是「这件事的另一个叫法」；
  *  - 明显超出别名长度（>16 字）。
- *  别名/检索词是名词性短语，出现上述信号基本可判定为误填。 */
-function isSentenceLike(s: string): boolean {
+ *  别名/检索词是名词性短语，出现上述信号基本可判定为误填。
+ *  导出供手动编辑路径复用：两条链路对「什么算别名」必须同口径。 */
+export function isSentenceLike(s: string): boolean {
   if (/[。！？；]/.test(s)) return true;
   if (/(可能|应该|似乎|或许|是否|表明|说明|因为|所以|导致|意味着)/.test(s)) return true;
   // 事件叙述：时间推进（前日/今日、昨天/今天）、完成体（已经…了）、否定（未/没…）
@@ -427,6 +428,8 @@ export function mergeKnowledgePatch(
   const usedIds = new Set(work.map(e => e.id).filter(Boolean));
   const changes: KnowledgeChange[] = [];
   let mutated = false;
+  /** 本轮补丁实际写过的条目 id：容量淘汰时保护它们，避免「新增即被自己挤掉」。 */
+  const touchedIds = new Set<string>();
 
   const findById = (id: string | undefined): KnowledgeReportEntry | undefined =>
     id ? work.find(e => e.id === id) : undefined;
@@ -617,6 +620,7 @@ export function mergeKnowledgePatch(
       if (patch.event_time) target.event_time = patch.event_time;
       target.updated_at_message = atMessage;
       target.revision += 1;
+      touchedIds.add(target.id);
       const kind: KnowledgeChangeKind = wasRetired
         ? 'restored'
         : matchedBy === 'similarity' || matchedBy === 'alias'
@@ -653,12 +657,14 @@ export function mergeKnowledgePatch(
     };
     if (entry.source === 'none' && entry.status === 'known') entry.status = 'uncertain';
     work.push(entry);
+    touchedIds.add(entry.id);
     changes.push(change('added', entry, '新增条目', now, atMessage));
     mutated = true;
   }
 
-  // 容量治理：先清退役条目（最久未更新优先），再清活跃条目（已知最先淘汰，锁定永不淘汰）
-  const retired = work.filter(e => e.retired);
+  // 容量治理：先清退役条目（最久未更新优先），再清活跃条目（已知最先淘汰，锁定永不淘汰）。
+  // 退役淘汰同样跳过锁定条目——锁定语义是「完全冻结」，不能因为先退役再超限就被清掉。
+  const retired = work.filter(e => e.retired && !e.locked);
   if (retired.length > MAX_RETIRED_ENTRIES) {
     const drop = new Set(
       [...retired]
@@ -679,17 +685,31 @@ export function mergeKnowledgePatch(
     // 淘汰优先级：已知（约束力最弱）→ 存疑 → 未知，同档内最久未更新优先；
     // 锁定条目永不淘汰。只淘汰到刚好回到上限，不按分档配额重排——
     // 按配额分档会先把 unknown 的新条目挤掉，与「未知优先保留」的注入口径相反。
+    // 本轮刚写入的条目不参与淘汰：否则锁定占满时，新条目会把自己挤掉（新增即消失）。
     const need = active.length - MAX_STORED_ENTRIES;
     const evict = new Set<string>();
     for (const status of ['known', 'uncertain', 'unknown'] as KnowledgeStatus[]) {
       if (evict.size >= need) break;
       const group = active
-        .filter(e => e.status === status && !e.locked)
+        .filter(e => e.status === status && !e.locked && !touchedIds.has(e.id))
         .sort((a, b) => a.updated_at_message - b.updated_at_message);
       for (const e of group) {
         if (evict.size >= need) break;
         evict.add(e.id);
       }
+    }
+    // 锁定条目占满上限时无可淘汰对象：临时允许超限，但必须留痕。
+    // 静默超限会让用户以为上限失效；静默丢弃新条目更糟——刚新增的条目会立刻消失。
+    if (evict.size < need) {
+      changes.push(
+        change(
+          'capacity_full',
+          { id: '', topic: '' },
+          `活跃条目已达上限 ${MAX_STORED_ENTRIES} 条，其余条目均被锁定或为本轮新增，本次允许临时超出 ${need - evict.size} 条`,
+          now,
+          atMessage,
+        ),
+      );
     }
     for (const e of work) {
       if (!evict.has(e.id)) continue;
@@ -883,20 +903,93 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
 }
 
 /** 聊天内容指纹：只取可见消息的 role + 正文摘要，忽略扩展自身写入的元数据。
- *  为什么不用楼层数：编辑/删除/切分支都可能保持楼层数不变，必须看内容。 */
+ *  为什么不用楼层数：编辑/删除/切分支都可能保持楼层数不变，必须看内容。
+ *
+ *  分两层：尾部 12 条逐条完整参与（最可能被改动、也最影响下一轮判定）；更早的楼层
+ *  按步长抽样（每 8 条取一条的头 80 字）——长聊里改掉早期一条「谁告诉了主角什么」
+ *  同样必须触发重算，但逐条全量哈希会让每次事件都扫整个聊天。抽样层只负责「早期有没有
+ *  变」，漏判概率远低于只看尾部；真要精确到单条，应由 MESSAGE_UPDATED 记录 dirty 楼层。 */
+const FINGERPRINT_TAIL = 12;
+const FINGERPRINT_EARLY_STEP = 8;
+const FINGERPRINT_EARLY_SNIPPET = 80;
+
 export function computeChatFingerprint(
   messages: Array<{ mes?: unknown; is_system?: boolean; is_user?: boolean; role?: string }>,
 ): string {
   const visible = messages.filter(m => !m.is_system);
-  const tail = visible.slice(-12);
-  const payload = tail
-    .map(m => {
-      const role = m.role ?? (m.is_user ? 'user' : 'assistant');
-      const text = String(m.mes ?? '');
-      return `${role}:${text.length}:${text.slice(0, 400)}`;
-    })
-    .join('\n');
-  return `${visible.length}:${fnv1a(payload)}`;
+  const roleOf = (m: { is_user?: boolean; role?: string }): string => m.role ?? (m.is_user ? 'user' : 'assistant');
+  const tailStart = Math.max(0, visible.length - FINGERPRINT_TAIL);
+  const early: string[] = [];
+  for (let i = 0; i < tailStart; i += FINGERPRINT_EARLY_STEP) {
+    const text = String(visible[i].mes ?? '');
+    early.push(`${roleOf(visible[i])}:${text.length}:${text.slice(0, FINGERPRINT_EARLY_SNIPPET)}`);
+  }
+  const tail = visible.slice(tailStart).map(m => {
+    const text = String(m.mes ?? '');
+    return `${roleOf(m)}:${text.length}:${text.slice(0, 400)}`;
+  });
+  return `${visible.length}:${fnv1a([...early, '|', ...tail].join('\n'))}`;
+}
+
+/** 导出格式版本：导入侧据此拒绝未来格式，避免把不认识的字段静默吞掉。 */
+export const KNOWLEDGE_EXPORT_VERSION = 1;
+export const KNOWLEDGE_EXPORT_TYPE = 'choice-knowledge-export';
+
+export type KnowledgeExport = {
+  type: typeof KNOWLEDGE_EXPORT_TYPE;
+  version: number;
+  exported_at: number;
+  entries: KnowledgeReportEntry[];
+};
+
+/** 导出当前报告的活跃条目（不含退役与变更记录：导入是「搬知识」，不是搬历史）。 */
+export function buildKnowledgeExport(entries: KnowledgeReportEntry[], now = Date.now()): KnowledgeExport {
+  return {
+    type: KNOWLEDGE_EXPORT_TYPE,
+    version: KNOWLEDGE_EXPORT_VERSION,
+    exported_at: now,
+    entries: entries.filter(e => !e.retired).map(cloneEntry),
+  };
+}
+
+/** 解析导入文件。返回 null = 不是本扩展的导出格式（调用方据此提示）。
+ *  条目走与迁移相同的清洗路径，不信任外部文件里的脏字段。 */
+export function parseKnowledgeExport(text: string): KnowledgeReportEntry[] | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (o.type !== KNOWLEDGE_EXPORT_TYPE) return null;
+  if (typeof o.version !== 'number' || o.version > KNOWLEDGE_EXPORT_VERSION) return null;
+  if (!Array.isArray(o.entries)) return null;
+  return migrateKnowledgeReport({
+    updated_at: 0,
+    based_on_message: 0,
+    based_on_fingerprint: '',
+    revision: 0,
+    entries: o.entries as KnowledgeReportEntry[],
+    last_changes: [],
+  }).entries;
+}
+
+/** 落库前的三项守卫（纯函数，可单测）。 *  三种语义不同，不能合并：
+ *  - chatIdentity：跨聊天写错文件，必须丢弃且无法补偿；
+ *  - fingerprint：聊天内容变了，旧结论已不适用；
+ *  - revision：用户手动改过报告，以用户为准。
+ *  返回 null 表示通过。放在本模块（而非 knowledge-state）是为了能被 vitest 直接覆盖——
+ *  这是「旧结论写进新内容」的最后一道防线，必须锁定。 */
+export function checkCommitGuards(
+  before: { chatIdentity: string; fingerprint: string; revision: number },
+  after: { chatIdentity: string; fingerprint: string; revision: number },
+): 'chat-changed' | 'stale' | 'revision-changed' | null {
+  if (after.chatIdentity !== before.chatIdentity) return 'chat-changed';
+  if (after.fingerprint !== before.fingerprint) return 'stale';
+  if (after.revision !== before.revision) return 'revision-changed';
+  return null;
 }
 
 /** 旧报告就地迁移（幂等）：补齐稳定 ID、来源、别名/检索词、修订号与变更记录。
@@ -926,10 +1019,13 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
       if (!existing.event_time && raw.event_time) existing.event_time = toEventTime(raw.event_time);
       if ((raw.updated_at_message ?? 0) > existing.updated_at_message) {
         existing.status = raw.status;
+        existing.source = normalizeSource(raw.source);
         existing.basis = raw.basis || existing.basis;
         existing.impact = raw.impact || existing.impact;
         existing.updated_at_message = raw.updated_at_message;
       }
+      if (existing.status === 'unknown') existing.source = 'none';
+      else if (existing.source === 'none' && existing.status === 'known') existing.status = 'uncertain';
       changes.unshift(change('merged', existing, `旧报告重复主题「${topic}」已合并`, now, existing.updated_at_message));
       continue;
     }
@@ -950,6 +1046,11 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
       retired: raw.retired === true,
       retired_reason: raw.retired_reason || '',
     };
+    // 三态与获取方式交叉校验：旧档可能存着「未知 + 目击」这类矛盾组合。
+    // 合并路径有同样两道纠正（见 mergeKnowledgePatch），迁移是唯一扫全表的入口，
+    // 不在这里补齐，矛盾条目会永久留在表里并进入注入文本。
+    if (entry.status === 'unknown') entry.source = 'none';
+    else if (entry.source === 'none' && entry.status === 'known') entry.status = 'uncertain';
     // 旧档的 evidence_floors 必须显式删除：上面 ...raw 会原样带回来，
     // 而 zod strip 后 validateInplace 的 _.assign 又会把它合并回落盘对象，
     // 不删就会随聊天文件一直残留（同全局设置迁移块的约定）。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderBaiBaiSummaryContent, renderPresetTask, type PresetTaskCtx } from '@/core/preset-task';
+import { renderMemorySummaryContent, renderPresetTask, type PresetTaskCtx } from '@/core/preset-task';
 
 const ctx: PresetTaskCtx = {
   count: 4,
@@ -120,15 +120,15 @@ describe('renderPresetTask — 合并知识边界时放宽标签契约', () => {
   });
 });
 
-describe('renderBaiBaiSummaryContent — 柏宝书包装（扩展/预设模式共用）', () => {
-  it('包装出 <baibai_summary> 标签并原样携带摘要文本', () => {
-    const out = renderBaiBaiSummaryContent('第一层剧情摘要。\n第二层。');
-    expect(out).toContain('<baibai_summary>');
-    expect(out).toContain('</baibai_summary>');
+describe('renderMemorySummaryContent — 记忆摘要包装（扩展/预设模式共用）', () => {
+  it('包装出 <memory_summary> 标签并原样携带摘要文本', () => {
+    const out = renderMemorySummaryContent('第一层剧情摘要。\n第二层。');
+    expect(out).toContain('<memory_summary>');
+    expect(out).toContain('</memory_summary>');
     expect(out).toContain('第一层剧情摘要。\n第二层。');
   });
 
   it('包装文案为纯背景说明：不含任务占位符（不经 fill 渲染）', () => {
-    expect(renderBaiBaiSummaryContent('x')).not.toContain('{{count}}');
+    expect(renderMemorySummaryContent('x')).not.toContain('{{count}}');
   });
 });

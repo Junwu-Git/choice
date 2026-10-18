@@ -69,6 +69,24 @@
           <i class="fa-solid fa-trash-can"></i>
           {{ t`清空报告` }}
         </button>
+        <button
+          v-if="!knowledgeState.loading && report.entries.length"
+          class="choice-btn-sm"
+          :title="t`导出当前报告为 JSON（不含退役条目）`"
+          @click="onExport"
+        >
+          <i class="fa-solid fa-file-export"></i>
+          {{ t`导出` }}
+        </button>
+        <button
+          v-if="!knowledgeState.loading"
+          class="choice-btn-sm"
+          :title="t`从 JSON 导入条目，按 id/主题合并进当前报告`"
+          @click="onImport"
+        >
+          <i class="fa-solid fa-file-import"></i>
+          {{ t`导入` }}
+        </button>
         <span v-if="knowledgeState.loading" class="choice-knowledge-status">
           <i class="fa-solid fa-spinner fa-spin"></i>
           {{ t`正在分析当前聊天…` }}
@@ -231,7 +249,7 @@
           </span>
           <span class="choice-knowledge-cell">
             {{ e.basis || '—' }}
-            <small v-if="e.event_time" class="choice-knowledge-floors">
+            <small v-if="e.event_time" class="choice-knowledge-time">
               {{ t`时间：${e.event_time}` }}
             </small>
           </span>
@@ -246,6 +264,7 @@
             <span class="choice-knowledge-change-kind" :class="`is-${c.kind}`">{{ changeKindLabel(c.kind) }}</span>
             <span class="choice-knowledge-change-topic">{{ c.topic || c.id || '—' }}</span>
             <span class="choice-knowledge-change-detail">{{ c.detail }}</span>
+            <span v-if="c.at" class="choice-knowledge-change-time">{{ changeTime(c.at) }}</span>
           </div>
         </div>
       </ChoiceSectionCard>
@@ -302,6 +321,7 @@ import {
 import {
   addManualEntry,
   clearKnowledgeReport,
+  importKnowledgeEntries,
   restoreEntry,
   retireEntry,
   scanDuplicateEntries,
@@ -309,7 +329,7 @@ import {
   tidyKnowledgeReport,
   updateManualEntry,
 } from '@/core/knowledge-actions';
-import { SOURCE_LABEL } from '@/core/knowledge-report';
+import { buildKnowledgeExport, parseKnowledgeExport, SOURCE_LABEL } from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { KnowledgeChangeKind, KnowledgeReportEntry, KnowledgeSource, KnowledgeStatus } from '@/type/settings';
@@ -377,6 +397,12 @@ const statusLabel = (s: KnowledgeStatus): string => (s === 'known' ? t`已知` :
 
 const sourceLabel = (s: KnowledgeSource): string => SOURCE_LABEL[s] ?? t`未标注`;
 
+/** 变更记录的时间戳：只显示时分，长聊里靠它与「更新于」对齐判断先后。 */
+const changeTime = (at: number): string => {
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
 const changeKindLabel = (kind: KnowledgeChangeKind): string => {
   switch (kind) {
     case 'added':
@@ -401,6 +427,8 @@ const changeKindLabel = (kind: KnowledgeChangeKind): string => {
       return t`待确认`;
     case 'evicted':
       return t`淘汰`;
+    case 'capacity_full':
+      return t`已满`;
     default:
       return t`更新`;
   }
@@ -412,9 +440,10 @@ const statusText = computed(() => {
   const d = new Date(r.updated_at);
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
-  // 只有手动条目（从未分析过）时 based_on_message=0，不显示「基于第 0 楼」
+  // 只有手动条目（从未分析过）时 based_on_message=0，不显示「基于前 0 条」
+  // based_on_message 是消息总数，不是楼层索引——措辞用「前 N 条」避免被读成第 N 楼
   return r.based_on_message > 0
-    ? t`更新于 ${hh}:${mm} · 基于第 ${r.based_on_message} 楼 · 修订 r${r.revision}`
+    ? t`更新于 ${hh}:${mm} · 基于前 ${r.based_on_message} 条消息 · 修订 r${r.revision}`
     : t`更新于 ${hh}:${mm} · 修订 r${r.revision}`;
 });
 
@@ -522,17 +551,56 @@ const onTidy = async () => {
   else toastr.info(t`没有可合并的条目`);
 };
 
-/** 清空报告：只删本地报告，不重新请求；下次分析会从空表重建。 */
+/** 清空报告：只删本地报告，不重新请求。开启「自动刷新」时下一轮回复后会从空表重建。 */
 const onClear = async () => {
   const ok = await showClearConfirm({
     title: t`清空报告`,
-    message: t`确定清空当前聊天的知识边界报告吗？条目与变更记录都会删除，且不会自动重新分析。`,
+    message: t`确定清空当前聊天的知识边界报告吗？条目与变更记录都会删除。开启「自动刷新」时，下一轮 AI 回复后会从空表重新分析；否则需手动点「开始分析」。`,
     confirmText: t`清空`,
     cancelText: t`取消`,
   });
   if (!ok) return;
   clearKnowledgeReport();
   toastr.success(t`已清空知识边界报告`);
+};
+
+/** 导出：走 Blob 下载，文件名带时间戳便于区分多次导出。 */
+const onExport = () => {
+  const payload = buildKnowledgeExport(report.value.entries);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const d = new Date();
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+  a.href = url;
+  a.download = `choice-knowledge-${stamp}.json`;
+  a.click();
+  // 立刻 revoke 会让部分浏览器拿不到内容，延后一拍释放
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toastr.success(t`已导出 ${payload.entries.length} 条`);
+};
+
+/** 导入：合并进当前报告，不替换。格式不对时明确提示，不静默失败。 */
+const onImport = () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const entries = parseKnowledgeExport(await file.text());
+    if (!entries) {
+      toastr.error(t`文件格式不正确：需要本扩展导出的知识边界 JSON`);
+      return;
+    }
+    const { added, updated } = importKnowledgeEntries(entries);
+    if (!added && !updated) {
+      toastr.info(t`没有可导入的新条目`);
+      return;
+    }
+    toastr.success(t`导入完成：新增 ${added} 条，更新 ${updated} 条`);
+  };
+  input.click();
 };
 </script>
 
@@ -736,7 +804,7 @@ const onClear = async () => {
   overflow-wrap: anywhere;
 }
 
-.choice-knowledge-floors {
+.choice-knowledge-time {
   display: block;
   color: var(--choice-text-muted);
   margin-top: 2px;
@@ -813,7 +881,8 @@ const onClear = async () => {
 .choice-knowledge-change-kind.is-rejected_locked,
 .choice-knowledge-change-kind.is-drop_missing,
 .choice-knowledge-change-kind.is-ambiguous,
-.choice-knowledge-change-kind.is-evicted {
+.choice-knowledge-change-kind.is-evicted,
+.choice-knowledge-change-kind.is-capacity_full {
   color: var(--choice-color-warning);
   border-color: var(--choice-color-warning);
 }
@@ -826,6 +895,15 @@ const onClear = async () => {
 
 .choice-knowledge-change-detail {
   color: var(--choice-text-muted);
+}
+
+/* 变更时间靠右：它是辅助信息，不该打断「类型 → 主题 → 说明」的阅读顺序 */
+.choice-knowledge-change-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--choice-text-muted);
+  opacity: 0.8;
 }
 
 /* 窄容器折叠成卡片：四列并排会把每列压到 40px 以下不可读。

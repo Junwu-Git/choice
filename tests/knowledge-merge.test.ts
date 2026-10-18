@@ -220,4 +220,10 @@ describe('buildMergedKnowledgeTask', () => {
     expect(task.indexOf('<knowledge_patch>')).toBeLessThan(task.indexOf('<options>'));
     expect(task).toContain('不得互相混入');
   });
+
+  it('摘要块只用于核对出处，不得当作新增依据', () => {
+    const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
+    expect(task).toContain('<memory_summary>');
+    expect(task).toContain('只用于核对既有条目的出处');
+  });
 });

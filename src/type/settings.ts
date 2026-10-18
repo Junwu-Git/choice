@@ -133,7 +133,7 @@ export const PromptConfig = z
     name: z.string(),
     is_default: z.boolean().default(false),
     modules: z.array(PromptModule).prefault([]),
-    /** @deprecated v35 起生成侧标量（人称/字数/轮数/预填充/柏宝书）不随配置切换。
+    /** @deprecated v35 起生成侧标量（人称/字数/轮数/预填充/记忆摘要）不随配置切换。
      *  历史配置仍可能带这些字段，但当前运行时不再读取或写入。 */
     option_person: z.string().default(DEFAULT_OPTION_PERSON),
     enrich_person: z.string().default(DEFAULT_OPTION_PERSON),
@@ -249,7 +249,8 @@ export const SIMPLE_MODULE_CONTENTS: Readonly<Record<string, string>> = Object.f
   DEFAULT_MODULES.filter(m => SIMPLE_MODULE_IDS.has(m.id)).map(m => [m.id, m.content]),
 );
 
-/** 柏宝书模块 ID 集合，供 PromptEditor 按总开关过滤显示 */
+/** 记忆摘要模块 ID 集合，供 PromptEditor 按总开关过滤显示。
+ *  模块 id 是用户已存配置里的键，保留历史命名，改名需要迁移。 */
 export const BAIBAI_MODULE_IDS = new Set(['baibai_summary']);
 
 // 聊天记录过滤规则：标签匹配（字面量头/尾）、正则匹配、标签提取，三者可混用。
@@ -351,9 +352,11 @@ const PromptRules = z
     modules: z.array(PromptModule).prefault([]),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
     context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
-    /** 柏宝书记忆源总开关：关闭时柏宝书模块在 PromptEditor 中隐藏且不注入 */
+    /** 记忆摘要总开关：关闭时摘要模块在 PromptEditor 中隐藏且不注入。
+     *  字段名是已存配置的键，保留历史命名，改名需要迁移。 */
     baibai_enabled: z.boolean().default(false),
-    /** SP·数据库 记忆源总开关：关闭时 SP·数据库 的注入目标世界书不参与选项/润色生成 */
+    /** 结构化记忆源总开关：关闭时其注入目标世界书不参与选项/润色生成。
+     *  字段名是已存配置的键，保留历史命名，改名需要迁移。 */
     shujuku_enabled: z.boolean().default(false),
     /** 选项人称（简单值），通过 {{option_person}} 直接注入 core_rules 模块 */
     option_person: z.string().default(DEFAULT_OPTION_PERSON),
@@ -1079,8 +1082,8 @@ export const WorldInfoGlobalSettings = z
     enabled: z.boolean().default(true),
     global_excluded_books: z.array(z.string()).prefault([]),
     // 世界书条目 EJS 渲染开关。开 = 拿到世界书 buckets 后对 content 先展宏 {{}} 再执行
-    // 提示词模板插件暴露的 evalTemplate(<% %>)，让「按好感度切换人设」等动态条目拿到成品。
-    // 默认开：未装提示词模板插件时安全降级为只展宏（substituteParams），不比现状差；
+    // 外部模板渲染器暴露的 evalTemplate(<% %>)，让「按好感度切换人设」等动态条目拿到成品。
+    // 默认开：未装该渲染器时安全降级为只展宏（substituteParams），不比现状差；
     // choice 现状连展宏都没做（{{user}} 都不展开），开启顺带修复该 gap。关 = 维持现状不碰。
     // 注意：choice 只检测 globalThis.EjsTemplate 是否存在（插件装了且加载），不跟随插件
     // 自己的 enabled 开关——choice 直接调函数、不走它的事件 hook，两开关各管各的语义
@@ -1157,7 +1160,8 @@ export type KnowledgeReportEntry = z.infer<typeof KnowledgeReportEntry>;
 
 /** 变更记录类型：解释「为什么表里多了一条/少了一条」，面板的最近变更列表直接展示。
  *  rejected_locked = 锁定条目拒绝了 AI 补丁；ambiguous = 相似度接近但未自动合并；
- *  evicted = 超出容量被淘汰；drop_missing = AI 要求删除但没找到对应条目。 */
+ *  evicted = 超出容量被淘汰；capacity_full = 达到上限但无可淘汰条目（锁定占满），
+ *  本次临时超限；drop_missing = AI 要求删除但没找到对应条目。 */
 export const KnowledgeChangeKind = z
   .enum([
     'added',
@@ -1171,6 +1175,7 @@ export const KnowledgeChangeKind = z
     'drop_missing',
     'ambiguous',
     'evicted',
+    'capacity_full',
   ])
   .default('updated')
   .catch('updated');
@@ -1690,7 +1695,7 @@ export const GlobalSettings = z
     /** 重试间隔（秒）。retry_count>0 时，两次重试之间等待的秒数；0=立即重试。
      *  默认 1 保持既有"每次间隔 1 秒"行为，老存档由 default 补齐，无需迁移。 */
     retry_interval: z.number().min(0).max(60).default(1).catch(1),
-    // 请求附带 tool_choice:"none"：酒馆助手预设脚本（如 Aether 防截断）会 patch 主窗口
+    // 请求附带 tool_choice:"none"：外部预设脚本（防截断类）会 patch 主窗口
     // window.fetch 并改写一切 /generate 请求，"none" 是其设计内绕过信号（详见
     // api-client.ts 注释）。ST 后端仅在 tools 非空数组时才转发该字段，故它到不了上游，
     // 对生成行为与未启用此类脚本的场景完全无影响；不用 Kemini 类预设时保持默认开即可
@@ -1709,14 +1714,14 @@ export const GlobalSettings = z
      *  关 = 用副 API 自己的采样参数（预设只提供提示词）。连接层（地址/密钥/模型）始终用副 API。 */
     st_preset_sampling: z.boolean().default(true),
     /** 提示词后处理跟随（默认开，仅预设模式生效）：custom_prompt_post_processing 按取值链解析
-     *  （SPreset ForcedPostProcessing → 预设顶层字段 → 酒馆实时设置）后透传给副 API 请求体，
+     *  （预设框架 ForcedPostProcessing → 预设顶层字段 → 酒馆实时设置）后透传给副 API 请求体，
      *  由酒馆后端 /generate 统一执行；扩展模式不发送。老档由 default 补齐，无需 bump schema_version。 */
     st_preset_post_processing: z.boolean().default(true),
     /** 预设脚本层（默认关，仅预设模式生效）：off = 不触发任何脚本事件；prompt_ready = 仅广播
-     *  CHAT_COMPLETION_PROMPT_READY（aether 类提示词改写脚本生效，MVU/QR 等生命周期类不感知）；
-     *  tavern_helper = 经酒馆助手 generateRaw 管线发送（GENERATE_AFTER_DATA/SETTINGS_READY 等
-     *  载荷级脚本生效——SPreset 类；GENERATION_STARTED 层的入口条件/工具注册/输出侧不武装，
-     *  后处理与 SPreset 配置跟随酒馆当前选中预设）。老档由 default 补齐，无需 bump schema_version。 */
+     *  CHAT_COMPLETION_PROMPT_READY（提示词改写类脚本生效，生命周期类不感知）；
+     *  tavern_helper = 经外部脚本执行器 generateRaw 管线发送（GENERATE_AFTER_DATA/SETTINGS_READY 等
+     *  载荷级脚本生效——预设框架类；GENERATION_STARTED 层的入口条件/工具注册/输出侧不武装，
+     *  后处理与预设框架配置跟随酒馆当前选中预设）。老档由 default 补齐，无需 bump schema_version。 */
     st_preset_script_processing: z.enum(['off', 'prompt_ready', 'tavern_helper']).default('off').catch('off'),
     /**
      * 预设条目覆盖层（键 = 条目 identifier）：在不改酒馆预设文件的前提下，对预设条目做

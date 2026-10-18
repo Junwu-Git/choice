@@ -20,8 +20,8 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 
 - `prompt_source` 双轨：`extension`（默认，本扩展模块管线）/ `st_preset`（完全用酒馆 CC 预设，不读本扩展模块，勿混用）。
 - 预设模式**自读预设 + 自组装**，不劫持宿主生成管线（`Generate` 占全局 abortController 与发送按钮）。链路：`st-preset-source` → `preset-extract`（白名单）→ `preset-messages`（按 order 展开，8 个 marker 槽位运行时填充）→ `preset-task`（内置固定任务，不读 `prompt_rules.modules`；`renderBaiBaiSummaryContent` 是摘要包装单一来源）→ `buildPresetModeMessages`。
-- 预设模式隐藏提示词配置/模块列表（配置保留），上下文设置（轮数/柏宝书/数据库）两模式共用。
-- 柏宝书摘要 depth = 历史条数；`getHistory({ before: historyWindowStart })` 取 `[0,N)`，与正文零重复。本体走 `setExtensionPrompt`，副 API 直连看不到。
+- 预设模式隐藏提示词配置/模块列表（配置保留），上下文设置（轮数/记忆摘要/结构化记忆源）两模式共用。
+- 记忆摘要 depth = 历史条数；`getHistory({ before: historyWindowStart })` 取 `[0,N)`，与正文零重复。本体走 `setExtensionPrompt`，副 API 直连看不到。桥接模块为 `memory-summary-bridge.ts`（`getExternalSummary`）与 `structured-memory-bridge.ts`（`getExternalStructuredBook`）；**运行时契约字符串（全局对象名、第三方存储命名空间与键名）不可改**，其余标识符与注释不出现外部插件名。模块 id `baibai_summary` 与设置字段 `baibai_enabled`/`shujuku_enabled` 是已存配置的键，保留历史命名（改名需迁移）。
 - `st_preset_overrides` 覆盖层（键 = identifier，不改预设文件）：`disabled` 优先于 `enabled`；`content` 替换；`content: ''` 明确清空。**两趟展开（含 in-chat 注入）都要应用**，8 个 marker 槽位不受影响。
 - **提取白名单**：预设顶层混有 `reverse_proxy`/`proxy_password` 等凭据，只取条目 + 顺序表 + `PRESET_SAMPLING_KEYS`，勿整体展开进请求体；`tests/preset-extract.test.ts` 锁定。
 - 采样：`st_preset_sampling` 只覆盖 temperature/top_p/惩罚项/max_tokens（实名 `openai_max_tokens`）；连接层始终用副 API。后处理 `st_preset_post_processing` 由服务端按请求体字段执行。
@@ -31,7 +31,8 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 
 ## 知识边界（默认开）
 
-- 独立分析请求：读 persona + 世界书 + 角色卡 + 同一份 `buildChatHistory` 窗口，判定 `{{user}}` 三态（known/uncertain/unknown）与获取方式（witnessed/heard/read/inferred/none），口径与 `knowledge_boundary` 模块一致（获取过程从严、他人内心不可断言）。提示词措辞用「背景设定资料 / 角色设定」，不写宿主术语。**不发 `<recent_floors>` 楼层索引，也不记录楼层号**：历史里没有楼层编号，额外抄一份摘要只会让模型把索引当剧情材料、还容易被 slice 切出半截标签；`evidence_floors` 字段已随 v82 删除（旧档由 `migrateKnowledgeReport` 显式 `delete` 清残留）。时间信息改为 `event_time`：模型从正文/`<SceneInfo>` 等场景元数据里摘录原话（如「2026年10月15日 下午」），读不到留空，不猜、不用现实时间顶替；该字段不参与判定与注入，只在面板展示。
+- 独立分析请求：读 persona + 世界书 + 角色卡 + 同一份 `buildChatHistory` 窗口，判定 `{{user}}` 三态（known/uncertain/unknown）与获取方式（witnessed/heard/read/inferred/none），口径与 `knowledge_boundary` 模块一致（获取过程从严、他人内心不可断言）。提示词措辞用「背景设定资料 / 角色设定」，不写宿主术语。**世界书必须与生成侧同源**：`before+anBefore+em`、`after+anAfter`、`depthBefore`（历史前）、`depthAfter`（历史后）四段齐全，`buildWI()` 只调一次（EJS 的 setvar 每次执行都有副作用）。**不发 `<recent_floors>` 楼层索引，也不记录楼层号**：历史里没有楼层编号，额外抄一份摘要只会让模型把索引当剧情材料、还容易被 slice 切出半截标签；`evidence_floors` 字段已随 v82 删除（旧档由 `migrateKnowledgeReport` 显式 `delete` 清残留）。时间信息改为 `event_time`：模型从正文/`<SceneInfo>` 等场景元数据里摘录原话（如「2026年10月15日 下午」），读不到留空，不猜、不用现实时间顶替；该字段不参与判定，但**会随注入发给生成侧**（模型据此区分「刚知道」与「早就知道」），面板也展示。
+- **历史摘要层**：分析请求在 `buildChatHistory` 之前插入 `getExternalSummary(historyWindowStart(...))`（外部记忆系统可用时），与正文窗口 `[start, 末尾)` 零重复。提示词明确约束：摘要只用于核对已有条目的出处与因果，不得当作新增判定依据；摘要与可见对话冲突时以对话为准。桥接不可用时零变化。
 - **账本式条目**：`id`（`kb_` 前缀，创建后不变）、`revision`、`source`、`aliases`、`keywords`、`event_time`、`previous_status`、`first_seen_message`、`locked`、`retired`。报告带 `revision` 与 `based_on_fingerprint`。
 - **别名/检索词清洗**（`toStringArray` / `mergeUnique` / `normalizeList` 三处同口径）：条数（6/8）+ 单条长度（`MAX_ALIAS_LEN`/`MAX_KEYWORD_LEN`=24）+ **丢弃句子式项**（`isSentenceLike`：句末标点、可能/是否/因为等情态词、时间推进与完成体叙述、>16 字）。弱模型常把「苏凛可能处于稳定期或发情边缘」这类判断当别名回传，它们不能用于检索、还会让注入表格变成第二份依据说明。截断只会留半句，故整条跳过。迁移路径也清洗旧档脏数据。
 - **增量维护**：请求带 `<existing_knowledge_table>`（含修订号、id、来源、锁定标记），模型输出 `{base_revision, entries}`，只给变化条目。合并顺序：id → 主题精确 → 别名精确 → 相似度（活跃条目，Dice ≥0.72 且领先 ≥0.08）→ 新建；相似度领先不足记 `ambiguous` 并新建（可追踪）。**相似度比对用 topic+aliases+keywords 的全组合**，且主题短于 `MIN_SIMILARITY_TOPIC_LEN`(4) 时不走相似度——纯人名/地名与太多条目共享二元组，靠 Dice 会误并不同的事（精确匹配路径不受限）。锁定条目完全冻结：更新、drop、改名绕过都拒绝并记 `rejected_locked`。退役条目只接受精确命中恢复。补丁缺 `status`/`source` 时更新路径保留旧值（`status_explicit`/`source_explicit` 区分「模型给了 unknown」与「模型没给」），只有新建路径回退 unknown/unspecified——弱模型只回半张表时不能把整表降级成未知。**状态变更只改同一条目的 `status`，旧值写入 `previous_status`**（只留一跳，完整历史在 `last_changes`），不产生副本条目。
@@ -39,14 +40,18 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 - `parseKnowledgeResponse` 返回 `null`=不可解析、`{patches: []}`=合法无变化，两者都必须保留旧表，语义不可混。`重建整表` 是唯一全量重跑入口（`rebuild=true` 传空表）。
 - 报告存聊天级 `ChatSettings.knowledge_report`（随聊天落盘，切聊天自动切报告）；`based_on_message` + `based_on_fingerprint` 共同判定过期：编辑/删除/切分支楼层数可能不变，必须看内容指纹（只取可见消息 role + 正文摘要，忽略扩展元数据）。
 - 并发守卫：请求前快照 chatIdentity / 楼层数 / 指纹 / `report.revision`，返回后任一不符丢弃结果（手动触发会提示，自动触发静默）。手动编辑同样 bump `revision`，使在途结果失效。
-- 存储上限 `MAX_STORED_ENTRIES=60`（锁定条目永不淘汰）、`MAX_RETIRED_ENTRIES=20`、`MAX_CHANGES=20`；活跃条目淘汰顺序 known → uncertain → unknown，同档最久未更新优先。
+- 存储上限 `MAX_STORED_ENTRIES=60`（锁定条目永不淘汰）、`MAX_RETIRED_ENTRIES=20`、`MAX_CHANGES=20`；活跃条目淘汰顺序 known → uncertain → unknown，同档最久未更新优先。**本轮补丁写过的条目（`touchedIds`）不参与淘汰**——否则锁定占满时新条目会把自己挤掉。锁定占满导致无可淘汰对象时允许临时超限，记 `capacity_full`（面板显示「已满」），不静默丢新条目；退役淘汰同样跳过锁定。
 - 注入在 `generateOptions` 的 `runWIExclWindow` 之后、`appendRuntimeLine` 之前——**扩展模式与预设模式共用同一注入点**（预设不读 modules，只有运行时注入能覆盖）。报告为空时零变化。
-- 注入由 `knowledge-injection.ts` 负责：`buildSceneText` 取最后 4 条可见消息，按 topic/别名/关键词命中评分；选择顺序 锁定 → unknown → uncertain → known 命中 → known 补齐；条数/字符预算来自 `knowledge.inject_max_entries`（默认 24）与 `inject_char_budget`（默认 2500），超预算跳过但继续尝试后续短条目。宏必须在代码里 `substituteParams`。`lastBuildMessages` 覆盖为注入后形态供调试页核对。
+- 注入由 `knowledge-injection.ts` 负责：`buildSceneText` 取最后 4 条可见消息，按 topic/别名/关键词命中评分；选择顺序 锁定 → unknown → uncertain → known 命中 → known 补齐；条数/字符预算来自 `knowledge.inject_max_entries`（默认 24）与 `inject_char_budget`（默认 2500），超预算跳过但继续尝试后续短条目。**固定头部/分组标题先预扣 120 字**（否则实际注入会超预算）。**有场景文本时**，未命中的 known 最多占 known 配额一半（无场景文本时不砍，否则等于浪费预算）。`renderKnowledgeInjectionDetailed` 返回 `{block, chosen, omitted, usedChars, total}`，`generator.lastKnowledgeInjection` 供调试页核对。宏必须在代码里 `substituteParams`。`lastBuildMessages` 覆盖为注入后形态供调试页核对。
 - 自动刷新统一走 `scheduleKnowledgeRefresh(reason)`：`received` 立即（与选项生成并行），`edited/deleted/swiped` 1200ms 防抖；分析在途只记 pending，结束后补跑一次；`CHAT_CHANGED` 调 `resetKnowledgeScheduling()` 清定时器并取消在途。`knowledgeState.tick` 驱动面板过期提示重算（聊天数组不是响应式）。
+- **指纹分层**：尾部 12 条逐条完整参与，更早楼层按步长 8 抽样（头 80 字）——长聊里改掉早期一条「谁告诉了主角什么」同样要触发重算，逐条全量哈希会让每次事件都扫整个聊天。采样点之外的早期编辑可能漏判，属刻意取舍。
 - **合并请求**（`knowledge.merge_with_generation`，默认关）：一次请求返回 `<knowledge_patch>` + `<options>` 两块，要求模型先更新边界再写候选。触发条件 `enabled && auto_analyze && merge_with_generation && isKnowledgeReportStale()`——报告新鲜时不追加任务。**「只许两个标签」的写法分散在 3 个模块**（`system_prompt` / `core_rules` / `thinking_prompt`），合并时统一走 `adaptPromptForMerge` 就地改写（`MERGE_PROMPT_REWRITES`，正则匹配「两个标签」等关键短语），**不要整模块跳过**——这些模块里有必需规则。`assistant_thinking` 例外：它整条只讲「以 thinking 开头、自检完输出 options」，前半句 `thinking_prompt` 已覆盖、后半句与补丁块冲突，**整条丢弃**（`MERGE_DROPPED_MODULE_IDS`）。预设模式改 `OPTION_SYSTEM` 契约句 + `OPTION_USER` 收尾句（只改一处会留下「自检完就出 options」的矛盾）。合并任务只补三态/source/字段，不复述 `knowledge_boundary` 已覆盖的规则（已知≠熟练、去主角化等），写成一整段任务而非多段拼接。`panel-mount` 只在「本次确实会自动生成」时跳过独立分析，否则（`auto_generate` 关/生成在途/无 API）仍走独立请求；`edited/deleted/swiped` 永远独立分析。解析隔离：`parseMergedKnowledge` 只读标签内、不做全文兜底；`parseOptions` 前必须 `stripMergedKnowledge`，否则括号回退会把补丁 JSON 当伪选项。补丁与选项互不阻塞；refill 轮次不重复提交补丁。
-- 手动编辑集中在 `knowledge-actions.ts`（新增/编辑/锁定/退役/恢复/清空），一律 bump `revision`、写 `last_changes`，不改 `based_on_message/fingerprint`。锁定条目允许手动编辑（用户是最终权威）。
-- 旧报告就地幂等迁移（`migrateKnowledgeReport`，chat-settings 每次校验后执行）：补 id/source/aliases/revision，同 topic 重复条目合并并记 `merged`。不 bump `SCHEMA_VERSION`。
-- 纯函数在 `knowledge-report.ts`（解析/合并/容量/表格/指纹/迁移，`tests/knowledge-report.test.ts` 锁定），提示词与合并文本层在 `knowledge-task.ts`（`tests/knowledge-merge.test.ts` 锁定），注入在 `knowledge-injection.ts`，快照/过期判定/落库守卫在 `knowledge-state.ts`，请求与调度在 `knowledge-analysis.ts`。`knowledge-state` 独立存在是因为 `generator` 与 `knowledge-analysis` 都要用，放任一方向会成模块环。
+- 手动编辑集中在 `knowledge-actions.ts`（新增/编辑/锁定/退役/恢复/清空/导入），一律 bump `revision`、写 `last_changes`，不改 `based_on_message/fingerprint`。锁定条目允许手动编辑（用户是最终权威）。`normalizeList` 直接复用 `isSentenceLike`，与 AI 路径同口径。
+- **导入/导出**：`buildKnowledgeExport` / `parseKnowledgeExport`（`type: 'choice-knowledge-export'` + `version`）；导出只含活跃条目，导入走与迁移相同的清洗路径，按 id/主题合并、不替换，导入文件的锁定状态不生效（那是别的聊天里用户做的决定）。
+- `base_revision` 必须校验：模型回传值非 `null` 且与表头不一致时丢弃本次补丁（分析侧提示、合并侧静默）；`null` = 弱模型漏传，放行（本地 `revision` 守卫仍然有效）。
+- 旧报告就地幂等迁移（`migrateKnowledgeReport`，chat-settings 每次校验后执行）：补 id/source/aliases/revision，同 topic 重复条目合并并记 `merged`，并纠正矛盾的三态/来源组合（`unknown → none`、`none + known → uncertain`）。不 bump `SCHEMA_VERSION`。
+- 纯函数在 `knowledge-report.ts`（解析/合并/容量/表格/指纹/迁移/导出/落库守卫，`tests/knowledge-report.test.ts` 锁定），提示词与合并文本层在 `knowledge-task.ts`（`tests/knowledge-merge.test.ts` 锁定），注入在 `knowledge-injection.ts`，快照/过期判定/落库在 `knowledge-state.ts`，请求与调度在 `knowledge-analysis.ts`。`knowledge-state` 独立存在是因为 `generator` 与 `knowledge-analysis` 都要用，放任一方向会成模块环。**并发守卫 `checkCommitGuards` 放在纯函数层**（不是 knowledge-state）——它必须能被 vitest 直接覆盖。
+- **快照必须带 `entries`**：`takeSnapshot()` 深拷贝报告表，`commitKnowledgePatches` 默认以 `snapshot.entries` 为合并基线，不读当前 store。响应回来时表可能已被手动编辑改过，用新表合并会让旧快照的 `messageCount` 覆盖新条目的 `updated_at_message`。
 
 ## 生成链路
 

@@ -127,7 +127,7 @@ export function extractPresetPostProcessing(preset: Record<string, unknown>): St
   return isPresetPostProcessingMode(String(value)) ? (String(value) as StPresetPostProcessing) : undefined;
 }
 
-/** 后处理取值链（纯函数）：SPreset ForcedPostProcessing → 预设顶层字段（undefined = 未声明；
+/** 后处理取值链（纯函数）：预设框架 ForcedPostProcessing → 预设顶层字段（undefined = 未声明；
  *  显式空串 = 预设明确不处理）→ 酒馆实时设置。各来源的枚举有效性由读取器先行校验。 */
 export function pickPresetPostProcessing(spresetMode?: string, presetValue?: string, liveValue?: string): string {
   if (spresetMode) return spresetMode;

@@ -37,12 +37,16 @@
 
       <label class="choice-field">
         <span>{{ t`别名` }}</span>
-        <input v-model="aliases" class="choice-input" :placeholder="t`同义说法，用逗号分隔`" />
+        <input v-model="aliases" class="choice-input" :placeholder="t`同义说法，用逗号分隔（每条不超过 24 字）`" />
       </label>
 
       <label class="choice-field">
         <span>{{ t`检索词` }}</span>
-        <input v-model="keywords" class="choice-input" :placeholder="t`人名、地点、物品，用逗号分隔`" />
+        <input
+          v-model="keywords"
+          class="choice-input"
+          :placeholder="t`人名、地点、物品，用逗号分隔（每条不超过 24 字）`"
+        />
       </label>
 
       <label class="choice-field">
@@ -51,7 +55,8 @@
           v-model="basis"
           class="choice-textarea"
           rows="2"
-          :placeholder="t`判定依据，如「第 12 楼被告知」`"
+          maxlength="240"
+          :placeholder="t`判定依据，如「在城北仓库被守卫当面告知」`"
         ></textarea>
       </label>
 
@@ -61,13 +66,14 @@
           v-model="impact"
           class="choice-textarea"
           rows="2"
+          maxlength="240"
           :placeholder="t`生成选项时该注意什么，如「不得直接叫出真名」`"
         ></textarea>
       </label>
 
       <label class="choice-field">
         <span>{{ t`剧情内时间` }}</span>
-        <input v-model="eventTime" class="choice-input" :placeholder="t`正文写了时间才填（可留空）`" />
+        <input v-model="eventTime" class="choice-input" maxlength="32" :placeholder="t`正文写了时间才填（可留空）`" />
       </label>
 
       <small v-if="duplicate" class="choice-field-hint choice-knowledge-form-warn">

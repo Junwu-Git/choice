@@ -11,6 +11,7 @@
 
 import {
   findDuplicateGroups,
+  isSentenceLike,
   makeEntryId,
   mergeDuplicateGroup,
   MAX_ALIASES,
@@ -44,11 +45,9 @@ const normalizeList = (list: string[], max: number, maxLen: number): string[] =>
   const out: string[] = [];
   for (const raw of list) {
     const s = raw.replace(/\s+/g, ' ').trim();
-    // 与 AI 路径同口径：句子式条目（判断/描述）不是「叫法」，直接丢弃。
-    // 手动输入也拦，避免两条链路对「什么算别名」的标准不一致。
-    if (!s || /[。！？；]/.test(s) || /(可能|应该|似乎|或许|是否|表明|说明|因为|所以|导致|意味着)/.test(s)) {
-      continue;
-    }
+    // 与 AI 路径同口径（直接复用 isSentenceLike）：句子式条目（判断/描述/事件叙述）
+    // 不是「叫法」，两条链路若各写一套，用户手填的内容会被 AI 下一轮判成脏数据。
+    if (!s || isSentenceLike(s)) continue;
     const cut = s.slice(0, maxLen);
     if (out.includes(cut)) continue;
     out.push(cut);
@@ -206,6 +205,65 @@ export function clearKnowledgeReport(): void {
 /** 扫描当前报告的重复条目（只读，供 UI 预览要合并多少条）。 */
 export function scanDuplicateEntries(): ReturnType<typeof findDuplicateGroups> {
   return findDuplicateGroups(report().entries);
+}
+
+/** 导入外部报告条目（同角色卡跨聊天复用、或从备份恢复）。
+ *
+ *  合并而非替换：导入的文件可能来自另一个聊天，直接替换会丢掉当前聊天独有的条目。
+ *  同 id 或同 topic 的条目按「较新的 updated_at_message 胜出」覆盖，其余作为新条目追加；
+ *  锁定状态沿用当前表（导入文件里的锁定不可信——那是别的聊天里用户做的决定）。
+ *  返回 { added, updated } 计数，供 UI 汇报。 */
+export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { added: number; updated: number } {
+  const r = report();
+  const byId = new Map(r.entries.map(e => [e.id, e]));
+  const byTopic = new Map(r.entries.filter(e => e.topic).map(e => [e.topic.trim(), e]));
+  let added = 0;
+  let updated = 0;
+  const next = [...r.entries];
+
+  for (const raw of incoming) {
+    if (!raw.topic || raw.retired) continue;
+    const hit = byId.get(raw.id) ?? byTopic.get(raw.topic.trim());
+    if (hit) {
+      // 只搬「知识内容」，不搬锁定/退役/修订号（当前聊天的用户意志优先）
+      hit.status = raw.status;
+      hit.source = raw.source;
+      hit.basis = raw.basis || hit.basis;
+      hit.impact = raw.impact || hit.impact;
+      hit.event_time = raw.event_time || hit.event_time;
+      hit.aliases = normalizeList([...hit.aliases, ...raw.aliases], MAX_ALIASES, MAX_ALIAS_LEN);
+      hit.keywords = normalizeList([...hit.keywords, ...raw.keywords], MAX_KEYWORDS, MAX_KEYWORD_LEN);
+      hit.revision += 1;
+      updated += 1;
+      continue;
+    }
+    const entry: KnowledgeReportEntry = {
+      ...raw,
+      // 重新分配 id：导入文件的 id 可能与本聊天已删条目的 id 撞车
+      id: makeEntryId(raw.topic, r.based_on_message),
+      first_seen_message: r.based_on_message,
+      updated_at_message: r.based_on_message,
+      revision: 1,
+      previous_status: '',
+      locked: false,
+      retired: false,
+      retired_reason: '',
+    };
+    const existingIds = new Set(next.map(e => e.id));
+    let id = entry.id;
+    let i = 2;
+    while (existingIds.has(id)) id = `${entry.id}_${i++}`;
+    entry.id = id;
+    next.push(entry);
+    added += 1;
+  }
+
+  if (added || updated) {
+    r.entries = next;
+    pushChange('merged', { id: '', topic: '' }, `导入报告：新增 ${added} 条，更新 ${updated} 条`);
+    touch();
+  }
+  return { added, updated };
 }
 
 /** 执行手动整理：合并所有扫描到的重复组。

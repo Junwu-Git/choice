@@ -20,7 +20,9 @@ const STATUS_HEADER: Record<KnowledgeStatus, string> = {
   unknown: '【未知】不得作为行动依据，只能通过可见钩子触发（看见异样、听见动静、被当面告知）',
 };
 
-/** 渲染分组顺序：未知放最后，模型读到时离任务指令最近，约束更强。 */
+/** 渲染分组顺序：已知 → 存疑 → 未知，未知放最后，模型读到时离任务指令最近，约束更强。
+ *  注意这与「入选顺序」不是一回事——入选顺序见 renderKnowledgeInjectionDetailed 里的
+ *  locked → unknown → uncertain → knownHit → knownRest（约束力强的先占预算）。 */
 const STATUS_ORDER: KnowledgeStatus[] = ['known', 'uncertain', 'unknown'];
 
 const RETIRED_SKIP = (e: KnowledgeReportEntry): boolean => e.retired || !e.topic;
@@ -58,10 +60,13 @@ type RenderOptions = {
 };
 
 /** 单条渲染。已知项只带依据（约束力弱，省预算）；存疑/未知必须带约束，
- *  模型漏写时用固定兜底句，保证生成端拿到的是可执行指令。 */
+ *  模型漏写时用固定兜底句，保证生成端拿到的是可执行指令。
+ *  event_time 一并带上：模型据此判断「这条是三天前知道的还是刚刚知道的」，
+ *  同一状态在不同时间点对行动的约束力不同（刚获知的信息更容易露馅）。 */
 function formatLine(e: KnowledgeReportEntry): string {
   const parts: string[] = [];
   if (e.basis) parts.push(`依据：${e.basis}`);
+  if (e.event_time) parts.push(`时间：${e.event_time}`);
   if (e.source === 'inferred' && e.status === 'known') parts.push('来源：推断（只能以推断口吻使用）');
   if (e.source === 'heard' && e.status === 'uncertain') parts.push('来源：传闻（未经证实）');
   if (e.status !== 'known') {
@@ -83,8 +88,25 @@ function formatLine(e: KnowledgeReportEntry): string {
  * 就浪费剩余预算），省略数量在尾部标注。
  */
 export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOptions = {}): string {
+  return renderKnowledgeInjectionDetailed(report, opts).block;
+}
+
+/** 结构化结果：调试页据此显示「注入了哪些条目、哪些因预算被省略」。
+ *  block 是模板文本（含 {{user}} 等宏），调用方负责 substituteParams。 */
+export type KnowledgeInjectionResult = {
+  block: string;
+  chosen: KnowledgeReportEntry[];
+  omitted: number;
+  usedChars: number;
+  total: number;
+};
+
+export function renderKnowledgeInjectionDetailed(
+  report: KnowledgeReport,
+  opts: RenderOptions = {},
+): KnowledgeInjectionResult {
   const active = (report.entries ?? []).filter(e => !RETIRED_SKIP(e));
-  if (!active.length) return '';
+  if (!active.length) return { block: '', chosen: [], omitted: 0, usedChars: 0, total: 0 };
 
   const maxEntries = Math.max(1, Math.floor(opts.maxEntries ?? MAX_INJECT_ENTRIES));
   const charBudget = Math.max(200, Math.floor(opts.charBudget ?? INJECT_CHAR_BUDGET));
@@ -106,6 +128,19 @@ export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOp
 
   const ordered = [...locked, ...unknown, ...uncertain, ...knownHit, ...knownRest].map(s => s.entry);
 
+  // 头部两行 + 分组标题 + 尾部省略说明的固定开销先扣掉：不扣会让实际注入超出用户设的预算
+  // （每个分组标题约 30 字，三个分组就是 90 字，长聊里这部分不可忽略）
+  const HEADER_RESERVE = 120;
+  const bodyBudget = Math.max(0, charBudget - HEADER_RESERVE);
+
+  // known 未命中场景的条目配额：只在「有场景文本」时生效。没有场景文本时所有 known 的
+  // hits 都是 0，若仍按一半砍会把预算浪费掉；有场景文本时命中才是有效信号，
+  // 让未命中的 known 最多占 known 配额一半，避免条目少于预算时全部入选、命中形同虚设。
+  // 未知/存疑/锁定不受此限——它们是约束项，宁可多占预算。
+  const restQuotaActive = sceneNorm.length > 0;
+  const knownBudget = Math.max(1, Math.ceil((maxEntries - locked.length - unknown.length - uncertain.length) / 2));
+  let knownTaken = 0;
+
   const chosen: KnowledgeReportEntry[] = [];
   let used = 0;
   let omitted = 0;
@@ -114,15 +149,21 @@ export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOp
       omitted++;
       continue;
     }
+    const isRest = restQuotaActive && e.status === 'known' && !e.locked && sceneHits(e, sceneNorm) === 0;
+    if (isRest && knownTaken >= knownBudget) {
+      omitted++;
+      continue;
+    }
     const len = formatLine(e).length + 1;
-    if (used + len > charBudget) {
+    if (used + len > bodyBudget) {
       omitted++;
       continue;
     }
     used += len;
     chosen.push(e);
+    if (isRest) knownTaken++;
   }
-  if (!chosen.length) return '';
+  if (!chosen.length) return { block: '', chosen, omitted, usedChars: 0, total: active.length };
 
   const sections: string[] = [];
   for (const status of STATUS_ORDER) {
@@ -131,7 +172,7 @@ export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOp
   }
 
   const total = active.length;
-  return [
+  const block = [
     '<knowledge_boundary_report>',
     '以下是针对 {{user}}（仅玩家角色本人）的知识边界分析，生成候选时必须遵守：',
     ...sections,
@@ -140,6 +181,7 @@ export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOp
   ]
     .filter(Boolean)
     .join('\n');
+  return { block, chosen, omitted, usedChars: used, total };
 }
 
 /** 把注入块插到最后一条 user 消息之前：选项任务的 user 消息承担最终指令，报告作为

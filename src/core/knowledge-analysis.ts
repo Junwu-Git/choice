@@ -21,7 +21,16 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { substituteParams, this_chid } from '@sillytavern/script';
 import toastr from 'toastr';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
-import { applyWIExcl, buildChatHistory, buildWI, resolveWIParticipation, runWIExclWindow } from '@/core/generator';
+import {
+  applyWIExcl,
+  buildChatHistory,
+  buildWI,
+  historyWindowStart,
+  resolveWIParticipation,
+  runWIExclWindow,
+} from '@/core/generator';
+import { getExternalSummary } from '@/core/memory-summary-bridge';
+import { renderMemorySummaryContent } from '@/core/preset-task';
 import { parseKnowledgeResponse, renderExistingTable } from '@/core/knowledge-report';
 import {
   commitKnowledgePatches,
@@ -51,7 +60,9 @@ type RefreshReason = 'received' | 'edited' | 'deleted' | 'swiped';
 
 const ANALYSIS_USER_FIRST = `请分析以上对话与设定，输出 {{user}} 当前的知识边界表（首次分析，输出完整表）。只输出 JSON 对象。`;
 
-const ANALYSIS_USER_INCREMENTAL = `请对照「已有知识边界表」与最近剧情，只输出需要新增或修改的条目；没有变化就输出空 entries。只输出 JSON 对象。`;
+// 增量指令把「只输出变化」再强调一次：system 里已写，但 user 是模型读到的最后一条指令，
+// 弱模型常忽略 system 直接按「重新判定整表」输出，导致补丁体积暴涨、还容易把旧条目改坏。
+const ANALYSIS_USER_INCREMENTAL = `请对照「已有知识边界表」与最近剧情，只输出需要新增或修改的条目；没有变化就输出空 entries。未变化的条目不要重复输出，已有条目的 id 必须原样沿用。只输出 JSON 对象。`;
 
 /** 构建分析请求的消息数组。世界书排他窗口只包住构建（与 generateOptions 一致）：
  *  applyWIExcl 改写的是酒馆全局状态，构建完立即还原，请求期间不持有。 */
@@ -75,13 +86,24 @@ async function buildAnalysisMessages(
 
       const persona = power_user?.persona_description;
       if (persona)
-        msgs.push({ role: 'system', content: substituteParams(`<user_persona>\n${persona}\n</user_persona>`) });
+        msgs.push({
+          role: 'system',
+          content: substituteParams(
+            `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${persona}\n</user_persona>`,
+          ),
+        });
 
-      if (gwi.enabled) {
-        const wi = await buildWI();
+      // 世界书只构建一次：buildWI 内部会跑 EJS，含 setvar 的条目每次执行都可能改变变量状态
+      const wi = gwi.enabled ? await buildWI() : null;
+      if (wi) {
         const before = [wi.before, wi.anBefore, wi.em].filter(Boolean).join('\n\n');
         if (before) msgs.push({ role: 'system', content: before });
-        if (wi.after) msgs.push({ role: 'system', content: wi.after });
+        // 与生成侧同源：anAfter 并入 after 桶（buildMessages 的 world_info_after 同款），
+        // 深度条目按 depth 两桶分别落在历史前后，否则分析侧会漏掉「角色当前状态」这类
+        // 最常写在 atDepth 条目里的信息。
+        const after = [wi.after, wi.anAfter].filter(Boolean).join('\n\n');
+        if (after) msgs.push({ role: 'system', content: after });
+        if (wi.depthBefore) msgs.push({ role: 'system', content: wi.depthBefore });
       }
 
       // 角色设定三字段与 buildMessages 同源同法（V1/浅卡走 readCharacterFields 兜底）
@@ -89,7 +111,17 @@ async function buildAnalysisMessages(
         if (field) msgs.push({ role: 'system', content: substituteParams(field) });
       }
 
+      // 摘要层（若外部记忆系统可用）：补上「已离开窗口的旧剧情」。
+      // 增量分析靠 existing_knowledge_table 保留旧结论，但模型看不到出处时无法判断
+      // 新剧情是否推翻旧条目；摘要正是这部分的压缩记录，与正文窗口 [start, 末尾) 零重复。
+      // 提示词里已声明「摘要只用于核对既有条目的出处」，防止模型把摘要当新剧情再判定一次。
+      const summary = getExternalSummary(historyWindowStart(contextRounds));
+      if (summary) msgs.push({ role: 'system', content: renderMemorySummaryContent(summary) });
+
       msgs.push(...buildChatHistory(contextRounds, true));
+
+      // depthAfter（D0-D2）在生成侧紧跟历史之后，分析侧保持同一相对位置
+      if (wi?.depthAfter) msgs.push({ role: 'system', content: wi.depthAfter });
 
       // 已有表放在历史之后、任务指令之前：模型读到时离输出最近，最不容易被历史冲淡
       if (existingTable) {
@@ -138,7 +170,7 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): 
     return false;
   }
 
-  const previous = rebuild ? [] : cs.settings.knowledge_report.entries;
+  const previous = rebuild ? [] : snapshot.entries;
   // 传给模型的是表头修订号：重建时表是空的，从 0 开始；并发守卫始终对比当前报告的真实修订号
   const tableRevision = rebuild ? 0 : snapshot.revision;
   const existingTable = renderExistingTable(previous, tableRevision);
@@ -160,6 +192,12 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): 
     // null = 模型输出不可解析；entries 为空 = 明确的「本轮无变化」，是合法结果
     if (parsed === null) {
       if (manual) toastr.error(t`未解析出知识边界条目，请检查模型输出后重试`);
+      return false;
+    }
+    // base_revision 明确不符：模型拿旧表做的增量（或自行编造），补丁丢弃。
+    // null = 弱模型漏传修订号，不据此丢弃（本地 revision 守卫仍然有效）。
+    if (parsed.baseRevision !== null && parsed.baseRevision !== tableRevision) {
+      if (manual) toastr.info(t`模型回传的修订号与当前报告不一致，本次结果已丢弃，请重新分析`);
       return false;
     }
 
