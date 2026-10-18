@@ -1,4 +1,5 @@
 import { OPTION_MATCH_MARGIN, type PoolEntry } from '@/type/settings';
+import { bigramsOf, diceCoefficient, normalizeText } from '@/core/text-similarity';
 
 /**
  * 选项→条目精确归因（纯函数）：生成时把每条输出选项近似归属到当轮候选条目，
@@ -14,22 +15,13 @@ import { OPTION_MATCH_MARGIN, type PoolEntry } from '@/type/settings';
 const buildEntrySignal = (entry: PoolEntry): string => entry.type + entry.content;
 
 /** 去空白归一（中文二元组对空白不敏感，去除避免「type 内容」与「type内容」失配） */
-const normalize = (s: string): string => s.replace(/\s+/g, '');
+const normalize = normalizeText;
 
 /** 字符串的字符二元组集合（中文短文本的次序敏感特征，实现简单） */
-const bigrams = (s: string): Set<string> => {
-  const out = new Set<string>();
-  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
-  return out;
-};
+const bigrams = bigramsOf;
 
 /** Dice 系数 = 2|A∩B| / (|A|+|B|)，对文本长度差异不敏感（Jaccard 在长选项上稀释严重） */
-const dice = (a: Set<string>, b: Set<string>): number => {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const g of a) if (b.has(g)) inter += 1;
-  return (2 * inter) / (a.size + b.size);
-};
+const dice = diceCoefficient;
 
 /**
  * 选项正文是否以候选 type 起始（允许紧跟正文无分隔，如「顺势行动武…」）。

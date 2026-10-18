@@ -537,6 +537,17 @@
   color: var(--choice-text-muted);
 }
 
+/* 依赖未满足的开关：仍可读但不接受点击（如合并请求依赖自动刷新）。
+   用 opacity + cursor 而非 display:none——用户需要看见「为什么没生效」的那一行。 */
+.choice-toggle.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.choice-toggle.is-disabled:hover {
+  background: var(--choice-bg-card);
+}
+
 /* ===== 设置页分区容器 + 标题（恒定展开的固定组卡片）=====
    UI 去杂乱：把平铺分区升级为「带边框卡片 + 标题行」，与 ChoiceSectionCard
    （可折叠）共用同一视觉语言——同背景/边框/圆角/标题行，只在"是否可折叠"上区分。

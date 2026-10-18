@@ -1,4 +1,4 @@
-import { chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
+import { chat, chat_metadata, substituteParams, this_chid } from '@sillytavern/script';
 import { getStCharacter, readCharacterFields } from '@/core/st-character';
 import { persistGateEnter, persistGateExit } from '@/core/persist-gate';
 import toastr from 'toastr';
@@ -24,7 +24,17 @@ import {
 import { renderPresetTask, renderBaiBaiSummaryContent, BAIBAI_SUMMARY_TAG } from '@/core/preset-task';
 import { readActiveStPreset, type StPresetSnapshot } from '@/core/st-preset-source';
 import { dedupOptions } from '@/core/option-dedup';
-import { injectKnowledgeBlock, renderKnowledgeInjection } from '@/core/knowledge-report';
+import { buildSceneText, injectKnowledgeBlock, renderKnowledgeInjection } from '@/core/knowledge-injection';
+import { commitKnowledgePatches, isKnowledgeReportStale, knowledgeState, takeSnapshot } from '@/core/knowledge-state';
+import {
+  adaptPromptForMerge,
+  buildMergedKnowledgeTask,
+  isModuleDroppedByMerge,
+  needsMergeAdaptation,
+  parseMergedKnowledge,
+  stripMergedKnowledge,
+} from '@/core/knowledge-task';
+import { renderExistingTable } from '@/core/knowledge-report';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { parseOptions, STRIP_REASONING_TAGS_RE, stripTrailingCommas } from '@/core/option-parse';
 import { getBaiBaiSummary } from '@/core/baibai-bridge';
@@ -159,6 +169,9 @@ export const buildMessages = async (
   wi: WorldInfoGlobalSettings,
   contextRounds: number,
   isEnrich = false,
+  /** 合并知识边界：把提示词里「只许 thinking + options 两个标签」的写法改写成三块。
+   *  不整段跳过模块——system_prompt / core_rules 里有必需的规则，删掉会丢约束。 */
+  adaptForMerge = false,
 ): Promise<ChatMsg[]> => {
   const gs = useGlobalSettingsStore();
   const pr = gs.settings.prompt_rules;
@@ -182,10 +195,14 @@ export const buildMessages = async (
   for (const mod of sorted) {
     if (!mod.enabled) continue;
     if (isEnrich && mod.option_only) continue;
+    // 合并模式：整条丢弃纯输出格式指令（见 knowledge-task.MERGE_DROPPED_MODULE_IDS），
+    // 其余模块改写「两个标签」口径
+    if (adaptForMerge && isModuleDroppedByMerge(mod.id)) continue;
+    const modContent = adaptForMerge && needsMergeAdaptation(mod.content) ? adaptPromptForMerge(mod.content) : mod.content;
 
     switch (mod.id) {
       case 'system_prompt': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
+        const content = substituteParams(sub(modContent, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -264,19 +281,24 @@ export const buildMessages = async (
         // core_rules 单一来源：直接发模块自己的 content（经占位符替换）。
         // 以前按隐藏字段动态拼装，造成"编辑器显示 ≠ 实际发送"的双来源矛盾；
         // 该路径已整体删除，现在编辑器内容就是发送给 AI 的内容。
-        const content = substituteParams(sub(mod.content, augmentedCtx));
+        const content = substituteParams(sub(modContent, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
       case 'thinking_prompt': {
-        const content = substituteParams(sub(mod.content, augmentedCtx));
+        const content = substituteParams(sub(modContent, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
-      default: {
+      case 'assistant_thinking': {
+        // 合并模式已在循环开头按 isModuleSuppressedByMerge 跳过，这里正常渲染
+        const content = substituteParams(sub(modContent, augmentedCtx));
+        if (content) msgs.push({ role: mod.role, content });
+        break;
+      }      default: {
         // v69：模块一律按其自身 role 发送（assistant_ack/assistant_thinking/enrich_assistant
         // 不再特殊处理，预填充开关已移除）。想用预填充把模块角色改为 assistant 即可。
-        const content = substituteParams(sub(mod.content, augmentedCtx));
+        const content = substituteParams(sub(modContent, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
       }
@@ -364,6 +386,8 @@ export const buildPresetModeMessages = async (
   contextRounds: number,
   preset: StPresetSnapshot,
   isEnrich = false,
+  /** 合并知识边界：放宽标签契约，允许额外的 <knowledge_patch> 块。 */
+  allowKnowledgePatch = false,
 ): Promise<ChatMsg[]> => {
   const { slots, depthInjections } = await buildPresetSlots(wi, contextRounds);
   const gs = useGlobalSettingsStore();
@@ -404,16 +428,20 @@ export const buildPresetModeMessages = async (
   if (presetMsgs.length) msgs.push({ role: 'system', content: PRESET_TASK_BRIDGE });
 
   // 内置任务指令（system 规则 + user 素材，口径与插件模块管线无关）
-  const task = renderPresetTask(isEnrich ? 'enrich' : 'option', {
-    count: ctx.count,
-    pinned: ctx.pinned,
-    poolSelected: ctx.poolSelected,
-    input: ctx.input,
-    minChars: isEnrich ? pr.enrich_min_chars : pr.option_min_chars,
-    maxChars: isEnrich ? pr.enrich_max_chars : pr.option_max_chars,
-    optionPerson: pr.option_person || '第三人称',
-    enrichPerson: pr.enrich_person || '第三人称',
-  });
+  const task = renderPresetTask(
+    isEnrich ? 'enrich' : 'option',
+    {
+      count: ctx.count,
+      pinned: ctx.pinned,
+      poolSelected: ctx.poolSelected,
+      input: ctx.input,
+      minChars: isEnrich ? pr.enrich_min_chars : pr.option_min_chars,
+      maxChars: isEnrich ? pr.enrich_max_chars : pr.option_max_chars,
+      optionPerson: pr.option_person || '第三人称',
+      enrichPerson: pr.enrich_person || '第三人称',
+    },
+    allowKnowledgePatch && !isEnrich,
+  );
   msgs.push({ role: 'system', content: task.system });
   msgs.push({ role: 'user', content: task.user });
 
@@ -985,6 +1013,19 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       }
     }
 
+    // 合并请求（knowledge.merge_with_generation）：把知识边界分析并进本次生成请求。
+    // 必须在构建消息前判定——buildMessages 要据此跳过 assistant_thinking（那条只认
+    // thinking + options，会把 knowledge_patch 挤掉）。stale 很关键：报告新鲜时没有
+    // 增量可算，追加任务只会白增输出长度。
+    // 快照在发请求前拍下，落库时用同一套并发守卫（见 knowledge-state）。
+    const knowledgeMerge =
+      gs.settings.knowledge.enabled &&
+      gs.settings.knowledge.auto_analyze &&
+      gs.settings.knowledge.merge_with_generation &&
+      isKnowledgeReportStale()
+        ? takeSnapshot()
+        : null;
+
     // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
     // 副 API 直连不再读——构建完成立即还原，不再持有到请求结束。此前 applyWIExcl 悬在 try 外
     // （抛错绕过 finally、loading 永久卡死），且排他态持有整个生成期（酒馆 WI 面板读到临时改写态）
@@ -995,8 +1036,8 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         : null;
       try {
         return presetSnapshot
-          ? await buildPresetModeMessages(c, gwi, rules.context_rounds, presetSnapshot)
-          : await buildMessages(enabledModules, c, gwi, rules.context_rounds);
+          ? await buildPresetModeMessages(c, gwi, rules.context_rounds, presetSnapshot, false, !!knowledgeMerge)
+          : await buildMessages(enabledModules, c, gwi, rules.context_rounds, false, !!knowledgeMerge);
       } finally {
         wiRestore?.restore();
       }
@@ -1020,7 +1061,13 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 宏必须在此替换：注入发生在模块管线的 substituteParams 之后，不替换会把 {{user}}
     // 原样发给模型（酒馆后端不处理请求体里的宏）。
     if (gs.settings.knowledge.enabled && gs.settings.knowledge.inject_enabled) {
-      const block = renderKnowledgeInjection(cs.settings.knowledge_report);
+      // chat 的导出类型是 TavernHelper 子集（message/role），运行时是 ST 原生楼层
+      // （mes/is_user/is_system）——与 panel-mount 同款断言
+      const block = renderKnowledgeInjection(cs.settings.knowledge_report, {
+        sceneText: buildSceneText(chat as unknown as StChatMessage[], 4),
+        maxEntries: gs.settings.knowledge.inject_max_entries,
+        charBudget: gs.settings.knowledge.inject_char_budget,
+      });
       if (block) {
         injectKnowledgeBlock(messages, substituteParams(block));
         // 调试页快照在 buildMessages 内就已拍下（不含本次注入），此处覆盖为注入后的最终形态
@@ -1044,6 +1091,22 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       appendRuntimeLine(
         t`判定方向（COC 百分位，覆盖前文「越难标得越高」的说明）：标题第三段的需求值代表达成该行动所需的能力/技艺水平（0-100），掷出 ≤ 需求值才算成功——行动对能力要求越高标得越低，越有把握标得越高。`,
       );
+    }
+
+    // 合并任务放在所有运行时追加之后：输出契约是模型读到的最后一条指令，
+    // 否则会被骰式行冲淡。
+    if (knowledgeMerge) {
+      const report = cs.settings.knowledge_report;
+      const tableRevision = knowledgeMerge.revision;
+      appendRuntimeLine(
+        substituteParams(
+          buildMergedKnowledgeTask({
+            existingTable: renderExistingTable(report.entries, tableRevision),
+            revision: tableRevision,
+          }),
+        ),
+      );
+      lastBuildMessages.value = structuredClone(messages);
     }
 
     const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
@@ -1077,7 +1140,17 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       scriptLayer,
     );
     if (cancelled) return null;
-    const parsed = parseOptions(raw, count).map(t => ({ text: t, sourceEntryId: null }));
+    // 合并请求的返回值里同时有两个块：先落知识补丁，再解析选项。两者互不阻塞——
+    // 补丁解析失败不影响出选项，选项解析失败也已保住知识更新（省下的那次上下文没白花）。
+    // 守卫失败（期间切聊天/改楼/手动改报告）静默丢弃，绝不把旧结论写进新内容。
+    if (knowledgeMerge) {
+      const patch = parseMergedKnowledge(raw);
+      if (patch) {
+        commitKnowledgePatches(patch.patches, knowledgeMerge, cs.settings.knowledge_report.entries);
+        knowledgeState.tick += 1;
+      }
+    }
+    const parsed = parseOptions(stripMergedKnowledge(raw), count).map(t => ({ text: t, sourceEntryId: null }));
     if (!parsed.length) {
       toastr.error(t`未能解析出任何选项,请检查模型输出`);
       return null;
@@ -1130,7 +1203,10 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
           scriptLayer,
         );
         if (cancelled) return null;
-        const refillParsed = parseOptions(refillRaw, need).map(t => ({ text: t, sourceEntryId: null }));
+        const refillParsed = parseOptions(stripMergedKnowledge(refillRaw), need).map(t => ({
+          text: t,
+          sourceEntryId: null,
+        }));
         totalParsed += refillParsed.length;
         const rNext = dedupOptions(
           refillParsed.map(o => o.text),

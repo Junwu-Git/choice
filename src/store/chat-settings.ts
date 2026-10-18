@@ -2,6 +2,7 @@ import { chat_metadata } from '@sillytavern/script';
 import { saveMetadataDebounced } from '@sillytavern/scripts/extensions';
 import toastr from 'toastr';
 import { persistGateDeferOrRun } from '@/core/persist-gate';
+import { migrateKnowledgeReport } from '@/core/knowledge-report';
 import { ChatSettings, setting_field, type WorldInfoChatSettings } from '@/type/settings';
 import { validateInplace } from '@/util/zod';
 
@@ -43,6 +44,13 @@ export const useChatSettingsStore = defineStore('chat-settings', () => {
     try {
       const parsed = validateInplace(ChatSettings, chat_metadata[setting_field]);
       migrateWorldInfo(parsed.world_info);
+      // 知识边界报告就地迁移（幂等）：补齐稳定 ID/来源/别名等字段，同 topic 重复条目合并。
+      // ChatSettings 无版本号，走每次校验后的幂等迁移（同 migrateWorldInfo 的约定）；
+      // 不保留旧结论以外的行为变化——状态/依据/约束原样保留。
+      const migrated = migrateKnowledgeReport(parsed.knowledge_report);
+      if (JSON.stringify(migrated) !== JSON.stringify(parsed.knowledge_report)) {
+        parsed.knowledge_report = migrated;
+      }
       return parsed;
     } catch (e) {
       console.error('[Choice] 聊天设置解析失败，使用默认值', e);

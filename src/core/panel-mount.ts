@@ -4,7 +4,7 @@ import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
-import { maybeAutoAnalyze } from '@/core/knowledge-analysis';
+import { isKnowledgeMergeActive, maybeAutoAnalyze, resetKnowledgeScheduling, scheduleKnowledgeRefresh } from '@/core/knowledge-analysis';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -102,8 +102,16 @@ export function initPanelMount() {
       // 知识边界自动刷新：与自动生成并行（fire-and-forget），本轮选项用上一份报告、
       // 下一轮用新报告，不额外增加出选项的等待时间。不 await 的理由同上——ST 的
       // eventSource.emit 会串行 await 监听器，返回 Promise 会拖住后续渲染事件。
-      maybeAutoAnalyze();
+      // 合并模式下由 generateOptions 顺带分析：只在「本次确实会生成」时让路，
+      // 否则（auto_generate 关 / 生成在途 / 无 API）仍需独立分析，不然报告永远停在旧状态。
       const gs = useGlobalSettingsStore(pinia);
+      const willGenerate =
+        gs.settings.auto_generate &&
+        !generatorState.loading &&
+        !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
+      if (!(willGenerate && isKnowledgeMergeActive())) {
+        maybeAutoAnalyze();
+      }
       if (!gs.settings.auto_generate) {
         return;
       }
@@ -142,16 +150,32 @@ export function initPanelMount() {
   };
 
   eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
-  eventSource.on(event_types.MESSAGE_SWIPED, safeResync);
-  eventSource.on(event_types.MESSAGE_DELETED, safeResync);
-  eventSource.on(event_types.MESSAGE_UPDATED, safeResync);
+  eventSource.on(event_types.MESSAGE_SWIPED, () => {
+    safeResync();
+    // 切换分支会换掉整楼内容：报告必须按新分支重算（防抖合并连续滑动）
+    scheduleKnowledgeRefresh('swiped');
+  });
+  eventSource.on(event_types.MESSAGE_DELETED, () => {
+    safeResync();
+    // 删楼后楼层数可能不变（删一增一），内容指纹才是可靠依据
+    scheduleKnowledgeRefresh('deleted');
+  });
+  eventSource.on(event_types.MESSAGE_UPDATED, () => {
+    safeResync();
+    // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过
+    scheduleKnowledgeRefresh('edited');
+  });
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
     safeResync();
     // 发消息后自动收起走 autoSetCollapsed：锁定时常开面板不被动收起
     panelStore.autoSetCollapsed(true);
   });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, safeResync);
-  eventSource.on(event_types.CHAT_CHANGED, safeResync);
+  eventSource.on(event_types.CHAT_CHANGED, () => {
+    // 换聊天先清空调度：防抖定时器属于旧聊天，跨聊天触发会分析错内容
+    resetKnowledgeScheduling();
+    safeResync();
+  });
   eventSource.on(event_types.MORE_MESSAGES_LOADED, safeResync);
   eventSource.on(event_types.APP_READY, safeResync);
   eventSource.on(event_types.GENERATION_ENDED, safeResync);

@@ -31,15 +31,22 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 
 ## 知识边界（默认开）
 
-- 独立分析请求：读 persona + 世界书 + 角色卡 + 同一份 `buildChatHistory` 窗口，判定 `{{user}}` 三态（known/uncertain/unknown），口径与 `knowledge_boundary` 模块一致（获取过程从严、他人内心不可断言）。
-- **增量维护**：请求带 `<existing_knowledge_table>`，模型只输出变化条目（同 topic 覆盖、`drop: true` 删除），由 `mergeKnowledgePatch` 合并进旧表。`parseKnowledgePatch` 返回 `null`=不可解析、`[]`=合法无变化，两者都必须保留旧表，语义不可混。`重建整表` 是唯一全量重跑入口（`rebuild=true` 传空表）。
-- 报告存聊天级 `ChatSettings.knowledge_report`（随聊天落盘，切聊天自动切报告）；`based_on_message` 只用于过期提示与自动重跑判定，楼层数变动（含删除）都算过期。
-- 存储上限 `MAX_STORED_ENTRIES=60`，超出丢 `updated_at_message` 最小的（最久未被刷新），不丢最新的。
+- 独立分析请求：读 persona + 世界书 + 角色卡 + 同一份 `buildChatHistory` 窗口，判定 `{{user}}` 三态（known/uncertain/unknown）与获取方式（witnessed/heard/read/inferred/none），口径与 `knowledge_boundary` 模块一致（获取过程从严、他人内心不可断言）。提示词措辞用「背景设定资料 / 角色设定」，不写宿主术语。**不发 `<recent_floors>` 楼层索引，也不记录楼层号**：历史里没有楼层编号，额外抄一份摘要只会让模型把索引当剧情材料、还容易被 slice 切出半截标签；`evidence_floors` 字段已随 v82 删除（旧档由 `migrateKnowledgeReport` 显式 `delete` 清残留）。时间信息改为 `event_time`：模型从正文/`<SceneInfo>` 等场景元数据里摘录原话（如「2026年10月15日 下午」），读不到留空，不猜、不用现实时间顶替；该字段不参与判定与注入，只在面板展示。
+- **账本式条目**：`id`（`kb_` 前缀，创建后不变）、`revision`、`source`、`aliases`、`keywords`、`event_time`、`previous_status`、`first_seen_message`、`locked`、`retired`。报告带 `revision` 与 `based_on_fingerprint`。
+- **别名/检索词清洗**（`toStringArray` / `mergeUnique` / `normalizeList` 三处同口径）：条数（6/8）+ 单条长度（`MAX_ALIAS_LEN`/`MAX_KEYWORD_LEN`=24）+ **丢弃句子式项**（`isSentenceLike`：句末标点、可能/是否/因为等情态词、时间推进与完成体叙述、>16 字）。弱模型常把「苏凛可能处于稳定期或发情边缘」这类判断当别名回传，它们不能用于检索、还会让注入表格变成第二份依据说明。截断只会留半句，故整条跳过。迁移路径也清洗旧档脏数据。
+- **增量维护**：请求带 `<existing_knowledge_table>`（含修订号、id、来源、锁定标记），模型输出 `{base_revision, entries}`，只给变化条目。合并顺序：id → 主题精确 → 别名精确 → 相似度（活跃条目，Dice ≥0.72 且领先 ≥0.08）→ 新建；相似度领先不足记 `ambiguous` 并新建（可追踪）。**相似度比对用 topic+aliases+keywords 的全组合**，且主题短于 `MIN_SIMILARITY_TOPIC_LEN`(4) 时不走相似度——纯人名/地名与太多条目共享二元组，靠 Dice 会误并不同的事（精确匹配路径不受限）。锁定条目完全冻结：更新、drop、改名绕过都拒绝并记 `rejected_locked`。退役条目只接受精确命中恢复。补丁缺 `status`/`source` 时更新路径保留旧值（`status_explicit`/`source_explicit` 区分「模型给了 unknown」与「模型没给」），只有新建路径回退 unknown/unspecified——弱模型只回半张表时不能把整表降级成未知。**状态变更只改同一条目的 `status`，旧值写入 `previous_status`**（只留一跳，完整历史在 `last_changes`），不产生副本条目。
+- **手动整理**（面板「整理条目」）：`findDuplicateGroups` 全表 O(n²) 扫描（上限 60 条，可忽略），阈值比 AI 路径更严（`MANUAL_DEDUP_THRESHOLD=0.82` / `MARGIN=0.12`）——批量误并会丢信息，漏并只是多一条。额外要求 `isRestatement`：短串二元组覆盖度 ≥0.6 且长度 ≥4，挡住「共享人名但不是同一件事」的误判。锁定与退役条目完全不参与。合并时状态取权威度最高的（known > uncertain > unknown），旧状态记 `previous_status`，别名/检索词/时间全部并入。
+- `parseKnowledgeResponse` 返回 `null`=不可解析、`{patches: []}`=合法无变化，两者都必须保留旧表，语义不可混。`重建整表` 是唯一全量重跑入口（`rebuild=true` 传空表）。
+- 报告存聊天级 `ChatSettings.knowledge_report`（随聊天落盘，切聊天自动切报告）；`based_on_message` + `based_on_fingerprint` 共同判定过期：编辑/删除/切分支楼层数可能不变，必须看内容指纹（只取可见消息 role + 正文摘要，忽略扩展元数据）。
+- 并发守卫：请求前快照 chatIdentity / 楼层数 / 指纹 / `report.revision`，返回后任一不符丢弃结果（手动触发会提示，自动触发静默）。手动编辑同样 bump `revision`，使在途结果失效。
+- 存储上限 `MAX_STORED_ENTRIES=60`（锁定条目永不淘汰）、`MAX_RETIRED_ENTRIES=20`、`MAX_CHANGES=20`；活跃条目淘汰顺序 known → uncertain → unknown，同档最久未更新优先。
 - 注入在 `generateOptions` 的 `runWIExclWindow` 之后、`appendRuntimeLine` 之前——**扩展模式与预设模式共用同一注入点**（预设不读 modules，只有运行时注入能覆盖）。报告为空时零变化。
-- 注入块插在末条 user 之前，**按总条数 `MAX_INJECT_ENTRIES=24` 裁剪**（不按状态分桶：存疑/未知天然就少，分桶配额会白白浪费），超限按「未知 > 存疑 > 已知」优先保留；再叠加 2500 字符预算，超出标注省略。宏必须在代码里 `substituteParams`——酒馆后端不替换请求体里的宏。`lastBuildMessages` 覆盖为注入后形态供调试页核对。
-- 自动刷新与选项生成**并行**（`MESSAGE_RECEIVED` 里 fire-and-forget），本轮用旧报告、下一轮用新报告；不 await 是因为 ST 的 `eventSource.emit` 串行 await 监听器。
-- 切聊天守卫：请求前快照 `getCurrentChatId()`，返回后不一致直接丢弃结果。
-- 纯函数在 `knowledge-report.ts`（`tests/knowledge-report.test.ts` 锁定解析/合并/渲染/注入），请求层在 `knowledge-analysis.ts`。
+- 注入由 `knowledge-injection.ts` 负责：`buildSceneText` 取最后 4 条可见消息，按 topic/别名/关键词命中评分；选择顺序 锁定 → unknown → uncertain → known 命中 → known 补齐；条数/字符预算来自 `knowledge.inject_max_entries`（默认 24）与 `inject_char_budget`（默认 2500），超预算跳过但继续尝试后续短条目。宏必须在代码里 `substituteParams`。`lastBuildMessages` 覆盖为注入后形态供调试页核对。
+- 自动刷新统一走 `scheduleKnowledgeRefresh(reason)`：`received` 立即（与选项生成并行），`edited/deleted/swiped` 1200ms 防抖；分析在途只记 pending，结束后补跑一次；`CHAT_CHANGED` 调 `resetKnowledgeScheduling()` 清定时器并取消在途。`knowledgeState.tick` 驱动面板过期提示重算（聊天数组不是响应式）。
+- **合并请求**（`knowledge.merge_with_generation`，默认关）：一次请求返回 `<knowledge_patch>` + `<options>` 两块，要求模型先更新边界再写候选。触发条件 `enabled && auto_analyze && merge_with_generation && isKnowledgeReportStale()`——报告新鲜时不追加任务。**「只许两个标签」的写法分散在 3 个模块**（`system_prompt` / `core_rules` / `thinking_prompt`），合并时统一走 `adaptPromptForMerge` 就地改写（`MERGE_PROMPT_REWRITES`，正则匹配「两个标签」等关键短语），**不要整模块跳过**——这些模块里有必需规则。`assistant_thinking` 例外：它整条只讲「以 thinking 开头、自检完输出 options」，前半句 `thinking_prompt` 已覆盖、后半句与补丁块冲突，**整条丢弃**（`MERGE_DROPPED_MODULE_IDS`）。预设模式改 `OPTION_SYSTEM` 契约句 + `OPTION_USER` 收尾句（只改一处会留下「自检完就出 options」的矛盾）。合并任务只补三态/source/字段，不复述 `knowledge_boundary` 已覆盖的规则（已知≠熟练、去主角化等），写成一整段任务而非多段拼接。`panel-mount` 只在「本次确实会自动生成」时跳过独立分析，否则（`auto_generate` 关/生成在途/无 API）仍走独立请求；`edited/deleted/swiped` 永远独立分析。解析隔离：`parseMergedKnowledge` 只读标签内、不做全文兜底；`parseOptions` 前必须 `stripMergedKnowledge`，否则括号回退会把补丁 JSON 当伪选项。补丁与选项互不阻塞；refill 轮次不重复提交补丁。
+- 手动编辑集中在 `knowledge-actions.ts`（新增/编辑/锁定/退役/恢复/清空），一律 bump `revision`、写 `last_changes`，不改 `based_on_message/fingerprint`。锁定条目允许手动编辑（用户是最终权威）。
+- 旧报告就地幂等迁移（`migrateKnowledgeReport`，chat-settings 每次校验后执行）：补 id/source/aliases/revision，同 topic 重复条目合并并记 `merged`。不 bump `SCHEMA_VERSION`。
+- 纯函数在 `knowledge-report.ts`（解析/合并/容量/表格/指纹/迁移，`tests/knowledge-report.test.ts` 锁定），提示词与合并文本层在 `knowledge-task.ts`（`tests/knowledge-merge.test.ts` 锁定），注入在 `knowledge-injection.ts`，快照/过期判定/落库守卫在 `knowledge-state.ts`，请求与调度在 `knowledge-analysis.ts`。`knowledge-state` 独立存在是因为 `generator` 与 `knowledge-analysis` 都要用，放任一方向会成模块环。
 
 ## 生成链路
 
@@ -111,3 +118,11 @@ npx knip        # klona/pinia/toastr 在 ignoreDependencies
 - `getPresetSettings()` 对 openai 返回空对象；读内容用 `getCompletionPresetByName`，先 `getAllPresets()` 预检。
 - `setExtensionPrompt(key, value, position, depth, scan, role, filter)`；空 value 被过滤。
 - `/api/characters/edit` 的 `json_data` 必须是完整卡 JSON。
+
+## 开发环境（ZCode）
+
+- 技能 `sillytavern-extension-dev` 已装在 `~/.zcode/skills/`，含 `getContext()` 全量 API、`event_types` 全表、Vite/manifest 模板与浏览器验证配方。
+- 工作区 MCP `chrome-devtools` 已配在本目录 `.zcode/config.json`，但**当前为 `enabled: false`**；浏览器验证走 ZCode 内置浏览器（`browser-use` 插件 / `agent.browsers`）。内置浏览器没有 console/网络面板：加载期错误读 ST 自己的 `#extensions_details` 的 `warning` 类与 `.info-block.error` 文本；请求体/console 需在页面加载后注入 fetch/console 钩子再触发操作（钩子随导航销毁，抓不到加载期错误）。
+- 扩展激活约需 10 秒（拉 manifest + 按 `loading_order` 注入 script），轮询 `#choice-floating-root` 或 `script[id="third-party_choice-js"]`，别只查一次。
+- `pnpm build` 后必须刷新页面：ST 用 `<script id="third-party_choice-js">` 注入 `dist/index.js`，不刷新不会重新执行。
+- 页面内自查：`SillyTavern.getContext()` 可直接读 `extensionSettings.choice`、`chatMetadata.choice`、`extensionPrompts`。

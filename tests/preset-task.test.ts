@@ -96,6 +96,30 @@ describe('renderPresetTask — 解耦不变量', () => {
   });
 });
 
+describe('renderPresetTask — 合并知识边界时放宽标签契约', () => {
+  it('默认仍只许 thinking + options', () => {
+    const task = renderPresetTask('option', ctx);
+    expect(task.system).toContain('只许出现 <thinking> 与 <options> 两个标签');
+  });
+
+  it('allowKnowledgePatch 时允许第三个标签，且收尾顺序也改', () => {
+    const task = renderPresetTask('option', ctx, true);
+    expect(task.system).not.toContain('只许出现 <thinking> 与 <options> 两个标签');
+    expect(task.system).toContain('<knowledge_patch>');
+    // 任务收尾句同样要改，否则「自检完就出 options」会跳过补丁
+    expect(task.user).toContain('<knowledge_patch>');
+    expect(task.user).not.toMatch(/再输出 <options>。$/);
+    // 规则正文不受影响
+    expect(task.system).toContain('不续写正文');
+    expect(task.system).toContain('档位');
+  });
+
+  it('润色任务即使传 true 也不放宽（合并只针对选项生成）', () => {
+    const task = renderPresetTask('enrich', ctx, true);
+    expect(task.system).not.toContain('<knowledge_patch>');
+  });
+});
+
 describe('renderBaiBaiSummaryContent — 柏宝书包装（扩展/预设模式共用）', () => {
   it('包装出 <baibai_summary> 标签并原样携带摘要文本', () => {
     const out = renderBaiBaiSummaryContent('第一层剧情摘要。\n第二层。');

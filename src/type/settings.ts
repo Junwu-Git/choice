@@ -1113,38 +1113,113 @@ export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 export const KnowledgeStatus = z.enum(['known', 'uncertain', 'unknown']).default('unknown').catch('unknown');
 export type KnowledgeStatus = z.infer<typeof KnowledgeStatus>;
 
+/** 获取方式：目击/听闻/阅读/推断/未获取，外加两个非分析来源——
+ *  unspecified = 旧存档迁移时没有该字段，UI 显示「未标注」；manual = 用户手动新增。
+ *  与三态交叉校验：unknown 只能是 none，none 不能声称 known（合并层会强制纠正）。 */
+export const KnowledgeSource = z
+  .enum(['witnessed', 'heard', 'read', 'inferred', 'none', 'unspecified', 'manual'])
+  .default('unspecified')
+  .catch('unspecified');
+export type KnowledgeSource = z.infer<typeof KnowledgeSource>;
+
 /** 报告单行：topic 是信息项短标题，basis 是判定依据出处，impact 是对候选生成的约束。
- *  updated_at_message = 最近一次被分析刷新时的消息总数，增量合并据此淘汰最久未更新的条目。 */
+ *  id 创建后不变（topic 改名/合并都沿用），AI 补丁按 id 回传；aliases 参与同义归并，
+ *  keywords 是场景检索词；event_time 是剧情内时间（从正文里读出，如「2026年10月15日 下午」），
+ *  用来回答「这件事发生在什么时候」，不记录楼层号——聊天历史里没有楼层编号，
+ *  强行记录只会让模型编造。
+ *  updated_at_message = 最近一次被分析刷新时的消息总数；retired 为软删除（可恢复）。 */
 export const KnowledgeReportEntry = z
   .object({
+    id: z.string().default(''),
     topic: z.string().default(''),
+    aliases: z.array(z.string()).prefault([]),
+    keywords: z.array(z.string()).prefault([]),
     status: KnowledgeStatus,
+    source: KnowledgeSource,
+    /** 上一次的状态（unknown/uncertain → known 时保留来路）。
+     *  空串 = 从未变更过。只留一跳：完整历史在 last_changes 里，这里是为了让面板
+     *  能直接标出「这条是从存疑转正的」，不必翻变更记录。 */
+    previous_status: z.enum(['', 'known', 'uncertain', 'unknown']).default('').catch(''),
     basis: z.string().default(''),
     impact: z.string().default(''),
+    /** 剧情内时间：模型从正文（含 SceneInfo 等场景元数据）里读到的时刻，读不到留空。
+     *  不参与判定与注入，只在面板展示，帮助长聊回溯「这条是什么时候的事」。 */
+    event_time: z.string().default('').catch(''),
+    first_seen_message: z.number().default(0),
     updated_at_message: z.number().default(0),
+    revision: z.number().default(0),
+    locked: z.boolean().default(false),
+    retired: z.boolean().default(false),
+    retired_reason: z.string().default(''),
   })
   .prefault({});
 export type KnowledgeReportEntry = z.infer<typeof KnowledgeReportEntry>;
 
+/** 变更记录类型：解释「为什么表里多了一条/少了一条」，面板的最近变更列表直接展示。
+ *  rejected_locked = 锁定条目拒绝了 AI 补丁；ambiguous = 相似度接近但未自动合并；
+ *  evicted = 超出容量被淘汰；drop_missing = AI 要求删除但没找到对应条目。 */
+export const KnowledgeChangeKind = z
+  .enum([
+    'added',
+    'updated',
+    'merged',
+    'retired',
+    'restored',
+    'locked',
+    'unlocked',
+    'rejected_locked',
+    'drop_missing',
+    'ambiguous',
+    'evicted',
+  ])
+  .default('updated')
+  .catch('updated');
+export type KnowledgeChangeKind = z.infer<typeof KnowledgeChangeKind>;
+
+/** 单条变更记录：最新在前，最多保留 20 条（MAX_CHANGES）。 */
+export const KnowledgeChange = z
+  .object({
+    at: z.number().default(0),
+    at_message: z.number().default(0),
+    kind: KnowledgeChangeKind,
+    id: z.string().default(''),
+    topic: z.string().default(''),
+    detail: z.string().default(''),
+  })
+  .prefault({});
+export type KnowledgeChange = z.infer<typeof KnowledgeChange>;
+
 /** 知识边界报告（聊天级缓存）：存进 ChatSettings 随聊天落盘，切聊天即切报告。
  *  based_on_message = 分析时的消息总数，用于面板过期提示与自动重跑判定；
+ *  based_on_fingerprint = 最近可见消息内容指纹，编辑/删除/切分支后楼层数可能不变，
+ *  必须靠指纹识别内容已变；revision = 报告内容修订号，分析请求携带 base_revision，
+ *  返回时不一致说明期间被手动改过，结果丢弃。
  *  updated_at 为时间戳（0 = 从未分析）。老档由 prefault({}) 自动补齐，无需迁移。 */
 export const KnowledgeReport = z
   .object({
     updated_at: z.number().default(0),
     based_on_message: z.number().default(0),
+    based_on_fingerprint: z.string().default(''),
+    revision: z.number().default(0),
     entries: z.array(KnowledgeReportEntry).prefault([]),
+    last_changes: z.array(KnowledgeChange).prefault([]),
   })
   .prefault({});
 export type KnowledgeReport = z.infer<typeof KnowledgeReport>;
 
 /** 知识边界分析功能开关（全局）。auto_analyze 默认开 = 每轮 AI 回复后多一次后台请求；
- *  inject_enabled 默认开 = 把最新报告注入选项生成请求（扩展模式与预设模式共用同一注入点）。 */
+ *  inject_enabled 默认开 = 把最新报告注入选项生成请求（扩展模式与预设模式共用同一注入点）。
+ *  merge_with_generation 默认关 = 分析并入选项生成请求（省一次上下文发送，但要求模型
+ *  在一次回复里同时完成判定与写作）；默认关保证存量用户请求形态零变化。
+ *  注入预算可调：长聊与短上下文模型对条数/字符数的容忍度差异很大。 */
 export const KnowledgeSettings = z
   .object({
     enabled: z.boolean().default(true),
     auto_analyze: z.boolean().default(true),
     inject_enabled: z.boolean().default(true),
+    merge_with_generation: z.boolean().default(false),
+    inject_max_entries: z.number().int().min(1).max(60).default(24).catch(24),
+    inject_char_budget: z.number().int().min(300).max(8000).default(2500).catch(2500),
   })
   .prefault({});
 export type KnowledgeSettings = z.infer<typeof KnowledgeSettings>;

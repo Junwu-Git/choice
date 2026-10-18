@@ -25,9 +25,28 @@ export type PresetTaskCtx = {
 /** 预设模式的任务类型。 */
 export type PresetTaskKind = 'option' | 'enrich';
 
-/** 渲染预设模式的内置任务指令（system + user 两条，追加在预设内容之后）。 */
-export function renderPresetTask(kind: PresetTaskKind, ctx: PresetTaskCtx): { system: string; user: string } {
-  return kind === 'enrich' ? renderEnrichTask(ctx) : renderOptionTask(ctx);
+/** 渲染预设模式的内置任务指令（system + user 两条，追加在预设内容之后）。
+ *  allowKnowledgePatch=true 时放宽标签契约：合并知识边界要多一个 <knowledge_patch> 块，
+ *  否则这里的「只许两个标签」会把补丁块挤掉。 */
+export function renderPresetTask(
+  kind: PresetTaskKind,
+  ctx: PresetTaskCtx,
+  allowKnowledgePatch = false,
+): { system: string; user: string } {
+  const task = kind === 'enrich' ? renderEnrichTask(ctx) : renderOptionTask(ctx);
+  if (!allowKnowledgePatch) return task;
+  // 契约句与任务收尾句都要改：前者只认两个标签，后者规定「自检完就输出 options」。
+  // 只改一处会留下「先 thinking 再 options」与「还要 knowledge_patch」并存的矛盾。
+  return {
+    system: task.system.replace(
+      '只许出现 <thinking> 与 <options> 两个标签，</options> 之后一字不写。',
+      '除 <thinking>、<knowledge_patch>、<options> 外不写任何标签或文字，<options> 之后一字不写。',
+    ),
+    user: task.user.replace(
+      '先输出 <thinking> 逐条自检（场景锚点、认知边界、句式差异、数量），再输出 <options>。',
+      '先输出 <thinking> 逐条自检（场景锚点、认知边界、句式差异、数量），再输出 <knowledge_patch> 记录本轮知识边界变化，最后输出 <options>。',
+    ),
+  };
 }
 
 /** 柏宝书摘要包装的开标签：generator 预设模式用它在展开结果里检测摘要是否随历史块落位成功。 */
