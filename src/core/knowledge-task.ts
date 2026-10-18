@@ -149,10 +149,7 @@ export function isModuleDroppedByMerge(moduleId: string): boolean {
 export function adaptPromptForMerge(text: string): string {
   const out = MERGE_PROMPT_REWRITES.reduce((acc, [re, to]) => acc.replace(re, to), text);
   // 选项生成时不应提及润色分支（enrich 链路不走合并）
-  return out.replace(
-    /，?或者把\s*\{\{user\}\}\s*的原始输入改写成几个更顺口的版本/g,
-    '',
-  );
+  return out.replace(/，?或者把\s*\{\{user\}\}\s*的原始输入改写成几个更顺口的版本/g, '');
 }
 
 /** 该模块是否需要为合并模式改写：含「两个标签」类写法时才处理，避免无谓遍历。 */

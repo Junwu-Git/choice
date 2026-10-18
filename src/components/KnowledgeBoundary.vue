@@ -33,7 +33,12 @@
           <i class="fa-solid fa-stop"></i>
           {{ t`取消分析` }}
         </button>
-        <button v-if="!knowledgeState.loading" class="choice-btn-sm" :title="t`手动新增一条知识边界条目`" @click="openAdd">
+        <button
+          v-if="!knowledgeState.loading"
+          class="choice-btn-sm"
+          :title="t`手动新增一条知识边界条目`"
+          @click="openAdd"
+        >
           <i class="fa-solid fa-plus"></i>
           {{ t`新增条目` }}
         </button>
@@ -97,7 +102,9 @@
         <span class="choice-toggle-custom"></span>
         <span class="choice-toggle-label">
           <strong>{{ t`合并到选项生成请求` }}</strong>
-          <small>{{ t`省掉一次上下文发送：分析与候选在同一次回复里完成，先更新边界再写候选。需开启「自动刷新」；报告已是最新时不追加分析任务。` }}</small>
+          <small>{{
+            t`省掉一次上下文发送：分析与候选在同一次回复里完成，先更新边界再写候选。需开启「自动刷新」；报告已是最新时不追加分析任务。`
+          }}</small>
         </span>
       </label>
       <small v-if="!gs.settings.knowledge.auto_analyze" class="choice-field-hint">
@@ -173,12 +180,7 @@
           <span>{{ t`依据` }}</span>
           <span>{{ t`对选项的约束` }}</span>
         </div>
-        <div
-          v-for="e in filtered"
-          :key="e.id"
-          class="choice-knowledge-row"
-          :class="{ 'is-retired': e.retired }"
-        >
+        <div v-for="e in filtered" :key="e.id" class="choice-knowledge-row" :class="{ 'is-retired': e.retired }">
           <span class="choice-knowledge-topic">
             <span class="choice-knowledge-topic-line">
               <i v-if="e.locked" class="fa-solid fa-lock choice-knowledge-lock" :title="t`已锁定，AI 不会修改`"></i>
@@ -223,7 +225,9 @@
             >
               {{ t`原${statusLabel(e.previous_status as KnowledgeStatus)}` }}
             </span>
-            <span v-if="e.retired" class="choice-knowledge-retired-note" :title="e.retired_reason">{{ t`已退役` }}</span>
+            <span v-if="e.retired" class="choice-knowledge-retired-note" :title="e.retired_reason">{{
+              t`已退役`
+            }}</span>
           </span>
           <span class="choice-knowledge-cell">
             {{ e.basis || '—' }}
@@ -453,9 +457,7 @@ const clampBudget = () => {
 };
 
 const existingTopics = computed(() =>
-  report.value.entries
-    .filter(e => e.id !== editingEntry.value?.id)
-    .map(e => e.topic),
+  report.value.entries.filter(e => e.id !== editingEntry.value?.id).map(e => e.topic),
 );
 
 const openAdd = () => {

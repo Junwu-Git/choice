@@ -202,7 +202,10 @@ function pickPatch(x: unknown): KnowledgePatch | null {
   if (!x || typeof x !== 'object') return null;
   const o = x as Record<string, unknown>;
   const id = typeof o.id === 'string' ? o.id.trim() : '';
-  const topic = (typeof o.topic === 'string' ? o.topic : '').replace(/^\[id=[^\]]*\]\s*/i, '').trim().slice(0, 24);
+  const topic = (typeof o.topic === 'string' ? o.topic : '')
+    .replace(/^\[id=[^\]]*\]\s*/i, '')
+    .trim()
+    .slice(0, 24);
   if (!id && !topic) return null;
   if (o.drop === true || o.drop === 'true') {
     return {
@@ -258,7 +261,9 @@ function lastCompleteBrace(text: string, from: number): number {
 /** 从模型输出里抽出条目数组与 base_revision。
  *  支持对象（含 entries 键）、裸数组、代码围栏；截断时尽量抢救完整对象。
  *  返回 null = 完全没有可解析的 JSON；entries 为空数组 = 明确的「本轮无变化」。 */
-export function parseKnowledgeResponse(text: string): { baseRevision: number | null; patches: KnowledgePatch[] } | null {
+export function parseKnowledgeResponse(
+  text: string,
+): { baseRevision: number | null; patches: KnowledgePatch[] } | null {
   const c = cleanModelText(text);
   if (!c) return null;
 
@@ -501,7 +506,13 @@ export function mergeKnowledgePatch(
 
   for (const patch of patches) {
     let target = findById(patch.id) ?? findByTopic(patch.topic) ?? findByAlias(patch);
-    let matchedBy = target ? (findById(patch.id) === target ? 'id' : findByTopic(patch.topic) === target ? 'topic' : 'alias') : '';
+    let matchedBy = target
+      ? findById(patch.id) === target
+        ? 'id'
+        : findByTopic(patch.topic) === target
+          ? 'topic'
+          : 'alias'
+      : '';
 
     if (!target) {
       const sim = findSimilar(patch);
@@ -550,7 +561,13 @@ export function mergeKnowledgePatch(
     if (patch.drop) {
       if (!target) {
         changes.push(
-          change('drop_missing', { id: patch.id ?? '', topic: patch.topic }, '未找到对应条目，忽略删除', now, atMessage),
+          change(
+            'drop_missing',
+            { id: patch.id ?? '', topic: patch.topic },
+            '未找到对应条目，忽略删除',
+            now,
+            atMessage,
+          ),
         );
         continue;
       }
@@ -600,7 +617,11 @@ export function mergeKnowledgePatch(
       if (patch.event_time) target.event_time = patch.event_time;
       target.updated_at_message = atMessage;
       target.revision += 1;
-      const kind: KnowledgeChangeKind = wasRetired ? 'restored' : matchedBy === 'similarity' || matchedBy === 'alias' ? 'merged' : 'updated';
+      const kind: KnowledgeChangeKind = wasRetired
+        ? 'restored'
+        : matchedBy === 'similarity' || matchedBy === 'alias'
+          ? 'merged'
+          : 'updated';
       if (matchedBy === 'similarity') detailParts.push('按主题相似度归并');
       else if (matchedBy === 'alias') detailParts.push('按别名归并');
       changes.push(change(kind, target, detailParts.join('；') || '内容已刷新', now, atMessage));
@@ -863,7 +884,9 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
 
 /** 聊天内容指纹：只取可见消息的 role + 正文摘要，忽略扩展自身写入的元数据。
  *  为什么不用楼层数：编辑/删除/切分支都可能保持楼层数不变，必须看内容。 */
-export function computeChatFingerprint(messages: Array<{ mes?: unknown; is_system?: boolean; is_user?: boolean; role?: string }>): string {
+export function computeChatFingerprint(
+  messages: Array<{ mes?: unknown; is_system?: boolean; is_user?: boolean; role?: string }>,
+): string {
   const visible = messages.filter(m => !m.is_system);
   const tail = visible.slice(-12);
   const payload = tail
@@ -907,9 +930,7 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
         existing.impact = raw.impact || existing.impact;
         existing.updated_at_message = raw.updated_at_message;
       }
-      changes.unshift(
-        change('merged', existing, `旧报告重复主题「${topic}」已合并`, now, existing.updated_at_message),
-      );
+      changes.unshift(change('merged', existing, `旧报告重复主题「${topic}」已合并`, now, existing.updated_at_message));
       continue;
     }
     const id = raw.id?.trim() || ensureUniqueId(makeEntryId(topic, raw.updated_at_message ?? 0), usedIds);

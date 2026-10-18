@@ -224,7 +224,9 @@ function shouldSkipRefresh(): boolean {
  *  生成在途、无 API）仍需走独立分析，否则报告永远停在旧状态。 */
 export function isKnowledgeMergeActive(): boolean {
   const gs = useGlobalSettingsStore();
-  return gs.settings.knowledge.enabled && gs.settings.knowledge.auto_analyze && gs.settings.knowledge.merge_with_generation;
+  return (
+    gs.settings.knowledge.enabled && gs.settings.knowledge.auto_analyze && gs.settings.knowledge.merge_with_generation
+  );
 }
 
 /** 自动刷新调度：

@@ -1,14 +1,15 @@
 <template>
-  <ChoiceDialog :open="open" :title="isEdit ? t`编辑条目` : t`新增条目`" icon="fa-solid fa-pen" width="520px" @close="emit('close')">
+  <ChoiceDialog
+    :open="open"
+    :title="isEdit ? t`编辑条目` : t`新增条目`"
+    icon="fa-solid fa-pen"
+    width="520px"
+    @close="emit('close')"
+  >
     <div class="choice-knowledge-form">
       <label class="choice-field">
         <span>{{ t`信息项` }}</span>
-        <input
-          v-model="topic"
-          class="choice-input"
-          maxlength="24"
-          :placeholder="t`短标题，如「主角的真实身份」`"
-        />
+        <input v-model="topic" class="choice-input" maxlength="24" :placeholder="t`短标题，如「主角的真实身份」`" />
       </label>
 
       <div class="choice-field">
@@ -46,7 +47,12 @@
 
       <label class="choice-field">
         <span>{{ t`依据` }}</span>
-        <textarea v-model="basis" class="choice-textarea" rows="2" :placeholder="t`判定依据，如「第 12 楼被告知」`"></textarea>
+        <textarea
+          v-model="basis"
+          class="choice-textarea"
+          rows="2"
+          :placeholder="t`判定依据，如「第 12 楼被告知」`"
+        ></textarea>
       </label>
 
       <label class="choice-field">

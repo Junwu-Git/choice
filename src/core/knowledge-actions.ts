@@ -63,7 +63,11 @@ function report() {
   return useChatSettingsStore().settings.knowledge_report;
 }
 
-function pushChange(kind: KnowledgeChangeKind, entry: Pick<KnowledgeReportEntry, 'id' | 'topic'>, detail: string): void {
+function pushChange(
+  kind: KnowledgeChangeKind,
+  entry: Pick<KnowledgeReportEntry, 'id' | 'topic'>,
+  detail: string,
+): void {
   const r = report();
   const change: KnowledgeChange = {
     at: Date.now(),
@@ -141,7 +145,9 @@ export function updateManualEntry(id: string, input: KnowledgeEntryInput): boole
   pushChange(
     'updated',
     entry,
-    beforeStatus === entry.status ? '手动编辑' : `状态 ${statusLabel(beforeStatus)} → ${statusLabel(entry.status)}（手动）`,
+    beforeStatus === entry.status
+      ? '手动编辑'
+      : `状态 ${statusLabel(beforeStatus)} → ${statusLabel(entry.status)}（手动）`,
   );
   touch();
   return true;

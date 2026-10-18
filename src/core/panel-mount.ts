@@ -4,7 +4,12 @@ import { chat } from '@sillytavern/script';
 import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
-import { isKnowledgeMergeActive, maybeAutoAnalyze, resetKnowledgeScheduling, scheduleKnowledgeRefresh } from '@/core/knowledge-analysis';
+import {
+  isKnowledgeMergeActive,
+  maybeAutoAnalyze,
+  resetKnowledgeScheduling,
+  scheduleKnowledgeRefresh,
+} from '@/core/knowledge-analysis';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';

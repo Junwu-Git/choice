@@ -198,7 +198,8 @@ export const buildMessages = async (
     // 合并模式：整条丢弃纯输出格式指令（见 knowledge-task.MERGE_DROPPED_MODULE_IDS），
     // 其余模块改写「两个标签」口径
     if (adaptForMerge && isModuleDroppedByMerge(mod.id)) continue;
-    const modContent = adaptForMerge && needsMergeAdaptation(mod.content) ? adaptPromptForMerge(mod.content) : mod.content;
+    const modContent =
+      adaptForMerge && needsMergeAdaptation(mod.content) ? adaptPromptForMerge(mod.content) : mod.content;
 
     switch (mod.id) {
       case 'system_prompt': {
@@ -295,7 +296,8 @@ export const buildMessages = async (
         const content = substituteParams(sub(modContent, augmentedCtx));
         if (content) msgs.push({ role: mod.role, content });
         break;
-      }      default: {
+      }
+      default: {
         // v69：模块一律按其自身 role 发送（assistant_ack/assistant_thinking/enrich_assistant
         // 不再特殊处理，预填充开关已移除）。想用预填充把模块角色改为 assistant 即可。
         const content = substituteParams(sub(modContent, augmentedCtx));

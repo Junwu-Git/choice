@@ -102,9 +102,7 @@ export function renderKnowledgeInjection(report: KnowledgeReport, opts: RenderOp
   const knownHit = scored
     .filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits > 0)
     .sort((a, b) => b.hits - a.hits || byRecency(a, b));
-  const knownRest = scored
-    .filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits === 0)
-    .sort(byRecency);
+  const knownRest = scored.filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits === 0).sort(byRecency);
 
   const ordered = [...locked, ...unknown, ...uncertain, ...knownHit, ...knownRest].map(s => s.entry);
 
