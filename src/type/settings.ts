@@ -1051,7 +1051,7 @@ export const PROMPT_TEXT_MIGRATIONS: ReadonlyArray<readonly [string, string]> = 
   ],
 ];
 
-export const SCHEMA_VERSION = 81;
+export const SCHEMA_VERSION = 83;
 
 // ── 统计窗口与报表常量（单一事实来源，组件/统计核心共用）───────────────────────
 /** 滑动窗口上限：recent 最多保留最近 N 轮，超出 FIFO 挤掉最旧 */
@@ -1116,6 +1116,20 @@ export type WIBookMode = 'off' | 'follow' | 'force' | 'custom';
 export const KnowledgeStatus = z.enum(['known', 'uncertain', 'unknown']).default('unknown').catch('unknown');
 export type KnowledgeStatus = z.infer<typeof KnowledgeStatus>;
 
+/** 条目对候选的约束强度档位（模型给的先验值，不直接决定排序）。
+ *  语义是「这条漏掉会不会写出越界/全知的候选」，不是「剧情上重不重要」：
+ *  high = 漏了会直接翻车（未知的秘密、他人的隐瞒意图、未公开真相）；
+ *  normal = 影响分寸与措辞，但不破底线（默认值）；
+ *  low = 背景常识、设定与当前场景已明写的内容。
+ *
+ *  为什么叫 importance 而不是 weight：条目池的 PoolEntry 已占用 weight（抽取概率），
+ *  同名会让读代码的人误以为两者是同一套机制。
+ *  为什么排序不直接用它：模型会把整表都标成 high（增量维护里旧条目只在变化时才回传，
+ *  档位只升不降）。注入侧把它当加性先验，与新鲜度、场景命中相加，
+ *  全表同档时先验相互抵消，排序自动退化成时间与场景信号。 */
+export const KnowledgeImportance = z.enum(['high', 'normal', 'low']).default('normal').catch('normal');
+export type KnowledgeImportance = z.infer<typeof KnowledgeImportance>;
+
 /** 获取方式：目击/听闻/阅读/推断/未获取，外加两个非分析来源——
  *  unspecified = 旧存档迁移时没有该字段，UI 显示「未标注」；manual = 用户手动新增。
  *  与三态交叉校验：unknown 只能是 none，none 不能声称 known（合并层会强制纠正）。 */
@@ -1135,10 +1149,18 @@ export const KnowledgeReportEntry = z
   .object({
     id: z.string().default(''),
     topic: z.string().default(''),
+    /** 关联对象：这条信息针对的是谁/哪个地方/哪件物品，通用设定写「世界设定」。
+     *  只用于面板展示与人工归类，**不参与归并匹配**——共享同一对象只说明涉及同一个
+     *  人/物，不说明是同一件事（立花的身份、情绪、私情各自独立）。也不进注入文本，
+     *  省下预算（topic 通常已包含对象名）。 */
+    subject: z.string().default('').catch(''),
     aliases: z.array(z.string()).prefault([]),
     keywords: z.array(z.string()).prefault([]),
     status: KnowledgeStatus,
     source: KnowledgeSource,
+    /** 约束强度档位：只影响注入时的组内排序与容量淘汰，不参与归并匹配、不进注入文本。
+     *  旧档缺失时落 normal——猜不出原来的轻重，等下一次分析重新校准。 */
+    importance: KnowledgeImportance,
     /** 上一次的状态（unknown/uncertain → known 时保留来路）。
      *  空串 = 从未变更过。只留一跳：完整历史在 last_changes 里，这里是为了让面板
      *  能直接标出「这条是从存疑转正的」，不必翻变更记录。 */

@@ -11,7 +11,7 @@
 
 import type { ChatMsg } from '@/core/api-client';
 import { normalizeText } from '@/core/text-similarity';
-import { MAX_INJECT_ENTRIES, INJECT_CHAR_BUDGET } from '@/core/knowledge-report';
+import { entrySortScore, MAX_INJECT_ENTRIES, INJECT_CHAR_BUDGET } from '@/core/knowledge-report';
 import type { KnowledgeReport, KnowledgeReportEntry, KnowledgeStatus } from '@/type/settings';
 
 const STATUS_HEADER: Record<KnowledgeStatus, string> = {
@@ -62,8 +62,14 @@ type RenderOptions = {
 /** 单条渲染。已知项只带依据（约束力弱，省预算）；存疑/未知必须带约束，
  *  模型漏写时用固定兜底句，保证生成端拿到的是可执行指令。
  *  event_time 一并带上：模型据此判断「这条是三天前知道的还是刚刚知道的」，
- *  同一状态在不同时间点对行动的约束力不同（刚获知的信息更容易露馅）。 */
-function formatLine(e: KnowledgeReportEntry): string {
+ *  同一状态在不同时间点对行动的约束力不同（刚获知的信息更容易露馅）。
+ *
+ *  compact=true 是「降级形态」：只留主题一行。预算不够时给 known 用——
+ *  主题本身已经陈述了事实（「富川家住高档住宅区」），依据对生成侧没有约束力。
+ *  存疑/未知绝不可降级：它们的约束句就是唯一有价值的部分，省掉会变成误导。
+ *  档位刻意不渲染：它是预算调度参数，写进注入只会引发元推理。 */
+function formatLine(e: KnowledgeReportEntry, compact = false): string {
+  if (compact) return `- ${e.topic}`;
   const parts: string[] = [];
   if (e.basis) parts.push(`依据：${e.basis}`);
   if (e.event_time) parts.push(`时间：${e.event_time}`);
@@ -112,19 +118,26 @@ export function renderKnowledgeInjectionDetailed(
   const charBudget = Math.max(200, Math.floor(opts.charBudget ?? INJECT_CHAR_BUDGET));
   const sceneNorm = normalizeText(opts.sceneText ?? '');
 
+  // 「最新楼层」以条目自报的 updated_at_message 为基准，不读聊天数组：
+  // 本模块的入参只有报告与场景文本，注入逻辑必须保持纯函数。
+  // 效果等价——报告里最大的 updated_at_message 就是最后一轮分析看到的楼层数。
+  const latestMessage = active.reduce((max, e) => Math.max(max, e.updated_at_message), 0);
+
   const scored = active.map(e => ({ entry: e, hits: sceneHits(e, sceneNorm) }));
-  const byRecency = (a: { entry: KnowledgeReportEntry }, b: { entry: KnowledgeReportEntry }) =>
-    b.entry.updated_at_message - a.entry.updated_at_message;
   const byStatus = (a: { entry: KnowledgeReportEntry }, b: { entry: KnowledgeReportEntry }) =>
     STATUS_ORDER.indexOf(a.entry.status) - STATUS_ORDER.indexOf(b.entry.status);
+  // 组内排序：档位先验 + 新鲜度 + 场景命中。三者加性，任一项通胀都会被另两项摊平。
+  const byScore = (a: { entry: KnowledgeReportEntry; hits: number }, b: { entry: KnowledgeReportEntry; hits: number }) =>
+    entrySortScore(b.entry, latestMessage, b.hits) - entrySortScore(a.entry, latestMessage, a.hits) ||
+    b.entry.updated_at_message - a.entry.updated_at_message;
 
-  const locked = scored.filter(s => s.entry.locked).sort((a, b) => byStatus(a, b) || byRecency(a, b));
-  const unknown = scored.filter(s => !s.entry.locked && s.entry.status === 'unknown').sort(byRecency);
-  const uncertain = scored.filter(s => !s.entry.locked && s.entry.status === 'uncertain').sort(byRecency);
+  const locked = scored.filter(s => s.entry.locked).sort((a, b) => byStatus(a, b) || byScore(a, b));
+  const unknown = scored.filter(s => !s.entry.locked && s.entry.status === 'unknown').sort(byScore);
+  const uncertain = scored.filter(s => !s.entry.locked && s.entry.status === 'uncertain').sort(byScore);
   const knownHit = scored
     .filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits > 0)
-    .sort((a, b) => b.hits - a.hits || byRecency(a, b));
-  const knownRest = scored.filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits === 0).sort(byRecency);
+    .sort((a, b) => byScore(a, b) || b.hits - a.hits);
+  const knownRest = scored.filter(s => !s.entry.locked && s.entry.status === 'known' && s.hits === 0).sort(byScore);
 
   const ordered = [...locked, ...unknown, ...uncertain, ...knownHit, ...knownRest].map(s => s.entry);
 
@@ -137,37 +150,58 @@ export function renderKnowledgeInjectionDetailed(
   // hits 都是 0，若仍按一半砍会把预算浪费掉；有场景文本时命中才是有效信号，
   // 让未命中的 known 最多占 known 配额一半，避免条目少于预算时全部入选、命中形同虚设。
   // 未知/存疑/锁定不受此限——它们是约束项，宁可多占预算。
+  // 高权重的 known 豁免这条配额：它编码的是约束力而不是相关性，
+  // 一条「漏了会越界」的已知项不该因为没在本场景命中就被砍掉。
   const restQuotaActive = sceneNorm.length > 0;
   const knownBudget = Math.max(1, Math.ceil((maxEntries - locked.length - unknown.length - uncertain.length) / 2));
   let knownTaken = 0;
 
+  /** 降级记录：entry.id 集合，用于渲染时改用精简形态。 */
+  const compactIds = new Set<string>();
   const chosen: KnowledgeReportEntry[] = [];
   let used = 0;
   let omitted = 0;
   for (const e of ordered) {
+    // 条数上限是硬上限（设置里就叫「条数上限」），降级不能突破它——
+    // 否则用户设 24 条却收到 60 条，预算形同虚设。
     if (chosen.length >= maxEntries) {
       omitted++;
       continue;
     }
     const isRest = restQuotaActive && e.status === 'known' && !e.locked && sceneHits(e, sceneNorm) === 0;
-    if (isRest && knownTaken >= knownBudget) {
+    if (isRest && knownTaken >= knownBudget && e.importance !== 'high') {
       omitted++;
       continue;
     }
-    const len = formatLine(e).length + 1;
-    if (used + len > bodyBudget) {
-      omitted++;
+    const fullLen = formatLine(e).length + 1;
+    if (used + fullLen <= bodyBudget) {
+      used += fullLen;
+      chosen.push(e);
+      if (isRest) knownTaken++;
       continue;
     }
-    used += len;
-    chosen.push(e);
-    if (isRest) knownTaken++;
+    // 字符预算放不下完整形态时，known 退化成主题单行——主题本身已陈述事实，
+    // 依据对生成侧没有约束力。存疑/未知/锁定不可降级：约束句是它们的全部价值，
+    // 省掉会变成「模型以为可以随便用」的误导。
+    if (e.status === 'known' && !e.locked) {
+      const compactLen = formatLine(e, true).length + 1;
+      if (used + compactLen <= bodyBudget) {
+        used += compactLen;
+        compactIds.add(e.id);
+        chosen.push(e);
+        if (isRest) knownTaken++;
+        continue;
+      }
+    }
+    omitted++;
   }
   if (!chosen.length) return { block: '', chosen, omitted, usedChars: 0, total: active.length };
 
+  // 分组渲染保持状态组顺序；组内沿用 chosen 的既有次序（已按分数排好），
+  // 精简标记按 id 查表，保证渲染形态与预算计算时一致。
   const sections: string[] = [];
   for (const status of STATUS_ORDER) {
-    const lines = chosen.filter(e => e.status === status).map(formatLine);
+    const lines = chosen.filter(e => e.status === status).map(e => formatLine(e, compactIds.has(e.id)));
     if (lines.length) sections.push(`${STATUS_HEADER[status]}\n${lines.join('\n')}`);
   }
 

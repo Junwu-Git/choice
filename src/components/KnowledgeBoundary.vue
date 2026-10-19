@@ -178,6 +178,10 @@
         <span v-if="counts.retired" class="choice-knowledge-count choice-knowledge-count--retired">
           {{ t`已退役` }} {{ counts.retired }}
         </span>
+        <!-- 档位分布：模型把大半张表标成「高」时，这一行能一眼看出通胀 -->
+        <span class="choice-knowledge-count choice-knowledge-count--importance" :title="t`档位只影响注入时的取舍顺序`">
+          {{ t`高 ${counts.importance.high} / 中 ${counts.importance.normal} / 低 ${counts.importance.low}` }}
+        </span>
         <div class="choice-seg choice-knowledge-filter">
           <button
             v-for="f in FILTERS"
@@ -194,6 +198,7 @@
       <div class="choice-knowledge-table">
         <div class="choice-knowledge-row choice-knowledge-row--head">
           <span>{{ t`信息项` }}</span>
+          <span>{{ t`关联对象` }}</span>
           <span>{{ t`状态` }}</span>
           <span>{{ t`依据` }}</span>
           <span>{{ t`对选项的约束` }}</span>
@@ -205,7 +210,9 @@
               <span :class="{ 'is-retired-text': e.retired }">{{ e.topic }}</span>
             </span>
             <span class="choice-knowledge-topic-meta">
-              <span class="choice-knowledge-source">{{ sourceLabel(e.source) }}</span>
+              <!-- 「未获取」只在状态不是未知时显示：状态为未知时它必然成立，
+                   摆一个恒定标签只是噪音（状态徽标已经说了「未知」） -->
+              <span v-if="e.source !== 'none'" class="choice-knowledge-source">{{ sourceLabel(e.source) }}</span>
               <span v-if="e.aliases.length" :title="e.aliases.join('、')">
                 {{ t`别名：${e.aliases.join('、')}` }}
               </span>
@@ -234,6 +241,7 @@
               </button>
             </span>
           </span>
+          <span class="choice-knowledge-cell choice-knowledge-subject">{{ e.subject || '—' }}</span>
           <span>
             <span class="choice-knowledge-badge" :class="`is-${e.status}`">{{ statusLabel(e.status) }}</span>
             <span
@@ -242,6 +250,13 @@
               :title="t`由「${statusLabel(e.previous_status as KnowledgeStatus)}」转为当前状态`"
             >
               {{ t`原${statusLabel(e.previous_status as KnowledgeStatus)}` }}
+            </span>
+            <span
+              class="choice-knowledge-importance"
+              :class="`is-${e.importance}`"
+              :title="importanceHint(e.importance)"
+            >
+              {{ t`档位${IMPORTANCE_LABEL[e.importance]}` }}
             </span>
             <span v-if="e.retired" class="choice-knowledge-retired-note" :title="e.retired_reason">{{
               t`已退役`
@@ -329,10 +344,16 @@ import {
   tidyKnowledgeReport,
   updateManualEntry,
 } from '@/core/knowledge-actions';
-import { buildKnowledgeExport, parseKnowledgeExport, SOURCE_LABEL } from '@/core/knowledge-report';
+import { buildKnowledgeExport, parseKnowledgeExport, IMPORTANCE_LABEL, SOURCE_LABEL } from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import type { KnowledgeChangeKind, KnowledgeReportEntry, KnowledgeSource, KnowledgeStatus } from '@/type/settings';
+import type {
+  KnowledgeChangeKind,
+  KnowledgeImportance,
+  KnowledgeReportEntry,
+  KnowledgeSource,
+  KnowledgeStatus,
+} from '@/type/settings';
 
 type FilterId = 'all' | KnowledgeStatus | 'locked' | 'retired';
 
@@ -377,10 +398,14 @@ const FILTERS = computed<Array<{ id: FilterId; label: string }>>(() => [
 ]);
 
 const counts = computed(() => {
-  const c = { known: 0, uncertain: 0, unknown: 0, retired: 0 };
+  const c = { known: 0, uncertain: 0, unknown: 0, retired: 0, importance: { high: 0, normal: 0, low: 0 } };
   for (const e of report.value.entries) {
-    if (e.retired) c.retired++;
-    else c[e.status]++;
+    if (e.retired) {
+      c.retired++;
+      continue;
+    }
+    c[e.status]++;
+    c.importance[e.importance]++;
   }
   return c;
 });
@@ -396,6 +421,13 @@ const filtered = computed(() => {
 const statusLabel = (s: KnowledgeStatus): string => (s === 'known' ? t`已知` : s === 'uncertain' ? t`存疑` : t`未知`);
 
 const sourceLabel = (s: KnowledgeSource): string => SOURCE_LABEL[s] ?? t`未标注`;
+
+const importanceHint = (v: KnowledgeImportance): string =>
+  v === 'high'
+    ? t`漏了会写出越界或全知的候选`
+    : v === 'low'
+      ? t`背景常识、设定或场景已明写`
+      : t`影响分寸与措辞，但不破底线`;
 
 /** 变更记录的时间戳：只显示时分，长聊里靠它与「更新于」对齐判断先后。 */
 const changeTime = (at: number): string => {
@@ -501,8 +533,10 @@ const openEdit = (entry: KnowledgeReportEntry) => {
 
 const onSaveEntry = (payload: {
   topic: string;
+  subject: string;
   status: KnowledgeStatus;
   source: KnowledgeSource;
+  importance: KnowledgeImportance;
   aliases: string[];
   keywords: string[];
   basis: string;
@@ -705,6 +739,28 @@ const onImport = () => {
   opacity: 0.7;
 }
 
+.choice-knowledge-count--importance {
+  font-size: 10px;
+  color: var(--choice-text-muted);
+}
+
+/* 档位标记：弱化处理——它是预算调度信息，不该和状态徽标抢注意力 */
+.choice-knowledge-importance {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 var(--choice-space-1);
+  border-radius: var(--choice-radius-full);
+  font-size: 10px;
+  color: var(--choice-text-muted);
+  border: 1px solid var(--choice-border);
+  white-space: nowrap;
+}
+
+.choice-knowledge-importance.is-high {
+  color: var(--choice-color-warning);
+  border-color: var(--choice-color-warning);
+}
+
 .choice-knowledge-filter {
   margin-left: auto;
 }
@@ -720,8 +776,10 @@ const onImport = () => {
 
 .choice-knowledge-row {
   display: grid;
-  /* 四列的最小宽合计约 320px；容器查询在更窄时切成卡片式，避免出现横向滚动 */
-  grid-template-columns: minmax(72px, 1.1fr) 48px minmax(80px, 1.4fr) minmax(80px, 1.4fr);
+  /* 五列：信息项 / 关联对象 / 状态 / 依据 / 约束。窄容器下折叠成卡片（见 @container） */
+  grid-template-columns:
+    minmax(64px, 1.1fr) minmax(52px, 0.7fr) 46px minmax(70px, 1.3fr)
+    minmax(70px, 1.3fr);
   gap: var(--choice-space-2);
   padding: var(--choice-space-2) var(--choice-space-3);
   border-top: 1px solid var(--choice-border);
@@ -802,6 +860,11 @@ const onImport = () => {
 .choice-knowledge-cell {
   color: var(--choice-text-secondary);
   overflow-wrap: anywhere;
+}
+
+/* 关联对象是分类标签，弱化处理，避免和主题抢注意力 */
+.choice-knowledge-subject {
+  color: var(--choice-text-muted);
 }
 
 .choice-knowledge-time {

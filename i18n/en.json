@@ -851,5 +851,18 @@
   "同义说法，用逗号分隔（每条不超过 24 字）": "Synonyms, comma-separated (24 characters max each)",
   "文件格式不正确：需要本扩展导出的知识边界 JSON": "Invalid file format: expected a knowledge boundary JSON exported by this extension",
   "已导出 ${0} 条": "Exported ${0} entries",
-  "已满": "Full"
+  "已满": "Full",
+  "背景常识、设定或场景已明写": "Background already stated in the card or scene",
+  "档位${0}": "Tier ${0}",
+  "档位只影响注入时的取舍顺序": "Tier only affects the inclusion order when the injection budget is tight",
+  "低": "Low",
+  "高": "High",
+  "高 ${0} / 中 ${1} / 低 ${2}": "High ${0} / Mid ${1} / Low ${2}",
+  "漏了会写出越界或全知的候选": "Omitting it would produce options that overstep or reveal what the character cannot know",
+  "影响分寸与措辞，但不破底线": "Affects tone and phrasing but does not break the boundary",
+  "只决定注入预算紧张时先保谁：漏掉会写出越界或全知候选 → 高；影响分寸但不破底线 → 中；设定与场景已明写 → 低。": "Only decides what to keep first when the injection budget is tight: omitting it would let options overstep or reveal unknown info → High; affects tone but stays within bounds → Mid; already stated in the card or scene → Low.",
+  "重要性档位": "Importance tier",
+  "关联对象": "Subject",
+  "这条信息针对谁，如「富川立花」「城北仓库」；通用设定填「世界设定」": "Who or what this is about, e.g. \"Fukawa Ritsuka\", \"North warehouse\"; use \"World setting\" for general lore",
+  "状态为「未知」时没有获取过程，获取方式固定为未获取。": "With status \"Unknown\" there is no acquisition process, so source is fixed to Not acquired."
 }

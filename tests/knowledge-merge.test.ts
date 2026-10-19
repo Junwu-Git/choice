@@ -4,6 +4,7 @@ import {
   adaptPromptForMerge,
   buildMergedKnowledgeTask,
   isModuleDroppedByMerge,
+  KNOWLEDGE_SYSTEM_PROMPT,
   needsMergeAdaptation,
   parseMergedKnowledge,
   stripMergedKnowledge,
@@ -188,12 +189,36 @@ describe('buildMergedKnowledgeTask', () => {
     expect(task).not.toContain('evidence_floors');
   });
 
+  it('提示词不出现宿主术语（模型不知道角色卡/世界书是什么）', () => {
+    // 这些是宿主软件的概念，模型读到只会当成剧情里的东西或直接忽略；
+    // 必须改写成模型能理解的「背景设定资料 / 背景 / 剧情」。
+    const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
+    for (const term of ['角色卡', '世界书', '酒馆', '楼层']) {
+      expect(task).not.toContain(term);
+    }
+  });
+
+  it('独立分析的系统提示同样不含宿主术语', () => {
+    for (const term of ['角色卡', '世界书', '酒馆', '楼层']) {
+      expect(KNOWLEDGE_SYSTEM_PROMPT).not.toContain(term);
+    }
+  });
+
   it('event_time 默认留空，不暗示必须填', () => {
     const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
-    expect(task).toContain('正文写了时间才填');
+    expect(task).toContain('正文写了具体时间才填');
     expect(task).toContain('否则空串');
+    // 明确排除「某日上午/下午」这类只有时段没有日期的伪时间
+    expect(task).toContain('某日上午');
     // 不能给出具体日期范例——那会诱导模型硬凑一个时间
     expect(task).not.toMatch(/\d{4}\s*年\s*\d{1,2}\s*月/);
+  });
+
+  it('subject 要求角色正名与统一写法', () => {
+    const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
+    expect(task).toContain('subject');
+    expect(task).toContain('角色用正名');
+    expect(task).toContain('世界设定');
   });
 
   it('不复述整套判定规则，只补三态与字段（避免与 knowledge_boundary 模块重复）', () => {

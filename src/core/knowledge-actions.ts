@@ -17,13 +17,15 @@ import {
   MAX_ALIASES,
   MAX_ALIAS_LEN,
   MAX_CHANGES,
-  MAX_EVENT_TIME_LEN,
   MAX_KEYWORDS,
   MAX_KEYWORD_LEN,
+  normalizeSubject,
+  toEventTime,
 } from '@/core/knowledge-report';
 import type {
   KnowledgeChange,
   KnowledgeChangeKind,
+  KnowledgeImportance,
   KnowledgeReportEntry,
   KnowledgeSource,
   KnowledgeStatus,
@@ -32,8 +34,10 @@ import { useChatSettingsStore } from '@/store/chat-settings';
 
 export type KnowledgeEntryInput = {
   topic: string;
+  subject: string;
   status: KnowledgeStatus;
   source: KnowledgeSource;
+  importance: KnowledgeImportance;
   aliases: string[];
   keywords: string[];
   basis: string;
@@ -56,7 +60,9 @@ const normalizeList = (list: string[], max: number, maxLen: number): string[] =>
   return out;
 };
 
-const normalizeEventTime = (s: string): string => s.replace(/\s+/g, ' ').trim().slice(0, MAX_EVENT_TIME_LEN);
+/** 手动输入与 AI 路径同口径：走 toEventTime，「某日上午」「下午」这类伪时间同样判空。
+ *  两条链路若各写一套，用户手填的合法时间不会被清洗，AI 填的脏时间却会被清。 */
+const normalizeEventTime = (s: string): string => toEventTime(s);
 
 function report() {
   return useChatSettingsStore().settings.knowledge_report;
@@ -98,10 +104,12 @@ export function addManualEntry(input: KnowledgeEntryInput): string | null {
   const entry: KnowledgeReportEntry = {
     id,
     topic,
+    subject: normalizeSubject(input.subject),
     aliases: normalizeList(input.aliases, MAX_ALIASES, MAX_ALIAS_LEN),
     keywords: normalizeList(input.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN),
     status: input.status,
     source: input.source,
+    importance: input.importance,
     previous_status: '',
     basis: input.basis.trim().slice(0, 240),
     impact: input.impact.trim().slice(0, 240),
@@ -130,8 +138,10 @@ export function updateManualEntry(id: string, input: KnowledgeEntryInput): boole
   if (!topic) return false;
   const beforeStatus = entry.status;
   entry.topic = topic;
+  entry.subject = normalizeSubject(input.subject);
   entry.status = input.status;
   entry.source = input.source;
+  entry.importance = input.importance;
   entry.aliases = normalizeList(input.aliases, MAX_ALIASES, MAX_ALIAS_LEN);
   entry.keywords = normalizeList(input.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN);
   entry.basis = input.basis.trim().slice(0, 240);
@@ -228,6 +238,8 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { adde
       // 只搬「知识内容」，不搬锁定/退役/修订号（当前聊天的用户意志优先）
       hit.status = raw.status;
       hit.source = raw.source;
+      hit.importance = raw.importance;
+      hit.subject = raw.subject || hit.subject;
       hit.basis = raw.basis || hit.basis;
       hit.impact = raw.impact || hit.impact;
       hit.event_time = raw.event_time || hit.event_time;
