@@ -218,7 +218,8 @@ export function isSentenceLike(s: string): boolean {
  *  刻意不做完整的日期格式校验：不同世界观有不同纪年（「第三纪元 3019 年」
  *  「民国二十三年」「翌日卯时」），强行套正则会把合法写法判成非法。 */
 const VAGUE_TIME_PLACEHOLDER_RE = /某(?:日|天|年|月|时|刻)/;
-const DAYPERIOD_RE = /^(?:凌晨|清晨|早上|早晨|上午|中午|正午|午后|下午|傍晚|黄昏|晚上|夜里|夜间|深夜|半夜|白天|今日|今天|昨日|昨天|明天|次日|翌日|同日)(?:时分|时候)?$/;
+const DAYPERIOD_RE =
+  /^(?:凌晨|清晨|早上|早晨|上午|中午|正午|午后|下午|傍晚|黄昏|晚上|夜里|夜间|深夜|半夜|白天|今日|今天|昨日|昨天|明天|次日|翌日|同日)(?:时分|时候)?$/;
 /** 有没有可定位的锚点：阿拉伯/中文数字（含纪年、时刻）、或明确的相对推进词。 */
 const TIME_ANCHOR_RE = /[0-9０-９零一二三四五六七八九十百千两]|天前|天后|日后|时辰|更次|刻钟/;
 
@@ -257,7 +258,8 @@ export function normalizeSubject(v: unknown): string {
  *  - 「未交代获取过程」「只有读者可见」这类贴标签的；
  *  - 「没有依据」「未知」「不详」这类自认空缺的。
  *  宁可漏判（多留一句空话）也不误杀正常依据——误杀会让注入表格少一行说明。 */
-const EMPTY_BASIS_RE = /^(?:未交代获取过程|没有交代获取过程|只有读者可见|只有读者能看到|无依据|没有依据|依据不详|未知|不详|无)$/;
+const EMPTY_BASIS_RE =
+  /^(?:未交代获取过程|没有交代获取过程|只有读者可见|只有读者能看到|无依据|没有依据|依据不详|未知|不详|无)$/;
 
 export function normalizeBasis(v: unknown): string {
   if (typeof v !== 'string') return '';
@@ -840,8 +842,7 @@ export function mergeKnowledgePatch(
         .filter(e => e.status === status && !e.locked && !touchedIds.has(e.id))
         .sort(
           (a, b) =>
-            entrySortScore(a, atMessage) - entrySortScore(b, atMessage) ||
-            a.updated_at_message - b.updated_at_message,
+            entrySortScore(a, atMessage) - entrySortScore(b, atMessage) || a.updated_at_message - b.updated_at_message,
         );
       for (const e of group) {
         if (evict.size >= need) break;
@@ -1225,7 +1226,13 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
     // 能在「最近变更」里找到原因，而不是以为内容凭空消失。
     if (raw.basis && !entry.basis) {
       changes.unshift(
-        change('updated', entry, '依据为无信息量的模板句，已清空（下次分析会补写具体内容）', now, entry.updated_at_message),
+        change(
+          'updated',
+          entry,
+          '依据为无信息量的模板句，已清空（下次分析会补写具体内容）',
+          now,
+          entry.updated_at_message,
+        ),
       );
     }
     // 旧版本别名是软上限，会堆到几十个。截断是唯一的清洗入口，但静默丢弃会让用户

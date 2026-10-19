@@ -127,7 +127,10 @@ export function renderKnowledgeInjectionDetailed(
   const byStatus = (a: { entry: KnowledgeReportEntry }, b: { entry: KnowledgeReportEntry }) =>
     STATUS_ORDER.indexOf(a.entry.status) - STATUS_ORDER.indexOf(b.entry.status);
   // 组内排序：档位先验 + 新鲜度 + 场景命中。三者加性，任一项通胀都会被另两项摊平。
-  const byScore = (a: { entry: KnowledgeReportEntry; hits: number }, b: { entry: KnowledgeReportEntry; hits: number }) =>
+  const byScore = (
+    a: { entry: KnowledgeReportEntry; hits: number },
+    b: { entry: KnowledgeReportEntry; hits: number },
+  ) =>
     entrySortScore(b.entry, latestMessage, b.hits) - entrySortScore(a.entry, latestMessage, a.hits) ||
     b.entry.updated_at_message - a.entry.updated_at_message;
 
