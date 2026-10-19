@@ -44,6 +44,18 @@ describe('renderPresetTask — option', () => {
     expect(task.system).toContain('需求值');
   });
 
+  it('首次指代必须写名字/省略主语，但不强制每条都以名字开头', () => {
+    // 预设模式不读 core_rules，这条规则必须内置在固定任务里，否则 st_preset 用户永远收不到。
+    expect(task.system).toContain('第一次出现主语/宾语指代');
+    expect(task.system).toContain('能省略主语就省略');
+    expect(task.system).toContain('这不是要求每条都以名字开头');
+    expect(task.system).toContain('不要先用物件/环境分句起头');
+    expect(task.system).toContain('手机被按熄收回裤兜，他站在原地没动');
+    expect(task.user).toContain('第一次出现主语/宾语指代');
+    expect(task.user).toContain('不能是「他/她」');
+    expect(task.user).toContain('不是每条都要以名字开头');
+  });
+
   it('声明不续写正文（压制预设定位冲突）', () => {
     expect(task.system).toContain('不续写正文');
   });

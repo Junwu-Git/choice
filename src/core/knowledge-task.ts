@@ -10,7 +10,7 @@
  * 被淹没，模型顾着读规则反而写不好候选。合并版只补三态与字段这两处生成侧没有的信息。
  */
 
-import { parseKnowledgeResponse, type KnowledgePatch } from '@/core/knowledge-report';
+import { MAX_STORED_ENTRIES, parseKnowledgeResponse, type KnowledgePatch } from '@/core/knowledge-report';
 
 /** 判定口径（两个模式共用）：从「判定对象」到「增量维护规则」结束。 */
 export const KNOWLEDGE_RULES_BODY = `【判定对象】
@@ -107,7 +107,7 @@ export const KNOWLEDGE_ENTRY_SCHEMA = `- base_revision 填表头给出的「当�
 - 删除条目只输出：{"id": "原 id", "drop": true, "drop_reason": "原因"}；没有 id 时可改用 topic 定位。
   只有新剧情**明确推翻**该信息时才 drop，并在 drop_reason 里写清是哪一段推翻的。拿不准就改成 uncertain，不要删除。
 
-条目总数控制在 30 条以内，优先保留对当前场景有影响的。`;
+条目总数控制在 ${MAX_STORED_ENTRIES} 条以内，优先保留对当前场景有影响的。`;
 
 /** 独立分析模式的系统提示（写死，不进 PromptEditor、不依赖预设）。
  *  三态定义必须与内置 knowledge_boundary 模块的口径一致（获取过程从严认定、
@@ -147,7 +147,7 @@ subject 写这条针对谁/哪样东西：角色用正名（不写「她」）�
 
 ${existingTable ? `【已有边界表】\n${existingTable}\n\n` : '（这是首次分析，输出完整的表。）\n'}当前修订号=${revision}。只输出真正变化或新增的条目，没有变化就留空数组；标记 [锁定] 的条目完全跳过。条目字段：
 {"id":"改已有条目时沿用原 id，新增省略","topic":"不超过 12 字","subject":"关联对象：角色正名/地点物品名/世界设定","status":"known|uncertain|unknown","source":"witnessed|heard|read|inferred|none","importance":"high|normal|low","aliases":["同一件事的另一种叫法，每个≤12字"],"keywords":["名词性检索词，每个≤12字"],"basis":"判定依据","impact":"对候选的约束，一句话","event_time":"正文写了具体时间才填，否则空串"}
-删除条目写 {"id":"原 id","drop":true,"drop_reason":"原因"}；只有新剧情明确推翻时才 drop，拿不准改成 uncertain。总条目控制在 30 条以内，优先保留对当前场景有影响的。
+删除条目写 {"id":"原 id","drop":true,"drop_reason":"原因"}；只有新剧情明确推翻时才 drop，拿不准改成 uncertain。总条目控制在 ${MAX_STORED_ENTRIES} 条以内，优先保留对当前场景有影响的。
 
 【输出顺序】
 1. <thinking>：按上面的思考框架分析场景，然后完成知识判定。

@@ -456,8 +456,11 @@ export const buildPresetModeMessages = async (
     },
     allowKnowledgePatch && !isEnrich,
   );
-  msgs.push({ role: 'system', content: task.system });
-  msgs.push({ role: 'user', content: task.user });
+  // 内置任务里的 {{user}}/{{char}} 是酒馆宏；预设内容走 expandPresetMessages 的 substitute，
+  // 任务指令是直接 push 的，必须在这里同样替换——否则模型看到字面量 {{user}}，
+  // 指代规则「第一次写 {{user}} 的名字」也会落空。
+  msgs.push({ role: 'system', content: substituteParams(task.system) });
+  msgs.push({ role: 'user', content: substituteParams(task.user) });
 
   // 合并相邻同 role 消息（user 不合并，理由同 buildMessages）
   const merged: ChatMsg[] = [];
@@ -494,8 +497,16 @@ export const historyWindowStart = (contextRounds: number): number => {
  * 拉取聊天历史。wrapCurrentScene=true（默认）时把最后一条 assistant 消息包进 <current_scene>，
  * 让选项 AI 明确"当前场景"边界——选项是场景产物，需要这层锚定；预设模式等自带场景锚定
  * 的生成方传 false：预设里可能已有自己的场景条目，再包一层会风格冲突。
+ *
+ * startRawIndex > 0 时只保留该原始下标之后的消息（知识边界增量分析用）：旧事实已经在
+ * 已有表/摘要里，只发上次分析之后的新消息即可。过滤发生在 rounds 截尾之后，depth 仍
+ * 相对末尾计算，与生成侧口径一致。
  */
-export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true): ChatMsg[] => {
+export const buildChatHistory = (
+  contextRounds: number,
+  wrapCurrentScene = true,
+  startRawIndex = 0,
+): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -504,8 +515,12 @@ export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true)
   // visible_only：全量未隐藏消息；rounds：未隐藏消息的最后 N*2 条（隐藏楼层不再占轮数槽位，
   // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
   // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
-  const visible = chatArr.filter((m: any) => !m.is_system);
-  const msgs = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
+  // 带原始下标是为了增量分析能在截尾后继续前移起点（不能先 slice 再 indexOf，重复文本会错位）。
+  const visible = chatArr
+    .map((m: any, index: number) => ({ m, index }))
+    .filter(x => !x.m.is_system);
+  const picked = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
+  const msgs = picked.filter(x => x.index >= startRawIndex).map(x => x.m);
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   let lastAssistantIdx = -1;

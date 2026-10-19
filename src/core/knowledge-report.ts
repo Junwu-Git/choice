@@ -25,8 +25,9 @@ import type {
   KnowledgeStatus,
 } from '@/type/settings';
 
-/** 单次解析上限：模型偶尔会把同一信息拆成十几行，超过这个量级注入文本会反客为主。 */
-export const MAX_PARSED_ENTRIES = 40;
+/** 单次解析上限：与存储上限对齐——重建整表时模型可能一次输出整张 60 条表，
+ *  解析层若只收 40 条会静默丢掉后 20 条。超过存储上限的部分由 enforceCapacity 淘汰。 */
+export const MAX_PARSED_ENTRIES = 60;
 
 /** 活跃条目存储上限：增量更新只增不减，必须有一个硬上限防长聊无限膨胀。 */
 export const MAX_STORED_ENTRIES = 60;
@@ -56,6 +57,9 @@ export const MAX_SUBJECT_LEN = 24;
 
 /** 分析输入表格里 basis/impact 的展示长度：完整内容仍在报告里，表格只给判定所需的摘要。 */
 export const MAX_TABLE_FIELD_LEN = 120;
+/** 已有表里 impact 的展示长度：分析侧只需要知道「这条约束住什么」，
+ *  完整措辞由生成侧注入使用，没必要每轮把 60 条约束全文重发。 */
+export const MAX_TABLE_IMPACT_LEN = 60;
 
 /** 相似度归并阈值与领先幅度：与选项归因同源思路——分数接近说明两条都可能对，
  *  宁可不合并（记录 ambiguous）也不误并。 */
@@ -124,8 +128,14 @@ export const IMPORTANCE_LABEL: Record<KnowledgeImportance, string> = {
   low: '低',
 };
 
-const normalizeImportance = (v: unknown): KnowledgeImportance =>
-  typeof v === 'string' ? (IMPORTANCE_ALIAS[v.trim().toLowerCase()] ?? 'normal') : 'normal';
+/** 枚举解析：null 表示「没给或给了无法识别的值」。
+ *  合并层据此决定是否覆盖旧值——把「部分已知」这类乱码当成显式 unknown，会把一条
+ *  known 静默降级成「不知道」；而「模型没给」与「模型给了乱码」在数据上应同样处理：
+ *  保留旧值。英文枚举统一小写后匹配，模型常把 Known / Witnessed 首字母大写。 */
+const parseImportance = (v: unknown): KnowledgeImportance | null =>
+  typeof v === 'string' ? (IMPORTANCE_ALIAS[v.trim().toLowerCase()] ?? null) : null;
+
+const normalizeImportance = (v: unknown): KnowledgeImportance => parseImportance(v) ?? 'normal';
 
 const SOURCE_ALIAS: Record<string, KnowledgeSource> = {
   目击: 'witnessed',
@@ -150,13 +160,19 @@ const SOURCE_ALIAS: Record<string, KnowledgeSource> = {
   manual: 'manual',
 };
 
-const normalizeStatus = (v: unknown): KnowledgeStatus =>
-  typeof v === 'string' ? (STATUS_ALIAS[v.trim()] ?? 'unknown') : 'unknown';
+const parseStatus = (v: unknown): KnowledgeStatus | null =>
+  typeof v === 'string' ? (STATUS_ALIAS[v.trim().toLowerCase()] ?? null) : null;
 
-const normalizeSource = (v: unknown): KnowledgeSource =>
-  typeof v === 'string' ? (SOURCE_ALIAS[v.trim()] ?? 'unspecified') : 'unspecified';
+const normalizeStatus = (v: unknown): KnowledgeStatus => parseStatus(v) ?? 'unknown';
 
-/** 归一化主题用于比较：去空白、去括号注释、转小写（中文不受影响，英文缩写受益）。 */
+const parseSource = (v: unknown): KnowledgeSource | null =>
+  typeof v === 'string' ? (SOURCE_ALIAS[v.trim().toLowerCase()] ?? null) : null;
+
+const normalizeSource = (v: unknown): KnowledgeSource => parseSource(v) ?? 'unspecified';
+
+/** 归一化主题用于比较：去空白与括号字符、转小写（中文不受影响，英文缩写受益）。
+ *  刻意不删括号里的内容——「立花（女主人）」与「立花」是两种说法，交给别名/相似度兜底；
+ *  直接删内容会把「城北（旧称）」和「城北」无条件当成同一件事。 */
 const normalizeTopic = (s: string): string =>
   s
     .replace(/^\[id=[^\]]*\]\s*/i, '')
@@ -311,21 +327,26 @@ function pickPatch(x: unknown): KnowledgePatch | null {
       drop_reason: typeof o.drop_reason === 'string' ? o.drop_reason.trim().slice(0, 120) : '',
     };
   }
+  const status = parseStatus(o.status);
+  const source = parseSource(o.source);
+  const importance = parseImportance(o.importance);
   return {
     id: id || undefined,
     topic,
-    status: normalizeStatus(o.status),
-    source: normalizeSource(o.source),
-    importance: normalizeImportance(o.importance),
+    status: status ?? 'unknown',
+    source: source ?? 'unspecified',
+    importance: importance ?? 'normal',
     subject: normalizeSubject(o.subject),
     basis: normalizeBasis(o.basis),
     impact: typeof o.impact === 'string' ? o.impact.trim().slice(0, 240) : '',
     aliases: toStringArray(o.aliases, MAX_ALIASES, MAX_ALIAS_LEN),
     keywords: toStringArray(o.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN),
     event_time: toEventTime(o.event_time),
-    status_explicit: o.status !== undefined && o.status !== null,
-    source_explicit: o.source !== undefined && o.source !== null,
-    importance_explicit: o.importance !== undefined && o.importance !== null,
+    // 只有「识别成功的值」才算显式：键存在但值非法时按缺失处理，否则会拿兜底值
+    // （unknown/unspecified/normal）覆盖已有条目的正确状态。
+    status_explicit: status !== null,
+    source_explicit: source !== null,
+    importance_explicit: importance !== null,
   };
 }
 
@@ -553,6 +574,97 @@ export type MergeResult = {
   changed: boolean;
 };
 
+/** 容量治理结果：evicted 供手动入口汇报「导入/新增时淘汰了几条」。 */
+export type CapacityResult = {
+  entries: KnowledgeReportEntry[];
+  changes: KnowledgeChange[];
+  changed: boolean;
+  evicted: number;
+};
+
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
+
+/**
+ * 容量治理（纯函数）：退役条目超限先清最久未更新的，再清活跃条目。
+ *
+ * 所有写入口共用（AI 合并、手动新增、导入、恢复、旧档迁移）。只在合并路径治理会让
+ * 其余入口绕过上限——一次大文件导入就能把表撑到几百条，之后每次分析都要发送整张超大表。
+ * protectedIds 是本轮刚写入/用户刚恢复的条目：它们不参与淘汰，否则锁定占满时
+ * 新条目会把自己挤掉（新增即消失）。锁定条目永不淘汰。
+ */
+export function enforceCapacity(
+  entries: KnowledgeReportEntry[],
+  atMessage: number,
+  now = Date.now(),
+  protectedIds: ReadonlySet<string> = EMPTY_ID_SET,
+): CapacityResult {
+  let work = entries;
+  const changes: KnowledgeChange[] = [];
+  let evicted = 0;
+
+  // 退役淘汰同样跳过锁定条目——锁定语义是「完全冻结」，不能因为先退役再超限就被清掉。
+  const retired = work.filter(e => e.retired && !e.locked);
+  if (retired.length > MAX_RETIRED_ENTRIES) {
+    const drop = new Set(
+      [...retired]
+        .sort((a, b) => a.updated_at_message - b.updated_at_message)
+        .slice(0, retired.length - MAX_RETIRED_ENTRIES)
+        .map(e => e.id),
+    );
+    for (const e of work) {
+      if (!drop.has(e.id)) continue;
+      changes.push(change('evicted', e, '退役条目超出上限，已清理最久未更新的记录', now, atMessage));
+      evicted++;
+    }
+    work = work.filter(e => !drop.has(e.id));
+  }
+
+  const active = work.filter(e => !e.retired);
+  if (active.length > MAX_STORED_ENTRIES) {
+    // 淘汰优先级：已知（约束力最弱）→ 存疑 → 未知，同组内按注入侧同一个排序分从低到高清；
+    // 锁定条目永不淘汰。只淘汰到刚好回到上限，不按分档配额重排——
+    // 按配额分档会先把 unknown 的新条目挤掉，与「未知优先保留」的注入口径相反。
+    // 同组用 entrySortScore（而不是单纯最久未更新）：老的高档位条目会因新鲜度衰减先走，
+    // 近期但低档位的条目反而留下——与注入排序保持同一套取舍口径，避免两处判断打架。
+    const need = active.length - MAX_STORED_ENTRIES;
+    const evict = new Set<string>();
+    for (const status of ['known', 'uncertain', 'unknown'] as KnowledgeStatus[]) {
+      if (evict.size >= need) break;
+      const group = active
+        .filter(e => e.status === status && !e.locked && !protectedIds.has(e.id))
+        .sort(
+          (a, b) =>
+            entrySortScore(a, atMessage) - entrySortScore(b, atMessage) || a.updated_at_message - b.updated_at_message,
+        );
+      for (const e of group) {
+        if (evict.size >= need) break;
+        evict.add(e.id);
+      }
+    }
+    // 锁定条目占满上限时无可淘汰对象：临时允许超限，但必须留痕。
+    // 静默超限会让用户以为上限失效；静默丢弃新条目更糟——刚新增的条目会立刻消失。
+    if (evict.size < need) {
+      changes.push(
+        change(
+          'capacity_full',
+          { id: '', topic: '' },
+          `活跃条目已达上限 ${MAX_STORED_ENTRIES} 条，其余条目均被锁定或受保护，本次允许临时超出 ${need - evict.size} 条`,
+          now,
+          atMessage,
+        ),
+      );
+    }
+    for (const e of work) {
+      if (!evict.has(e.id)) continue;
+      changes.push(change('evicted', e, '活跃条目超出上限，已淘汰最久未更新的记录', now, atMessage));
+      evicted++;
+    }
+    work = work.filter(e => !evict.has(e.id));
+  }
+
+  return { entries: work, changes, changed: evicted > 0, evicted };
+}
+
 /**
  * 把补丁合并进已有表。目标解析顺序：
  *   id → 主题精确 → 别名精确 → 相似度（活跃条目）→ 新建。
@@ -630,14 +742,17 @@ export function mergeKnowledgePatch(
     return best ? { entry: best, score: bestScore, second: secondScore, secondTopic } : null;
   };
 
-  /** 改名绕过锁定：新 topic 与任一锁定条目高度相似，就视为对锁定条目的修改。 */
+  /** 改名绕过锁定：新 topic 与任一锁定条目高度相似，就视为对锁定条目的修改。
+   *  两边都走 normalizeTopic——与 findSimilar 同口径；否则补丁里多一个括号/标点，
+   *  相似度就会被压低到阈值以下，锁定守卫形同虚设。 */
   const matchesLockedBySimilarity = (patch: KnowledgePatch): KnowledgeReportEntry | null => {
     if (!patch.topic) return null;
+    const patchKey = normalizeTopic(patch.topic);
     for (const e of work) {
       if (!e.locked) continue;
       const score = Math.max(
-        textSimilarity(patch.topic, e.topic),
-        ...e.aliases.map(a => textSimilarity(patch.topic, a)),
+        textSimilarity(patchKey, normalizeTopic(e.topic)),
+        ...e.aliases.map(a => textSimilarity(patchKey, normalizeTopic(a))),
       );
       if (score >= KNOWLEDGE_DEDUP_THRESHOLD) return e;
     }
@@ -777,6 +892,22 @@ export function mergeKnowledgePatch(
       continue;
     }
 
+    // 只有 id、没有 topic 的补丁是合法的「只改档/只改状态」写法，但它必须命中已有条目。
+    // 未命中（id 被淘汰、写错或来自别的聊天）时不能新建：空主题条目会占容量、
+    // 在面板里显示为空白行，却永远无法被模型或用户定位。
+    if (!patch.topic) {
+      changes.push(
+        change(
+          'drop_missing',
+          { id: patch.id ?? '', topic: '' },
+          '补丁只给了 id 且未找到对应条目，已忽略',
+          now,
+          atMessage,
+        ),
+      );
+      continue;
+    }
+
     const baseId = patch.id?.trim() || makeEntryId(patch.topic, atMessage);
     const id = ensureUniqueId(baseId, usedIds);
     usedIds.add(id);
@@ -808,69 +939,12 @@ export function mergeKnowledgePatch(
     mutated = true;
   }
 
-  // 容量治理：先清退役条目（最久未更新优先），再清活跃条目（已知最先淘汰，锁定永不淘汰）。
-  // 退役淘汰同样跳过锁定条目——锁定语义是「完全冻结」，不能因为先退役再超限就被清掉。
-  const retired = work.filter(e => e.retired && !e.locked);
-  if (retired.length > MAX_RETIRED_ENTRIES) {
-    const drop = new Set(
-      [...retired]
-        .sort((a, b) => a.updated_at_message - b.updated_at_message)
-        .slice(0, retired.length - MAX_RETIRED_ENTRIES)
-        .map(e => e.id),
-    );
-    for (const e of work) {
-      if (!drop.has(e.id)) continue;
-      changes.push(change('evicted', e, '退役条目超出上限，已清理最久未更新的记录', now, atMessage));
-      mutated = true;
-    }
-    for (let i = work.length - 1; i >= 0; i--) if (drop.has(work[i].id)) work.splice(i, 1);
-  }
+  // 容量治理统一走 enforceCapacity：与手动新增/导入/恢复/迁移共用同一套口径。
+  const capacity = enforceCapacity(work, atMessage, now, touchedIds);
+  if (capacity.changed) mutated = true;
+  changes.push(...capacity.changes);
 
-  const active = work.filter(e => !e.retired);
-  if (active.length > MAX_STORED_ENTRIES) {
-    // 淘汰优先级：已知（约束力最弱）→ 存疑 → 未知，同组内按注入侧同一个排序分从低到高清；
-    // 锁定条目永不淘汰。只淘汰到刚好回到上限，不按分档配额重排——
-    // 按配额分档会先把 unknown 的新条目挤掉，与「未知优先保留」的注入口径相反。
-    // 本轮刚写入的条目不参与淘汰：否则锁定占满时，新条目会把自己挤掉（新增即消失）。
-    // 同组用 entrySortScore（而不是单纯最久未更新）：老的高档位条目会因新鲜度衰减先走，
-    // 近期但低档位的条目反而留下——与注入排序保持同一套取舍口径，避免两处判断打架。
-    const need = active.length - MAX_STORED_ENTRIES;
-    const evict = new Set<string>();
-    for (const status of ['known', 'uncertain', 'unknown'] as KnowledgeStatus[]) {
-      if (evict.size >= need) break;
-      const group = active
-        .filter(e => e.status === status && !e.locked && !touchedIds.has(e.id))
-        .sort(
-          (a, b) =>
-            entrySortScore(a, atMessage) - entrySortScore(b, atMessage) || a.updated_at_message - b.updated_at_message,
-        );
-      for (const e of group) {
-        if (evict.size >= need) break;
-        evict.add(e.id);
-      }
-    }
-    // 锁定条目占满上限时无可淘汰对象：临时允许超限，但必须留痕。
-    // 静默超限会让用户以为上限失效；静默丢弃新条目更糟——刚新增的条目会立刻消失。
-    if (evict.size < need) {
-      changes.push(
-        change(
-          'capacity_full',
-          { id: '', topic: '' },
-          `活跃条目已达上限 ${MAX_STORED_ENTRIES} 条，其余条目均被锁定或为本轮新增，本次允许临时超出 ${need - evict.size} 条`,
-          now,
-          atMessage,
-        ),
-      );
-    }
-    for (const e of work) {
-      if (!evict.has(e.id)) continue;
-      changes.push(change('evicted', e, '活跃条目超出上限，已淘汰最久未更新的记录', now, atMessage));
-      mutated = true;
-    }
-    for (let i = work.length - 1; i >= 0; i--) if (evict.has(work[i].id)) work.splice(i, 1);
-  }
-
-  return { entries: work, changes: changes.slice(0, MAX_CHANGES), changed: mutated };
+  return { entries: capacity.entries, changes: changes.slice(0, MAX_CHANGES), changed: mutated };
 }
 
 /** 重复候选组：同组条目被判定为「同一件事」，可合并。 */
@@ -903,11 +977,12 @@ const STATUS_RANK: Record<KnowledgeStatus, number> = { known: 3, uncertain: 2, u
  */
 export function findDuplicateGroups(entries: KnowledgeReportEntry[]): DuplicateGroup[] {
   const active = entries.filter(e => !e.retired && !e.locked && e.topic);
-  const formsOf = (e: KnowledgeReportEntry): string[] =>
-    [e.topic, ...e.aliases, ...e.keywords].map(normalizeTopic).filter(Boolean);
+  // 身份只用 topic + aliases（同 AI 合并路径的 identityForms）。keywords 是场景检索词，
+  // 共享人名/地名只说明涉及同一对象，不说明是同一件事：把它纳入身份后，
+  // 「富川立花的身份」与「富川立花的私情」会凭共享的四字人名直接得到 1.0 并被合并。
   const pairScore = (a: KnowledgeReportEntry, b: KnowledgeReportEntry): number => {
     let best = 0;
-    for (const x of formsOf(a)) for (const y of formsOf(b)) best = Math.max(best, textSimilarity(x, y));
+    for (const x of identityForms(a)) for (const y of identityForms(b)) best = Math.max(best, textSimilarity(x, y));
     return best;
   };
 
@@ -943,13 +1018,12 @@ export function findDuplicateGroups(entries: KnowledgeReportEntry[]): DuplicateG
   return groups;
 }
 
-/** 两条条目是否可能指同一件事：在全部说法组合里，找最相似的一对，
- *  要求「共同部分之外剩下的字」至少有一边很短——即只是换了说法，不是两件事。 */
+/** 两条条目是否可能指同一件事：在全部「身份说法」组合里找最相似的一对，
+ *  要求「共同部分之外剩下的字」至少有一边很短——即只是换了说法，不是两件事。
+ *  只用 topic + aliases：keywords 是检索词，共享它不构成身份（见 identityForms）。 */
 function isSameFact(a: KnowledgeReportEntry, b: KnowledgeReportEntry): boolean {
-  const formsOf = (e: KnowledgeReportEntry): string[] =>
-    [e.topic, ...e.aliases, ...e.keywords].map(normalizeTopic).filter(Boolean);
-  const aForms = formsOf(a);
-  const bForms = formsOf(b);
+  const aForms = identityForms(a);
+  const bForms = identityForms(b);
   for (const x of aForms) {
     for (const y of bForms) {
       if (isRestatement(x, y)) return true;
@@ -1030,12 +1104,14 @@ export function mergeDuplicateGroup(
   };
 }
 
-const truncateField = (s: string): string =>
-  s.length > MAX_TABLE_FIELD_LEN ? `${s.slice(0, MAX_TABLE_FIELD_LEN)}…` : s;
+const truncateField = (s: string, max = MAX_TABLE_FIELD_LEN): string =>
+  s.length > max ? `${s.slice(0, max)}…` : s;
 
 /** 渲染「已有知识边界表」块，作为增量分析的输入。空表返回 ''。
  *  只列活跃条目；锁定标记必须让模型看见，否则它会反复尝试修改被拒。
- *  档位一并显示：模型需要看到现有档位才可能提出改档（否则只能凭记忆猜）。 */
+ *  档位一并显示：模型需要看到现有档位才可能提出改档（否则只能凭记忆猜）。
+ *  impact 只给存疑/未知：已知项的约束对判定没有增量信息，省下的预算留给真正需要
+ *  照抄的「未知写到哪里为止」；完整 impact 仍留在报告里供生成侧注入。 */
 export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 0): string {
   const active = entries.filter(e => e.topic && !e.retired);
   if (!active.length) return '';
@@ -1053,7 +1129,7 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
       e.aliases.length ? `别名：${e.aliases.join('、')}` : '',
       e.keywords.length ? `检索词：${e.keywords.join('、')}` : '',
       e.basis ? `依据：${truncateField(e.basis)}` : '',
-      e.impact ? `约束：${truncateField(e.impact)}` : '',
+      e.status !== 'known' && e.impact ? `约束：${truncateField(e.impact, MAX_TABLE_IMPACT_LEN)}` : '',
     ].filter(Boolean);
     return `- ${tags.join(' ')} ${e.topic}${parts.length ? `｜${parts.join('｜')}` : ''}`;
   });
@@ -1063,10 +1139,11 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
 /** 聊天内容指纹：只取可见消息的 role + 正文摘要，忽略扩展自身写入的元数据。
  *  为什么不用楼层数：编辑/删除/切分支都可能保持楼层数不变，必须看内容。
  *
- *  分两层：尾部 12 条逐条完整参与（最可能被改动、也最影响下一轮判定）；更早的楼层
- *  按步长抽样（每 8 条取一条的头 80 字）——长聊里改掉早期一条「谁告诉了主角什么」
- *  同样必须触发重算，但逐条全量哈希会让每次事件都扫整个聊天。抽样层只负责「早期有没有
- *  变」，漏判概率远低于只看尾部；真要精确到单条，应由 MESSAGE_UPDATED 记录 dirty 楼层。 */
+ *  分两层：尾部 12 条逐条**全文**参与（最可能被改动、也最影响下一轮判定，12 条全量
+ *  哈希开销可忽略）；更早的楼层按步长抽样（每 8 条取一条的头 80 字）——长聊里改掉
+ *  早期一条「谁告诉了主角什么」同样必须触发重算，但逐条全量哈希会让每次事件都扫整个
+ *  聊天。抽样点之外的早期编辑不会改变指纹，由 `isMessageCoveredByFingerprint` 在
+ *  MESSAGE_UPDATED 时按楼层位置强制分析兜底。 */
 const FINGERPRINT_TAIL = 12;
 const FINGERPRINT_EARLY_STEP = 8;
 const FINGERPRINT_EARLY_SNIPPET = 80;
@@ -1084,9 +1161,39 @@ export function computeChatFingerprint(
   }
   const tail = visible.slice(tailStart).map(m => {
     const text = String(m.mes ?? '');
-    return `${roleOf(m)}:${text.length}:${text.slice(0, 400)}`;
+    // 不再截断：尾部 12 条是编辑最频繁的区域，400 字之后的改动同样必须触发重算。
+    return `${roleOf(m)}:${text.length}:${text}`;
   });
   return `${visible.length}:${fnv1a([...early, '|', ...tail].join('\n'))}`;
+}
+
+/** 原始楼层是否被指纹覆盖（尾部逐条全文 + 早期抽样点）。
+ *  未覆盖的楼层被编辑时指纹不会变化，调度层必须强制分析，否则「谁告诉了主角什么」
+ *  这类早期信息被改掉后，报告会一直停留在旧结论。隐藏楼层不参与指纹，视为已覆盖。 */
+export function isMessageCoveredByFingerprint(
+  messages: Array<{ is_system?: boolean }>,
+  rawIndex: number,
+): boolean {
+  const target = messages[rawIndex];
+  if (!target || target.is_system) return true;
+  const visibleBefore = messages.slice(0, rawIndex).filter(m => !m.is_system).length;
+  const visibleCount = messages.filter(m => !m.is_system).length;
+  const tailStart = Math.max(0, visibleCount - FINGERPRINT_TAIL);
+  return visibleBefore >= tailStart || visibleBefore % FINGERPRINT_EARLY_STEP === 0;
+}
+
+/** 增量分析的历史起点：只发送上次分析之后的新消息（保留一条重叠）。
+ *  `based_on_message` 是消息总数（原始下标），不是楼层号。只有 `received` 用增量：
+ *  编辑/删除/滑动/载入更多历史都可能改到旧楼层，必须走完整窗口，否则改动会漏判。
+ *  无可见历史（fullStart < 0）时从 0 开始；`basedOn` 超出当前消息数（删楼）时回退完整窗口。 */
+export function resolveAnalysisHistoryStart(
+  fullStart: number,
+  basedOnMessage: number,
+  messageCount: number,
+  delta: boolean,
+): number {
+  if (!delta || basedOnMessage <= 0 || basedOnMessage > messageCount) return fullStart;
+  return Math.max(fullStart < 0 ? 0 : fullStart, basedOnMessage - 1);
 }
 
 /** 导出格式版本：导入侧据此拒绝未来格式，避免把不认识的字段静默吞掉。 */
@@ -1176,7 +1283,7 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
       existing.keywords = toStringArray(existing.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN);
       if (!existing.event_time && raw.event_time) existing.event_time = toEventTime(raw.event_time);
       if ((raw.updated_at_message ?? 0) > existing.updated_at_message) {
-        existing.status = raw.status;
+        existing.status = normalizeStatus(raw.status);
         existing.source = normalizeSource(raw.source);
         existing.importance = normalizeImportance(raw.importance);
         existing.subject = normalizeSubject(raw.subject) || existing.subject;
@@ -1196,6 +1303,7 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
       ...raw,
       id,
       topic,
+      status: normalizeStatus(raw.status),
       subject: normalizeSubject(raw.subject),
       aliases: toStringArray(raw.aliases, MAX_ALIASES, MAX_ALIAS_LEN),
       keywords: toStringArray(raw.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN),
@@ -1252,12 +1360,16 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
     out.push(entry);
   }
 
+  // 旧档可能长期未治理，迁移是唯一扫全表的入口：在这里也执行容量上限，
+  // 否则历史遗留或外部导入的超大表会永久保留，之后每次分析都要发送整张表。
+  const capacity = enforceCapacity(out, report.based_on_message ?? 0, now);
+
   return {
     updated_at: report.updated_at ?? 0,
     based_on_message: report.based_on_message ?? 0,
     based_on_fingerprint: report.based_on_fingerprint ?? '',
     revision: report.revision ?? 0,
-    entries: out,
-    last_changes: changes.slice(0, MAX_CHANGES),
+    entries: capacity.entries,
+    last_changes: [...capacity.changes, ...changes].slice(0, MAX_CHANGES),
   };
 }

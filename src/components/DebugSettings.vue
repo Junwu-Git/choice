@@ -20,6 +20,28 @@
       </div>
     </ChoiceSectionCard>
 
+    <ChoiceSectionCard title="上次知识注入" icon="fa-solid fa-user-shield">
+      <div v-if="!lastKnowledgeInjection || !lastKnowledgeInjection.total" class="choice-empty-hint">
+        {{ t`本次未注入知识边界（未启用、报告为空或全部省略）` }}
+      </div>
+      <div v-else class="choice-debug-messages">
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`条目` }}</span>
+          <span class="choice-debug-content">
+            {{ t`已注入 ${lastKnowledgeInjection.chosen.length} / ${lastKnowledgeInjection.total} 条，省略 ${lastKnowledgeInjection.omitted} 条` }}
+          </span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`字符` }}</span>
+          <span class="choice-debug-content">{{ lastKnowledgeInjection.usedChars }}</span>
+        </div>
+        <div v-for="c in lastKnowledgeInjection.chosen" :key="c.id" class="choice-debug-msg">
+          <span class="choice-debug-role">{{ c.status }}</span>
+          <span class="choice-debug-content">{{ c.topic }}</span>
+        </div>
+      </div>
+    </ChoiceSectionCard>
+
     <ChoiceSectionCard title="上次去重报告" icon="fa-solid fa-clone">
       <div v-if="!lastDedupReport || !lastDedupReport.details.length" class="choice-empty-hint">
         {{ t`去重未触发（未启用或无重复）` }}
@@ -84,7 +106,7 @@
 import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { lastBuildMessages, lastDedupReport } from '@/core/generator';
+import { lastBuildMessages, lastDedupReport, lastKnowledgeInjection } from '@/core/generator';
 
 const globalStore = useGlobalSettingsStore();
 

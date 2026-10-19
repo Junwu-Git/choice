@@ -6,10 +6,12 @@ import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
 import {
   isKnowledgeMergeActive,
+  knowledgeState,
   maybeAutoAnalyze,
   resetKnowledgeScheduling,
   scheduleKnowledgeRefresh,
 } from '@/core/knowledge-analysis';
+import { isMessageCoveredByFingerprint } from '@/core/knowledge-report';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -164,10 +166,14 @@ export function initPanelMount() {
     // 删楼后楼层数可能不变（删一增一），内容指纹才是可靠依据
     scheduleKnowledgeRefresh('deleted');
   });
-  eventSource.on(event_types.MESSAGE_UPDATED, () => {
+  eventSource.on(event_types.MESSAGE_UPDATED, (messageId: number) => {
     safeResync();
-    // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过
-    scheduleKnowledgeRefresh('edited');
+    // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过。
+    // 但早期未抽样楼层不在指纹里，必须按楼层位置强制分析，否则「谁告诉了主角什么」
+    // 被改掉后报告会一直停在旧结论。
+    const covered =
+      typeof messageId !== 'number' || isMessageCoveredByFingerprint(chat as unknown as StChatMessage[], messageId);
+    scheduleKnowledgeRefresh('edited', !covered);
   });
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
     safeResync();
@@ -180,7 +186,12 @@ export function initPanelMount() {
     resetKnowledgeScheduling();
     safeResync();
   });
-  eventSource.on(event_types.MORE_MESSAGES_LOADED, safeResync);
+  eventSource.on(event_types.MORE_MESSAGES_LOADED, () => {
+    safeResync();
+    // 载入更早的历史会改变分析窗口与指纹；即使自动分析关闭，也要让面板的过期提示重算
+    knowledgeState.tick += 1;
+    scheduleKnowledgeRefresh('loaded');
+  });
   eventSource.on(event_types.APP_READY, safeResync);
   eventSource.on(event_types.GENERATION_ENDED, safeResync);
 

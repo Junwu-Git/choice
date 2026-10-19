@@ -2595,6 +2595,59 @@ const applyDefaults = (
     migrateV83(validated.prompt_rules.modules);
     for (const cfg of validated.prompt_configs) migrateV83(cfg.modules);
   }
+
+  // v84：指代规则收紧——v82 的「不要用「他/她」开头」被模型理解成只看句首，
+  // 于是先写物件/环境分句、再用「他/她」指代 {{user}}（实测：「手机被按熄收回裤兜，
+  // 他站在原地没动」）。本版把那句改成「第一次指向 {{user}} 的主语/宾语必须是名字」，
+  // 并给出正反例。这里按片段替换而非整模块 exact-match：用户可能在别的段落自定义过，
+  // 但这一段是同一处默认规则，保留旧句就会继续生成歧义指代。新句已含新文案，
+  // 重复执行不会二次替换。
+  if ((validated.schema_version ?? 0) < 84) {
+    const CORE_OLD =
+      '指代要清楚：主体是 {{user}} 时，每条候选首次指代用 {{user}} 的名字或省略主语的动词句，不要用「他/她」开头——代词只在同一句内二次指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const CORE_NEW =
+      '指代必须能唯一落到人：主体是 {{user}} 时，每条候选里第一次指向 {{user}} 的主语或宾语按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，也可以整句省略主语；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const THINK_OLD = '指代是否清楚——主体是 {{user}} 时有没有用「他/她」开头、让读者不知道说的是谁？';
+    const THINK_NEW =
+      '指代是否清楚——主体是 {{user}} 时，第一次指向他的主语/宾语是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？';
+    const migrateV84 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        if (mod.id === 'core_rules' && mod.content.includes(CORE_OLD)) {
+          mod.content = mod.content.replace(CORE_OLD, CORE_NEW);
+        } else if (mod.id === 'thinking_prompt' && mod.content.includes(THINK_OLD)) {
+          mod.content = mod.content.replace(THINK_OLD, THINK_NEW);
+        }
+      }
+    };
+    migrateV84(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV84(cfg.modules);
+  }
+
+  // v85：v84 的「第一次指向写名字」被模型进一步理解成「每条都以名字开头」，
+  // 整批选项变成「user……」「名字 + 动作」的同构句，丢掉了省略主语/场景起句的变化。
+  // 本版明确：名字只在必须写出主语/宾语时使用，能省略主语就省略；整批开头仍要错开。
+  // 仍按片段替换，只有命中 v84 文案才换。
+  if ((validated.schema_version ?? 0) < 85) {
+    const CORE_OLD =
+      '指代必须能唯一落到人：主体是 {{user}} 时，每条候选里第一次指向 {{user}} 的主语或宾语按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，也可以整句省略主语；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const CORE_NEW =
+      '指代必须能唯一落到人：主体是 {{user}} 时，第一次出现主语/宾语指代按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，能省略主语就省略（如「按熄手机，收回裤兜」）；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。这不是要求每条都以名字开头——名字只在必须写出主语/宾语时使用，整批开头仍要错开，不要全是「名字 + 动作」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const THINK_OLD =
+      '指代是否清楚——主体是 {{user}} 时，第一次指向他的主语/宾语是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？';
+    const THINK_NEW =
+      '指代是否清楚——主体是 {{user}} 时，第一次出现主语/宾语指代是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？有没有反过来整批都用名字开头、把省略主语这个选项丢了？';
+    const migrateV85 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        if (mod.id === 'core_rules' && mod.content.includes(CORE_OLD)) {
+          mod.content = mod.content.replace(CORE_OLD, CORE_NEW);
+        } else if (mod.id === 'thinking_prompt' && mod.content.includes(THINK_OLD)) {
+          mod.content = mod.content.replace(THINK_OLD, THINK_NEW);
+        }
+      }
+    };
+    migrateV85(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV85(cfg.modules);
+  }
   validated.schema_version = SCHEMA_VERSION;
 };
 

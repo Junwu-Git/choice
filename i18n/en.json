@@ -864,5 +864,12 @@
   "重要性档位": "Importance tier",
   "关联对象": "Subject",
   "这条信息针对谁，如「富川立花」「城北仓库」；通用设定填「世界设定」": "Who or what this is about, e.g. \"Fukawa Ritsuka\", \"North warehouse\"; use \"World setting\" for general lore",
-  "状态为「未知」时没有获取过程，获取方式固定为未获取。": "With status \"Unknown\" there is no acquisition process, so source is fixed to Not acquired."
+  "状态为「未知」时没有获取过程，获取方式固定为未获取。": "With status \"Unknown\" there is no acquisition process, so source is fixed to Not acquired.",
+  "导入完成：新增 ${0} 条，更新 ${1} 条；超出容量上限，已淘汰 ${2} 条": "Import complete: ${0} added, ${1} updated; over the capacity limit, ${2} evicted",
+  "模型未返回任何条目，已保留现有报告；请重试或检查模型输出": "The model returned no entries; the existing report was kept. Please retry or check the model output",
+  "本次未注入知识边界（未启用、报告为空或全部省略）": "No knowledge boundary injected this time (disabled, empty report, or all entries omitted)",
+  "搜索主题/对象/别名/检索词": "Search topic / subject / aliases / keywords",
+  "条目": "Entries",
+  "已注入 ${0} / ${1} 条，省略 ${2} 条": "Injected ${0} / ${1} entries, ${2} omitted",
+  "字符": "Chars"
 }

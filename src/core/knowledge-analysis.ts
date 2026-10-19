@@ -31,7 +31,7 @@ import {
 } from '@/core/generator';
 import { getExternalSummary } from '@/core/memory-summary-bridge';
 import { renderMemorySummaryContent } from '@/core/preset-task';
-import { parseKnowledgeResponse, renderExistingTable } from '@/core/knowledge-report';
+import { parseKnowledgeResponse, renderExistingTable, resolveAnalysisHistoryStart } from '@/core/knowledge-report';
 import {
   commitKnowledgePatches,
   isKnowledgeReportStale,
@@ -54,9 +54,15 @@ let knowledgeController: AbortController | null = null;
  *  与 loading 分开记——分析在途时再来事件，结束后补跑一次（pending 标志）。 */
 const EDIT_DEBOUNCE_MS = 1200;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingReason: string | null = null;
+/** 尚未触发的防抖任务参数：新事件到来时要把它们合并进来，不能直接丢掉。 */
+let timerForce = false;
+let timerDelta = false;
+/** 在途期间攒下的补跑参数：force 表示「指纹覆盖不到的编辑」，delta 表示「只发新消息」。 */
+let pendingReason: RefreshReason | null = null;
+let pendingForce = false;
+let pendingDelta = false;
 
-type RefreshReason = 'received' | 'edited' | 'deleted' | 'swiped';
+type RefreshReason = 'received' | 'edited' | 'deleted' | 'swiped' | 'loaded';
 
 const ANALYSIS_USER_FIRST = `请分析以上对话与设定，输出 {{user}} 当前的知识边界表（首次分析，输出完整表）。只输出 JSON 对象。`;
 
@@ -70,6 +76,7 @@ async function buildAnalysisMessages(
   contextRounds: number,
   existingTable: string,
   revision: number,
+  historyStart: number,
 ): Promise<ChatMsg[]> {
   const gs = useGlobalSettingsStore();
   const cs = useChatSettingsStore();
@@ -114,11 +121,11 @@ async function buildAnalysisMessages(
       // 摘要层（若外部记忆系统可用）：补上「已离开窗口的旧剧情」。
       // 增量分析靠 existing_knowledge_table 保留旧结论，但模型看不到出处时无法判断
       // 新剧情是否推翻旧条目；摘要正是这部分的压缩记录，与正文窗口 [start, 末尾) 零重复。
-      // 提示词里已声明「摘要只用于核对既有条目的出处」，防止模型把摘要当新剧情再判定一次。
-      const summary = getExternalSummary(historyWindowStart(contextRounds));
+      // 增量模式下 historyStart 前移到上次分析处，摘要边界随之同步，仍保持零重复。
+      const summary = getExternalSummary(historyStart);
       if (summary) msgs.push({ role: 'system', content: renderMemorySummaryContent(summary) });
 
-      msgs.push(...buildChatHistory(contextRounds, true));
+      msgs.push(...buildChatHistory(contextRounds, true, historyStart));
 
       // depthAfter（D0-D2）在生成侧紧跟历史之后，分析侧保持同一相对位置
       if (wi?.depthAfter) msgs.push({ role: 'system', content: wi.depthAfter });
@@ -146,7 +153,7 @@ async function buildAnalysisMessages(
 /** 执行一次知识边界分析（增量）。返回是否写入了新报告。
  *  manual=true 时失败会 toastr 提示；自动触发（manual=false）静默失败，避免刷屏。
  *  rebuild=true 丢弃已有表从零重建（表被污染时的逃生舱）。 */
-export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): Promise<boolean> {
+export async function analyzeKnowledgeBoundary(manual = true, rebuild = false, delta = false): Promise<boolean> {
   const gs = useGlobalSettingsStore();
   const cs = useChatSettingsStore();
 
@@ -175,10 +182,25 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): 
   const tableRevision = rebuild ? 0 : snapshot.revision;
   const existingTable = renderExistingTable(previous, tableRevision);
 
+  // 增量窗口：只有「收到新回复」时只发上次分析之后的消息（保留一条重叠）。
+  // 旧事实已经在已有表与摘要里；编辑/删除/滑动/载入更多历史都可能改到旧楼层，
+  // 必须走完整窗口，否则被改的早期信息永远进不了判定。
+  const historyStart = resolveAnalysisHistoryStart(
+    historyWindowStart(gs.settings.prompt_rules.context_rounds),
+    cs.settings.knowledge_report.based_on_message,
+    snapshot.messageCount,
+    delta && !rebuild,
+  );
+
   knowledgeState.loading = true;
   knowledgeController = new AbortController();
   try {
-    const messages = await buildAnalysisMessages(gs.settings.prompt_rules.context_rounds, existingTable, tableRevision);
+    const messages = await buildAnalysisMessages(
+      gs.settings.prompt_rules.context_rounds,
+      existingTable,
+      tableRevision,
+      historyStart,
+    );
     const raw = await callSecondaryApiWithRetry(
       messages,
       api,
@@ -198,6 +220,13 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): 
     // null = 弱模型漏传修订号，不据此丢弃（本地 revision 守卫仍然有效）。
     if (parsed.baseRevision !== null && parsed.baseRevision !== tableRevision) {
       if (manual) toastr.info(t`模型回传的修订号与当前报告不一致，本次结果已丢弃，请重新分析`);
+      return false;
+    }
+
+    // 重建整表时模型返回空 entries 通常意味着它没看懂任务，而不是「表真的应该为空」。
+    // 直接落库会清空用户所有条目（含手动与锁定），故保留旧表并要求重试。
+    if (rebuild && parsed.patches.length === 0) {
+      if (manual) toastr.info(t`模型未返回任何条目，已保留现有报告；请重试或检查模型输出`);
       return false;
     }
 
@@ -236,10 +265,12 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false): 
     // 在途期间有新事件：结束后补跑一次（只补一次，避免连续编辑时无限追请求）
     if (pendingReason) {
       const reason = pendingReason;
+      const force = pendingForce;
+      const pendingDeltaValue = pendingDelta;
       pendingReason = null;
-      if (reason === 'received' || reason === 'edited' || reason === 'deleted' || reason === 'swiped') {
-        scheduleKnowledgeRefresh(reason as RefreshReason);
-      }
+      pendingForce = false;
+      pendingDelta = false;
+      scheduleKnowledgeRefresh(reason, force, pendingDeltaValue);
     }
   }
 }
@@ -249,11 +280,13 @@ export function cancelKnowledgeAnalysis(): void {
   // loading 复位交给 analyzeKnowledgeBoundary 的 finally（与 cancelPoolGen 同款约定）
 }
 
-function shouldSkipRefresh(): boolean {
+function shouldSkipRefresh(force = false): boolean {
   const gs = useGlobalSettingsStore();
   if (!gs.settings.knowledge.enabled || !gs.settings.knowledge.auto_analyze) return true;
   if (!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) return true;
-  return !isKnowledgeReportStale();
+  // force 只跳过「报告是否过期」这一项：指纹覆盖不到的早期编辑不会改变过期判定，
+  // 但功能开关与 API 配置仍然必须尊重。
+  return !force && !isKnowledgeReportStale();
 }
 
 /** 合并模式是否接管了本轮分析：由选项生成请求顺带完成，独立分析必须让路，
@@ -269,29 +302,54 @@ export function isKnowledgeMergeActive(): boolean {
 
 /** 自动刷新调度：
  *  - received（新回复）立即执行，保持与选项生成并行——本轮用旧报告，下一轮用新报告；
- *  - edited / deleted / swiped 合并防抖，避免连续编辑逐字发请求；这些事件不伴随生成，
- *    合并模式下仍走独立请求；
- *  - 分析在途时只记 pending，结束后补跑一次。
+ *    这是唯一走增量窗口的事件（只发上次分析之后的新消息）；
+ *  - edited / deleted / swiped / loaded 合并防抖，避免连续编辑/滚动加载逐字发请求；
+ *    这些事件可能改到旧楼层，必须用完整窗口；
+ *  - force=true 表示「指纹覆盖不到的早期楼层被编辑」，只跳过过期判定，仍需功能开关/API；
+ *  - 尚未触发的防抖任务与在途 pending 都会合并 force/完整窗口需求（force 取 OR、delta 取 AND），
+ *    避免后续的 received 把之前那次「必须完整窗口」的编辑需求冲掉；结束后按合并结果补跑一次。
  *  不 await 是因为 ST 的 eventSource.emit 串行 await 监听器。 */
-export function scheduleKnowledgeRefresh(reason: RefreshReason): void {
+export function scheduleKnowledgeRefresh(
+  reason: RefreshReason,
+  force = false,
+  delta = reason === 'received',
+): void {
   try {
-    if (shouldSkipRefresh()) return;
+    // 继承尚未触发的防抖任务：新事件不能把它的 force 或「完整窗口」需求丢掉。
+    // 例如早期未抽样楼层刚被编辑（force + 完整窗口），随后又来了一条新回复——
+    // 若直接按 received 的增量窗口跑，那次编辑就永远进不了判定。
+    if (refreshTimer) {
+      force = force || timerForce;
+      delta = delta && timerDelta;
+    }
+    if (shouldSkipRefresh(force)) return;
     if (knowledgeState.loading) {
+      pendingForce = pendingForce || force;
+      // 只要有一个待处理事件需要完整窗口，补跑就必须用完整窗口（AND，不是 OR）。
+      pendingDelta = pendingReason === null ? delta : pendingDelta && delta;
       pendingReason = reason;
       return;
     }
     if (refreshTimer) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
+      timerForce = false;
+      timerDelta = false;
     }
     if (reason === 'received') {
-      void analyzeKnowledgeBoundary(false);
+      void analyzeKnowledgeBoundary(false, false, delta);
       return;
     }
+    timerForce = force;
+    timerDelta = delta;
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
-      if (shouldSkipRefresh()) return;
-      void analyzeKnowledgeBoundary(false);
+      const carriedForce = timerForce;
+      const carriedDelta = timerDelta;
+      timerForce = false;
+      timerDelta = false;
+      if (shouldSkipRefresh(carriedForce)) return;
+      void analyzeKnowledgeBoundary(false, false, carriedDelta);
     }, EDIT_DEBOUNCE_MS);
   } catch (error) {
     console.error('[Choice] scheduleKnowledgeRefresh failed', error);
@@ -304,7 +362,11 @@ export function resetKnowledgeScheduling(): void {
     clearTimeout(refreshTimer);
     refreshTimer = null;
   }
+  timerForce = false;
+  timerDelta = false;
   pendingReason = null;
+  pendingForce = false;
+  pendingDelta = false;
   cancelKnowledgeAnalysis();
   knowledgeState.tick += 1;
 }

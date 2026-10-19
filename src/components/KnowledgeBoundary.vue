@@ -193,6 +193,12 @@
             {{ f.label }}
           </button>
         </div>
+        <input
+          v-model="search"
+          class="choice-input choice-knowledge-search"
+          type="search"
+          :placeholder="t`搜索主题/对象/别名/检索词`"
+        />
       </div>
 
       <div class="choice-knowledge-table">
@@ -385,6 +391,7 @@ const {
 } = useConfirm();
 
 const filter = ref<FilterId>('all');
+const search = ref('');
 const dialogOpen = ref(false);
 const editingEntry = ref<KnowledgeReportEntry | null>(null);
 
@@ -412,10 +419,17 @@ const counts = computed(() => {
 
 const filtered = computed(() => {
   const entries = report.value.entries;
-  if (filter.value === 'all') return entries.filter(e => !e.retired);
-  if (filter.value === 'locked') return entries.filter(e => e.locked && !e.retired);
-  if (filter.value === 'retired') return entries.filter(e => e.retired);
-  return entries.filter(e => !e.retired && e.status === filter.value);
+  let list: KnowledgeReportEntry[];
+  if (filter.value === 'all') list = entries.filter(e => !e.retired);
+  else if (filter.value === 'locked') list = entries.filter(e => e.locked && !e.retired);
+  else if (filter.value === 'retired') list = entries.filter(e => e.retired);
+  else list = entries.filter(e => !e.retired && e.status === filter.value);
+  const query = search.value.trim().toLowerCase();
+  if (!query) return list;
+  // 搜索覆盖主题/对象/别名/检索词：长聊里用户通常记得人名或物件名，不一定记得主题措辞。
+  return list.filter(e =>
+    [e.topic, e.subject, ...e.aliases, ...e.keywords].some(v => v.toLowerCase().includes(query)),
+  );
 });
 
 const statusLabel = (s: KnowledgeStatus): string => (s === 'known' ? t`已知` : s === 'uncertain' ? t`存疑` : t`未知`);
@@ -627,9 +641,13 @@ const onImport = () => {
       toastr.error(t`文件格式不正确：需要本扩展导出的知识边界 JSON`);
       return;
     }
-    const { added, updated } = importKnowledgeEntries(entries);
+    const { added, updated, evicted } = importKnowledgeEntries(entries);
     if (!added && !updated) {
       toastr.info(t`没有可导入的新条目`);
+      return;
+    }
+    if (evicted > 0) {
+      toastr.warning(t`导入完成：新增 ${added} 条，更新 ${updated} 条；超出容量上限，已淘汰 ${evicted} 条`);
       return;
     }
     toastr.success(t`导入完成：新增 ${added} 条，更新 ${updated} 条`);
@@ -763,6 +781,12 @@ const onImport = () => {
 
 .choice-knowledge-filter {
   margin-left: auto;
+}
+
+/* 搜索独占一行：380px 窄屏下和筛选按钮挤在一行会把两边都压扁 */
+.choice-knowledge-search {
+  flex: 1 1 100%;
+  min-width: 0;
 }
 
 /* 表格：不用 <table>，用 grid 行——380px 窄屏下表格必然横滚 */

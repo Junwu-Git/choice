@@ -25,6 +25,11 @@ const STATUS_HEADER: Record<KnowledgeStatus, string> = {
  *  locked → unknown → uncertain → knownHit → knownRest（约束力强的先占预算）。 */
 const STATUS_ORDER: KnowledgeStatus[] = ['known', 'uncertain', 'unknown'];
 
+/** 锁定条目的组内优先级：约束力最强的未知先占预算（与入选顺序的注释一致）。
+ *  渲染顺序仍用 STATUS_ORDER（known → uncertain → unknown），两者用途不同——
+ *  前者决定「预算紧张时先保谁」，后者决定「模型读到的分组顺序」。 */
+const LOCKED_STATUS_PRIORITY: Record<KnowledgeStatus, number> = { unknown: 0, uncertain: 1, known: 2 };
+
 const RETIRED_SKIP = (e: KnowledgeReportEntry): boolean => e.retired || !e.topic;
 
 /** 从聊天数组拼当前场景文本：只取最后几条可见消息，去掉思考块与 HTML 注释。
@@ -124,8 +129,10 @@ export function renderKnowledgeInjectionDetailed(
   const latestMessage = active.reduce((max, e) => Math.max(max, e.updated_at_message), 0);
 
   const scored = active.map(e => ({ entry: e, hits: sceneHits(e, sceneNorm) }));
-  const byStatus = (a: { entry: KnowledgeReportEntry }, b: { entry: KnowledgeReportEntry }) =>
-    STATUS_ORDER.indexOf(a.entry.status) - STATUS_ORDER.indexOf(b.entry.status);
+  // 命中数只算一次：下面配额判断还要用，重复调用会把每条检索词重新归一化/扫描一遍场景。
+  const hitsById = new Map(scored.map(s => [s.entry.id, s.hits]));
+  const byLockedStatus = (a: { entry: KnowledgeReportEntry }, b: { entry: KnowledgeReportEntry }) =>
+    LOCKED_STATUS_PRIORITY[a.entry.status] - LOCKED_STATUS_PRIORITY[b.entry.status];
   // 组内排序：档位先验 + 新鲜度 + 场景命中。三者加性，任一项通胀都会被另两项摊平。
   const byScore = (
     a: { entry: KnowledgeReportEntry; hits: number },
@@ -134,7 +141,7 @@ export function renderKnowledgeInjectionDetailed(
     entrySortScore(b.entry, latestMessage, b.hits) - entrySortScore(a.entry, latestMessage, a.hits) ||
     b.entry.updated_at_message - a.entry.updated_at_message;
 
-  const locked = scored.filter(s => s.entry.locked).sort((a, b) => byStatus(a, b) || byScore(a, b));
+  const locked = scored.filter(s => s.entry.locked).sort((a, b) => byLockedStatus(a, b) || byScore(a, b));
   const unknown = scored.filter(s => !s.entry.locked && s.entry.status === 'unknown').sort(byScore);
   const uncertain = scored.filter(s => !s.entry.locked && s.entry.status === 'uncertain').sort(byScore);
   const knownHit = scored
@@ -171,7 +178,7 @@ export function renderKnowledgeInjectionDetailed(
       omitted++;
       continue;
     }
-    const isRest = restQuotaActive && e.status === 'known' && !e.locked && sceneHits(e, sceneNorm) === 0;
+    const isRest = restQuotaActive && e.status === 'known' && !e.locked && (hitsById.get(e.id) ?? 0) === 0;
     if (isRest && knownTaken >= knownBudget && e.importance !== 'high') {
       omitted++;
       continue;
@@ -198,7 +205,17 @@ export function renderKnowledgeInjectionDetailed(
     }
     omitted++;
   }
-  if (!chosen.length) return { block: '', chosen, omitted, usedChars: 0, total: active.length };
+  if (!chosen.length) {
+    // 一条都放不下时不能静默返回空：模型会以为没有知识边界约束，反而更容易写出
+    // 全知候选。只发头部与省略数量，不泄漏任何条目内容。
+    const block = [
+      '<knowledge_boundary_report>',
+      '以下是针对 {{user}}（仅玩家角色本人）的知识边界分析，生成候选时必须遵守：',
+      `（共 ${active.length} 项，本次因篇幅限制未注入具体条目；仍须遵守「不知道的信息不得作为行动依据」）`,
+      '</knowledge_boundary_report>',
+    ].join('\n');
+    return { block, chosen, omitted, usedChars: 0, total: active.length };
+  }
 
   // 分组渲染保持状态组顺序；组内沿用 chosen 的既有次序（已按分数排好），
   // 精简标记按 id 查表，保证渲染形态与预算计算时一致。
@@ -213,7 +230,7 @@ export function renderKnowledgeInjectionDetailed(
     '<knowledge_boundary_report>',
     '以下是针对 {{user}}（仅玩家角色本人）的知识边界分析，生成候选时必须遵守：',
     ...sections,
-    total > chosen.length ? `（共 ${total} 项，另有 ${omitted} 项因篇幅省略）` : '',
+    total > chosen.length ? `（共 ${total} 项，另有 ${omitted} 项未注入）` : '',
     '</knowledge_boundary_report>',
   ]
     .filter(Boolean)

@@ -3,10 +3,12 @@ import {
   buildKnowledgeExport,
   checkCommitGuards,
   computeChatFingerprint,
+  enforceCapacity,
   entrySortScore,
   findDuplicateGroups,
   freshnessScore,
   IMPORTANCE_RANK,
+  isMessageCoveredByFingerprint,
   MAX_ALIAS_LEN,
   MAX_ALIASES,
   MAX_RETIRED_ENTRIES,
@@ -18,6 +20,7 @@ import {
   parseKnowledgeResponse,
   parseKnowledgeExport,
   renderExistingTable,
+  resolveAnalysisHistoryStart,
   type KnowledgePatch,
 } from '@/core/knowledge-report';
 import { injectKnowledgeBlock, renderKnowledgeInjection, renderKnowledgeInjectionDetailed } from '@/core/knowledge-injection';
@@ -107,6 +110,31 @@ describe('parseKnowledgeResponse', () => {
     );
     expect(out?.patches[0]).toMatchObject({ status: 'uncertain', source: 'heard' });
     expect(out?.patches[1]).toMatchObject({ status: 'known', source: 'witnessed' });
+  });
+
+  it('大写英文枚举同样识别（Known / Witnessed / High）', () => {
+    const out = parseKnowledgeResponse(
+      '{"entries":[{"topic":"A","status":"Known","source":"Witnessed","importance":"High"}]}',
+    );
+    expect(out?.patches[0]).toMatchObject({
+      status: 'known',
+      source: 'witnessed',
+      importance: 'high',
+      status_explicit: true,
+      source_explicit: true,
+      importance_explicit: true,
+    });
+  });
+
+  it('无法识别的枚举不算显式值（按缺失处理，保留旧值）', () => {
+    const out = parseKnowledgeResponse(
+      '{"entries":[{"topic":"A","status":"部分已知","source":"?","importance":"离谱"}]}',
+    );
+    expect(out?.patches[0]).toMatchObject({
+      status_explicit: false,
+      source_explicit: false,
+      importance_explicit: false,
+    });
   });
 
   it('aliases/keywords 支持字符串拆分', () => {
@@ -296,9 +324,9 @@ describe('parseKnowledgeResponse', () => {
     expect(out?.patches.map(x => `${x.topic}:${'status' in x ? x.status : 'drop'}`)).toEqual(['A:unknown', 'B:known']);
   });
 
-  it('上限 40 条', () => {
-    const arr = Array.from({ length: 60 }, (_, i) => ({ topic: `T${i}`, status: 'known' }));
-    expect(parseKnowledgeResponse(JSON.stringify({ entries: arr }))?.patches).toHaveLength(40);
+  it('上限 60 条（与存储上限对齐）', () => {
+    const arr = Array.from({ length: 70 }, (_, i) => ({ topic: `T${i}`, status: 'known' }));
+    expect(parseKnowledgeResponse(JSON.stringify({ entries: arr }))?.patches).toHaveLength(60);
   });
 });
 
@@ -327,6 +355,64 @@ describe('mergeKnowledgePatch', () => {
     const out = mergeKnowledgePatch(existing, [patch({ id: 'kb_x', topic: '新名' })], 20);
     expect(out.entries).toHaveLength(1);
     expect(out.entries[0]).toMatchObject({ id: 'kb_x', topic: '新名' });
+  });
+
+  it('只有 id 的改档补丁命中已有条目时正常更新', () => {
+    const existing = [e('仓库位置', 'known', '', '', 5, { importance: 'low' })];
+    const out = mergeKnowledgePatch(
+      existing,
+      [
+        {
+          id: 'kb_仓库位置',
+          topic: '',
+          importance: 'high',
+          importance_explicit: true,
+          basis: '',
+          impact: '',
+          aliases: [],
+          keywords: [],
+          event_time: '',
+        },
+      ],
+      20,
+    );
+    expect(out.entries).toHaveLength(1);
+    expect(out.entries[0]).toMatchObject({ topic: '仓库位置', importance: 'high' });
+  });
+
+  it('只有 id 且未命中时不创建空主题条目', () => {
+    // 模型漏传 topic（或 id 来自别的聊天/已被淘汰）时，空条目会占容量、
+    // 在面板里显示空白行，却永远无法被定位。
+    const out = mergeKnowledgePatch(
+      [],
+      [
+        {
+          id: 'kb_ghost',
+          topic: '',
+          importance: 'high',
+          importance_explicit: true,
+          basis: '',
+          impact: '',
+          aliases: [],
+          keywords: [],
+          event_time: '',
+        },
+      ],
+      20,
+    );
+    expect(out.entries).toHaveLength(0);
+    expect(out.changes[0]).toMatchObject({ kind: 'drop_missing' });
+  });
+
+  it('未识别的枚举按缺失处理，保留旧状态/来源/档位', () => {
+    const existing = [e('仓库位置', 'known', '', '', 5, { source: 'witnessed', importance: 'high' })];
+    const parsed = parseKnowledgeResponse(
+      JSON.stringify({
+        entries: [{ id: 'kb_仓库位置', topic: '仓库位置', status: '部分已知', source: '?', importance: '离谱' }],
+      }),
+    );
+    const out = mergeKnowledgePatch(existing, parsed!.patches, 20);
+    expect(out.entries[0]).toMatchObject({ status: 'known', source: 'witnessed', importance: 'high' });
   });
 
   it('别名命中合并到同一条并记录 merged', () => {
@@ -412,6 +498,15 @@ describe('mergeKnowledgePatch', () => {
     const out = mergeKnowledgePatch(existing, [patch({ topic: '主角真实身份' })], 20);
     expect(out.entries).toHaveLength(1);
     expect(out.entries[0].topic).toBe('主角的真实身份');
+    expect(out.changes[0]).toMatchObject({ kind: 'rejected_locked' });
+  });
+
+  it('带括号/标点的改名同样被锁定守卫拦住', () => {
+    // 两边都走 normalizeTopic：否则补丁多一个括号就把相似度压到阈值以下。
+    const existing = [e('城北仓库的位置', 'known', '', '', 5, { locked: true })];
+    const out = mergeKnowledgePatch(existing, [patch({ topic: '城北仓库（位置）' })], 20);
+    expect(out.entries).toHaveLength(1);
+    expect(out.entries[0].topic).toBe('城北仓库的位置');
     expect(out.changes[0]).toMatchObject({ kind: 'rejected_locked' });
   });
 
@@ -539,6 +634,66 @@ describe('mergeKnowledgePatch', () => {
   });
 });
 
+describe('enforceCapacity — 所有写入口共用的容量治理', () => {
+  it('活跃条目超限时按统一顺序淘汰，返回淘汰数', () => {
+    const entries = Array.from({ length: MAX_STORED_ENTRIES + 3 }, (_, i) => e(`条目${i}`, 'known', '', '', i));
+    const out = enforceCapacity(entries, 100, 0);
+    expect(out.entries).toHaveLength(MAX_STORED_ENTRIES);
+    expect(out.evicted).toBe(3);
+    expect(out.changed).toBe(true);
+    expect(out.changes.filter(c => c.kind === 'evicted')).toHaveLength(3);
+  });
+
+  it('protectedIds 不参与淘汰（刚新增/刚恢复的条目不会被自己挤掉）', () => {
+    const entries = Array.from({ length: MAX_STORED_ENTRIES + 2 }, (_, i) => e(`条目${i}`, 'known', '', '', i));
+    const out = enforceCapacity(entries, 100, 0, new Set(['kb_条目0', 'kb_条目1']));
+    expect(out.entries).toHaveLength(MAX_STORED_ENTRIES);
+    expect(out.entries.some(x => x.id === 'kb_条目0')).toBe(true);
+    expect(out.entries.some(x => x.id === 'kb_条目1')).toBe(true);
+  });
+
+  it('锁定条目永不淘汰；无可淘汰时临时超限并记 capacity_full', () => {
+    const entries = Array.from({ length: MAX_STORED_ENTRIES + 1 }, (_, i) =>
+      e(`锁定${i}`, 'known', '', '', i, { locked: true }),
+    );
+    const out = enforceCapacity(entries, 100, 0);
+    expect(out.entries).toHaveLength(MAX_STORED_ENTRIES + 1);
+    expect(out.evicted).toBe(0);
+    expect(out.changed).toBe(false);
+    expect(out.changes.some(c => c.kind === 'capacity_full')).toBe(true);
+  });
+
+  it('退役条目超限先清最久未更新的，且跳过锁定', () => {
+    const entries = [
+      e('锁定退役', 'known', '', '', 0, { retired: true, locked: true }),
+      ...Array.from({ length: MAX_RETIRED_ENTRIES + 2 }, (_, i) =>
+        e(`退役${i}`, 'known', '', '', i + 1, { retired: true }),
+      ),
+    ];
+    const out = enforceCapacity(entries, 100, 0);
+    expect(out.entries.filter(x => x.retired)).toHaveLength(MAX_RETIRED_ENTRIES + 1);
+    expect(out.entries.some(x => x.topic === '锁定退役')).toBe(true);
+    expect(out.entries.some(x => x.topic === '退役0')).toBe(false);
+  });
+
+  it('幂等：治理后再跑一次不再变化', () => {
+    const entries = Array.from({ length: MAX_STORED_ENTRIES + 5 }, (_, i) => e(`条目${i}`, 'known', '', '', i));
+    const once = enforceCapacity(entries, 100, 0);
+    const twice = enforceCapacity(once.entries, 100, 0);
+    expect(twice.changed).toBe(false);
+    expect(twice.evicted).toBe(0);
+    expect(twice.entries).toEqual(once.entries);
+  });
+
+  it('旧报告迁移也会执行容量上限', () => {
+    const legacy = report(
+      Array.from({ length: MAX_STORED_ENTRIES + 4 }, (_, i) => e(`旧条目${i}`, 'known', '', '', i)),
+    );
+    const out = migrateKnowledgeReport(legacy);
+    expect(out.entries.filter(x => !x.retired)).toHaveLength(MAX_STORED_ENTRIES);
+  });
+});
+
 describe('renderExistingTable', () => {
   it('空表返回空串', () => {
     expect(renderExistingTable([])).toBe('');
@@ -550,6 +705,16 @@ describe('renderExistingTable', () => {
     // 档位必须让模型看见，否则它无法提出改档（只能凭记忆猜）
     expect(out).toContain('[id=kb_A] [已知] [来源=未标注] [档位=中] A｜依据：第 2 楼');
     expect(out).toContain('[id=kb_B] [未知] [来源=未标注] [档位=中] B｜依据：未交代｜约束：不得叫破');
+  });
+
+  it('已知条目的 impact 不再重复发送，存疑/未知仍带约束', () => {
+    // 分析侧只需要判定依据；已知项的约束对判定没有增量信息，省下的预算留给未知项。
+    const out = renderExistingTable([
+      e('已知项', 'known', '第 2 楼', '可以直接去', 1),
+      e('未知项', 'unknown', '未交代', '不得叫破', 2),
+    ]);
+    expect(out).not.toContain('可以直接去');
+    expect(out).toContain('约束：不得叫破');
   });
 
   it('锁定条目标记 [锁定]，退役条目不出现在表格中', () => {
@@ -587,7 +752,7 @@ describe('renderKnowledgeInjection', () => {
     expect(out.omitted).toBe(3);
     expect(out.total).toBe(5);
     expect(out.usedChars).toBeGreaterThan(0);
-    expect(out.block).toContain('另有 3 项因篇幅省略');
+    expect(out.block).toContain('另有 3 项未注入');
   });
 
   it('按已知→存疑→未知分组并带标签', () => {
@@ -639,6 +804,16 @@ describe('renderKnowledgeInjection', () => {
     expect(out).toContain('L');
   });
 
+  it('锁定条目内部未知优先于已知（预算紧张时先保约束项）', () => {
+    const entries = [
+      e('锁定已知', 'known', '', '', 9, { locked: true }),
+      e('锁定未知', 'unknown', '未交代', '不得作为依据', 8, { locked: true }),
+    ];
+    const out = renderKnowledgeInjectionDetailed(report(entries), { maxEntries: 1 });
+    expect(out.chosen).toHaveLength(1);
+    expect(out.chosen[0].topic).toBe('锁定未知');
+  });
+
   it('条数上限生效并标注省略数量', () => {
     const entries = [
       ...Array.from({ length: 30 }, (_, i) => e(`K${i}`, 'known')),
@@ -650,7 +825,7 @@ describe('renderKnowledgeInjection', () => {
     expect(lineCount).toBe(10);
     expect(out).toContain('U0');
     expect(out).toContain('S0');
-    expect(out).toContain('因篇幅省略');
+    expect(out).toContain('未注入');
   });
 
   it('字符预算生效，超长条目不阻断后续短条目', () => {
@@ -746,6 +921,10 @@ describe('renderKnowledgeInjection', () => {
     const out = renderKnowledgeInjection(report(entries), { charBudget: 200 });
     expect(out).not.toContain('真名');
     expect(out).not.toContain('不得叫出');
+    // 一条都放不下时仍要保留非全知提醒，不能静默返回空块
+    expect(out).toContain('<knowledge_boundary_report>');
+    expect(out).toContain('未注入具体条目');
+    expect(out).toContain('不得作为行动依据');
   });
 
   it('注入文本不出现档位字样（档位是预算参数，不该引发元推理）', () => {
@@ -818,10 +997,67 @@ describe('computeChatFingerprint', () => {
 
   it('早期抽样层不改动时保持稳定（避免每次事件都扫全量）', () => {
     const msgs = Array.from({ length: 40 }, (_, i) => ({ mes: `第 ${i} 条内容`, is_user: i % 2 === 0 }));
+    const before = computeChatFingerprint(msgs);
     // 改的是抽样步长之间的楼层（第 1 条不在 0/8/16… 采样点上，且不在尾部 12 条内）
     const edited = msgs.map((m, i) => (i === 1 ? { ...m, mes: '第 1 条被改写' } : m));
-    // 该层刻意只做粗粒度检测：未命中采样点时允许指纹不变（尾部层仍精确）
-    expect(typeof computeChatFingerprint(edited)).toBe('string');
+    // 该层刻意只做粗粒度检测：未命中采样点时允许指纹不变，由 MESSAGE_UPDATED 的
+    // isMessageCoveredByFingerprint 强制分析兜底。
+    expect(computeChatFingerprint(edited)).toBe(before);
+  });
+
+  it('尾部消息 400 字之后的改动也改变指纹', () => {
+    const long = 'a'.repeat(600);
+    const a = computeChatFingerprint([{ mes: long, is_user: true }]);
+    const b = computeChatFingerprint([{ mes: long.slice(0, 599) + 'b', is_user: true }]);
+    expect(a).not.toBe(b);
+  });
+});
+
+describe('isMessageCoveredByFingerprint — 未抽样编辑的强制分析判定', () => {
+  const msgs = (n: number): Array<{ mes: string; is_user?: boolean; is_system?: boolean }> =>
+    Array.from({ length: n }, (_, i) => ({ mes: `第 ${i} 条`, is_user: i % 2 === 0 }));
+
+  it('尾部楼层全部覆盖', () => {
+    const m = msgs(30); // 尾部从第 18 条（30 - 12）开始
+    expect(isMessageCoveredByFingerprint(m, 18)).toBe(true);
+    expect(isMessageCoveredByFingerprint(m, 29)).toBe(true);
+  });
+
+  it('早期抽样点覆盖，抽样点之间不覆盖', () => {
+    const m = msgs(30);
+    expect(isMessageCoveredByFingerprint(m, 0)).toBe(true);
+    expect(isMessageCoveredByFingerprint(m, 8)).toBe(true);
+    expect(isMessageCoveredByFingerprint(m, 9)).toBe(false);
+  });
+
+  it('隐藏楼层不参与指纹，视为覆盖', () => {
+    const m = msgs(30);
+    m[3].is_system = true;
+    expect(isMessageCoveredByFingerprint(m, 3)).toBe(true);
+  });
+
+  it('越界下标按覆盖处理（没有可分析的编辑）', () => {
+    expect(isMessageCoveredByFingerprint(msgs(5), 99)).toBe(true);
+  });
+});
+
+describe('resolveAnalysisHistoryStart — 增量分析窗口', () => {
+  it('非增量 / 无基线 / 消息变少时用完整窗口', () => {
+    expect(resolveAnalysisHistoryStart(4, 10, 12, false)).toBe(4);
+    expect(resolveAnalysisHistoryStart(4, 0, 12, true)).toBe(4);
+    expect(resolveAnalysisHistoryStart(4, 15, 12, true)).toBe(4);
+  });
+
+  it('增量从上次分析前一条开始（保留重叠）', () => {
+    expect(resolveAnalysisHistoryStart(4, 10, 12, true)).toBe(9);
+  });
+
+  it('增量起点不早于完整窗口起点', () => {
+    expect(resolveAnalysisHistoryStart(20, 10, 12, true)).toBe(20);
+  });
+
+  it('完整窗口没有可见消息（-1）时从 0 开始', () => {
+    expect(resolveAnalysisHistoryStart(-1, 3, 5, true)).toBe(2);
   });
 });
 
@@ -1034,6 +1270,16 @@ describe('findDuplicateGroups — 手动整理扫描', () => {
       e('张子薇逃课', 'known', '', '', 9, { keywords: ['张子薇', '逃课'] }),
     ];
     // 相似度可能过阈值，但领先幅度不足 → 不合并（保守策略）
+    expect(findDuplicateGroups(entries)).toHaveLength(0);
+  });
+
+  it('共享四字检索词的不同事实也不合并（keywords 不参与身份判定）', () => {
+    // 旧实现把 keywords 纳入身份：两条共享四字人名时 isRestatement 与 Dice 同时满分，
+    // 会直接并成一条。三字人名恰好被短串闸门挡住，所以此前的测试没暴露。
+    const entries = [
+      e('富川立花的身份', 'known', '', '', 10, { keywords: ['富川立花'] }),
+      e('富川立花的私情', 'known', '', '', 9, { keywords: ['富川立花'] }),
+    ];
     expect(findDuplicateGroups(entries)).toHaveLength(0);
   });
 

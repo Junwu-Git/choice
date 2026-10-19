@@ -10,6 +10,7 @@
  */
 
 import {
+  enforceCapacity,
   findDuplicateGroups,
   isSentenceLike,
   makeEntryId,
@@ -22,6 +23,7 @@ import {
   normalizeSubject,
   toEventTime,
 } from '@/core/knowledge-report';
+import { currentMessageCount } from '@/core/knowledge-state';
 import type {
   KnowledgeChange,
   KnowledgeChangeKind,
@@ -76,13 +78,27 @@ function pushChange(
   const r = report();
   const change: KnowledgeChange = {
     at: Date.now(),
-    at_message: r.based_on_message,
+    // 手动操作不是重新分析，但时间锚点必须反映「操作发生的时刻」：用报告的分析基线
+    // 会让长聊里刚改的条目在新鲜度排序里仍是旧条目，预算紧张时反而先被省略。
+    at_message: currentMessageCount(),
     kind,
     id: entry.id,
     topic: entry.topic,
     detail,
   };
   r.last_changes = [change, ...r.last_changes].slice(0, MAX_CHANGES);
+}
+
+/** 手动写入口的容量治理：与 AI 合并共用 enforceCapacity，结果写回 store 并留痕。
+ *  protectedIds 传本轮刚写入/刚恢复的条目，避免它们被自己挤掉。 */
+function applyCapacity(atMessage: number, protectedIds?: ReadonlySet<string>): number {
+  const r = report();
+  const capacity = enforceCapacity(r.entries, atMessage, Date.now(), protectedIds);
+  if (capacity.changes.length) {
+    r.entries = capacity.entries;
+    r.last_changes = [...capacity.changes, ...r.last_changes].slice(0, MAX_CHANGES);
+  }
+  return capacity.evicted;
 }
 
 /** 每次手动改动都 bump 报告修订号：让在途分析结果被并发守卫丢弃，也便于面板显示版本。 */
@@ -97,10 +113,11 @@ export function addManualEntry(input: KnowledgeEntryInput): string | null {
   const topic = input.topic.trim().slice(0, 24);
   if (!topic) return null;
   const r = report();
+  const atMessage = currentMessageCount();
   const existingIds = new Set(r.entries.map(e => e.id));
-  let id = makeEntryId(topic, r.based_on_message);
+  let id = makeEntryId(topic, atMessage);
   let i = 2;
-  while (existingIds.has(id)) id = `${makeEntryId(topic, r.based_on_message)}_${i++}`;
+  while (existingIds.has(id)) id = `${makeEntryId(topic, atMessage)}_${i++}`;
   const entry: KnowledgeReportEntry = {
     id,
     topic,
@@ -114,8 +131,8 @@ export function addManualEntry(input: KnowledgeEntryInput): string | null {
     basis: input.basis.trim().slice(0, 240),
     impact: input.impact.trim().slice(0, 240),
     event_time: normalizeEventTime(input.event_time),
-    first_seen_message: r.based_on_message,
-    updated_at_message: r.based_on_message,
+    first_seen_message: atMessage,
+    updated_at_message: atMessage,
     revision: 1,
     locked: false,
     retired: false,
@@ -125,6 +142,8 @@ export function addManualEntry(input: KnowledgeEntryInput): string | null {
   else if (entry.source === 'none' && entry.status === 'known') entry.status = 'uncertain';
   r.entries = [...r.entries, entry];
   pushChange('added', entry, '手动新增');
+  // 手动新增同样受容量上限约束；保护刚写入的条目，避免它被自己挤掉。
+  applyCapacity(atMessage, new Set([id]));
   touch();
   return id;
 }
@@ -147,6 +166,8 @@ export function updateManualEntry(id: string, input: KnowledgeEntryInput): boole
   entry.basis = input.basis.trim().slice(0, 240);
   entry.impact = input.impact.trim().slice(0, 240);
   entry.event_time = normalizeEventTime(input.event_time);
+  // 用户刚编辑过的条目应在注入排序里按「新」计算，而不是沿用分析基线。
+  entry.updated_at_message = currentMessageCount();
   entry.revision += 1;
   if (entry.status === 'unknown') entry.source = 'none';
   else if (entry.source === 'none' && entry.status === 'known') entry.status = 'uncertain';
@@ -191,10 +212,14 @@ export function restoreEntry(id: string): boolean {
   const r = report();
   const entry = r.entries.find(e => e.id === id);
   if (!entry || !entry.retired) return false;
+  const atMessage = currentMessageCount();
   entry.retired = false;
   entry.retired_reason = '';
+  entry.updated_at_message = atMessage;
   entry.revision += 1;
   pushChange('restored', entry, '手动恢复');
+  // 恢复会重新占用活跃名额：同样受上限约束，并保护刚恢复的条目。
+  applyCapacity(atMessage, new Set([id]));
   touch();
   return true;
 }
@@ -220,11 +245,17 @@ export function scanDuplicateEntries(): ReturnType<typeof findDuplicateGroups> {
 /** 导入外部报告条目（同角色卡跨聊天复用、或从备份恢复）。
  *
  *  合并而非替换：导入的文件可能来自另一个聊天，直接替换会丢掉当前聊天独有的条目。
- *  同 id 或同 topic 的条目按「较新的 updated_at_message 胜出」覆盖，其余作为新条目追加；
+ *  同 id 或同 topic 的条目直接覆盖为导入内容（当前聊天的锁定/退役状态保留），其余作为新条目追加；
  *  锁定状态沿用当前表（导入文件里的锁定不可信——那是别的聊天里用户做的决定）。
- *  返回 { added, updated } 计数，供 UI 汇报。 */
-export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { added: number; updated: number } {
+ *  导入同样受容量上限约束：文件里的条目数不可信，超出部分按统一淘汰规则清理。
+ *  返回 { added, updated, evicted } 计数，供 UI 汇报。 */
+export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): {
+  added: number;
+  updated: number;
+  evicted: number;
+} {
   const r = report();
+  const atMessage = currentMessageCount();
   const byId = new Map(r.entries.map(e => [e.id, e]));
   const byTopic = new Map(r.entries.filter(e => e.topic).map(e => [e.topic.trim(), e]));
   let added = 0;
@@ -245,6 +276,7 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { adde
       hit.event_time = raw.event_time || hit.event_time;
       hit.aliases = normalizeList([...hit.aliases, ...raw.aliases], MAX_ALIASES, MAX_ALIAS_LEN);
       hit.keywords = normalizeList([...hit.keywords, ...raw.keywords], MAX_KEYWORDS, MAX_KEYWORD_LEN);
+      hit.updated_at_message = atMessage;
       hit.revision += 1;
       updated += 1;
       continue;
@@ -252,9 +284,9 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { adde
     const entry: KnowledgeReportEntry = {
       ...raw,
       // 重新分配 id：导入文件的 id 可能与本聊天已删条目的 id 撞车
-      id: makeEntryId(raw.topic, r.based_on_message),
-      first_seen_message: r.based_on_message,
-      updated_at_message: r.based_on_message,
+      id: makeEntryId(raw.topic, atMessage),
+      first_seen_message: atMessage,
+      updated_at_message: atMessage,
       revision: 1,
       previous_status: '',
       locked: false,
@@ -270,12 +302,14 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { adde
     added += 1;
   }
 
+  let evicted = 0;
   if (added || updated) {
     r.entries = next;
     pushChange('merged', { id: '', topic: '' }, `导入报告：新增 ${added} 条，更新 ${updated} 条`);
+    evicted = applyCapacity(atMessage);
     touch();
   }
-  return { added, updated };
+  return { added, updated, evicted };
 }
 
 /** 执行手动整理：合并所有扫描到的重复组。
@@ -286,6 +320,7 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): { adde
  *  返回实际合并掉的条目数。 */
 export function tidyKnowledgeReport(): number {
   const r = report();
+  const atMessage = currentMessageCount();
   const groups = findDuplicateGroups(r.entries);
   if (!groups.length) return 0;
   let entries = r.entries;
@@ -295,7 +330,7 @@ export function tidyKnowledgeReport(): number {
     // 目标条目可能已被前面的组合并掉：此时组内 id 在 entries 里找不到，跳过即可。
     // 不能用「长度是否变化」判断——mergeDuplicateGroup 的跳过分支同样返回新数组。
     if (!entries.some(e => e.id === group.keep.id)) continue;
-    const out = mergeDuplicateGroup(entries, group, r.based_on_message);
+    const out = mergeDuplicateGroup(entries, group, atMessage);
     entries = out.entries;
     mergedCount += group.merge.length;
     changes.push(out.change);
