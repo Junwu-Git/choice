@@ -427,9 +427,7 @@ const filtered = computed(() => {
   const query = search.value.trim().toLowerCase();
   if (!query) return list;
   // 搜索覆盖主题/对象/别名/检索词：长聊里用户通常记得人名或物件名，不一定记得主题措辞。
-  return list.filter(e =>
-    [e.topic, e.subject, ...e.aliases, ...e.keywords].some(v => v.toLowerCase().includes(query)),
-  );
+  return list.filter(e => [e.topic, e.subject, ...e.aliases, ...e.keywords].some(v => v.toLowerCase().includes(query)));
 });
 
 const statusLabel = (s: KnowledgeStatus): string => (s === 'known' ? t`已知` : s === 'uncertain' ? t`存疑` : t`未知`);

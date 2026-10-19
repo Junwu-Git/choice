@@ -1104,8 +1104,7 @@ export function mergeDuplicateGroup(
   };
 }
 
-const truncateField = (s: string, max = MAX_TABLE_FIELD_LEN): string =>
-  s.length > max ? `${s.slice(0, max)}…` : s;
+const truncateField = (s: string, max = MAX_TABLE_FIELD_LEN): string => (s.length > max ? `${s.slice(0, max)}…` : s);
 
 /** 渲染「已有知识边界表」块，作为增量分析的输入。空表返回 ''。
  *  只列活跃条目；锁定标记必须让模型看见，否则它会反复尝试修改被拒。
@@ -1170,10 +1169,7 @@ export function computeChatFingerprint(
 /** 原始楼层是否被指纹覆盖（尾部逐条全文 + 早期抽样点）。
  *  未覆盖的楼层被编辑时指纹不会变化，调度层必须强制分析，否则「谁告诉了主角什么」
  *  这类早期信息被改掉后，报告会一直停留在旧结论。隐藏楼层不参与指纹，视为已覆盖。 */
-export function isMessageCoveredByFingerprint(
-  messages: Array<{ is_system?: boolean }>,
-  rawIndex: number,
-): boolean {
+export function isMessageCoveredByFingerprint(messages: Array<{ is_system?: boolean }>, rawIndex: number): boolean {
   const target = messages[rawIndex];
   if (!target || target.is_system) return true;
   const visibleBefore = messages.slice(0, rawIndex).filter(m => !m.is_system).length;

@@ -502,11 +502,7 @@ export const historyWindowStart = (contextRounds: number): number => {
  * 已有表/摘要里，只发上次分析之后的新消息即可。过滤发生在 rounds 截尾之后，depth 仍
  * 相对末尾计算，与生成侧口径一致。
  */
-export const buildChatHistory = (
-  contextRounds: number,
-  wrapCurrentScene = true,
-  startRawIndex = 0,
-): ChatMsg[] => {
+export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true, startRawIndex = 0): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
@@ -516,9 +512,7 @@ export const buildChatHistory = (
   // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
   // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
   // 带原始下标是为了增量分析能在截尾后继续前移起点（不能先 slice 再 indexOf，重复文本会错位）。
-  const visible = chatArr
-    .map((m: any, index: number) => ({ m, index }))
-    .filter(x => !x.m.is_system);
+  const visible = chatArr.map((m: any, index: number) => ({ m, index })).filter(x => !x.m.is_system);
   const picked = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
   const msgs = picked.filter(x => x.index >= startRawIndex).map(x => x.m);
   const rules = gs.sortedEnabledFilterRules;

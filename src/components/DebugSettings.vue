@@ -28,7 +28,9 @@
         <div class="choice-debug-msg">
           <span class="choice-debug-role">{{ t`条目` }}</span>
           <span class="choice-debug-content">
-            {{ t`已注入 ${lastKnowledgeInjection.chosen.length} / ${lastKnowledgeInjection.total} 条，省略 ${lastKnowledgeInjection.omitted} 条` }}
+            {{
+              t`已注入 ${lastKnowledgeInjection.chosen.length} / ${lastKnowledgeInjection.total} 条，省略 ${lastKnowledgeInjection.omitted} 条`
+            }}
           </span>
         </div>
         <div class="choice-debug-msg">

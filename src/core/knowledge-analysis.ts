@@ -309,11 +309,7 @@ export function isKnowledgeMergeActive(): boolean {
  *  - 尚未触发的防抖任务与在途 pending 都会合并 force/完整窗口需求（force 取 OR、delta 取 AND），
  *    避免后续的 received 把之前那次「必须完整窗口」的编辑需求冲掉；结束后按合并结果补跑一次。
  *  不 await 是因为 ST 的 eventSource.emit 串行 await 监听器。 */
-export function scheduleKnowledgeRefresh(
-  reason: RefreshReason,
-  force = false,
-  delta = reason === 'received',
-): void {
+export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, delta = reason === 'received'): void {
   try {
     // 继承尚未触发的防抖任务：新事件不能把它的 force 或「完整窗口」需求丢掉。
     // 例如早期未抽样楼层刚被编辑（force + 完整窗口），随后又来了一条新回复——
