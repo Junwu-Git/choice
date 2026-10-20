@@ -3,6 +3,7 @@ import '@/theme.css';
 import '@/global.css';
 import { initPanelMount } from '@/core/panel-mount';
 import { initWandMenu } from '@/core/wand-menu';
+import { resetWICache } from '@/core/generator';
 import { syncDiceContractPrompt, clearPendingTurn, flushPendingTurnMarker } from '@/core/dice-contract';
 import { pinia } from '@/pinia';
 import { useCharacterSettingsStore } from '@/store/character-settings';
@@ -36,6 +37,13 @@ $(() => {
   step('设置 store', () => {
     useCharacterSettingsStore();
     useChatSettingsStore();
+  });
+
+  // 世界书缓存失效：世界书被保存/设置变动时立刻作废缓存（键含聊天指纹但不含世界书内容，
+  // 不失效会让刚改完的书在 TTL 内仍用旧分桶）。CHAT_CHANGED 的清理由 panel-mount 负责。
+  step('世界书缓存失效', () => {
+    eventSource.on(event_types.WORLDINFO_UPDATED, () => resetWICache());
+    eventSource.on(event_types.WORLDINFO_SETTINGS_UPDATED, () => resetWICache());
   });
 
   // 判定契约（v67）：正文 AI 常驻说明「消息开头的 HTML 注释是骰子裁定指令」。

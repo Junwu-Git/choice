@@ -7,8 +7,10 @@ import {
   KNOWLEDGE_SYSTEM_PROMPT,
   needsMergeAdaptation,
   parseMergedKnowledge,
+  rewriteTagContractOnly,
   stripMergedKnowledge,
 } from '@/core/knowledge-task';
+import { shouldInjectKnowledge } from '@/core/knowledge-injection';
 
 const OPTIONS_BLOCK =
   '<options>[{"title":"推门|平衡|55","content":"你抬手推开木门，铰链发出一声干涩的响。"},{"title":"后退|保守|20","content":"你退后半步，把重心压回脚跟上。"}]</options>';
@@ -45,7 +47,8 @@ describe('parseMergedKnowledge', () => {
   });
 
   it('标签未闭合（输出被截断）时仍能解析补丁', () => {
-    const raw = '<knowledge_patch>{"base_revision":1,"entries":[{"topic":"旧信","status":"unknown","source":"none","basis":"未交代","impact":"不得引用"}]}';
+    const raw =
+      '<knowledge_patch>{"base_revision":1,"entries":[{"topic":"旧信","status":"unknown","source":"none","basis":"未交代","impact":"不得引用"}]}';
     const parsed = parseMergedKnowledge(raw);
     expect(parsed).not.toBeNull();
     expect(parsed!.patches).toHaveLength(1);
@@ -92,7 +95,8 @@ describe('stripMergedKnowledge', () => {
 
 describe('adaptPromptForMerge — 改写「只许两个标签」的口径', () => {
   it('system_prompt 的「只输出两个标签」', () => {
-    const src = '只输出 <thinking> 与 <options> 两个标签内的内容，<options> 之外一个字都不写；发现自己开始写正文或扮演角色时立即停下，回到这两个标签。';
+    const src =
+      '只输出 <thinking> 与 <options> 两个标签内的内容，<options> 之外一个字都不写；发现自己开始写正文或扮演角色时立即停下，回到这两个标签。';
     const out = adaptPromptForMerge(src);
     expect(out).not.toContain('两个标签');
     expect(out).toContain('<knowledge_patch>');
@@ -131,7 +135,8 @@ describe('adaptPromptForMerge — 改写「只许两个标签」的口径', () =
   });
 
   it('压掉润色分支（合并只用于选项生成）', () => {
-    const src = '你只做一件事——根据当前场景生成一组可供挑选的下一拍候选，或者把 {{user}} 的原始输入改写成几个更顺口的版本。本轮是哪一种，由后续消息指明。';
+    const src =
+      '你只做一件事——根据当前场景生成一组可供挑选的下一拍候选，或者把 {{user}} 的原始输入改写成几个更顺口的版本。本轮是哪一种，由后续消息指明。';
     const out = adaptPromptForMerge(src);
     expect(out).not.toContain('润色');
     expect(out).not.toContain('更顺口');
@@ -250,5 +255,41 @@ describe('buildMergedKnowledgeTask', () => {
     const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
     expect(task).toContain('<memory_summary>');
     expect(task).toContain('只用于核对既有条目的出处');
+  });
+});
+
+describe('合并模式的标签契约改写', () => {
+  const DEFAULT_SYSTEM_PROMPT =
+    '只输出 <thinking> 与 <options> 两个标签内的内容，<options> 之外一个字都不写；发现自己开始写正文或扮演角色时立即停下，回到这两个标签。';
+
+  it('「<options> 之外一个字都不写」被改掉（补丁块就在 options 之前）', () => {
+    const out = adaptPromptForMerge(DEFAULT_SYSTEM_PROMPT);
+    expect(out).not.toContain('<options> 之外');
+    expect(out).toContain('</options> 之后');
+  });
+
+  it('改写后仍只有一个输出契约口径', () => {
+    const out = adaptPromptForMerge(DEFAULT_SYSTEM_PROMPT);
+    expect(out).not.toContain('两个标签');
+    expect(out).toContain('<knowledge_patch>');
+  });
+
+  it('rewriteTagContractOnly 只改契约句，不动其他内容', () => {
+    const src = '只输出 <thinking> 与 <options> 两个标签；顺便把 {{user}} 的原始输入改写成几个版本。';
+    const out = rewriteTagContractOnly(src);
+    expect(out).toContain('三个标签');
+    // 润色分支的表述保留——预设条目是用户自己的叙事内容，不该被插件删掉
+    expect(out).toContain('改写成几个版本');
+  });
+});
+
+describe('合并模式不重复注入知识表', () => {
+  it('合并请求在途时不注入（合并任务已带同一张表）', () => {
+    expect(shouldInjectKnowledge(true, true)).toBe(false);
+  });
+
+  it('普通模式按注入开关决定', () => {
+    expect(shouldInjectKnowledge(true, false)).toBe(true);
+    expect(shouldInjectKnowledge(false, false)).toBe(false);
   });
 });

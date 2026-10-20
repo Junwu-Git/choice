@@ -1,10 +1,11 @@
 import toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
-import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
+import { generateOptions, generatorState, resetWICache, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
 import {
+  flushKnowledgeRefreshAfterGeneration,
   isKnowledgeMergeActive,
   knowledgeState,
   maybeAutoAnalyze,
@@ -117,6 +118,8 @@ export function initPanelMount() {
         const swipeId = getMessageSwipeId(messageId);
         void (async () => {
           const generation = await generateOptions({ messageId, swipeId });
+          // 合并请求在途期间挂起的事件在此补跑（报告已最新的话调度层会跳过）
+          flushKnowledgeRefreshAfterGeneration();
           if (!generation) {
             return;
           }
@@ -195,6 +198,8 @@ export function initPanelMount() {
   eventSource.on(event_types.CHAT_CHANGED, () => {
     // 换聊天先清空调度：防抖定时器属于旧聊天，跨聊天触发会分析错内容
     resetKnowledgeScheduling();
+    // 世界书缓存同理：键含聊天指纹，但切聊天后立即作废更稳妥（不残留旧世界的 EJS 产物）
+    resetWICache();
     safeResync();
   });
   eventSource.on(event_types.MORE_MESSAGES_LOADED, () => {

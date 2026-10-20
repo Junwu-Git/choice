@@ -179,6 +179,12 @@ const MERGE_PROMPT_REWRITES: Array<[RegExp, string]> = [
   [/回到这两(?:个)?标签/g, '回到这些标签'],
   // 「核对无误即进入 <options>」
   [/核对无误(?:即|后)进入\s*<options>/g, '核对无误后先输出 <knowledge_patch>，再进入 <options>'],
+  // 「<options> 之外一个字都不写」——改写成三标签后这句自相矛盾：
+  // <knowledge_patch> 就在 <options> 之前，按原句等于禁止输出补丁块。
+  // 契约的真实边界是「options 块之后不再写字」，故改成同一语义的说法。
+  [/<options>\s*之外[^，；。]*?不写/g, '</options> 之后一字不写'],
+  // 「两个标签之外不写任何文字」等变体（未被上面两条覆盖的独立表述）
+  [/这两(?:个)?标签之外[^，；。]*?不写/g, '这三个标签之外不写任何文字'],
 ];
 
 /** 合并模式下整条丢弃的模块：纯输出格式指令，合并任务自己已声明完整顺序。
@@ -191,14 +197,22 @@ export function isModuleDroppedByMerge(moduleId: string): boolean {
   return (MERGE_DROPPED_MODULE_IDS as readonly string[]).includes(moduleId);
 }
 
+/** 只改写标签契约句，其余内容一字不动。纯函数，返回改写后的文本。
+ *
+ *  与 adaptPromptForMerge 的区别：后者额外删掉「把 {{user}} 的原始输入改写成几个版本」
+ *  这类润色分支表述（选项生成时不该提润色）；本函数用于用户自有文本（预设条目），
+ *  只统一「输出几个标签」的口径，不动叙事内容。 */
+export function rewriteTagContractOnly(text: string): string {
+  return MERGE_PROMPT_REWRITES.reduce((acc, [re, to]) => acc.replace(re, to), text);
+}
+
 /** 合并模式下改写一段提示词文本。纯函数，返回改写后的文本。
  *
  *  除了标签口径，还压掉 system_prompt 里「或者把 {{user}} 的原始输入润色成几个版本」——
  *  本次是选项生成，润色是另一条链路，留着只会让模型分不清本轮任务。 */
 export function adaptPromptForMerge(text: string): string {
-  const out = MERGE_PROMPT_REWRITES.reduce((acc, [re, to]) => acc.replace(re, to), text);
   // 选项生成时不应提及润色分支（enrich 链路不走合并）
-  return out.replace(/，?或者把\s*\{\{user\}\}\s*的原始输入改写成几个更顺口的版本/g, '');
+  return rewriteTagContractOnly(text).replace(/，?或者把\s*\{\{user\}\}\s*的原始输入改写成几个更顺口的版本/g, '');
 }
 
 /** 该模块是否需要为合并模式改写：含「两个标签」类写法时才处理，避免无谓遍历。 */

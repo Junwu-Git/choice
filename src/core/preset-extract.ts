@@ -76,17 +76,29 @@ export function extractPresetSampling(preset: Record<string, unknown>): StPreset
 }
 
 /**
- * 取生效的 prompt_order 组：优先 global 策略的 dummyId（100001，旧版 100000），
- * 未命中已知 dummyId（用户改过策略或预设来自旧版本）时取首个非空组。
- * 结构异常一律返回空数组，由调用方决定降级。
+ * 取生效的 prompt_order 组。
+ *
+ *  酒馆 PromptManager 有两种顺序策略（configuration.promptOrder.strategy）：
+ *  - 'global'：所有角色共用 dummyId（100001，新版；旧版 100000）那一组；
+ *  - 'character'：每个角色一组（character_id = 角色 id）。
+ *  本扩展原先只认 global 组，character 策略下会拿到与酒馆实际不一致的顺序
+ *  （角色专属的停用状态、条目位置全部对不上）。故按策略取，character 策略优先
+ *  当前角色的组，取不到再回退 global。
  */
-export function extractPresetOrderList(raw: unknown): StPresetOrderEntry[] {
+export function extractPresetOrderList(
+  raw: unknown,
+  opts: { strategy?: 'global' | 'character'; characterId?: string } = {},
+): StPresetOrderEntry[] {
   if (!Array.isArray(raw)) return [];
   const groups = raw.filter(
     (g): g is { character_id?: unknown; order: StPresetOrderEntry[] } =>
       Boolean(g) && Array.isArray((g as { order?: unknown }).order),
   );
   if (!groups.length) return [];
+  if (opts.strategy === 'character' && opts.characterId) {
+    const hit = groups.find(g => String(g.character_id) === String(opts.characterId));
+    if (hit) return hit.order;
+  }
   for (const id of GLOBAL_ORDER_IDS) {
     const hit = groups.find(g => String(g.character_id) === id);
     if (hit) return hit.order;
@@ -94,9 +106,39 @@ export function extractPresetOrderList(raw: unknown): StPresetOrderEntry[] {
   return (groups.find(g => g.order.length) ?? groups[0]).order;
 }
 
-/** 提取提示词条目数组（仅结构归一，不筛选——筛选在 preset-messages 的展开阶段）。 */
+/** 条目字段白名单：预设条目上未列出的字段一律不进入快照。
+ *
+ *  凭据主要在预设顶层，但条目层同样做投影——宿主将来给条目加字段时，
+ *  不会顺手把新字段带进请求体。 */
+const PROMPT_FIELD_KEYS: readonly (keyof StPresetPrompt)[] = [
+  'identifier',
+  'name',
+  'role',
+  'content',
+  'system_prompt',
+  'marker',
+  'injection_position',
+  'injection_depth',
+  'injection_order',
+  'injection_trigger',
+];
+
+/** 提取提示词条目数组（字段投影，筛选在 preset-messages 的展开阶段）。 */
 export function extractPresetPrompts(raw: unknown): StPresetPrompt[] {
-  return Array.isArray(raw) ? (raw as StPresetPrompt[]) : [];
+  if (!Array.isArray(raw)) return [];
+  const out: StPresetPrompt[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const o = item as Record<string, unknown>;
+    const picked: Record<string, unknown> = {};
+    for (const key of PROMPT_FIELD_KEYS) {
+      const value = o[key];
+      if (value === undefined || value === null) continue;
+      picked[key] = value;
+    }
+    out.push(picked as StPresetPrompt);
+  }
+  return out;
 }
 
 /** 允许透传的提示词后处理模式（与酒馆 openai.js custom_prompt_post_processing_types 对齐，
@@ -144,3 +186,24 @@ export type StPresetSnapshot = {
   /** 预设顶层 custom_prompt_post_processing（未声明为 undefined）。 */
   postProcessing?: StPresetPostProcessing;
 };
+
+/**
+ * 组装预设快照（纯函数）。
+ *
+ *  单独成函数是为了让「凭据不进快照」这条边界能被单测锁住——宿主读取那一步
+ *  依赖酒馆对象，没法直接测；把组装挪到纯函数里，测试就能拿带 reverse_proxy /
+ *  proxy_password 的原始预设做输入，断言这些键不出现在快照里。
+ */
+export function buildPresetSnapshot(
+  raw: Record<string, unknown>,
+  name: string,
+  orderCtx: { strategy?: 'global' | 'character'; characterId?: string } = {},
+): StPresetSnapshot {
+  return {
+    name: String(name ?? '').trim(),
+    prompts: extractPresetPrompts(raw.prompts),
+    order: extractPresetOrderList(raw.prompt_order, orderCtx),
+    sampling: extractPresetSampling(raw),
+    postProcessing: extractPresetPostProcessing(raw),
+  };
+}

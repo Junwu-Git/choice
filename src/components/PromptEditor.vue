@@ -40,7 +40,7 @@
           {{ t`采样参数跟随预设` }}
         </label>
         <span class="choice-field-hint">{{
-          t`开启后温度、top_p、惩罚项与输出上限取自预设（预设的输出上限偏小时可能截断选项，可关闭此项用 API 页的参数）；连接地址与模型始终用本扩展的 API 配置`
+          t`开启后温度、top_p、惩罚项与输出上限取自预设（输出上限低于一轮候选所需时会自动抬到够写完，温度过高则可能让 JSON 失效）；连接地址与模型始终用本扩展的 API 配置`
         }}</span>
         <label class="choice-check">
           <input v-model="globalStore.settings.st_preset_post_processing" type="checkbox" />
@@ -84,6 +84,9 @@
             t`预设自带的脚本默认不参与选项生成。关闭＝不带；仅广播＝改写提示词的脚本生效；酒馆助手＝交给酒馆助手插件执行（需安装）`
           }}</span
         >
+        <span class="choice-field-hint">{{
+          t`能力边界：预设模式只取预设的提示词栈，加上本扩展填入的槽位（角色卡、persona、世界书、聊天历史）与本扩展的任务指令；酒馆其他扩展注入的内容（作者注、向量库、摘要等）不在其中，与主生成看到的上下文并不完全一致`
+        }}</span>
         <div v-if="companionHint" class="choice-preset-companion" :title="companionHintTitle">
           <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
           <span>{{ companionHint }}</span>
@@ -128,6 +131,14 @@
             <span v-else-if="entry.overridden" class="choice-preset-entry-badge choice-preset-entry-badge--on">{{
               t`已覆盖`
             }}</span>
+            <span
+              v-if="entry.legacyOverride"
+              class="choice-preset-entry-badge"
+              :title="
+                t`旧版全局覆盖：只按条目标识符保存，对所有含该标识符的预设都生效。当前预设的修改只写当前预设的键，不会动它；点「恢复原样」会把它一并清掉。`
+              "
+              >{{ t`全局覆盖` }}</span
+            >
             <span class="choice-preset-entry-actions">
               <template v-if="!entry.isMarker">
                 <button
@@ -583,9 +594,21 @@ import type { PromptModule } from '@/type/settings';
 import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
 import { isoTimestamp } from '@/util/time';
 import { toggleChatBinding, toggleCharacterBinding } from '@/core/bindings';
-import { listStPresetNames, readActiveStPreset, type StPresetSnapshot } from '@/core/st-preset-source';
+import {
+  listStPresetNames,
+  onStPresetChanged,
+  readActiveStPreset,
+  type StPresetSnapshot,
+} from '@/core/st-preset-source';
 import { readPresetCompanionScripts, type PresetCompanionScripts } from '@/core/st-preset-scripts';
 import { NATIVE_MARKER_SLOTS } from '@/core/preset-messages';
+import {
+  clearPresetContentOverride,
+  getPresetOverride,
+  hasLegacyPresetOverride,
+  togglePresetOverrideFlag,
+  writePresetContentOverride,
+} from '@/core/preset-overrides';
 import { z } from 'zod';
 
 const globalStore = useGlobalSettingsStore();
@@ -610,14 +633,26 @@ const expandedEntries = ref(new Set<number>());
 // 提示为快照性质（重进本页即刷新）。
 const companionScripts = ref<PresetCompanionScripts | null>(null);
 
+/** 宿主预设切换事件的退订句柄（组件卸载时清理）。 */
+let stopPresetWatch: (() => void) | null = null;
+
+/** 刷新预设快照（预设列表 + 条目快照 + 配套脚本概览）。
+ *
+ *  三处触发：进入/切换预设模式、酒馆切换 CC 预设（跟随模式下预设名会变）。
+ *  酒馆那次不能省——覆盖层的键按预设名隔离，快照不刷新就会把覆盖写进上一个
+ *  预设的名字下，生成时查不到，覆盖静默失效。 */
+const refreshPresetSnapshot = (): void => {
+  if (globalStore.settings.prompt_source !== 'st_preset') return;
+  presetNames.value = listStPresetNames();
+  presetSnapshot.value = readActiveStPreset(globalStore.settings.st_preset_name);
+  companionScripts.value = readPresetCompanionScripts(globalStore.settings.st_preset_name);
+  expandedEntries.value = new Set();
+};
+
 watch(
   () => [globalStore.settings.prompt_source, globalStore.settings.st_preset_name] as const,
-  ([source]) => {
-    if (source !== 'st_preset') return;
-    presetNames.value = listStPresetNames();
-    presetSnapshot.value = readActiveStPreset(globalStore.settings.st_preset_name);
-    companionScripts.value = readPresetCompanionScripts(globalStore.settings.st_preset_name);
-    expandedEntries.value = new Set();
+  () => {
+    refreshPresetSnapshot();
   },
   { immediate: true },
 );
@@ -660,6 +695,13 @@ const companionHintTitle = computed(() => {
 /** 覆盖层的响应式入口：模板与操作函数都经它读写，deep watch 统一落盘。 */
 const overridesRef = computed(() => globalStore.settings.st_preset_overrides);
 
+/** 生效预设名（覆盖层按预设名隔离的键用）：快照里是解析后的真实预设名，
+ *  不是用户填的固定名——填了空表示跟随酒馆选中预设。 */
+const activePresetName = computed(() => presetSnapshot.value?.name ?? '');
+
+/** 条目的生效覆盖值：先查 `预设名::标识符`，再回退旧版全局键（兼容老配置）。 */
+const effectiveOverride = (id: string) => getPresetOverride(overridesRef.value, activePresetName.value, id);
+
 type PresetEntryRow = {
   identifier: string;
   title: string;
@@ -673,6 +715,8 @@ type PresetEntryRow = {
   expanded: boolean;
   pluginDisabled: boolean;
   overridden: boolean;
+  /** 旧版全局覆盖（只按条目标识符存）：对所有含该 id 的预设都生效。 */
+  legacyOverride: boolean;
 };
 
 /** rows：按酒馆 prompt_order 顺序列出当前预设条目（含覆盖状态）。 */
@@ -689,7 +733,7 @@ const presetEntries = computed<PresetEntryRow[]>(() => {
     seen.add(id);
     const prompt = byId.get(id);
     if (!prompt) continue;
-    const ov = overrides?.[id];
+    const ov = effectiveOverride(id);
     rows.push({
       identifier: id,
       title: String(prompt.name ?? '').trim(),
@@ -701,39 +745,33 @@ const presetEntries = computed<PresetEntryRow[]>(() => {
       expanded: expandedEntries.value.has(rows.length),
       pluginDisabled: ov?.disabled === true,
       overridden: ov?.content !== undefined,
+      // 旧版全局覆盖（只按条目标识符存）：对所有含该 id 的预设都生效，UI 需明示。
+      // 覆盖层改成按预设隔离后，它不会随当前预设的编辑消失——徽标按「旧键还在不在」判。
+      legacyOverride: hasLegacyPresetOverride(overrides, id),
     });
   }
   return rows;
 });
 
 /** 禁用/恢复条目（本扩展侧覆盖层，酒馆预设不动）。已有内容/强制启用覆盖时只翻 disabled 位，
- *  其余覆盖保留——「恢复原样」由清除覆盖负责。 */
+ *  其余覆盖保留——「恢复原样」由清除覆盖负责。
+ *
+ *  写入按预设名隔离的键（`预设名::标识符`）：内置标识符（main/nsfw/jailbreak）在所有预设里
+ *  同名，只按标识符存会让一个预设的改动静默作用到别的预设。旧版全局键原样保留——
+ *  它对其它预设仍然生效，在当前预设翻个开关就把全局覆盖抹掉，等于让别的预设的覆盖
+ *  静默失效；只有「恢复原样」才连它一起清（见 clearPresetContentOverride）。 */
 const togglePresetEntry = (id: string): void => {
-  const ov = globalStore.settings.st_preset_overrides;
-  const cur = ov[id];
-  if (cur?.disabled) {
-    const { disabled: _disabled, ...rest } = cur;
-    if (Object.keys(rest).length) ov[id] = rest;
-    else delete ov[id];
-  } else {
-    ov[id] = { ...(cur ?? {}), disabled: true };
-  }
+  if (!activePresetName.value) return;
+  togglePresetOverrideFlag(globalStore.settings.st_preset_overrides, activePresetName.value, id, 'disabled');
 };
 
 /** 强制启用/取消（仅对酒馆已停用的条目显示）：插件侧开启不改酒馆预设，只影响选项生成。 */
 const togglePresetEntryForce = (id: string): void => {
-  const ov = globalStore.settings.st_preset_overrides;
-  const cur = ov[id];
-  if (cur?.enabled) {
-    const { enabled: _enabled, ...rest } = cur;
-    if (Object.keys(rest).length) ov[id] = rest;
-    else delete ov[id];
-  } else {
-    ov[id] = { ...(cur ?? {}), enabled: true };
-  }
+  if (!activePresetName.value) return;
+  togglePresetOverrideFlag(globalStore.settings.st_preset_overrides, activePresetName.value, id, 'enabled');
 };
 
-const overrideContentOf = (id: string): string | undefined => globalStore.settings.st_preset_overrides[id]?.content;
+const overrideContentOf = (id: string): string | undefined => effectiveOverride(id)?.content;
 
 /** 写入内容覆盖。空值 = 清除覆盖（恢复预设原文）——条目级「清空」想表达的是不参与，
  *  用禁用表达更明确，且防误触空 textarea 把条目静默清空。 */
@@ -742,21 +780,17 @@ const onPresetEntryContentInput = (id: string, e: Event): void => {
 };
 
 const setPresetEntryContent = (id: string, value: string): void => {
-  const ov = globalStore.settings.st_preset_overrides;
+  if (!activePresetName.value) return;
   if (!value.trim()) {
     clearPresetEntryContent(id);
     return;
   }
-  ov[id] = { ...(ov[id] ?? {}), content: value };
+  writePresetContentOverride(globalStore.settings.st_preset_overrides, activePresetName.value, id, value);
 };
 
 const clearPresetEntryContent = (id: string): void => {
-  const ov = globalStore.settings.st_preset_overrides;
-  const cur = ov[id];
-  if (!cur) return;
-  const { content: _content, ...rest } = cur;
-  if (Object.keys(rest).length) ov[id] = rest;
-  else delete ov[id];
+  if (!activePresetName.value) return;
+  clearPresetContentOverride(globalStore.settings.st_preset_overrides, activePresetName.value, id);
 };
 
 const togglePresetEntryExpand = (idx: number): void => {
@@ -1222,9 +1256,12 @@ function onDocumentClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick);
+  // 酒馆切换 CC 预设后刷新快照（覆盖层按预设名隔离，预设名变了键也得跟着变）
+  stopPresetWatch = onStPresetChanged(refreshPresetSnapshot);
 });
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick);
+  stopPresetWatch?.();
 });
 </script>
 

@@ -23,7 +23,11 @@ import {
   resolveAnalysisHistoryStart,
   type KnowledgePatch,
 } from '@/core/knowledge-report';
-import { injectKnowledgeBlock, renderKnowledgeInjection, renderKnowledgeInjectionDetailed } from '@/core/knowledge-injection';
+import {
+  injectKnowledgeBlock,
+  renderKnowledgeInjection,
+  renderKnowledgeInjectionDetailed,
+} from '@/core/knowledge-injection';
 import type { ChatMsg } from '@/core/api-client';
 import type { KnowledgeReport, KnowledgeReportEntry } from '@/type/settings';
 
@@ -262,7 +266,13 @@ describe('parseKnowledgeResponse', () => {
           { topic: '立花的勾引意图', status: 'unknown', source: 'none', basis: '未交代获取过程', impact: '不得点破' },
           { topic: '立花过去的私情', status: 'unknown', source: 'none', basis: '只有读者可见', impact: '不得提及' },
           { topic: '她的真实身份', status: 'unknown', source: 'none', basis: '没有依据', impact: '不得叫破' },
-          { topic: '男主人姓名', status: 'unknown', source: 'none', basis: '剧情只字未提，没有任何人告知主角', impact: '不可断言' },
+          {
+            topic: '男主人姓名',
+            status: 'unknown',
+            source: 'none',
+            basis: '剧情只字未提，没有任何人告知主角',
+            impact: '不可断言',
+          },
         ],
       }),
     );
@@ -272,9 +282,7 @@ describe('parseKnowledgeResponse', () => {
   });
 
   it('不再解析 evidence_floors（楼层号已废弃）', () => {
-    const out = parseKnowledgeResponse(
-      '{"entries":[{"topic":"A","status":"known","evidence_floors":["3",7]}]}',
-    );
+    const out = parseKnowledgeResponse('{"entries":[{"topic":"A","status":"known","evidence_floors":["3",7]}]}');
     expect(out?.patches[0]).not.toHaveProperty('evidence_floors');
   });
 
@@ -345,7 +353,12 @@ describe('mergeKnowledgePatch', () => {
     const existing = [e('A', 'uncertain', '传闻', '', 5), e('B', 'known', '第 1 楼', '', 6)];
     const out = mergeKnowledgePatch(existing, [patch({ topic: 'A', basis: '第 9 楼当面告知' })], 30);
     expect(out.entries.map(x => x.topic)).toEqual(['A', 'B']);
-    expect(out.entries[0]).toMatchObject({ topic: 'A', status: 'known', basis: '第 9 楼当面告知', updated_at_message: 30 });
+    expect(out.entries[0]).toMatchObject({
+      topic: 'A',
+      status: 'known',
+      basis: '第 9 楼当面告知',
+      updated_at_message: 30,
+    });
     expect(out.entries[1]).toEqual(existing[1]);
     expect(out.changes[0]).toMatchObject({ kind: 'updated' });
   });
@@ -451,9 +464,7 @@ describe('mergeKnowledgePatch', () => {
   });
 
   it('别名数量受 MAX_ALIASES 硬约束（多轮归并也不膨胀）', () => {
-    let entries = [
-      e('主题', 'known', '', '', 1, { aliases: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'] }),
-    ];
+    let entries = [e('主题', 'known', '', '', 1, { aliases: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'] })];
     for (let i = 0; i < 10; i++) {
       entries = mergeKnowledgePatch(entries, [patch({ topic: `新说法${i}` })], 20 + i).entries;
     }
@@ -461,9 +472,7 @@ describe('mergeKnowledgePatch', () => {
   });
 
   it('合并时顺带清洗旧数组里超限的别名', () => {
-    const existing = [
-      e('主题', 'known', '', '', 1, { aliases: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'] }),
-    ];
+    const existing = [e('主题', 'known', '', '', 1, { aliases: ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8'] })];
     const out = mergeKnowledgePatch(existing, [patch({ topic: '主题', basis: '补充' })], 20);
     expect(out.entries[0].aliases.length).toBe(MAX_ALIASES);
   });
@@ -537,7 +546,10 @@ describe('mergeKnowledgePatch', () => {
   it('unknown 强制 source=none；none + known 降级 uncertain', () => {
     const out = mergeKnowledgePatch(
       [],
-      [patch({ topic: 'A', status: 'unknown', source: 'witnessed' }), patch({ topic: 'B', status: 'known', source: 'none' })],
+      [
+        patch({ topic: 'A', status: 'unknown', source: 'witnessed' }),
+        patch({ topic: 'B', status: 'known', source: 'none' }),
+      ],
       20,
     );
     expect(out.entries[0]).toMatchObject({ status: 'unknown', source: 'none' });
@@ -769,10 +781,7 @@ describe('renderKnowledgeInjection', () => {
 
   it('未知项缺 impact 时兜底约束；inferred 追加推断提示', () => {
     const out = renderKnowledgeInjection(
-      report([
-        e('K', 'known', '线索', '', 1, { source: 'inferred' }),
-        e('U', 'unknown', '未交代', '', 2),
-      ]),
+      report([e('K', 'known', '线索', '', 1, { source: 'inferred' }), e('U', 'unknown', '未交代', '', 2)]),
     );
     expect(out).toContain('来源：推断（只能以推断口吻使用）');
     expect(out).toContain('U｜依据：未交代；约束：不得作为行动依据');
@@ -784,10 +793,7 @@ describe('renderKnowledgeInjection', () => {
   });
 
   it('场景命中优先于最近更新', () => {
-    const entries = [
-      e('远处传闻', 'known', '', '', 100),
-      e('城北仓库', 'known', '', '', 1, { keywords: ['城北'] }),
-    ];
+    const entries = [e('远处传闻', 'known', '', '', 100), e('城北仓库', 'known', '', '', 1, { keywords: ['城北'] })];
     const out = renderKnowledgeInjection(report(entries), { sceneText: '你来到城北，看见仓库大门', maxEntries: 1 });
     expect(out).toContain('城北仓库');
     expect(out).not.toContain('远处传闻');
@@ -829,10 +835,7 @@ describe('renderKnowledgeInjection', () => {
   });
 
   it('字符预算生效，超长条目不阻断后续短条目', () => {
-    const entries = [
-      e('超长', 'unknown', 'x'.repeat(600), 'y'.repeat(600)),
-      e('短条目', 'unknown', '未交代', '不得'),
-    ];
+    const entries = [e('超长', 'unknown', 'x'.repeat(600), 'y'.repeat(600)), e('短条目', 'unknown', '未交代', '不得')];
     const out = renderKnowledgeInjection(report(entries), { charBudget: 300 });
     expect(out).toContain('短条目');
     expect(out).not.toContain('超长');
@@ -944,15 +947,28 @@ describe('renderKnowledgeInjection', () => {
 });
 
 describe('injectKnowledgeBlock', () => {
-  it('插到最后一条 user 消息之前', () => {
+  it('有任务锚点时插到锚点之前', () => {
     const msgs: ChatMsg[] = [
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'task' },
       { role: 'assistant', content: 'prefill' },
     ];
-    injectKnowledgeBlock(msgs, '<report/>');
+    injectKnowledgeBlock(msgs, '<report/>', msgs[1]);
     expect(msgs.map(m => m.role)).toEqual(['system', 'system', 'user', 'assistant']);
     expect(msgs[1].content).toBe('<report/>');
+  });
+
+  it('无锚点时追加到末尾（不再回退到最后一条 user）', () => {
+    // 回退到「最后一条 user」会在 option_task 被禁用/重排时把约束插进聊天历史中间，
+    // 模型可能把这段 system 约束当成对话内容
+    const msgs: ChatMsg[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: 'history-user' },
+      { role: 'assistant', content: 'prefill' },
+    ];
+    injectKnowledgeBlock(msgs, '<report/>');
+    expect(msgs.map(m => m.role)).toEqual(['system', 'user', 'assistant', 'system']);
+    expect(msgs[3].content).toBe('<report/>');
   });
 
   it('没有 user 消息时追加到末尾', () => {
@@ -978,7 +994,10 @@ describe('computeChatFingerprint', () => {
 
   it('隐藏楼层不参与指纹', () => {
     const a = computeChatFingerprint([{ mes: '你好', is_user: true }]);
-    const b = computeChatFingerprint([{ mes: '你好', is_user: true }, { mes: '系统注入', is_system: true }]);
+    const b = computeChatFingerprint([
+      { mes: '你好', is_user: true },
+      { mes: '系统注入', is_system: true },
+    ]);
     expect(a).toBe(b);
   });
 
@@ -1138,12 +1157,7 @@ describe('migrateKnowledgeReport — 别名清洗', () => {
         {
           topic: '苏凛的渴求症',
           status: 'uncertain',
-          aliases: [
-            '上次上贡时间',
-            '苏凛可能处于稳定期或发情边缘',
-            '苏凛前日发消息后今日未联系',
-            '渴求症',
-          ],
+          aliases: ['上次上贡时间', '苏凛可能处于稳定期或发情边缘', '苏凛前日发消息后今日未联系', '渴求症'],
           keywords: ['精液', '苏凛今日可能心情复杂'],
         },
       ],
@@ -1221,7 +1235,13 @@ describe('migrateKnowledgeReport — evidence_floors 清理', () => {
       based_on_message: 5,
       entries: [
         { topic: '立花的过往', status: 'unknown', source: 'none', basis: '未交代获取过程', impact: '不得提及' },
-        { topic: '武的家教身份', status: 'known', source: 'witnessed', basis: '立花当面称「老师」', impact: '以家教身份言行' },
+        {
+          topic: '武的家教身份',
+          status: 'known',
+          source: 'witnessed',
+          basis: '立花当面称「老师」',
+          impact: '以家教身份言行',
+        },
       ],
     } as unknown as KnowledgeReport;
     const out = migrateKnowledgeReport(legacy);
@@ -1331,7 +1351,9 @@ describe('知识报告导出 / 导入格式', () => {
   it('拒绝非本扩展格式与未来版本', () => {
     expect(parseKnowledgeExport('{"entries":[]}')).toBeNull();
     expect(parseKnowledgeExport('not json')).toBeNull();
-    expect(parseKnowledgeExport(JSON.stringify({ type: 'choice-knowledge-export', version: 99, entries: [] }))).toBeNull();
+    expect(
+      parseKnowledgeExport(JSON.stringify({ type: 'choice-knowledge-export', version: 99, entries: [] })),
+    ).toBeNull();
   });
 
   it('导入时清洗脏字段（与迁移同口径）', () => {
@@ -1435,7 +1457,11 @@ describe('importance — 档位归一与合并', () => {
   it('补丁未给 subject 时保留旧值，给了则覆盖', () => {
     const existing = [e('她的私情', 'unknown', '', '不得提及', 5, { id: 'kb_a', subject: '富川立花' })];
     // 只改 status 的补丁不该把关联对象清空
-    const keep = mergeKnowledgePatch(existing, [{ id: 'kb_a', topic: '她的私情', status: 'known' } as KnowledgePatch], 20);
+    const keep = mergeKnowledgePatch(
+      existing,
+      [{ id: 'kb_a', topic: '她的私情', status: 'known' } as KnowledgePatch],
+      20,
+    );
     expect(keep.entries[0].subject).toBe('富川立花');
     const replace = mergeKnowledgePatch(existing, [patch({ topic: '她的私情', subject: '富川家' })], 21);
     expect(replace.entries[0].subject).toBe('富川家');
@@ -1499,5 +1525,140 @@ describe('entrySortScore — 动态取舍', () => {
   it('档位优先级 low < normal < high', () => {
     expect(IMPORTANCE_RANK.low).toBeLessThan(IMPORTANCE_RANK.normal);
     expect(IMPORTANCE_RANK.normal).toBeLessThan(IMPORTANCE_RANK.high);
+  });
+});
+
+describe('无变化补丁不刷新条目', () => {
+  const base = () => e('真实身份', 'known', '第 3 楼当面告知', '不得叫出', 5, { source: 'witnessed' });
+
+  it('内容完全相同的重复条目：时间戳/修订号/变更记录都不动', () => {
+    const out = mergeKnowledgePatch(
+      [base()],
+      [
+        patch({
+          topic: '真实身份',
+          status: 'known',
+          source: 'witnessed',
+          basis: '第 3 楼当面告知',
+          impact: '不得叫出',
+        }),
+      ],
+      20,
+    );
+    expect(out.changed).toBe(false);
+    expect(out.entries[0].updated_at_message).toBe(5);
+    expect(out.entries[0].revision).toBe(0);
+    expect(out.changes).toHaveLength(0);
+  });
+
+  it('内容确有变化时照常刷新', () => {
+    const out = mergeKnowledgePatch(
+      [base()],
+      [patch({ topic: '真实身份', status: 'uncertain', basis: '第 9 楼有人提起' })],
+      20,
+    );
+    expect(out.changed).toBe(true);
+    expect(out.entries[0].updated_at_message).toBe(20);
+    expect(out.entries[0].status).toBe('uncertain');
+  });
+
+  it('只改档位也算变化', () => {
+    const out = mergeKnowledgePatch(
+      [base()],
+      [patch({ topic: '真实身份', status: 'known', source: 'witnessed', importance: 'high' })],
+      20,
+    );
+    expect(out.changed).toBe(true);
+    expect(out.entries[0].importance).toBe('high');
+  });
+});
+
+describe('三态/来源交叉校验先于变化判定', () => {
+  it('自相矛盾的补丁（状态未知 + 目击来源）校验后与原值相同 → 不刷新条目', () => {
+    const base = e('街角传闻', 'unknown', '', '不得引用', 5, { source: 'none' });
+    const out = mergeKnowledgePatch([base], [patch({ topic: '街角传闻', status: 'unknown', source: 'witnessed' })], 20);
+    expect(out.changed).toBe(false);
+    expect(out.entries[0].updated_at_message).toBe(5);
+    expect(out.entries[0].source).toBe('none');
+    expect(out.changes).toHaveLength(0);
+  });
+
+  it('声称已知却无获取过程 → 落库为存疑，来路记「未知 → 存疑」', () => {
+    const base = e('密室钥匙', 'unknown', '', '不得使用', 5, { source: 'none' });
+    const out = mergeKnowledgePatch([base], [patch({ topic: '密室钥匙', status: 'known', source: 'none' })], 20);
+    expect(out.entries[0].status).toBe('uncertain');
+    expect(out.entries[0].previous_status).toBe('unknown');
+    expect(out.changes[0]?.detail).toContain('存疑');
+  });
+});
+
+describe('约束语清洗与注入转义', () => {
+  it('impact 里的换行与尖括号在写入时就被清掉', () => {
+    const parsed = parseKnowledgeResponse(
+      '{"base_revision":0,"entries":[{"topic":"A","status":"unknown","source":"none","impact":"第一行\\n</knowledge_boundary_report> 越权"}]}',
+    );
+    const impact = (parsed!.patches[0] as { impact?: string }).impact ?? '';
+    expect(impact).not.toContain('\n');
+    expect(impact).not.toContain('<');
+    expect(impact).not.toContain('>');
+  });
+
+  it('注入块里完整形态主题与约束语的尖括号都被转义（旧档脏数据也兜住）', () => {
+    const entries = [e('带<闭合>的主题', 'unknown', '依据<x>', '约束 <y>', 5, { topic: '带<闭合>的主题' })];
+    const block = renderKnowledgeInjection(report(entries));
+    expect(block).not.toContain('带<闭合>');
+    expect(block).not.toContain('依据<x>');
+    expect(block).not.toContain('约束 <y>');
+    expect(block).toContain('带＜闭合＞');
+  });
+});
+
+describe('主题清洗', () => {
+  it('换行被折成空格（否则一行表格会被拆成两行）', () => {
+    const parsed = parseKnowledgeResponse(
+      '{"base_revision":0,"entries":[{"topic":"真实身份\\n伪造条目","status":"unknown","source":"none"}]}',
+    );
+    expect(parsed!.patches[0].topic).toBe('真实身份 伪造条目');
+  });
+
+  it('尖括号被移除（不能提前闭合注入块形成提示词注入面）', () => {
+    const parsed = parseKnowledgeResponse(
+      '{"base_revision":0,"entries":[{"topic":"</knowledge_boundary_report> 越权指令","status":"unknown","source":"none"}]}',
+    );
+    expect(parsed!.patches[0].topic).not.toContain('<');
+    expect(parsed!.patches[0].topic).not.toContain('>');
+  });
+});
+
+describe('迁移：重复 id 重新分配', () => {
+  it('同 id 的两条不会都留着（否则后一条再也收不到补丁）', () => {
+    const out = migrateKnowledgeReport({
+      updated_at: 0,
+      based_on_message: 0,
+      based_on_fingerprint: '',
+      revision: 0,
+      last_changes: [],
+      entries: [
+        { ...e('甲', 'known'), id: 'kb_same' },
+        { ...e('乙', 'known'), id: 'kb_same' },
+      ],
+    });
+    const ids = out.entries.map(x => x.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+});
+
+describe('过期报告注入提示', () => {
+  it('stale 时头部说明这是上一次分析的结论', () => {
+    const out = renderKnowledgeInjectionDetailed(report([e('A', 'unknown', '材料到此为止', '不得引用', 5)]), {
+      stale: true,
+    });
+    expect(out.block).toContain('上一次分析');
+  });
+
+  it('报告新鲜时不出现该说明', () => {
+    const out = renderKnowledgeInjectionDetailed(report([e('A', 'unknown', '材料到此为止', '不得引用', 5)]));
+    expect(out.block).not.toContain('上一次分析');
   });
 });

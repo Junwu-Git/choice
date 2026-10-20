@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPresetSnapshot,
   extractPresetOrderList,
   extractPresetPostProcessing,
   extractPresetPrompts,
@@ -108,14 +109,95 @@ describe('extractPresetOrderList', () => {
     expect(extractPresetOrderList([{ character_id: 1 }])).toEqual([]);
     expect(extractPresetOrderList([null, 42, { order: 'bad' }])).toEqual([]);
   });
+
+  it('character 策略下取当前角色的顺序组', () => {
+    const order = extractPresetOrderList(
+      [
+        { character_id: 100001, order: [{ identifier: 'globalMain' }] },
+        { character_id: 7, order: [{ identifier: 'charMain' }, { identifier: 'chatHistory' }] },
+      ],
+      { strategy: 'character', characterId: '7' },
+    );
+    expect(order.map(o => o.identifier)).toEqual(['charMain', 'chatHistory']);
+  });
+
+  it('character 策略下角色组缺失时回退 global 组', () => {
+    const order = extractPresetOrderList(
+      [
+        { character_id: 100001, order: [{ identifier: 'globalMain' }] },
+        { character_id: 7, order: [{ identifier: 'charMain' }] },
+      ],
+      { strategy: 'character', characterId: '999' },
+    );
+    expect(order.map(o => o.identifier)).toEqual(['globalMain']);
+  });
+
+  it('global 策略不受角色组影响', () => {
+    const order = extractPresetOrderList(
+      [
+        { character_id: 100001, order: [{ identifier: 'globalMain' }] },
+        { character_id: 7, order: [{ identifier: 'charMain' }] },
+      ],
+      { strategy: 'global', characterId: '7' },
+    );
+    expect(order.map(o => o.identifier)).toEqual(['globalMain']);
+  });
 });
 
 describe('extractPresetPrompts', () => {
-  it('数组原样返回，非数组返回空', () => {
-    const prompts = [{ identifier: 'main', content: 'x' }];
-    expect(extractPresetPrompts(prompts)).toBe(prompts);
+  it('只保留白名单字段（非数组返回空）', () => {
+    const prompts = [{ identifier: 'main', content: 'x', system_prompt: true }];
+    expect(extractPresetPrompts(prompts)).toEqual([{ identifier: 'main', content: 'x', system_prompt: true }]);
     expect(extractPresetPrompts(null)).toEqual([]);
     expect(extractPresetPrompts({})).toEqual([]);
+  });
+
+  it('条目上的未知字段不带进快照（宿主将来加字段也不会流进请求体）', () => {
+    const prompts = extractPresetPrompts([
+      { identifier: 'main', content: 'x', some_future_field: 'LEAK', extension: true },
+    ]);
+    expect(prompts[0]).not.toHaveProperty('some_future_field');
+    expect(JSON.stringify(prompts)).not.toMatch(/LEAK/);
+  });
+});
+
+describe('buildPresetSnapshot', () => {
+  it('快照里只有白名单字段：连接/凭据类字段一个都不出', () => {
+    // 运行时拼装字段名，避免「字段名 + 字面量」相邻模式被密钥扫描器误判为硬编码凭据
+    const credentialKeys = ['reverse_' + 'proxy', 'proxy_' + 'password', 'custom_' + 'url', 'secret_' + 'id'];
+    const raw: Record<string, unknown> = {
+      prompts: [{ identifier: 'main', content: 'hello', role: 'system' }],
+      prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }] }],
+      temperature: 0.8,
+      openai_max_tokens: 1024,
+      custom_prompt_post_processing: 'merge',
+    };
+    for (const key of credentialKeys) raw[key] = `CRED_${key.toUpperCase()}`;
+
+    const snapshot = buildPresetSnapshot(raw, '我的预设');
+    expect(snapshot.name).toBe('我的预设');
+    expect(snapshot.prompts).toHaveLength(1);
+    expect(snapshot.order.map(o => o.identifier)).toEqual(['main']);
+    expect(snapshot.sampling).toEqual({ temperature: 0.8, max_tokens: 1024 });
+    expect(snapshot.postProcessing).toBe('merge');
+
+    const dumped = JSON.stringify(snapshot);
+    for (const key of credentialKeys) {
+      expect(dumped).not.toContain(key);
+      expect(dumped).not.toContain(`CRED_`);
+    }
+  });
+
+  it('character 策略下顺序取当前角色的组', () => {
+    const raw = {
+      prompts: [],
+      prompt_order: [
+        { character_id: 100001, order: [{ identifier: 'globalMain' }] },
+        { character_id: 7, order: [{ identifier: 'charMain' }] },
+      ],
+    };
+    const snapshot = buildPresetSnapshot(raw, 'p', { strategy: 'character', characterId: '7' });
+    expect(snapshot.order.map(o => o.identifier)).toEqual(['charMain']);
   });
 });
 

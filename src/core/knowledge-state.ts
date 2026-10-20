@@ -72,6 +72,26 @@ export function takeSnapshot(): AnalysisSnapshot {
   };
 }
 
+/** 落库守卫用的轻量快照：只要四个标量，不复制 entries。
+ *
+ *  守卫只比对「聊天身份 / 内容指纹 / 修订号」，而面板可能已把表撑到 60 条——
+ *  每次落库都深拷贝整表是纯浪费（请求前的完整快照才是需要 entries 的那个）。 */
+export function takeGuardSnapshot(): {
+  chatIdentity: string;
+  messageCount: number;
+  fingerprint: string;
+  revision: number;
+} {
+  const messages = currentChat();
+  const report = useChatSettingsStore().settings.knowledge_report;
+  return {
+    chatIdentity: snapshotChatIdentity(),
+    messageCount: messages.length,
+    fingerprint: computeChatFingerprint(messages),
+    revision: report.revision,
+  };
+}
+
 /** 报告是否落后于当前聊天：有指纹时只比指纹（隐藏楼层变动不触发重跑），
  *  旧报告没有指纹（升级前的存档）时回退到楼层数比较。
  *  只有手动条目（从未分析，based_on_message=0）视为过期，让自动刷新建立基准；
@@ -116,7 +136,7 @@ export function commitKnowledgePatches(
   rebuild = false,
 ): CommitOutcome {
   // 守卫只需四项标量，不复制 entries（面板可能已把表撑到 60 条）
-  const after = takeSnapshot();
+  const after = takeGuardSnapshot();
   const rejected = checkCommitGuards(snapshot, after);
   if (rejected) return rejected;
 

@@ -13,6 +13,7 @@ import { getRegexedString, regex_placement } from '@sillytavern/scripts/extensio
 import { uuidv4 } from '@sillytavern/scripts/utils';
 import { power_user } from '@sillytavern/scripts/power-user';
 import { resolvePool } from '@/core/pool-resolver';
+import { applySamplingFloor } from '@/core/sampling';
 import { resolveCount } from '@/core/resolve-count';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg, type PresetScriptLayer } from '@/core/api-client';
 import { resolvePresetPostProcessing } from '@/core/st-preset-scripts';
@@ -24,17 +25,32 @@ import {
 import { renderPresetTask, renderMemorySummaryContent, MEMORY_SUMMARY_TAG } from '@/core/preset-task';
 import { readActiveStPreset, type StPresetSnapshot } from '@/core/st-preset-source';
 import { dedupOptions } from '@/core/option-dedup';
-import { buildSceneText, injectKnowledgeBlock, renderKnowledgeInjectionDetailed } from '@/core/knowledge-injection';
-import { commitKnowledgePatches, isKnowledgeReportStale, knowledgeState, takeSnapshot } from '@/core/knowledge-state';
+import {
+  buildSceneText,
+  injectKnowledgeBlock,
+  renderKnowledgeInjectionDetailed,
+  shouldInjectKnowledge,
+} from '@/core/knowledge-injection';
+import {
+  commitKnowledgePatches,
+  isKnowledgeReportStale,
+  knowledgeState,
+  snapshotChatIdentity,
+  takeSnapshot,
+} from '@/core/knowledge-state';
 import {
   adaptPromptForMerge,
   buildMergedKnowledgeTask,
   isModuleDroppedByMerge,
   needsMergeAdaptation,
   parseMergedKnowledge,
+  rewriteTagContractOnly,
   stripMergedKnowledge,
 } from '@/core/knowledge-task';
-import { renderExistingTable } from '@/core/knowledge-report';
+import { renderExistingTable, computeChatFingerprint } from '@/core/knowledge-report';
+import { waitForHostIdle } from '@/core/host-generation';
+import { calcRegexDepth } from '@/core/history-window';
+import { appendRuntimeLineTo } from '@/core/runtime-line';
 import { matchOptionToEntry, prepareMatchSignals } from '@/core/option-attribution';
 import { parseOptions, STRIP_REASONING_TAGS_RE, stripTrailingCommas } from '@/core/option-parse';
 import { getExternalSummary } from '@/core/memory-summary-bridge';
@@ -66,7 +82,13 @@ export type { PromptModule };
 
 type GenerateTarget = { messageId: number; swipeId: number };
 
-export const generatorState = reactive({ loading: false, generationId: null as string | null });
+export const generatorState = reactive({
+  loading: false,
+  generationId: null as string | null,
+  /** 本次生成是否走了「知识边界合并请求」：在途期间独立分析要挂起，
+   *  否则两次请求争同一个修订号，后到者被守卫丢弃、白耗一次上下文。 */
+  mergeActive: false,
+});
 
 // 取消标志：模块级单例。generateOptions 串行（generatorState.loading 守卫互斥），
 // cancelGeneration 触发 genController.abort() 使在途 await 立即 reject → finally 紧随复位，
@@ -82,13 +104,31 @@ export const lastOptionsGeneratedAt = ref(0);
 export const lastBuildMessages = ref<ChatMsg[] | undefined>(undefined);
 
 /** 最近一次知识边界注入的统计（调试用）：注入了哪些条目、多少条因预算省略。
- *  undefined = 本轮未注入（功能关闭 / 报告为空）。 */
+ *  undefined = 本轮未注入（功能关闭 / 报告为空 / 合并模式改由合并任务带表）。 */
 export const lastKnowledgeInjection = ref<
   | {
       chosen: { id: string; topic: string; status: string }[];
       omitted: number;
       usedChars: number;
       total: number;
+    }
+  | undefined
+>(undefined);
+
+/** 世界书构建计数（调试用）：builds = 真正扫过世界书的次数，hits = 命中缓存的次数。
+ *  正常一轮回复应当 builds=1、hits≤1（选项生成与知识分析共用同一份分桶）。 */
+export const wiStats = reactive({ builds: 0, hits: 0 });
+
+/** 最近一次生成的上下文概览（调试页展示）：哪些开关生效、请求怎么发的。 */
+export const lastGenerationContext = ref<
+  | {
+      promptSource: 'extension' | 'st_preset';
+      knowledgeMerge: boolean;
+      knowledgeInjected: boolean;
+      knowledgeStale: boolean;
+      samplingMaxTokens?: number;
+      postProcessing?: string;
+      scriptLayer: string;
     }
   | undefined
 >(undefined);
@@ -175,16 +215,28 @@ const sub = (t: string, c: Ctx) =>
     .replaceAll('{{enrich_person}}', c.enrichPerson)
     .replaceAll('{{prev_options}}', c.prevOptions);
 
+/** 消息构建产物：消息数组 + 任务消息锚点。
+ *
+ *  任务消息 = 承担最终指令的那条 user 消息（扩展模式的 option_task / enrich_prompt，
+ *  预设模式的内置任务 user）。知识边界注入、骰式行、合并任务都要落在它附近；
+ *  靠「最后一条 user」猜会在 option_task 被禁用/重排时插进聊天历史中间。 */
+export type BuiltMessages = {
+  messages: ChatMsg[];
+  taskUser: ChatMsg | null;
+};
+
 export const buildMessages = async (
   modules: PromptModule[],
   ctx: Ctx,
-  wi: WorldInfoGlobalSettings,
   contextRounds: number,
   isEnrich = false,
   /** 合并知识边界：把提示词里「只许 thinking + options 两个标签」的写法改写成三块。
    *  不整段跳过模块——system_prompt / core_rules 里有必需的规则，删掉会丢约束。 */
   adaptForMerge = false,
-): Promise<ChatMsg[]> => {
+  /** 已构建好的世界书分桶（必传：构建要走 buildWICached 的缓存/排他窗口/主生成闸门，
+   *  自行构建会绕过它们——EJS（setvar 等副作用）会双跑一轮）。 */
+  wiBuckets: WIBuckets | null,
+): Promise<BuiltMessages> => {
   const gs = useGlobalSettingsStore();
   const pr = gs.settings.prompt_rules;
   const augmentedCtx: Ctx = {
@@ -197,12 +249,15 @@ export const buildMessages = async (
     enrichPerson: pr.enrich_person || '第三人称',
   };
   const msgs: ChatMsg[] = [];
-  const wiBuckets = wi.enabled ? await buildWI() : null;
+  // 世界书分桶由调用方构建并传入（buildWICached）：没有启用任何世界书相关模块时调用方传 null，
+  // 省一次 getWorldInfoPrompt + EJS 渲染
   // 记忆摘要的正文边界（窗口首楼原始下标），模块循环前算一次——摘要模块在用户可调序的
   // 模块列表里，可能在 chat_history 之前渲染，不能依赖后者先算好
   const histStart = historyWindowStart(contextRounds);
 
   const sorted = [...modules].sort((a, b) => a.order - b.order);
+  /** 任务消息引用：option_task / enrich_prompt 走 default 分支，这里登记 */
+  let taskUser: ChatMsg | null = null;
 
   for (const mod of sorted) {
     if (!mod.enabled) continue;
@@ -313,7 +368,15 @@ export const buildMessages = async (
         // v69：模块一律按其自身 role 发送（assistant_ack/assistant_thinking/enrich_assistant
         // 不再特殊处理，预填充开关已移除）。想用预填充把模块角色改为 assistant 即可。
         const content = substituteParams(sub(modContent, augmentedCtx));
-        if (content) msgs.push({ role: mod.role, content });
+        if (content) {
+          const msg: ChatMsg = { role: mod.role, content };
+          msgs.push(msg);
+          // 任务模块（option_task / enrich_prompt）= 承担最终指令的那条 user 消息：
+          // 知识边界块、骰式行、合并任务都以它为锚点，避免插进聊天历史中间
+          if (mod.role === 'user' && (mod.id === 'option_task' || mod.id === 'enrich_prompt')) {
+            taskUser = msg;
+          }
+        }
         break;
       }
     }
@@ -324,26 +387,27 @@ export const buildMessages = async (
   // 同为 user 时会把「生成任务」混进历史正文——user 角色消息在提示词里代表独立的输入
   // 边界，合并会模糊"这是用户说的话"还是"这是任务指令"；system/assistant 相邻（多为
   // 内置模块拼接）仍合并以减少首尾噪音
+  // 合并时保留原对象引用（不复制）：任务消息锚点靠引用定位，复制会丢
   const merged: ChatMsg[] = [];
   for (const msg of msgs) {
     const last = merged[merged.length - 1];
     if (last && last.role === msg.role && msg.role !== 'user') {
       last.content = last.content + '\n\n' + msg.content;
     } else {
-      merged.push({ ...msg });
+      merged.push(msg);
     }
   }
   lastBuildMessages.value = structuredClone(merged);
-  return merged;
+  return { messages: merged, taskUser };
 };
 
 /** 预设模式下由本扩展承担的槽位内容：预设决定"这些资料放在哪、什么顺序"，
  *  内容由本扩展按当前场景实时取（与酒馆主生成同源：世界书/历史/角色卡/persona）。 */
 const buildPresetSlots = async (
-  wi: WorldInfoGlobalSettings,
   contextRounds: number,
+  /** 已构建好的世界书分桶（必传，理由同 buildMessages）。 */
+  wiBuckets: WIBuckets | null,
 ): Promise<{ slots: PresetSlotContents; depthInjections: InChatInjection[] }> => {
-  const wiBuckets = wi.enabled ? await buildWI() : null;
   const ch = getStCharacter(this_chid);
   const fields = readCharacterFields(ch);
   const personaDesc = power_user?.persona_description ?? '';
@@ -389,6 +453,20 @@ const buildPresetSlots = async (
 /** 预设模式的任务区起手说明：压制预设"续写正文/扮演角色"的定位与本轮任务的冲突。 */
 const PRESET_TASK_BRIDGE = `【本轮任务说明】以上是本次会话的背景资料与写作规则，请全部作为参考吸收；但本轮不续写正文、不扮演角色。本轮的具体任务与输出格式以下方内容为准（当前场景即最后一条对话消息）。`;
 
+/** 合并模式下改写预设条目自身的输出标签契约。
+ *
+ *  预设是用户自己的叙事资料，里面常带「只输出 <thinking> 与 <options> 两个标签」这类
+ *  格式约定；合并模式要额外输出 <knowledge_patch>，两者并存会让模型无所适从。
+ *  rewriteTagContractOnly 只匹配已知的契约句式，未命中即原样返回，叙事内容不受影响。 */
+const rewritePresetTagContract = (preset: StPresetSnapshot): StPresetSnapshot => ({
+  ...preset,
+  prompts: preset.prompts.map(p => {
+    const content = String(p.content ?? '');
+    if (!content.includes('<options>')) return p;
+    return { ...p, content: rewriteTagContractOnly(content) };
+  }),
+});
+
 /** 预设模式的组装：**只用酒馆预设 + 内置任务指令，完全不读本扩展的提示词模块**。
  *  预设提供叙事上下文（世界观/文风/角色扮演规则），本扩展只补一份自包含的任务契约
  *  （输出格式 <options> JSON、防全知、难度标注、条目池素材）——二者职责分离、互不糅合。
@@ -396,14 +474,15 @@ const PRESET_TASK_BRIDGE = `【本轮任务说明】以上是本次会话的背�
  *  的模块不产生任何效果（UI 已明示），这是刻意的设计而非缺陷。 */
 export const buildPresetModeMessages = async (
   ctx: Ctx,
-  wi: WorldInfoGlobalSettings,
   contextRounds: number,
   preset: StPresetSnapshot,
   isEnrich = false,
   /** 合并知识边界：放宽标签契约，允许额外的 <knowledge_patch> 块。 */
   allowKnowledgePatch = false,
-): Promise<ChatMsg[]> => {
-  const { slots, depthInjections } = await buildPresetSlots(wi, contextRounds);
+  /** 已构建好的世界书分桶（必传，理由同 buildMessages）。 */
+  wiBuckets: WIBuckets | null,
+): Promise<BuiltMessages> => {
+  const { slots, depthInjections } = await buildPresetSlots(contextRounds, wiBuckets);
   const gs = useGlobalSettingsStore();
   const pr = gs.settings.prompt_rules;
   // 记忆摘要（预设模式补缺）：外部记忆系统把摘要注入酒馆正文管线（setExtensionPrompt），
@@ -424,12 +503,17 @@ export const buildPresetModeMessages = async (
       });
     }
   }
-  const presetMsgs = expandPresetMessages(preset, slots, {
+  // 合并模式：预设条目自身可能带输出格式契约（如「只输出 <thinking> 与 <options> 两个标签」），
+  // 与合并任务的三标签口径直接冲突。只改契约句，叙事内容一字不动。
+  const presetForBuild = allowKnowledgePatch ? rewritePresetTagContract(preset) : preset;
+  const presetMsgs = expandPresetMessages(presetForBuild, slots, {
     generationType: 'normal',
     substitute: text => substituteParams(text),
     extraInjections: depthInjections,
     // 插件侧覆盖层：不改酒馆预设文件的前提下禁用/替换预设条目（PromptEditor「预设条目」区块）
     overrides: gs.settings.st_preset_overrides,
+    // 覆盖层按预设名隔离：新键 `预设名::条目id`，旧键仍作全局回退
+    presetName: preset.name,
   });
   const msgs: ChatMsg[] = [...presetMsgs];
   // 兜底：深度注入落在历史块内部，历史块为空或预设缺 chatHistory 槽位时注入被整体丢弃——
@@ -460,20 +544,22 @@ export const buildPresetModeMessages = async (
   // 任务指令是直接 push 的，必须在这里同样替换——否则模型看到字面量 {{user}}，
   // 指代规则「第一次写 {{user}} 的名字」也会落空。
   msgs.push({ role: 'system', content: substituteParams(task.system) });
-  msgs.push({ role: 'user', content: substituteParams(task.user) });
+  // 任务 user 消息 = 预设模式的任务锚点（知识块/骰式行/合并任务都落在它附近）
+  const taskUser: ChatMsg = { role: 'user', content: substituteParams(task.user) };
+  msgs.push(taskUser);
 
-  // 合并相邻同 role 消息（user 不合并，理由同 buildMessages）
+  // 合并相邻同 role 消息（user 不合并，理由同 buildMessages；保留原对象引用以便定位锚点）
   const merged: ChatMsg[] = [];
   for (const msg of msgs) {
     const last = merged[merged.length - 1];
     if (last && last.role === msg.role && msg.role !== 'user') {
       last.content = last.content + '\n\n' + msg.content;
     } else {
-      merged.push({ ...msg });
+      merged.push(msg);
     }
   }
   lastBuildMessages.value = structuredClone(merged);
-  return merged;
+  return { messages: merged, taskUser };
 };
 
 /**
@@ -512,9 +598,15 @@ export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true,
   // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
   // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
   // 带原始下标是为了增量分析能在截尾后继续前移起点（不能先 slice 再 indexOf，重复文本会错位）。
-  const visible = chatArr.map((m: any, index: number) => ({ m, index })).filter(x => !x.m.is_system);
+  // pos = 该消息在「全部可见消息」中的位置：酒馆正则的 depth 以整段可见聊天为基准
+  // （script.js:4445），轮数模式截尾后仍按全量算，才与主生成一致（见 history-window.ts）
+  const visible = chatArr
+    .map((m: any, index: number) => ({ m, index }))
+    .filter(x => !x.m.is_system)
+    .map((x, pos) => ({ ...x, pos }));
   const picked = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
-  const msgs = picked.filter(x => x.index >= startRawIndex).map(x => x.m);
+  const pickedRaw = picked.filter(x => x.index >= startRawIndex);
+  const msgs = pickedRaw.map(x => x.m);
   const rules = gs.sortedEnabledFilterRules;
   const h: ChatMsg[] = [];
   let lastAssistantIdx = -1;
@@ -522,8 +614,6 @@ export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true,
   // 必须先把消息裁剪到只剩标签区间，之后现有 tag/regex 规则在裁剪结果上继续跑——
   // 这样"提取后再用标签过滤滤掉提取内容里的子标签"天然成立，且无提取规则的用户行为零变化
   const extractRules = rules.filter(r => r.type === 'extract');
-  // depth 相对当前迭代数组：0=距末尾最近一条，对齐 script.js:4445（rounds 截尾取自末尾，
-  // 截尾数组内 depth 与全量未隐藏数组一致，无需特判）
   const total = msgs.length;
   for (let i = 0; i < total; i++) {
     const m = msgs[i];
@@ -535,8 +625,12 @@ export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true,
     // 会让相邻 assistant 失去 user 分隔而"合并"，受此困扰的用户可关闭此开关只用本页过滤规则。
     const stRegexOn = gs.settings.filter_settings.st_regex_enabled;
     const placement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
+    // depth 按「全部可见消息」算（与酒馆主生成同口径），不按截尾后的窗口长度算：
+    // 轮数模式下窗口只有 N*2 条，用窗口长度会把同一条消息的 depth 抬高，
+    // minDepth/maxDepth 限定的正则会在两个链路里切在不同楼层
+    const regexDepth = calcRegexDepth(visible.length, pickedRaw[i].pos);
     let content = stRegexOn
-      ? getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: total - i - 1 })
+      ? getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: regexDepth })
       : String(m.mes ?? '');
     if (!content) continue;
     // 标签提取只作用于 AI 输出（assistant）：user 输入多为纯文本/对白，不含待提取的结构化
@@ -683,7 +777,9 @@ export const buildWI = async (): Promise<WIBuckets> => {
     // 但行动选项是独立 API 调用，沿用 8192 会让角色世界书的大条目先耗尽预算，
     // 导致额外启用的世界书 constant 条目在预算检查阶段被丢弃（"budget of N reached"）。
     // 这里放宽到较大上下文估算值，使预算不再成为额外世界书条目的瓶颈。
-    const maxCtx = 128000;
+    // 世界书预算 = 该值 × 酒馆 world_info_budget%。可配（见 WorldInfoGlobalSettings.scan_max_context）：
+    // 默认放宽到 128000，避免沿用主生成的 8k 上下文把额外启用的 constant 条目挤掉。
+    const maxCtx = gs.settings.world_info.scan_max_context || 128000;
 
     const result = await getWorldInfoPrompt(chatStrings, maxCtx, false, {
       trigger: 'normal',
@@ -899,6 +995,77 @@ export async function runWIExclWindow<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+/** 世界书构建缓存：同一轮回复里选项生成与知识分析各要一次世界书，
+ *  两次都会跑一遍 EJS 渲染——<% setvar %> 之类的副作用会被执行两次，
+ *  既白花一次 getWorldInfoPrompt，也可能把酒馆的聊天变量改出与主生成不一致的状态。
+ *  键覆盖「聊天内容 + 世界书参与范围 + 渲染开关」，任一变化即失效；
+ *  TTL 兜底 EJS 变量被主生成改写的情况（主生成结束后短时间内缓存就该作废）。 */
+const WI_CACHE_TTL_MS = 5000;
+let wiCache: { key: string; at: number; buckets: WIBuckets } | null = null;
+/** 在途构建：选项生成与知识分析并发时共用同一个 Promise，只扫一次世界书 */
+let wiPending: { key: string; promise: Promise<WIBuckets> } | null = null;
+
+/** 清空世界书缓存（切聊天时调用：聊天内容与参与范围都会变）。 */
+export const resetWICache = (): void => {
+  wiCache = null;
+  wiPending = null;
+};
+
+const wiCacheKey = (gwi: WorldInfoGlobalSettings, cwi: ChatSettings['world_info']): string => {
+  const ctx = window.SillyTavern?.getContext?.();
+  const chatArr = (ctx?.chat ?? []) as Array<{ mes?: unknown; is_system?: boolean; is_user?: boolean }>;
+  return JSON.stringify([
+    snapshotChatIdentity(),
+    computeChatFingerprint(chatArr),
+    gwi.enabled,
+    gwi.render_world_info_ejs,
+    gwi.scan_max_context,
+    cwi.excluded_books ?? [],
+    cwi.enabled_books ?? [],
+    cwi.book_entry_modes ?? {},
+    cwi.book_entry_overrides ?? {},
+  ]);
+};
+
+/** 构建世界书分桶（缓存 + 排他窗口 + 主生成闸门）。
+ *
+ *  排他窗口从「包裹整段消息构建」收窄到「只包世界书构建」：消息构建不再读酒馆
+ *  世界书状态，没必要让临时改写持续到消息拼好为止。 */
+export const buildWICached = async (
+  gwi: WorldInfoGlobalSettings,
+  cwi: ChatSettings['world_info'],
+): Promise<WIBuckets | null> => {
+  if (!gwi.enabled) return null;
+  const key = wiCacheKey(gwi, cwi);
+  const cached = wiCache;
+  if (cached && cached.key === key && Date.now() - cached.at < WI_CACHE_TTL_MS) {
+    wiStats.hits += 1;
+    return cached.buckets;
+  }
+  if (wiPending?.key === key) return wiPending.promise;
+  const promise = runWIExclWindow(async () => {
+    // 主生成在途时先等它结束：窗口会临时改写酒馆全局世界书状态，
+    // 与主生成并发会让主请求读到被改写的书表（详见 host-generation.ts）
+    await waitForHostIdle();
+    const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
+    const restore = await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides);
+    try {
+      const buckets = await buildWI();
+      wiStats.builds += 1;
+      wiCache = { key, at: Date.now(), buckets };
+      return buckets;
+    } finally {
+      restore?.restore();
+    }
+  });
+  wiPending = { key, promise };
+  try {
+    return await promise;
+  } finally {
+    if (wiPending?.promise === promise) wiPending = null;
+  }
+};
+
 /** parseOptions 已整体迁至 @/core/option-parse（纯函数、可单测）——此处 re-export 保持
  *  既有 import 点（enrich-input 等）零改动。迁移动机：提取起点出过实测事故，必须有
  *  vitest 覆盖，而 generator 依赖酒馆运行时无法直接单测。 */
@@ -931,6 +1098,12 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
   try {
+    // API 先查：未配置 API 时直接返回——否则会白跑一次世界书扫描 + EJS 渲染才发现发不出去
+    const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
+    if (!api) {
+      toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
+      return null;
+    }
     const count = resolveCount(gs.settings.global_count_mode);
     // 抽取参数读全局 settings.generation（v35 起从 per-pool-config 收归全局）：条目池配置
     // 只管条目引用，切换池配置严禁带动生成参数（历史耦合：本处读生效池配置，切池配置
@@ -1041,41 +1214,41 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // thinking + options，会把 knowledge_patch 挤掉）。stale 很关键：报告新鲜时没有
     // 增量可算，追加任务只会白增输出长度。
     // 快照在发请求前拍下，落库时用同一套并发守卫（见 knowledge-state）。
+    // 报告是否落后（合并判定与注入提示共用，避免重复算一次聊天指纹）
+    const knowledgeStale = gs.settings.knowledge.enabled ? isKnowledgeReportStale() : false;
     const knowledgeMerge =
       gs.settings.knowledge.enabled &&
       gs.settings.knowledge.auto_analyze &&
       gs.settings.knowledge.merge_with_generation &&
-      isKnowledgeReportStale()
+      knowledgeStale
         ? takeSnapshot()
         : null;
+    // 合并请求在途标记：独立分析据此挂起（见 knowledge-analysis.scheduleKnowledgeRefresh），
+    // 等本次生成结束再补跑，避免两次请求争同一个修订号
+    generatorState.mergeActive = !!knowledgeMerge;
 
-    // WI 排他窗口（互斥 + 即用即还，见 runWIExclWindow）：只有消息构建读取酒馆世界书，后续
-    // 副 API 直连不再读——构建完成立即还原，不再持有到请求结束。此前 applyWIExcl 悬在 try 外
-    // （抛错绕过 finally、loading 永久卡死），且排他态持有整个生成期（酒馆 WI 面板读到临时改写态）
-    const messages = await runWIExclWindow(async () => {
-      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-      const wiRestore = gwi.enabled
-        ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-        : null;
-      try {
-        return presetSnapshot
-          ? await buildPresetModeMessages(c, gwi, rules.context_rounds, presetSnapshot, false, !!knowledgeMerge)
-          : await buildMessages(enabledModules, c, gwi, rules.context_rounds, false, !!knowledgeMerge);
-      } finally {
-        wiRestore?.restore();
-      }
-    });
+    // 世界书构建（缓存 + 排他窗口 + 主生成闸门，见 buildWICached）：
+    // 排他窗口只包住「读酒馆世界书」这一段，构建完立即还原；消息构建不再读世界书状态。
+    // 知识分析链路复用同一份缓存：同一轮回复不再跑两遍 EJS（setvar 副作用会双跑）。
+    // 扩展模式没启用任何世界书模块时整段跳过（省一次 getWorldInfoPrompt + EJS 渲染）；
+    // 预设模式始终要世界书（槽位 + 深度注入都取自它）。
+    const needsWI = presetSnapshot
+      ? true
+      : enabledModules.some(
+          m =>
+            m.enabled && ['world_info_before', 'world_info_after', 'wi_depth_before', 'wi_depth_after'].includes(m.id),
+        );
+    const wiBuckets = needsWI ? await buildWICached(gwi, cwi) : null;
+    const { messages, taskUser } = presetSnapshot
+      ? await buildPresetModeMessages(c, rules.context_rounds, presetSnapshot, false, !!knowledgeMerge, wiBuckets)
+      : await buildMessages(enabledModules, c, rules.context_rounds, false, !!knowledgeMerge, wiBuckets);
 
-    // 运行时追加指令统一出口（v61 骰式行先例）：追加到末条 user 消息，避免「system 紧随
-    // user」的次序噪音；末条非 user 才另起 system。骰式标注行/COC 教学行共用。
+    // 运行时追加指令统一出口（v61 骰式行先例）：**排在提示词末尾**——
+    // 合并任务声明的输出契约（thinking → knowledge_patch → options）必须是模型读到的
+    // 最后一条指令，否则会被后面的模块（默认是 assistant_thinking「再输出 <options>」）冲淡。
+    // 落点规则见 core/runtime-line.ts（有单测锁住：既不插进聊天历史，也不被后置模块盖过）。
     const appendRuntimeLine = (line: string): void => {
-      if (messages.length === 0) return;
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg.role === 'user') {
-        lastMsg.content += `\n\n${line}`;
-      } else {
-        messages.push({ role: 'system', content: line });
-      }
+      appendRuntimeLineTo(messages, line, taskUser);
     };
 
     // 知识边界报告注入：把上一轮分析出的「已知/存疑/未知」表作为 system 参考块插到任务
@@ -1083,16 +1256,25 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 两条来源必须共用同一个注入点才都生效。报告为空（从未分析）时零变化。
     // 宏必须在此替换：注入发生在模块管线的 substituteParams 之后，不替换会把 {{user}}
     // 原样发给模型（酒馆后端不处理请求体里的宏）。
-    if (gs.settings.knowledge.enabled && gs.settings.knowledge.inject_enabled) {
+    // 合并模式不注入：合并任务自带同一张表并要求「先更新边界再生成」，再注入一份旧表
+    // 会出现两份互相矛盾的结论（注入块说「必须遵守」，合并任务说「先改再写」）。
+    let knowledgeInjected = false;
+    if (
+      gs.settings.knowledge.enabled &&
+      shouldInjectKnowledge(gs.settings.knowledge.inject_enabled, !!knowledgeMerge)
+    ) {
       // chat 的导出类型是 TavernHelper 子集（message/role），运行时是 ST 原生楼层
       // （mes/is_user/is_system）——与 panel-mount 同款断言
       const injection = renderKnowledgeInjectionDetailed(cs.settings.knowledge_report, {
         sceneText: buildSceneText(chat as unknown as StChatMessage[], 4),
         maxEntries: gs.settings.knowledge.inject_max_entries,
         charBudget: gs.settings.knowledge.inject_char_budget,
+        // 报告落后于当前聊天时说明一句：旧结论仍作约束，但与当前场景冲突时以场景为准
+        stale: knowledgeStale,
       });
       if (injection.block) {
-        injectKnowledgeBlock(messages, substituteParams(injection.block));
+        injectKnowledgeBlock(messages, substituteParams(injection.block), taskUser);
+        knowledgeInjected = true;
         // 调试页据此核对「注入了哪些条目、哪些因预算省略」
         lastKnowledgeInjection.value = {
           chosen: injection.chosen.map(e => ({ id: e.id, topic: e.topic, status: e.status })),
@@ -1103,6 +1285,9 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         // 调试页快照在 buildMessages 内就已拍下（不含本次注入），此处覆盖为注入后的最终形态
         lastBuildMessages.value = structuredClone(messages);
       }
+    } else if (knowledgeMerge) {
+      // 合并模式不注入：调试页不要留着上一轮的报告冒充本轮
+      lastKnowledgeInjection.value = undefined;
     }
 
     // v61 骰式表达式（dice.allow_formula）：开启时向 option_task user 消息追加一句骰式标注
@@ -1139,20 +1324,15 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
       lastBuildMessages.value = structuredClone(messages);
     }
 
-    const api = resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
-    if (!api) {
-      toastr.error(t`请先在设置中配置 API（API 地址 + 模型），然后重新生成`);
-      return null;
-    }
+    // 调试页快照统一在这里拍：注入/合并两条分支各自拍过快照，但只开骰式行
+    // （dice.allow_formula / low_roll）时拍到的仍是追加前的形态——调试页会与真实请求对不上
+    lastBuildMessages.value = structuredClone(messages);
 
-    // 预设采样跟随（st_preset_sampling）：只覆盖采样项，连接层仍用副 API 配置
+    // 预设采样跟随（st_preset_sampling）：只覆盖采样项，连接层仍用副 API 配置。
+    // max_tokens 另套输出下限：预设为正文续写设计，值往往只有几百，直接沿用会把
+    // <options> 截在半截（解析不出任何选项）。合并模式额外为补丁块预留 token。
     let sampling = presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined;
-    // 合并模式要多输出一块知识补丁：max_tokens 若沿用预设值，最可能被截断的是末尾的
-    // <options>（补丁在它之前，反而能保住）——补丁写成了、选项没了，用户看到的是生成失败。
-    // 预留 800 token 给补丁块；预设没声明 max_tokens 时不猜（让上游用自己的默认值）。
-    if (knowledgeMerge && sampling?.max_tokens) {
-      sampling = { ...sampling, max_tokens: sampling.max_tokens + 800 };
-    }
+    sampling = applySamplingFloor(sampling, count, rules.option_max_chars, knowledgeMerge ? 800 : 0);
     // 提示词后处理透传（取值链：预设框架 ForcedPostProcessing → 预设顶层 → 酒馆实时）
     // 与脚本层档位——仅预设模式；扩展模式两者恒不生效
     const postProcessing =
@@ -1160,6 +1340,17 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
         ? resolvePresetPostProcessing(gs.settings.st_preset_name, presetSnapshot.postProcessing)
         : undefined;
     const scriptLayer: PresetScriptLayer = presetSnapshot ? gs.settings.st_preset_script_processing : 'off';
+
+    // 调试页：本轮请求的实际形态（哪些开关生效、输出上限取自谁）
+    lastGenerationContext.value = {
+      promptSource: presetSnapshot ? 'st_preset' : 'extension',
+      knowledgeMerge: !!knowledgeMerge,
+      knowledgeInjected,
+      knowledgeStale,
+      samplingMaxTokens: sampling?.max_tokens,
+      postProcessing,
+      scriptLayer,
+    };
 
     // 取消早退：构建完成后、发请求前再查一次（controller 已在入口创建，abort 已生效）
     if (cancelled) return null;
@@ -1330,6 +1521,7 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     genController = null;
     generatorState.loading = false;
     generatorState.generationId = null;
+    generatorState.mergeActive = false;
   }
 }
 

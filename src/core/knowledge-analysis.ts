@@ -21,14 +21,7 @@ import { power_user } from '@sillytavern/scripts/power-user';
 import { substituteParams, this_chid } from '@sillytavern/script';
 import toastr from 'toastr';
 import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/core/api-client';
-import {
-  applyWIExcl,
-  buildChatHistory,
-  buildWI,
-  historyWindowStart,
-  resolveWIParticipation,
-  runWIExclWindow,
-} from '@/core/generator';
+import { buildChatHistory, buildWICached, generatorState, historyWindowStart } from '@/core/generator';
 import { getExternalSummary } from '@/core/memory-summary-bridge';
 import { renderMemorySummaryContent } from '@/core/preset-task';
 import { parseKnowledgeResponse, renderExistingTable, resolveAnalysisHistoryStart } from '@/core/knowledge-report';
@@ -61,6 +54,9 @@ let timerDelta = false;
 let pendingReason: RefreshReason | null = null;
 let pendingForce = false;
 let pendingDelta = false;
+/** 合并请求在途时挂起的事件：合并请求结束后由生成链路调用 flush 补跑
+ *  （knowledge-analysis 不能反向 import generator：generator 已依赖本模块的快照语义）。 */
+let mergePending: { reason: RefreshReason; force: boolean; delta: boolean } | null = null;
 
 type RefreshReason = 'received' | 'edited' | 'deleted' | 'swiped' | 'loaded';
 
@@ -83,71 +79,63 @@ async function buildAnalysisMessages(
   const gwi = gs.settings.world_info;
   const cwi = cs.settings.world_info;
 
-  return runWIExclWindow(async () => {
-    const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-    const wiRestore = gwi.enabled
-      ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-      : null;
-    try {
-      const msgs: ChatMsg[] = [{ role: 'system', content: substituteParams(KNOWLEDGE_SYSTEM_PROMPT) }];
+  // 世界书分桶走缓存（buildWICached）：与选项生成共用同一份结果——
+  // 同一轮回复不再跑两遍 getWorldInfoPrompt / EJS（<% setvar %> 副作用会双跑，
+  // 既白花一次扫描，也可能把酒馆变量改出与主生成不一致的状态）
+  const wi = await buildWICached(gwi, cwi);
+  const msgs: ChatMsg[] = [{ role: 'system', content: substituteParams(KNOWLEDGE_SYSTEM_PROMPT) }];
 
-      const persona = power_user?.persona_description;
-      if (persona)
-        msgs.push({
-          role: 'system',
-          content: substituteParams(
-            `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${persona}\n</user_persona>`,
-          ),
-        });
+  const persona = power_user?.persona_description;
+  if (persona)
+    msgs.push({
+      role: 'system',
+      content: substituteParams(
+        `<user_persona>\n以下是用户本人（用户=主角=user）的人物设定：\n${persona}\n</user_persona>`,
+      ),
+    });
 
-      // 世界书只构建一次：buildWI 内部会跑 EJS，含 setvar 的条目每次执行都可能改变变量状态
-      const wi = gwi.enabled ? await buildWI() : null;
-      if (wi) {
-        const before = [wi.before, wi.anBefore, wi.em].filter(Boolean).join('\n\n');
-        if (before) msgs.push({ role: 'system', content: before });
-        // 与生成侧同源：anAfter 并入 after 桶（buildMessages 的 world_info_after 同款），
-        // 深度条目按 depth 两桶分别落在历史前后，否则分析侧会漏掉「角色当前状态」这类
-        // 最常写在 atDepth 条目里的信息。
-        const after = [wi.after, wi.anAfter].filter(Boolean).join('\n\n');
-        if (after) msgs.push({ role: 'system', content: after });
-        if (wi.depthBefore) msgs.push({ role: 'system', content: wi.depthBefore });
-      }
+  if (wi) {
+    const before = [wi.before, wi.anBefore, wi.em].filter(Boolean).join('\n\n');
+    if (before) msgs.push({ role: 'system', content: before });
+    // 与生成侧同源：anAfter 并入 after 桶（buildMessages 的 world_info_after 同款），
+    // 深度条目按 depth 两桶分别落在历史前后，否则分析侧会漏掉「角色当前状态」这类
+    // 最常写在 atDepth 条目里的信息。
+    const after = [wi.after, wi.anAfter].filter(Boolean).join('\n\n');
+    if (after) msgs.push({ role: 'system', content: after });
+    if (wi.depthBefore) msgs.push({ role: 'system', content: wi.depthBefore });
+  }
 
-      // 角色设定三字段与 buildMessages 同源同法（V1/浅卡走 readCharacterFields 兜底）
-      for (const field of Object.values(readCharacterFields(getStCharacter(this_chid)))) {
-        if (field) msgs.push({ role: 'system', content: substituteParams(field) });
-      }
+  // 角色设定三字段与 buildMessages 同源同法（V1/浅卡走 readCharacterFields 兜底）
+  for (const field of Object.values(readCharacterFields(getStCharacter(this_chid)))) {
+    if (field) msgs.push({ role: 'system', content: substituteParams(field) });
+  }
 
-      // 摘要层（若外部记忆系统可用）：补上「已离开窗口的旧剧情」。
-      // 增量分析靠 existing_knowledge_table 保留旧结论，但模型看不到出处时无法判断
-      // 新剧情是否推翻旧条目；摘要正是这部分的压缩记录，与正文窗口 [start, 末尾) 零重复。
-      // 增量模式下 historyStart 前移到上次分析处，摘要边界随之同步，仍保持零重复。
-      const summary = getExternalSummary(historyStart);
-      if (summary) msgs.push({ role: 'system', content: renderMemorySummaryContent(summary) });
+  // 摘要层（若外部记忆系统可用）：补上「已离开窗口的旧剧情」。
+  // 增量分析靠 existing_knowledge_table 保留旧结论，但模型看不到出处时无法判断
+  // 新剧情是否推翻旧条目；摘要正是这部分的压缩记录，与正文窗口 [start, 末尾) 零重复。
+  // 增量模式下 historyStart 前移到上次分析处，摘要边界随之同步，仍保持零重复。
+  const summary = getExternalSummary(historyStart);
+  if (summary) msgs.push({ role: 'system', content: renderMemorySummaryContent(summary) });
 
-      msgs.push(...buildChatHistory(contextRounds, true, historyStart));
+  msgs.push(...buildChatHistory(contextRounds, true, historyStart));
 
-      // depthAfter（D0-D2）在生成侧紧跟历史之后，分析侧保持同一相对位置
-      if (wi?.depthAfter) msgs.push({ role: 'system', content: wi.depthAfter });
+  // depthAfter（D0-D2）在生成侧紧跟历史之后，分析侧保持同一相对位置
+  if (wi?.depthAfter) msgs.push({ role: 'system', content: wi.depthAfter });
 
-      // 已有表放在历史之后、任务指令之前：模型读到时离输出最近，最不容易被历史冲淡
-      if (existingTable) {
-        msgs.push({
-          role: 'system',
-          content: `<existing_knowledge_table>\n${existingTable}\n</existing_knowledge_table>`,
-        });
-      }
-      msgs.push({
-        role: 'user',
-        content: substituteParams(
-          existingTable ? `${ANALYSIS_USER_INCREMENTAL}\n（当前修订号=${revision}）` : ANALYSIS_USER_FIRST,
-        ),
-      });
-      return msgs;
-    } finally {
-      wiRestore?.restore();
-    }
+  // 已有表放在历史之后、任务指令之前：模型读到时离输出最近，最不容易被历史冲淡
+  if (existingTable) {
+    msgs.push({
+      role: 'system',
+      content: `<existing_knowledge_table>\n${existingTable}\n</existing_knowledge_table>`,
+    });
+  }
+  msgs.push({
+    role: 'user',
+    content: substituteParams(
+      existingTable ? `${ANALYSIS_USER_INCREMENTAL}\n（当前修订号=${revision}）` : ANALYSIS_USER_FIRST,
+    ),
   });
+  return msgs;
 }
 
 /** 执行一次知识边界分析（增量）。返回是否写入了新报告。
@@ -311,6 +299,19 @@ export function isKnowledgeMergeActive(): boolean {
  *  不 await 是因为 ST 的 eventSource.emit 串行 await 监听器。 */
 export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, delta = reason === 'received'): void {
   try {
+    // 合并请求在途：本次独立分析与合并请求争同一个修订号，后到者会被并发守卫丢弃、
+    // 白耗一次上下文。事件先挂起，等合并请求结束后由生成链路 flush 补跑。
+    if (generatorState.mergeActive) {
+      mergePending = mergePending
+        ? {
+            reason,
+            force: mergePending.force || force,
+            // 只要有一个待处理事件需要完整窗口，补跑就必须用完整窗口（AND）
+            delta: mergePending.delta && delta,
+          }
+        : { reason, force, delta };
+      return;
+    }
     // 继承尚未触发的防抖任务：新事件不能把它的 force 或「完整窗口」需求丢掉。
     // 例如早期未抽样楼层刚被编辑（force + 完整窗口），随后又来了一条新回复——
     // 若直接按 received 的增量窗口跑，那次编辑就永远进不了判定。
@@ -363,8 +364,21 @@ export function resetKnowledgeScheduling(): void {
   pendingReason = null;
   pendingForce = false;
   pendingDelta = false;
+  mergePending = null;
   cancelKnowledgeAnalysis();
   knowledgeState.tick += 1;
+}
+
+/** 合并请求结束后补跑挂起的事件。
+ *
+ *  由生成链路在 generateOptions 返回后调用（见 panel-mount / ActionOptionsPanel）：
+ *  合并请求在途期间到达的事件（新一轮回复、编辑、滑动）在此补跑一次独立分析。
+ *  报告若已被合并请求更新到最新，调度层的过期判定会自然跳过（不重复请求）。 */
+export function flushKnowledgeRefreshAfterGeneration(): void {
+  if (!mergePending) return;
+  const { reason, force, delta } = mergePending;
+  mergePending = null;
+  scheduleKnowledgeRefresh(reason, force, delta);
 }
 
 /** 兼容旧入口：MESSAGE_RECEIVED 的自动分析（内部走统一调度）。

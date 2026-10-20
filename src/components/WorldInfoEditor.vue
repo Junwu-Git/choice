@@ -16,6 +16,22 @@
           <input v-model="globalStore.settings.world_info.render_world_info_ejs" type="checkbox" />
           {{ t`EJS 渲染` }}
         </label>
+        <label
+          class="choice-field"
+          :title="
+            t`世界书预算估算用的上下文长度（预算 = 该值 × 酒馆的世界书预算百分比）。默认 128000：不沿用主生成的较小上下文，否则额外启用的世界书条目会被预算挤掉。设得过大可能让副请求超出模型真实上下文，按副 API 模型的上下文调小即可。`
+          "
+        >
+          <span>{{ t`预算上下文` }}</span>
+          <input
+            v-model.number="globalStore.settings.world_info.scan_max_context"
+            type="number"
+            min="1024"
+            max="2000000"
+            step="1024"
+            class="choice-input choice-input-w-sm"
+          />
+        </label>
       </div>
     </div>
 

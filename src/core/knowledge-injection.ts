@@ -11,7 +11,7 @@
 
 import type { ChatMsg } from '@/core/api-client';
 import { normalizeText } from '@/core/text-similarity';
-import { entrySortScore, MAX_INJECT_ENTRIES, INJECT_CHAR_BUDGET } from '@/core/knowledge-report';
+import { entrySortScore, escapePromptText, MAX_INJECT_ENTRIES, INJECT_CHAR_BUDGET } from '@/core/knowledge-report';
 import type { KnowledgeReport, KnowledgeReportEntry, KnowledgeStatus } from '@/type/settings';
 
 const STATUS_HEADER: Record<KnowledgeStatus, string> = {
@@ -62,7 +62,19 @@ type RenderOptions = {
   sceneText?: string;
   maxEntries?: number;
   charBudget?: number;
+  /** 报告是否已落后于当前聊天：注入头部需要说明「这是上一次分析的结论」，
+   *  否则模型会把旧结论当成当前事实（旧表里的 known 可能已被新剧情推翻）。 */
+  stale?: boolean;
 };
+
+/** 本轮是否需要独立注入知识边界块。
+ *
+ *  合并模式（merge_with_generation）下不注入：合并任务自带同一张表并要求模型
+ *  「先更新边界再生成」，再额外注入一份旧表会出现两份互相矛盾的结论
+ *  （注入块说「必须遵守」，合并任务说「先改再写」），模型多半会沿用旧表。 */
+export function shouldInjectKnowledge(injectEnabled: boolean, knowledgeMerge: boolean): boolean {
+  return injectEnabled && !knowledgeMerge;
+}
 
 /** 单条渲染。已知项只带依据（约束力弱，省预算）；存疑/未知必须带约束，
  *  模型漏写时用固定兜底句，保证生成端拿到的是可执行指令。
@@ -74,16 +86,20 @@ type RenderOptions = {
  *  存疑/未知绝不可降级：它们的约束句就是唯一有价值的部分，省掉会变成误导。
  *  档位刻意不渲染：它是预算调度参数，写进注入只会引发元推理。 */
 function formatLine(e: KnowledgeReportEntry, compact = false): string {
-  if (compact) return `- ${e.topic}`;
+  if (compact) return `- ${escapePromptText(e.topic)}`;
   const parts: string[] = [];
-  if (e.basis) parts.push(`依据：${e.basis}`);
-  if (e.event_time) parts.push(`时间：${e.event_time}`);
+  if (e.basis) parts.push(`依据：${escapePromptText(e.basis)}`);
+  if (e.event_time) parts.push(`时间：${escapePromptText(e.event_time)}`);
   if (e.source === 'inferred' && e.status === 'known') parts.push('来源：推断（只能以推断口吻使用）');
   if (e.source === 'heard' && e.status === 'uncertain') parts.push('来源：传闻（未经证实）');
   if (e.status !== 'known') {
-    parts.push(`约束：${e.impact || (e.status === 'uncertain' ? '只能写成试探/怀疑' : '不得作为行动依据')}`);
+    // 约束语来自模型回传，必须转义：带换行会把一行拆成两行，带闭合标签能提前
+    // 关掉注入块——与主题同源的提示词注入面
+    parts.push(
+      `约束：${escapePromptText(e.impact || (e.status === 'uncertain' ? '只能写成试探/怀疑' : '不得作为行动依据'))}`,
+    );
   }
-  return `- ${e.topic}${parts.length ? `｜${parts.join('；')}` : ''}`;
+  return `- ${escapePromptText(e.topic)}${parts.length ? `｜${parts.join('；')}` : ''}`;
 }
 
 /**
@@ -211,6 +227,7 @@ export function renderKnowledgeInjectionDetailed(
     const block = [
       '<knowledge_boundary_report>',
       '以下是针对 {{user}}（仅玩家角色本人）的知识边界分析，生成候选时必须遵守：',
+      ...staleNotice(opts.stale),
       `（共 ${active.length} 项，本次因篇幅限制未注入具体条目；仍须遵守「不知道的信息不得作为行动依据」）`,
       '</knowledge_boundary_report>',
     ].join('\n');
@@ -229,6 +246,7 @@ export function renderKnowledgeInjectionDetailed(
   const block = [
     '<knowledge_boundary_report>',
     '以下是针对 {{user}}（仅玩家角色本人）的知识边界分析，生成候选时必须遵守：',
+    ...staleNotice(opts.stale),
     ...sections,
     total > chosen.length ? `（共 ${total} 项，另有 ${omitted} 项未注入）` : '',
     '</knowledge_boundary_report>',
@@ -238,16 +256,28 @@ export function renderKnowledgeInjectionDetailed(
   return { block, chosen, omitted, usedChars: used, total };
 }
 
-/** 把注入块插到最后一条 user 消息之前：选项任务的 user 消息承担最终指令，报告作为
+/** 报告过期时的提示行：说明这是上一次分析的结论，与当前场景冲突时以当前场景为准。
+ *  过期报告仍然注入——unknown/uncertain 是必要安全约束，不能因为「可能不准」就丢掉。 */
+function staleNotice(stale: boolean | undefined): string[] {
+  if (!stale) return [];
+  return ['（以下为上一次分析的结论；若与当前场景已发生的事实冲突，以当前场景为准）'];
+}
+
+/** 把注入块插到任务消息之前：选项任务的 user 消息承担最终指令，报告作为
  *  system 参考块紧邻其前，既不被历史冲淡也不打断任务指令的完整性。
- *  没有 user 消息时追加到末尾（润色链路等异常形态下的兜底）。 */
-export function injectKnowledgeBlock(messages: ChatMsg[], block: string): void {
+ *
+ *  anchor = 任务消息（option_task / 预设任务 user）。没有锚点时不再回退到
+ *  「最后一条 user」——那条 user 往往是聊天历史里的用户发言，插进去会让约束
+ *  夹在对话中间，模型可能当成对话内容；此时直接追加到末尾。 */
+export function injectKnowledgeBlock(messages: ChatMsg[], block: string, anchor?: ChatMsg | null): void {
   if (!block) return;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
-      messages.splice(i, 0, { role: 'system', content: block });
+  const entry: ChatMsg = { role: 'system', content: block };
+  if (anchor) {
+    const idx = messages.indexOf(anchor);
+    if (idx >= 0) {
+      messages.splice(idx, 0, entry);
       return;
     }
   }
-  messages.push({ role: 'system', content: block });
+  messages.push(entry);
 }

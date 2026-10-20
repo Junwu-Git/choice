@@ -54,6 +54,31 @@ export const MAX_KEYWORD_LEN = 24;
 export const MAX_EVENT_TIME_LEN = 32;
 /** 关联对象上限：人名/地名/物品名，正常远短于这个值（主题本身是 24 字）。 */
 export const MAX_SUBJECT_LEN = 24;
+/** 主题上限：短标题，超过即截断。 */
+export const MAX_TOPIC_LEN = 24;
+
+/** 主题清洗：折叠换行/制表/多余空白，去掉尖括号，限长。
+ *
+ *  为什么必须清洗：主题会直接拼进「已有知识边界表」与注入块（`- [id=…] 主题`）。
+ *  模型或手动输入一旦带上换行，就会把一行表格拆成两行（模型会把后半截读成新条目）；
+ *  带上 `</knowledge_boundary_report>` 这类闭合标签，还能提前关掉注入块、把后文
+ *  变成「系统说的内容」——提示词注入面。 */
+export function normalizeTopicText(v: unknown): string {
+  return String(v ?? '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_TOPIC_LEN);
+}
+
+/** 渲染进提示词前的兜底转义：旧档里的尖括号/换行仍可能残留，
+ *  统一换成全角，避免破坏表格结构或提前闭合标签。 */
+export const escapePromptText = (s: string): string =>
+  String(s ?? '')
+    .replace(/</g, '＜')
+    .replace(/>/g, '＞')
+    .replace(/[\r\n]+/g, ' ');
 
 /** 分析输入表格里 basis/impact 的展示长度：完整内容仍在报告里，表格只给判定所需的摘要。 */
 export const MAX_TABLE_FIELD_LEN = 120;
@@ -196,6 +221,7 @@ const toStringArray = (v: unknown, max: number, maxLen: number): string[] => {
   const out: string[] = [];
   for (const item of raw) {
     const s = String(item ?? '')
+      .replace(/[<>]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
     if (!s || isSentenceLike(s)) continue;
@@ -260,7 +286,8 @@ const EMPTY_SUBJECT_RE = /^(?:未指定|未标注|无|未知|不详|none|null|-|
 
 export function normalizeSubject(v: unknown): string {
   if (typeof v !== 'string') return '';
-  const s = v.replace(/\s+/g, ' ').trim().slice(0, MAX_SUBJECT_LEN);
+  // 尖括号会破坏注入块的标签结构（可提前闭合 <knowledge_boundary_report>），一律去掉
+  const s = v.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, MAX_SUBJECT_LEN);
   return EMPTY_SUBJECT_RE.test(s) ? '' : s;
 }
 
@@ -281,6 +308,21 @@ export function normalizeBasis(v: unknown): string {
   if (typeof v !== 'string') return '';
   const s = v.replace(/\s+/g, ' ').trim().slice(0, 240);
   return EMPTY_BASIS_RE.test(s) ? '' : s;
+}
+
+/** 约束语（impact）清洗：与依据同口径——折叠空白、去掉尖括号、限长。
+ *
+ *  为什么必须清洗：impact 会原样拼进注入块的「约束：…」一行，模型回传的内容
+ *  带换行会把一行条目拆成两行，带 `</knowledge_boundary_report>` 能提前闭合注入块、
+ *  把后文变成「系统说的内容」——与主题同源的提示词注入面。 */
+export function normalizeImpact(v: unknown): string {
+  if (typeof v !== 'string') return '';
+  return v
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
 }
 
 /** 增量补丁：drop=true 删除该 topic；否则按 id/topic 覆盖或新增。
@@ -314,10 +356,7 @@ function pickPatch(x: unknown): KnowledgePatch | null {
   if (!x || typeof x !== 'object') return null;
   const o = x as Record<string, unknown>;
   const id = typeof o.id === 'string' ? o.id.trim() : '';
-  const topic = (typeof o.topic === 'string' ? o.topic : '')
-    .replace(/^\[id=[^\]]*\]\s*/i, '')
-    .trim()
-    .slice(0, 24);
+  const topic = normalizeTopicText((typeof o.topic === 'string' ? o.topic : '').replace(/^\[id=[^\]]*\]\s*/i, ''));
   if (!id && !topic) return null;
   if (o.drop === true || o.drop === 'true') {
     return {
@@ -338,7 +377,7 @@ function pickPatch(x: unknown): KnowledgePatch | null {
     importance: importance ?? 'normal',
     subject: normalizeSubject(o.subject),
     basis: normalizeBasis(o.basis),
-    impact: typeof o.impact === 'string' ? o.impact.trim().slice(0, 240) : '',
+    impact: normalizeImpact(o.impact),
     aliases: toStringArray(o.aliases, MAX_ALIASES, MAX_ALIAS_LEN),
     keywords: toStringArray(o.keywords, MAX_KEYWORDS, MAX_KEYWORD_LEN),
     event_time: toEventTime(o.event_time),
@@ -542,7 +581,7 @@ export function entrySortScore(
 const mergeUnique = (a: string[], b: string[], max: number, maxLen: number): string[] => {
   const out: string[] = [];
   for (const item of [...a, ...b]) {
-    const s = item.replace(/\s+/g, ' ').trim();
+    const s = item.replace(/[<>]/g, '').replace(/\s+/g, ' ').trim();
     if (!s || isSentenceLike(s)) continue;
     const cut = s.slice(0, maxLen);
     if (out.includes(cut)) continue;
@@ -665,6 +704,72 @@ export function enforceCapacity(
   return { entries: work, changes, changed: evicted > 0, evicted };
 }
 
+/** 非删除形态的补丁（字段齐全的那一支）。 */
+type KnowledgePatchUpdate = Extract<KnowledgePatch, { drop?: false }>;
+
+/**
+ * 应用补丁后的有效三态与获取方式（含交叉校验）。
+ *
+ *  为什么先算再判变化：交叉校验会把自相矛盾的组合改回原值——「状态未知」却带
+ *  「目击」来源会被强制回 none、「声称已知」却没有获取过程会被降级成存疑。
+ *  若先按补丁原值判「有变化」、再交叉校验，条目最终可能与合并前完全相同，
+ *  却仍然刷新了时间戳、bump 了修订号、记了一条变更——正是「无变化补丁不刷新条目」
+ *  要防的新鲜度集体通胀。 */
+function resolveEffectiveState(
+  target: KnowledgeReportEntry,
+  patch: KnowledgePatchUpdate,
+): { status: KnowledgeStatus; source: KnowledgeSource } {
+  const status = patch.status_explicit !== false && patch.status ? patch.status : target.status;
+  const source = patch.source_explicit !== false && patch.source ? patch.source : target.source;
+  // 三态与获取方式交叉校验：不知道的信息不可能有获取方式；声称已知却没有获取过程时降级存疑
+  if (status === 'unknown') return { status, source: 'none' };
+  if (source === 'none' && status === 'known') return { status: 'uncertain', source };
+  return { status, source };
+}
+
+/** 补丁相对目标条目是否带来实质变化。
+ *
+ *  为什么需要这道判断：提示词写了「仅重复确认不算变化，不要输出」，但弱模型常把
+ *  整张表重复输出。若照单全收，每次分析都会刷新全部条目的 updated_at_message，
+ *  新鲜度分（entrySortScore）随之集体抬高——老条目看起来像刚更新，预算紧张时
+ *  反而先被省略，「越近越该保留」这一维就此失效。 */
+const patchChangesEntry = (
+  target: KnowledgeReportEntry,
+  patch: KnowledgePatchUpdate,
+  matchedBy: string,
+  effective: { status: KnowledgeStatus; source: KnowledgeSource },
+): boolean => {
+  if (matchedBy === 'id' && patch.topic && normalizeTopic(patch.topic) !== normalizeTopic(target.topic)) {
+    return true;
+  }
+  if (effective.status !== target.status) return true;
+  if (effective.source !== target.source) return true;
+  if (patch.importance_explicit !== false && patch.importance && patch.importance !== target.importance) {
+    return true;
+  }
+  if (patch.subject && normalizeSubject(patch.subject) !== target.subject) return true;
+  const basis = normalizeBasis(patch.basis);
+  if (basis && basis !== target.basis) return true;
+  const impact = normalizeImpact(patch.impact);
+  if (impact && impact !== target.impact) return true;
+  if (patch.event_time && patch.event_time !== target.event_time) return true;
+  // 别名/检索词：按 id 命中时补丁别名是追加；按别名或相似度命中时，补丁主题本身
+  // 也会并入别名（见合并路径），所以要一并算进对比
+  const aliasInputs = [...(patch.aliases ?? [])];
+  if (matchedBy !== 'id' && patch.topic && normalizeTopic(patch.topic) !== normalizeTopic(target.topic)) {
+    aliasInputs.unshift(patch.topic);
+  }
+  if (mergeUnique(target.aliases, aliasInputs, MAX_ALIASES, MAX_ALIAS_LEN).length !== target.aliases.length) {
+    return true;
+  }
+  if (
+    mergeUnique(target.keywords, patch.keywords ?? [], MAX_KEYWORDS, MAX_KEYWORD_LEN).length !== target.keywords.length
+  ) {
+    return true;
+  }
+  return false;
+};
+
 /**
  * 把补丁合并进已有表。目标解析顺序：
  *   id → 主题精确 → 别名精确 → 相似度（活跃条目）→ 新建。
@@ -728,7 +833,11 @@ export function mergeKnowledgePatch(
       }
       // 太短的说法（纯人名/地名）不参与相似度归并：它们与太多条目共享二元组，
       // 靠相似度会误并成不同的事。精确匹配路径（id/topic/alias）仍能命中。
-      if (Math.min(topic.length, e.topic.length) < MIN_SIMILARITY_TOPIC_LEN && score < 1) score = 0;
+      // 长度按归一化后的说法算——原始长度会把「立 花 女」这类多空格写法算成 5 字，
+      // 绕过 4 字闸门后仍参与归并。
+      if (Math.min(patchKey.length, normalizeTopic(e.topic).length) < MIN_SIMILARITY_TOPIC_LEN && score < 1) {
+        score = 0;
+      }
       if (score > bestScore) {
         secondScore = bestScore;
         secondTopic = best?.topic ?? '';
@@ -838,6 +947,12 @@ export function mergeKnowledgePatch(
 
     const wasRetired = target?.retired === true;
     if (target) {
+      // 有效三态/来源先算出来：交叉校验可能把补丁改回与原值相同的结果，
+      // 变化判定必须基于最终会落库的值（见 resolveEffectiveState 注释）
+      const effective = resolveEffectiveState(target, patch);
+      // 无实质变化的重复条目：整条跳过（不刷新新鲜度、不改修订号、不记变更）。
+      // 恢复退役条目本身就是变化，故只在未退役时判断
+      if (!wasRetired && !patchChangesEntry(target, patch, matchedBy, effective)) continue;
       const beforeStatus = target.status;
       const detailParts: string[] = [];
       if (wasRetired) {
@@ -854,8 +969,9 @@ export function mergeKnowledgePatch(
       }
       // 只有模型显式给的字段才覆盖：弱模型有时只回部分字段，缺 status 会被归一成
       // unknown，直接覆盖会把一条 known 误降级成「不知道」，污染整张表。
-      if (patch.status_explicit !== false && patch.status) target.status = patch.status;
-      if (patch.source_explicit !== false && patch.source) target.source = patch.source;
+      // 三态与来源的交叉校验已折进 effective，落库即为最终值。
+      target.status = effective.status;
+      target.source = effective.source;
       // 档位同样只在显式给出时覆盖：模型常只回 status/impact，缺 importance 时
       // 不该把用户或上一轮判定的 high 降回 normal（那等于静默丢权重）
       if (patch.importance_explicit !== false && patch.importance) target.importance = patch.importance;
@@ -866,13 +982,10 @@ export function mergeKnowledgePatch(
         // 只留一跳来路：面板据此标「由存疑转正」，完整历史仍在 last_changes
         target.previous_status = beforeStatus;
       }
-      // 三态与获取方式交叉校验：不知道的信息不可能有获取方式；声称已知却没有获取过程时降级存疑
-      if (target.status === 'unknown') target.source = 'none';
-      else if (target.source === 'none' && target.status === 'known') target.status = 'uncertain';
       // 模板句清洗放在合并层（数据进报告的总闸）而不是只放在解析层：补丁也可能来自
       // 手动导入等绕过解析的路径，清洗后模板句变空串，于是旧的具体依据得以保留
       target.basis = normalizeBasis(patch.basis) || target.basis;
-      target.impact = patch.impact || target.impact;
+      target.impact = normalizeImpact(patch.impact) || target.impact;
       target.aliases = mergeUnique(target.aliases, patch.aliases ?? [], MAX_ALIASES, MAX_ALIAS_LEN);
       target.keywords = mergeUnique(target.keywords, patch.keywords ?? [], MAX_KEYWORDS, MAX_KEYWORD_LEN);
       // 时间只在模型给出时覆盖：旧值往往是更早、更接近事件发生时的判定
@@ -923,7 +1036,7 @@ export function mergeKnowledgePatch(
       importance: patch.importance ?? 'normal',
       previous_status: '',
       basis: patch.basis,
-      impact: patch.impact,
+      impact: normalizeImpact(patch.impact),
       event_time: patch.event_time,
       first_seen_message: atMessage,
       updated_at_message: atMessage,
@@ -944,7 +1057,12 @@ export function mergeKnowledgePatch(
   if (capacity.changed) mutated = true;
   changes.push(...capacity.changes);
 
-  return { entries: capacity.entries, changes: changes.slice(0, MAX_CHANGES), changed: mutated };
+  // 容量记录（淘汰 / 已满）必须留得住：它们是本轮最新的事实，却被 MAX_CHANGES
+  // 从尾部截掉的话，面板既看不到淘汰了谁，也看不到「已满」提示。
+  // 改为先截前面的普通变更，再把容量变更接在末尾。
+  const capacityCount = capacity.changes.length;
+  const kept = changes.slice(0, Math.max(0, MAX_CHANGES - capacityCount));
+  return { entries: capacity.entries, changes: [...kept, ...capacity.changes].slice(0, MAX_CHANGES), changed: mutated };
 }
 
 /** 重复候选组：同组条目被判定为「同一件事」，可合并。 */
@@ -1120,17 +1238,20 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
       `[${STATUS_LABEL[e.status]}]`,
       `[来源=${SOURCE_LABEL[e.source]}]`,
       `[档位=${IMPORTANCE_LABEL[e.importance]}]`,
-      e.subject ? `[对象=${e.subject}]` : '',
+      e.subject ? `[对象=${escapePromptText(e.subject)}]` : '',
       e.locked ? '[锁定]' : '',
     ].filter(Boolean);
+    // 各字段统一转义：旧档里可能残留尖括号/换行，会破坏表格行与注入块结构
     const parts = [
-      e.event_time ? `时间：${e.event_time}` : '',
-      e.aliases.length ? `别名：${e.aliases.join('、')}` : '',
-      e.keywords.length ? `检索词：${e.keywords.join('、')}` : '',
-      e.basis ? `依据：${truncateField(e.basis)}` : '',
-      e.status !== 'known' && e.impact ? `约束：${truncateField(e.impact, MAX_TABLE_IMPACT_LEN)}` : '',
+      e.event_time ? `时间：${escapePromptText(e.event_time)}` : '',
+      e.aliases.length ? `别名：${e.aliases.map(escapePromptText).join('、')}` : '',
+      e.keywords.length ? `检索词：${e.keywords.map(escapePromptText).join('、')}` : '',
+      e.basis ? `依据：${truncateField(escapePromptText(e.basis))}` : '',
+      e.status !== 'known' && e.impact
+        ? `约束：${truncateField(escapePromptText(e.impact), MAX_TABLE_IMPACT_LEN)}`
+        : '',
     ].filter(Boolean);
-    return `- ${tags.join(' ')} ${e.topic}${parts.length ? `｜${parts.join('｜')}` : ''}`;
+    return `- ${tags.join(' ')} ${escapePromptText(e.topic)}${parts.length ? `｜${parts.join('｜')}` : ''}`;
   });
   return [`当前修订号=${revision}；活跃条目 ${active.length} 条`, ...lines].join('\n');
 }
@@ -1227,14 +1348,20 @@ export function parseKnowledgeExport(text: string): KnowledgeReportEntry[] | nul
   if (o.type !== KNOWLEDGE_EXPORT_TYPE) return null;
   if (typeof o.version !== 'number' || o.version > KNOWLEDGE_EXPORT_VERSION) return null;
   if (!Array.isArray(o.entries)) return null;
-  return migrateKnowledgeReport({
-    updated_at: 0,
-    based_on_message: 0,
-    based_on_fingerprint: '',
-    revision: 0,
-    entries: o.entries as KnowledgeReportEntry[],
-    last_changes: [],
-  }).entries;
+  return migrateKnowledgeReport(
+    {
+      updated_at: 0,
+      based_on_message: 0,
+      based_on_fingerprint: '',
+      revision: 0,
+      entries: o.entries as KnowledgeReportEntry[],
+      last_changes: [],
+    },
+    Date.now(),
+    // 不在这里做容量治理：导入阶段的治理会把「刚导入的条目」保护起来，
+    // 并把真实淘汰条数返回给 UI；在这里先砍一遍会让用户以为全部导入成功
+    { skipCapacity: true },
+  ).entries;
 }
 
 /** 落库前的三项守卫（纯函数，可单测）。 *  三种语义不同，不能合并：
@@ -1256,14 +1383,18 @@ export function checkCommitGuards(
 /** 旧报告就地迁移（幂等）：补齐稳定 ID、来源、别名/检索词、修订号与变更记录。
  *  同一 topic 的重复条目合并到第一条（保留最大 updated_at_message），其余主题并入别名。
  *  不改变用户已看到的结论（状态/依据/约束原样保留）。 */
-export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()): KnowledgeReport {
+export function migrateKnowledgeReport(
+  report: KnowledgeReport,
+  now = Date.now(),
+  opts: { skipCapacity?: boolean } = {},
+): KnowledgeReport {
   const changes: KnowledgeChange[] = [...(report.last_changes ?? [])];
   const out: KnowledgeReportEntry[] = [];
   const byTopic = new Map<string, KnowledgeReportEntry>();
   const usedIds = new Set<string>();
 
   for (const raw of report.entries ?? []) {
-    const topic = String(raw.topic ?? '').trim();
+    const topic = normalizeTopicText(raw.topic);
     if (!topic) continue;
     const key = normalizeTopic(topic);
     const existing = byTopic.get(key);
@@ -1292,8 +1423,22 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
       changes.unshift(change('merged', existing, `旧报告重复主题「${topic}」已合并`, now, existing.updated_at_message));
       continue;
     }
-    const id = raw.id?.trim() || ensureUniqueId(makeEntryId(topic, raw.updated_at_message ?? 0), usedIds);
+    // 重复 id（外部导入或手改造成）必须重新分配：同 id 时 findById 永远命中第一条，
+    // 后一条再也收不到补丁，等于静默失效
+    const baseId = raw.id?.trim() || makeEntryId(topic, raw.updated_at_message ?? 0);
+    const id = ensureUniqueId(baseId, usedIds);
     usedIds.add(id);
+    if (id !== baseId) {
+      changes.unshift(
+        change(
+          'updated',
+          { id, topic },
+          `旧报告条目 id「${baseId}」重复，已重新分配`,
+          now,
+          raw.updated_at_message ?? 0,
+        ),
+      );
+    }
     const rawAliases = Array.isArray(raw.aliases) ? raw.aliases.length : 0;
     const entry: KnowledgeReportEntry = {
       ...raw,
@@ -1358,7 +1503,11 @@ export function migrateKnowledgeReport(report: KnowledgeReport, now = Date.now()
 
   // 旧档可能长期未治理，迁移是唯一扫全表的入口：在这里也执行容量上限，
   // 否则历史遗留或外部导入的超大表会永久保留，之后每次分析都要发送整张表。
-  const capacity = enforceCapacity(out, report.based_on_message ?? 0, now);
+  // 导入路径例外：跳过容量治理，治理交给 importKnowledgeEntries——那里才知道
+  // 哪些是刚导入的条目（要保护），也才能把真实的淘汰条数报给用户。
+  const capacity = opts.skipCapacity
+    ? { entries: out, changes: [] as KnowledgeChange[] }
+    : enforceCapacity(out, report.based_on_message ?? 0, now);
 
   return {
     updated_at: report.updated_at ?? 0,

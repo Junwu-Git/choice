@@ -160,12 +160,25 @@ describe('buildPresetMessages', () => {
     expect(out.map(m => m.content)).toEqual(['u1', 'WI_DEPTH', 'a1', 'PRESET']);
   });
 
-  it('预设无 chatHistory 槽位时 extraInjections 不注入（无历史块可挂）', () => {
+  it('预设无 chatHistory 槽位时 extraInjections 追加到末尾（不再静默丢弃）', () => {
+    // 极简预设/新聊天下没有历史块可挂：深度注入（世界书 D0-D2、记忆摘要）整段丢弃
+    // 会让这些内容凭空消失，故改为追加到主序列末尾
     const preset = { prompts: [mkPrompt('main', { content: 'MAIN' })], order: [{ identifier: 'main', enabled: true }] };
     const out = buildPresetMessages(preset, slots(), {
       extraInjections: [{ depth: 0, order: 100, role: 'system', content: 'WI_DEPTH' }],
     });
-    expect(out.map(m => m.content)).toEqual(['MAIN']);
+    expect(out.map(m => m.content)).toEqual(['MAIN', 'WI_DEPTH']);
+  });
+
+  it('历史块为空时深度注入平铺到槽位处（不再整段丢弃）', () => {
+    const preset = {
+      prompts: [mkPrompt('chatHistory')],
+      order: [{ identifier: 'chatHistory', enabled: true }],
+    };
+    const out = buildPresetMessages(preset, slots({ chatHistory: [] }), {
+      extraInjections: [{ depth: 0, order: 100, role: 'system', content: 'WI_DEPTH' }],
+    });
+    expect(out.map(m => m.content)).toEqual(['WI_DEPTH']);
   });
 });
 

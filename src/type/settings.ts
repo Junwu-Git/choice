@@ -1088,6 +1088,12 @@ export const WorldInfoGlobalSettings = z
     // 注意：choice 只检测 globalThis.EjsTemplate 是否存在（插件装了且加载），不跟随插件
     // 自己的 enabled 开关——choice 直接调函数、不走它的事件 hook，两开关各管各的语义
     render_world_info_ejs: z.boolean().default(true),
+    // 世界书预算估算用的上下文长度（世界书预算 = 该值 × 酒馆的 world_info_budget%）。
+    // 酒馆主生成按自己的 maxContext 算预算；本扩展是独立副 API 请求，沿用主生成的
+    // maxContext（如 8192）会让角色世界书的大条目先耗尽预算、额外启用的 constant 条目
+    // 被丢弃，故默认放宽到 128000。注意这是「估算用」的值：设得过大可能让副请求
+    // 超出模型真实上下文而报错——按副 API 模型的上下文调小即可。
+    scan_max_context: z.number().int().min(1024).max(2000000).default(128000).catch(128000),
   })
   .prefault({});
 export type WorldInfoGlobalSettings = z.infer<typeof WorldInfoGlobalSettings>;
@@ -1746,11 +1752,13 @@ export const GlobalSettings = z
      *  后处理与预设框架配置跟随酒馆当前选中预设）。老档由 default 补齐，无需 bump schema_version。 */
     st_preset_script_processing: z.enum(['off', 'prompt_ready', 'tavern_helper']).default('off').catch('off'),
     /**
-     * 预设条目覆盖层（键 = 条目 identifier）：在不改酒馆预设文件的前提下，对预设条目做
+     * 预设条目覆盖层（键 = `预设名::条目 identifier`）：在不改酒馆预设文件的前提下，对预设条目做
      * 插件侧的禁用 / 内容覆盖。disabled=true 跳过该条目；content 存在（含空串）即替换
      * 条目原内容。8 个原生 marker 槽位（chatHistory 等）由运行时填充，覆盖对它们无效。
-     * 原生条目 id（main/nsfw/jailbreak…）全预设通用，覆盖作用于所有含该 id 的预设；
-     * UUID 自定义条目天然只命中其所属预设。老档由 default({}) 补齐，无需 bump schema_version。
+     * 键按预设名隔离：内置条目 id（main/nsfw/jailbreak…）在所有预设里同名，不隔离会让一个
+     * 预设的改动静默作用到别的预设。旧键（只按 identifier）继续作为全局回退以兼容老配置，
+     * UI 一律写 scoped 键。键的构造与查找见 core/preset-overrides.ts。
+     * 老档由 default({}) 补齐，无需 bump schema_version。
      */
     st_preset_overrides: z
       .record(

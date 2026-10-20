@@ -21,6 +21,7 @@ import {
   MAX_KEYWORDS,
   MAX_KEYWORD_LEN,
   normalizeSubject,
+  normalizeTopicText,
   toEventTime,
 } from '@/core/knowledge-report';
 import { currentMessageCount } from '@/core/knowledge-state';
@@ -110,7 +111,7 @@ function touch(): void {
 
 /** 新增手动条目，返回新条目 ID。topic 为空时拒绝（调用方应先校验）。 */
 export function addManualEntry(input: KnowledgeEntryInput): string | null {
-  const topic = input.topic.trim().slice(0, 24);
+  const topic = normalizeTopicText(input.topic);
   if (!topic) return null;
   const r = report();
   const atMessage = currentMessageCount();
@@ -153,7 +154,7 @@ export function updateManualEntry(id: string, input: KnowledgeEntryInput): boole
   const r = report();
   const entry = r.entries.find(e => e.id === id);
   if (!entry) return false;
-  const topic = input.topic.trim().slice(0, 24);
+  const topic = normalizeTopicText(input.topic);
   if (!topic) return false;
   const beforeStatus = entry.status;
   entry.topic = topic;
@@ -257,14 +258,20 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): {
   const r = report();
   const atMessage = currentMessageCount();
   const byId = new Map(r.entries.map(e => [e.id, e]));
-  const byTopic = new Map(r.entries.filter(e => e.topic).map(e => [e.topic.trim(), e]));
+  const byTopic = new Map(r.entries.filter(e => e.topic).map(e => [normalizeTopicText(e.topic), e] as const));
   let added = 0;
   let updated = 0;
   const next = [...r.entries];
+  /** 本轮新建的条目 id：容量治理时受保护，避免「导入即消失」——
+   *  淘汰顺序是已知→存疑→未知，刚导入的未知条目排在最前，不保护就会被先砍掉。 */
+  const addedIds = new Set<string>();
 
   for (const raw of incoming) {
-    if (!raw.topic || raw.retired) continue;
-    const hit = byId.get(raw.id) ?? byTopic.get(raw.topic.trim());
+    const topic = normalizeTopicText(raw.topic);
+    if (!topic || raw.retired) continue;
+    // 命中表：同 id 或同主题。查找表随写入实时更新——同一批导入里出现两条同主题时，
+    // 第二条要并进第一条（否则会连着新建两条几乎一样的条目）
+    const hit = byId.get(raw.id) ?? byTopic.get(topic);
     if (hit) {
       // 只搬「知识内容」，不搬锁定/退役/修订号（当前聊天的用户意志优先）
       hit.status = raw.status;
@@ -283,8 +290,9 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): {
     }
     const entry: KnowledgeReportEntry = {
       ...raw,
+      topic,
       // 重新分配 id：导入文件的 id 可能与本聊天已删条目的 id 撞车
-      id: makeEntryId(raw.topic, atMessage),
+      id: makeEntryId(topic, atMessage),
       first_seen_message: atMessage,
       updated_at_message: atMessage,
       revision: 1,
@@ -299,6 +307,9 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): {
     while (existingIds.has(id)) id = `${entry.id}_${i++}`;
     entry.id = id;
     next.push(entry);
+    byId.set(id, entry);
+    byTopic.set(topic, entry);
+    addedIds.add(id);
     added += 1;
   }
 
@@ -306,7 +317,7 @@ export function importKnowledgeEntries(incoming: KnowledgeReportEntry[]): {
   if (added || updated) {
     r.entries = next;
     pushChange('merged', { id: '', topic: '' }, `导入报告：新增 ${added} 条，更新 ${updated} 条`);
-    evicted = applyCapacity(atMessage);
+    evicted = applyCapacity(atMessage, addedIds);
     touch();
   }
   return { added, updated, evicted };

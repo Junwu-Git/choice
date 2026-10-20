@@ -246,6 +246,7 @@
 <script setup lang="ts">
 import toastr from 'toastr';
 import { cancelGeneration, generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
+import { flushKnowledgeRefreshAfterGeneration } from '@/core/knowledge-analysis';
 import { cancelEnrich } from '@/core/enrich-input';
 import { storeGeneration } from '@/core/options-store';
 import type { ChoiceOption } from '@/core/options-store';
@@ -698,6 +699,8 @@ const onToggle = async () => {
   }
   const target = { messageId: panelStore.messageId, swipeId: panelStore.swipeId };
   const generation = await generateOptions(target);
+  // 合并请求在途期间挂起的事件在此补跑（报告已最新的话调度层会跳过）
+  flushKnowledgeRefreshAfterGeneration();
   if (!generation) {
     return;
   }
