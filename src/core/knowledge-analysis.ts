@@ -367,7 +367,11 @@ export function resetKnowledgeScheduling(): void {
   knowledgeState.tick += 1;
 }
 
-/** 兼容旧入口：MESSAGE_RECEIVED 的自动分析（内部走统一调度）。 */
-export function maybeAutoAnalyze(): void {
-  scheduleKnowledgeRefresh('received');
+/** 兼容旧入口：MESSAGE_RECEIVED 的自动分析（内部走统一调度）。
+ *  fullWindow=true 用于 type='swipe'：酒馆的 MESSAGE_SWIPED 在新分支生成前触发，
+ *  真正的新分支内容是在流式结束后以 MESSAGE_RECEIVED(type='swipe') 补发的；swipe
+ *  不增加楼层数，增量起点（based_on_message - 1）会落到末尾，只能看到最后一条，
+ *  必须用完整窗口才能复核被替换分支留下的旧结论。 */
+export function maybeAutoAnalyze(fullWindow = false): void {
+  scheduleKnowledgeRefresh('received', false, !fullWindow);
 }

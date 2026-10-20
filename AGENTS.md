@@ -66,6 +66,8 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 - 注入点在 `generateOptions` 的 `runWIExclWindow` 之后、`appendRuntimeLine` 之前，**扩展/预设模式共用**；报告为空零变化。
 - `knowledge-injection.ts`：`buildSceneText` 取最后 4 条可见消息，按 topic/别名/关键词命中评分；顺序 锁定→unknown→uncertain→known命中→known补齐（组内按 `entrySortScore`；**锁定组内 unknown→uncertain→known**，预算紧张时先保约束项，渲染分组仍按 known→uncertain→unknown）。预算 `knowledge.inject_max_entries`=24、`knowledge.inject_char_budget`=2500，**固定头部先预扣 120 字**。**有场景文本时**未命中 known 最多占 known 配额一半（高权重豁免；无场景不砍）。**三级降级**：放不下完整形态时 known 退化为「- 主题」单行；unknown/uncertain/锁定绝不降级，直接省略；**条数硬上限**不突破。**一条都放不下时仍输出头部 + 「未注入具体条目」的非全知提醒**（静默返回空会让模型以为没有约束）；尾部省略文案统一为「未注入」。场景命中数复用 `scored` 的结果，不再二次扫描。`renderKnowledgeInjectionDetailed` 返回 `{block, chosen, omitted, usedChars, total}`，`lastKnowledgeInjection` 已在调试页展示；宏必须 `substituteParams`；`lastBuildMessages` 覆盖为注入后形态。
 - `scheduleKnowledgeRefresh(reason, force, delta)`：`received` 立即（并行生成，`delta=true`）；`edited/deleted/swiped/loaded` 1200ms 防抖（完整窗口）；`force=true` 表示指纹覆盖不到的早期楼层被编辑，只跳过过期判定（功能开关/API 仍生效）；**未触发的防抖任务与在途 pending 会合并需求（force 取 OR、delta 取 AND）**，后续 `received` 不能把之前那次完整窗口/强制分析冲掉；`CHAT_CHANGED` 调 `resetKnowledgeScheduling()` 清定时器并取消在途。`MORE_MESSAGES_LOADED` 还要 bump `knowledgeState.tick`，让面板过期提示立即重算。
+- **swipe 事件顺序**：酒馆 `MESSAGE_SWIPED` 在新分支 `Generate('swipe')` **之前**触发（`chat[mesId].mes` 仍是旧分支，DOM 只显示 `...`），流式结束后才以 `MESSAGE_RECEIVED(type='swipe')` 补发。因此 `swiped` 的防抖分析通常因指纹未变被 `shouldSkipRefresh` 跳过；真正的新分支分析必须由 `MESSAGE_RECEIVED` 按**完整窗口**跑（`maybeAutoAnalyze(type === 'swipe')` → `delta=false`），否则 `based_on_message - 1` 会落到末尾，只发最后一条。
+- **构建排队顺序**：`onMessageReceived` 先 `startGeneration()` 再 `maybeAutoAnalyze()`。`generateOptions` 在首个 await 前同步置位 `generatorState.loading` 并把消息构建排进 `runWIExclWindow`；分析构建随后入队。两条 API 请求本身并行，但用户可见的选项请求不再等后台分析构建。合并模式下仍由 `generateOptions` 顺带分析，`maybeAutoAnalyze` 让路。
 - **指纹分层**：尾部 12 条逐条**全文**参与（不再截 400 字），更早按步长 8 抽样（头 80 字）。未抽样楼层的编辑不改变指纹，由 `MESSAGE_UPDATED` + `isMessageCoveredByFingerprint` 按楼层位置强制分析兜底；隐藏楼层不参与指纹。
 
 ### 合并请求（`knowledge.merge_with_generation`，默认关）
@@ -110,6 +112,7 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 
 - `--choice-primary` 蓝系卡片化，移动端优先（~380px）。
 - 选项行样式（`.choice-option-*`/`.choice-roll-chip`）只在 global.css；悬浮球独立版式但复用解析/行为层。
+- 悬浮球知识分析态：`knowledgeState.loading` 时挂 `--knowledge`（与 `--generating` 独立，可并存），内环外一颗绿色小光点（`--choice-color-success`）2.6s 反向公转；选项生成仍是 1.5s 正向快环 + `fa-spinner`。拖拽时收起，`prefers-reduced-motion` 下静止；合并模式分析并进选项请求，只显示 `--generating`。
 - `setEntryVisible` 拒绝关闭最后一个入口。z 序：panel 10 / floating 30000 / dialog 30100 / dropdown 30200 / popover 30300。
 - i18n：中文源串做键；改文案跑 `pnpm i18n:check`；插值勿嵌反引号模板。
 - 引导单一来源 `guide-content.ts`；唯一 `v-html` 在 `OnboardingWizard`（静态内容）。

@@ -108,15 +108,36 @@ export function initPanelMount() {
       // 知识边界自动刷新：与自动生成并行（fire-and-forget），本轮选项用上一份报告、
       // 下一轮用新报告，不额外增加出选项的等待时间。不 await 的理由同上——ST 的
       // eventSource.emit 会串行 await 监听器，返回 Promise 会拖住后续渲染事件。
-      // 合并模式下由 generateOptions 顺带分析：只在「本次确实会生成」时让路，
-      // 否则（auto_generate 关 / 生成在途 / 无 API）仍需独立分析，不然报告永远停在旧状态。
       const gs = useGlobalSettingsStore(pinia);
       const willGenerate =
         gs.settings.auto_generate &&
         !generatorState.loading &&
         !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
+      const startGeneration = () => {
+        const swipeId = getMessageSwipeId(messageId);
+        void (async () => {
+          const generation = await generateOptions({ messageId, swipeId });
+          if (!generation) {
+            return;
+          }
+          storeGeneration(messageId, swipeId, generation);
+          // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
+          panelStore.autoSetCollapsed(false);
+          resync();
+        })().catch(error => console.error('[Choice] onMessageReceived failed', error));
+      };
+      // 合并模式下由 generateOptions 顺带分析：只在「本次确实会生成」时让路，
+      // 否则（auto_generate 关 / 生成在途 / 无 API）仍需独立分析，不然报告永远停在旧状态。
+      // 先启动选项生成：generateOptions 在首个 await 前同步置位 loading 并把消息构建
+      // 排进 runWIExclWindow 队列；随后触发的分析构建排在它之后，用户可见的选项请求
+      // 不再被后台分析构建拖慢（两条 API 请求本身仍并行）。
+      if (willGenerate && !isKnowledgeMergeActive()) {
+        startGeneration();
+        maybeAutoAnalyze(type === 'swipe');
+        return;
+      }
       if (!(willGenerate && isKnowledgeMergeActive())) {
-        maybeAutoAnalyze();
+        maybeAutoAnalyze(type === 'swipe');
       }
       if (!gs.settings.auto_generate) {
         return;
@@ -131,17 +152,7 @@ export function initPanelMount() {
         toastr.warning(t`未配置 API，跳过自动生成选项`);
         return;
       }
-      const swipeId = getMessageSwipeId(messageId);
-      void (async () => {
-        const generation = await generateOptions({ messageId, swipeId });
-        if (!generation) {
-          return;
-        }
-        storeGeneration(messageId, swipeId, generation);
-        // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
-        panelStore.autoSetCollapsed(false);
-        resync();
-      })().catch(error => console.error('[Choice] onMessageReceived failed', error));
+      startGeneration();
     } catch (error) {
       console.error('[Choice] onMessageReceived failed', error);
     }

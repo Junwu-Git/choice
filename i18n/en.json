@@ -573,6 +573,7 @@
   "目标分组": "Target Group",
   "目标类型": "Target Type",
   "知识边界": "Knowledge Boundary",
+  "知识边界分析中": "Analyzing knowledge boundary…",
   "知识边界分析失败：${0}": "Knowledge boundary analysis failed: ${0}",
   "知识边界分析完成：本轮无变化，共 ${0} 条": "Knowledge boundary analysis complete: no changes this round, ${0} entries total",
   "知识边界分析已关闭，请先在上方开启": "Knowledge boundary analysis is off; enable it above first",

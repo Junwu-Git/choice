@@ -15,6 +15,9 @@
       :class="{
         'choice-floating-bubble--dragging': isDragging,
         'choice-floating-bubble--generating': bubbleState === 'generating',
+        // 知识分析是独立后台请求，可与选项生成同时进行：用独立修饰类而不是塞进
+        // bubbleState，否则两者并行时后到的状态会覆盖前一个，动效只剩一种
+        'choice-floating-bubble--knowledge': isAnalyzingKnowledge && !isDragging,
         'choice-floating-bubble--idle': bubbleState === 'idle' && !isDragging,
         'choice-floating-bubble--disabled': bubbleState === 'disabled',
         'choice-floating-bubble--snapped-left': isSnappedLeft && !isDragging,
@@ -43,6 +46,7 @@
       :title="bubbleTitle"
     >
       <div class="choice-bubble-inner-ring"></div>
+      <div class="choice-bubble-knowledge-orbit" aria-hidden="true"></div>
       <i
         :class="
           isGenerating ? 'fa-solid fa-spinner fa-spin choice-bubble-icon' : 'fa-solid fa-chess choice-bubble-icon'
@@ -56,6 +60,7 @@
 
 <script setup lang="ts">
 import { generatorState, resolveCustomApi } from '@/core/generator';
+import { knowledgeState } from '@/core/knowledge-state';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import {
@@ -105,6 +110,8 @@ const clearSuppressSelect = () => {
 };
 
 const isGenerating = computed(() => generatorState.loading);
+// 知识边界独立分析在途：与选项生成并行，悬浮球用独立光点提示（见样式 --knowledge）
+const isAnalyzingKnowledge = computed(() => knowledgeState.loading);
 
 // 紧凑小点样式（ui.bubble_style='compact'）：直径由 floating-state.bubbleSize 统一
 // 处理，这里只挂视觉类（内环保留度/呼吸节奏走本组件样式表）
@@ -132,10 +139,13 @@ const bubbleTitle = computed(() => {
   const noPool = usePoolSelectorStore().effectivePool.length === 0;
   const opensSettings = gs.settings.ui.bubble_click_action === 'settings';
   const actionHint = opensSettings ? t`点击打开设置` : t`点击查看选项`;
-  if (noApi && noPool) return t`未配置 API 且条目池为空——${actionHint}`;
-  if (noApi) return t`未配置 API——${actionHint}`;
-  if (noPool) return t`条目池为空——${actionHint}`;
-  return actionHint;
+  let title: string;
+  if (noApi && noPool) title = t`未配置 API 且条目池为空——${actionHint}`;
+  else if (noApi) title = t`未配置 API——${actionHint}`;
+  else if (noPool) title = t`条目池为空——${actionHint}`;
+  else title = actionHint;
+  // 光点动效较克制，标题补一句运行态：hover 时能确认绿点是知识分析而非装饰
+  return isAnalyzingKnowledge.value ? `${title} · ${t`知识边界分析中`}` : title;
 });
 
 const bubbleState = computed(() => {
@@ -500,6 +510,54 @@ onUnmounted(() => {
 .choice-floating-bubble--generating .choice-bubble-inner-ring {
   animation: choice-bubble-ring-spin 1.5s linear infinite;
   opacity: 0.5;
+}
+
+/* 知识边界分析：绿色小光点慢速反向公转，与选项生成的蓝色快环 + spinner 区分。
+   两者可同时存在（分析在后台并行），所以用独立节点而不是复用内环；
+   拖拽时由 class 绑定临时收起，避免跟手位移叠加动画。 */
+.choice-bubble-knowledge-orbit {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--choice-transition);
+}
+
+.choice-floating-bubble--knowledge .choice-bubble-knowledge-orbit {
+  opacity: 1;
+  /* 复用内环 keyframe：2.6s 反向 vs generating 的 1.5s 正向，节奏与方向都不同 */
+  animation: choice-bubble-ring-spin 2.6s linear infinite reverse;
+}
+
+.choice-bubble-knowledge-orbit::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--choice-color-success);
+  box-shadow: 0 0 6px var(--choice-color-success);
+}
+
+/* 紧凑小点直径更小，光点与轨道同步收一档，避免贴边 */
+.choice-floating-bubble--compact .choice-bubble-knowledge-orbit {
+  inset: 4px;
+}
+
+.choice-floating-bubble--compact .choice-bubble-knowledge-orbit::before {
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice-floating-bubble--knowledge .choice-bubble-knowledge-orbit {
+    animation: none;
+  }
 }
 
 .choice-floating-bubble--disabled .choice-bubble-inner-ring {
