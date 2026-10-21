@@ -1,53 +1,20 @@
 <template>
   <div class="choice-stats-settings">
-    <!-- 控制簇：统计/自动化/AI 归因/AI 理由四开关集中（原「统计与自动化」+「AI 增强」两段合并，
-         减少顶部标题噪音）；运行状态读数随开关显隐 -->
+    <!-- 控制簇：统计采集单开关（v78 起自动化系统已移除，统计页为纯报表） -->
     <div class="choice-section">
       <div class="choice-stats-card-head">
-        <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计与自动化` }}</h4>
+        <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`统计` }}</h4>
         <span class="choice-stats-info" :title="controlHelp"><i class="fa-solid fa-circle-info"></i></span>
       </div>
-      <div class="choice-stats-ai-row">
+      <div class="choice-stats-switch-row">
         <label class="choice-stats-toggle">
           <ChoiceSwitch
             v-model="statsEnabled"
-            :title="t`统计采集：开启后记录生成/选择数据（驱动下方报表与建议引擎）；关闭期间零记录，既有历史保留`"
+            :title="t`统计采集：开启后记录生成/选择数据（驱动下方报表）；关闭期间零记录，既有历史保留`"
           />
           <span>{{ t`统计采集` }}</span>
         </label>
-        <label class="choice-stats-toggle">
-          <ChoiceSwitch
-            v-model="automationEnabled"
-            :disabled="!statsEnabled"
-            :title="t`自动化：建议引擎/阵容计划/AI 增强（需先开启统计采集）；只想看统计报表可保持关闭`"
-          />
-          <span>{{ t`自动化建议` }}</span>
-        </label>
-        <template v-if="statsEnabled && automationEnabled">
-          <label class="choice-stats-toggle">
-            <ChoiceSwitch
-              v-model="aiAttributionEnabled"
-              :title="t`归因开关：每轮生成后后台 AI 修正选项→条目归因（成本提示见问号帮助）`"
-            />
-            <span>{{ t`AI 归因` }}</span>
-          </label>
-          <label class="choice-stats-toggle">
-            <ChoiceSwitch
-              v-model="aiAnalysisEnabled"
-              :title="t`建议理由开关：为有统计建议的条目生成 AI 解释（仅展示）`"
-            />
-            <span>{{ t`AI 建议理由` }}</span>
-          </label>
-        </template>
       </div>
-      <p v-if="statsEnabled && automationEnabled && aiAttributionEnabled" class="choice-stats-sub choice-stats-ai-l1">
-        {{
-          t`归因队列 ${aiAttributionState.queued} · 已修正 ${aiAttributionState.corrected} 条次 · 迁移命中 ${aiAttributionState.migrated} 条次`
-        }}
-      </p>
-      <p v-if="statsEnabled && automationEnabled && aiCacheEntryCount > 0" class="choice-stats-sub">
-        {{ t`已为 ${aiCacheEntryCount} 条建议生成理由（${aiCacheTimeText}）· 数据更新后自动重算` }}
-      </p>
     </div>
 
     <!-- 统计关闭提示（仅提示；开关在上方控制簇，常驻可开可关） -->
@@ -55,68 +22,24 @@
       <div>
         <b>{{ t`统计未开启` }}</b>
         <p>
-          {{
-            t`关闭期间不记录任何生成/选择数据，既有历史保留。开启「统计采集」后开始积累；仅需查看报表时保持「自动化建议」关闭即可。`
-          }}
+          {{ t`关闭期间不记录任何生成/选择数据，既有历史保留。开启「统计采集」后开始积累。` }}
         </p>
       </div>
     </div>
 
-    <!-- 粘性子头：维度切换 + 快捷跳转 pills（钉在设置面板可视区顶部，滚动时常驻可达） -->
+    <!-- 粘性子头：维度切换（钉在设置面板可视区顶部，滚动时常驻可达） -->
     <div class="choice-stats-sticky-head">
       <!-- 维度切换：全局（聚合所有 config） / 未绑定档 / 各条目池配置 -->
       <div class="choice-stats-dim-bar">
         <select v-model="scopeId" class="text_pole choice-stats-scope-select" :title="t`统计维度`">
           <option v-for="o in scopeOptions" :key="o.id" :value="o.id">{{ o.name }}</option>
         </select>
-        <button
-          v-if="undoCount > 0"
-          class="menu_button choice-stats-undo"
-          :title="t`撤销最近一次应用到条目池配置的修改（可连续撤销）`"
-          @click="onUndo"
-        >
-          <i class="fa-solid fa-rotate-left"></i>
-          {{ t`撤销 (${undoCount})` }}
-        </button>
         <span v-if="view.isGlobal" class="choice-stats-dim-note">{{ t`全局 = 全部配置的混合统计` }}</span>
         <span v-else-if="scopeId === NONE_SCOPE" class="choice-stats-dim-note">{{
           t`未绑定配置档（无 config 会话）`
         }}</span>
         <span v-else class="choice-stats-dim-note">{{ t`仅该条目池配置生效会话计入` }}</span>
       </div>
-    </div>
-
-    <!-- 无 config 引导：应用建议需要 config 作为写入目标（关闭态隐藏——建议应用不可达） -->
-    <div
-      v-if="statsEnabled && automationEnabled && scopeId === NONE_SCOPE && configs.length === 0"
-      class="choice-stats-guide"
-    >
-      <div>
-        <b>{{ t`尚未创建任何条目池配置` }}</b>
-        <p>
-          {{
-            t`统计优选建议会写入条目池配置的权重覆盖。创建默认配置后，未绑定档的历史统计会自动并入新配置，即可在统计页应用建议。`
-          }}
-        </p>
-      </div>
-      <button class="menu_button" @click="onCreateDefaultConfig">
-        <i class="fa-solid fa-folder-plus"></i>
-        {{ t`创建默认配置` }}
-      </button>
-    </div>
-    <div v-else-if="statsEnabled && automationEnabled && scopeId === NONE_SCOPE" class="choice-stats-guide">
-      <div>
-        <b>{{ t`当前会话未绑定条目池配置` }}</b>
-        <p>
-          {{
-            t`本会话的统计记入「未绑定配置」档，可查看但无法应用建议。到条目池页绑定角色/聊天，或将某配置设为默认后回来。`
-          }}
-        </p>
-      </div>
-      <button class="menu_button" @click="requestTab('pool')">
-        <i class="fa-solid fa-arrow-right-to-bracket"></i>
-        {{ t`前往条目池页` }}
-      </button>
     </div>
 
     <!-- 概览（恒展开）：汇总卡片 + 样本分布 + 趋势三合一，减少标题噪音 -->
@@ -286,35 +209,6 @@
         <span class="choice-stats-info" :title="leaderboardHelp"><i class="fa-solid fa-circle-info"></i></span>
         <div class="choice-stats-head-actions">
           <button
-            v-if="applyableCount > 0"
-            class="menu_button choice-stats-apply-all"
-            :title="t`批量应用当前筛选结果中的全部建议`"
-            @click="applyAll()"
-          >
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-            {{ t`应用全部建议 (${applyableCount})` }}
-          </button>
-          <button
-            v-if="statsEnabled && automationEnabled && aiAnalysisEnabled"
-            class="menu_button choice-stats-ai-btn"
-            :class="{ 'choice-stats-ai-btn--running': aiAnalysisState.running }"
-            :disabled="aiAnalysisState.running"
-            :title="t`为当前维度有统计建议的条目生成/刷新 AI 理由（仅展示，不改动作）`"
-            @click="onRunAiAnalysis()"
-          >
-            <i class="fa-solid fa-brain"></i>
-            {{ aiAnalyzeLabel }}
-          </button>
-          <button
-            v-if="statsEnabled && automationEnabled && aiAnalysisEnabled && aiAnalysisState.running"
-            class="menu_button"
-            :title="t`取消当前 AI 理由分析（已完成的批次不写入）`"
-            @click="onCancelAiAnalysis()"
-          >
-            <i class="fa-solid fa-xmark"></i>
-            {{ t`取消` }}
-          </button>
-          <button
             v-if="filteredGroups.length > 0"
             class="choice-icon-btn"
             :title="allExpanded ? t`全部收起` : t`全部展开`"
@@ -361,9 +255,6 @@
           <button :ref="groupHeadRef(g)" class="choice-stats-group-head" @click="toggleGroup(g)">
             <i class="fa-solid" :class="isExpanded(g) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
             <span class="choice-stats-group-name">{{ g.category }}</span>
-            <span v-if="canApply && groupSuggestCount(g) > 0" class="choice-stats-suggest-badge">{{
-              t`${groupSuggestCount(g)} 条建议`
-            }}</span>
             <span class="choice-stats-group-summary">{{ groupSummary(g) }}</span>
           </button>
           <div v-if="isExpanded(g)" class="choice-stats-group-body choice-scrollbar">
@@ -381,22 +272,6 @@
                 <span class="choice-stats-rank-text" :title="selectedTextTitle(row)">{{ entryText(row) }}</span>
                 <span class="choice-stats-rank-actions">
                   <button
-                    v-if="canApplyRow(row)"
-                    class="choice-icon-btn choice-stats-apply"
-                    :title="t`应用这条建议到当前配置`"
-                    @click="applySuggestion(row)"
-                  >
-                    <i class="fa-solid fa-check"></i>
-                  </button>
-                  <button
-                    v-if="insightOf(row) === 'disabled' && canApply && !row.deleted"
-                    class="choice-icon-btn choice-stats-reenable"
-                    :title="t`重新启用该条目（恢复参与生成；不记应用历史）`"
-                    @click="reEnable(row)"
-                  >
-                    <i class="fa-solid fa-power-off"></i>
-                  </button>
-                  <button
                     v-if="!row.deleted"
                     class="choice-icon-btn choice-stats-locate"
                     :title="t`在条目库中定位`"
@@ -413,15 +288,8 @@
               >
                 <div class="choice-stats-rate-fill" :style="{ width: rateWidth(row.rate) }"></div>
               </div>
-              <!-- meta 行：洞察徽标 + 命中率/期望/窗口读数 + 参与/命中/未命中 -->
+              <!-- meta 行：命中率/期望/窗口读数 + 参与/命中/未命中 -->
               <div class="choice-stats-rank-meta">
-                <span
-                  v-if="statsEnabled && automationEnabled && badgeOf(row)"
-                  class="choice-stats-insight"
-                  :class="badgeOf(row)?.cls"
-                  :title="badgeOf(row)?.title"
-                  >{{ badgeOf(row)?.text }}</span
-                >
                 <span v-if="row.rate !== null" class="choice-stats-rank-rate" :title="t`命中率 = 命中轮次 ÷ 参与轮次`"
                   >{{ t`命中率` }} <b>{{ rateText(row.rate) }}</b></span
                 >
@@ -441,15 +309,6 @@
                   >{{ t`未命中` }}
                   <b class="choice-stats-meta-miss">{{ row.rounds_included - row.rounds_with_selection }}</b></span
                 >
-              </div>
-              <div
-                v-if="statsEnabled && automationEnabled && aiReasonOf(row)"
-                class="choice-stats-ai-reason"
-                :class="{ 'choice-stats-ai-reason--low': (aiReasonOf(row)?.confidence ?? 0) < 0.4 }"
-                :title="t`AI 生成的理由（置信度 ${aiReasonOf(row)?.confidence ?? 0}）；仅解释统计建议，不改变动作`"
-              >
-                <i class="fa-solid fa-brain"></i>
-                <span>{{ aiReasonOf(row)?.reason ?? '' }}</span>
               </div>
             </div>
           </div>
@@ -552,208 +411,6 @@
       </template>
     </ChoiceSectionCard>
 
-    <!-- 卡牌（统计层，全局维度；默认折叠：卡库/触发/幸运数/货币收支读数） -->
-    <ChoiceSectionCard id="choice-stats-anchor-card" title="卡牌" icon="fa-solid fa-chess-knight" data-anchor="card">
-      <template #extra>
-        <span class="choice-stats-info" :title="cardHelp"><i class="fa-solid fa-circle-info"></i></span>
-      </template>
-      <p class="choice-stats-sub">
-        {{ t`幸运命中 ${cardStats.lucky_hits} · 开包 ${cardStats.packs_opened} · 获得卡 ${cardStats.cards_obtained}` }}
-      </p>
-      <div v-if="cardStats.lucky_hits === 0 && cardStats.cards_obtained === 0" class="choice-empty-hint">
-        {{ t`尚未触卡。开卡牌总开关后，判定击中幸运数可开卡包；卡触发继续下面的明细。` }}
-      </div>
-      <template v-else>
-        <div class="choice-stats-cards">
-          <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--warning"><i class="fa-solid fa-star"></i></span>
-            <div class="choice-stats-card-body">
-              <div class="choice-stats-card-label">{{ t`幸运命中` }}</div>
-              <div class="choice-stats-card-value">{{ cardStats.lucky_hits }}</div>
-            </div>
-          </div>
-          <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--info"><i class="fa-solid fa-gift"></i></span>
-            <div class="choice-stats-card-body">
-              <div class="choice-stats-card-label">{{ t`开包次数` }}</div>
-              <div class="choice-stats-card-value">{{ cardStats.packs_opened }}</div>
-            </div>
-          </div>
-          <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--success"
-              ><i class="fa-solid fa-layer-group"></i
-            ></span>
-            <div class="choice-stats-card-body">
-              <div class="choice-stats-card-label">{{ t`获得卡` }}</div>
-              <div class="choice-stats-card-value">{{ cardStats.cards_obtained }}</div>
-            </div>
-          </div>
-          <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--success"
-              ><i class="fa-solid fa-coins"></i
-            ></span>
-            <div class="choice-stats-card-body">
-              <div class="choice-stats-card-label">{{ t`行动币获得` }}</div>
-              <div class="choice-stats-card-value">{{ cardStats.currency_earned }}</div>
-            </div>
-          </div>
-          <div class="choice-stats-card">
-            <span class="choice-stats-card-icon choice-stats-card-icon--danger"><i class="fa-solid fa-minus"></i></span>
-            <div class="choice-stats-card-body">
-              <div class="choice-stats-card-label">{{ t`行动币支出` }}</div>
-              <div class="choice-stats-card-value">{{ cardStats.currency_spent }}</div>
-            </div>
-          </div>
-        </div>
-        <p v-if="earnedByOutcome" class="choice-stats-sub">
-          {{ t`收支构成` }}：{{ earnedByOutcome }}{{ t`（失败/大失败通常只扣余额，叠加套装加成时可为正收入）` }}
-        </p>
-        <!-- 每卡触发次数（join 卡定义，按触发次数降序） -->
-        <div class="choice-stats-sub-block">
-          <div class="choice-stats-sub-block-head">
-            <span class="choice-stats-mini-title"><i class="fa-solid fa-id-badge"></i>{{ t`每卡触发` }}</span>
-          </div>
-          <p class="choice-stats-sub">{{ t`卡效果实际触发的次数（累计）` }}</p>
-          <div v-if="cardTopTriggers.length === 0" class="choice-empty-hint">{{ t`暂无卡触发` }}</div>
-          <ol v-else class="choice-dice-history-list">
-            <li v-for="t in cardTopTriggers" :key="t.card_id" class="choice-dice-history-item">
-              <span class="choice-dice-history-text" :title="t.name">{{ t.name }}</span>
-              <span class="choice-dice-history-nums"
-                ><b>{{ t.triggers }}</b
-                ><span class="choice-dice-history-outcome" :class="`choice-dice-history-outcome--${t.star}`">{{
-                  CARD_STAR_LABEL[t.star]
-                }}</span></span
-              >
-            </li>
-          </ol>
-        </div>
-      </template>
-    </ChoiceSectionCard>
-
-    <!-- 阵容计划（半自动：默认折叠；仅具体 config 维度可写） -->
-    <ChoiceSectionCard
-      v-if="canApply"
-      id="choice-stats-anchor-roster"
-      title="阵容计划"
-      icon="fa-solid fa-users-gear"
-      data-anchor="roster"
-    >
-      <template #extra>
-        <span class="choice-stats-info" :title="rosterHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <button
-          v-if="rosterPlan && (rosterPlan.drops.length > 0 || rosterPlan.promotes.length > 0)"
-          class="menu_button choice-stats-apply-all"
-          :title="t`把落出/补入清单应用到当前配置`"
-          @click="applyRoster()"
-        >
-          <i class="fa-solid fa-users-gear"></i>
-          {{ t`应用阵容计划` }}
-          <b>{{ rosterPlan.drops.length + rosterPlan.promotes.length }}</b>
-        </button>
-      </template>
-      <p class="choice-stats-sub">{{ t`按目标在役条数生成落出 / 补入清单` }}</p>
-      <div class="choice-stats-roster-bar">
-        <label class="choice-stats-toggle">
-          <ChoiceSwitch v-model="rosterEnabled" :title="t`启用阵容计划`" />
-          <span>{{ t`启用` }}</span>
-        </label>
-        <label class="choice-stats-roster-size" :class="{ 'choice-stats-roster-size--off': !rosterEnabled }">
-          {{ t`目标在役条数` }}
-          <input
-            v-model="rosterSizeText"
-            class="text_pole choice-stats-roster-input"
-            type="number"
-            min="1"
-            step="1"
-            :placeholder="t`如 12`"
-            @blur="syncRosterDisplay"
-          />
-        </label>
-      </div>
-      <div v-if="rosterPlan" class="choice-stats-roster-readout">
-        {{ t`在役 ${rosterPlan.activeCount} 条` }}
-        <template v-if="rosterPlan.exempt > 0"> · {{ t`${rosterPlan.exempt} 条被豁免` }}</template>
-        · {{ t`替补席 ${benchCount} 条` }} · {{ t`未入池 ${unreferencedCount} 条` }}
-        <template v-if="rosterPostApplyShortfall > 0">
-          ·
-          <span :title="t`探索补入每次至多填一半空位，应用本计划后再次应用可继续从未入池条目补入（直至无可补）`">{{
-            t`应用后仍缺 ${rosterPostApplyShortfall} 条`
-          }}</span>
-        </template>
-      </div>
-      <div v-if="rosterEnabled && rosterPlan" class="choice-stats-roster">
-        <div v-if="rosterPlan.drops.length > 0" class="choice-stats-roster-col">
-          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--drop">
-            <i class="fa-solid fa-arrow-down"></i>
-            {{ t`落出 (${rosterPlan.drops.length})` }}
-          </div>
-          <div v-for="a in rosterPlan.drops" :key="a.entryId" class="choice-stats-roster-item">
-            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-          </div>
-        </div>
-        <div v-if="rosterPlan.promotes.length > 0" class="choice-stats-roster-col">
-          <div class="choice-stats-roster-col-head choice-stats-roster-col-head--promote">
-            <i class="fa-solid fa-arrow-up"></i>
-            {{ t`补入 (${rosterPlan.promotes.length})` }}
-          </div>
-          <div v-for="a in rosterPlan.promotes" :key="a.entryId" class="choice-stats-roster-item">
-            <span class="choice-stats-type-badge">{{ rosterTypeLabel(a) }}</span>
-            <span class="choice-stats-roster-text" :title="rosterReason(a)">{{ rosterText(a) }}</span>
-          </div>
-        </div>
-        <div v-if="rosterPlan.drops.length === 0 && rosterPlan.promotes.length === 0" class="choice-empty-hint">
-          {{ rosterEmptyText }}
-        </div>
-      </div>
-    </ChoiceSectionCard>
-
-    <!-- 应用历史：最近自动化写入批次（持久撤销槽的可视化，刷新不丢；默认折叠；统计或自动化
-         任一关闭时隐藏——撤销入口保留在顶部维度条，config 写入记录与统计关停解耦） -->
-    <ChoiceSectionCard
-      v-if="statsEnabled && automationEnabled && historyEntries.length > 0"
-      id="choice-stats-anchor-history"
-      title="应用历史"
-      icon="fa-solid fa-clock-rotate-left"
-      data-anchor="history"
-    >
-      <template #extra>
-        <span class="choice-stats-info" :title="historyHelp"><i class="fa-solid fa-circle-info"></i></span>
-        <span v-if="undoCount > 1" class="choice-stats-dim-note">{{
-          t`共 ${historyEntries.length} 批，可逐条撤销`
-        }}</span>
-      </template>
-      <p class="choice-stats-sub">{{ t`最近应用批次，可逐条撤销` }}</p>
-      <div class="choice-stats-history">
-        <div v-for="h in historyEntries" :key="h.entry.id" class="choice-stats-history-item">
-          <div class="choice-stats-history-head">
-            <span
-              class="choice-stats-kind"
-              :class="h.entry.kind === 'roster' ? 'choice-stats-kind--roster' : 'choice-stats-kind--suggestions'"
-              >{{ h.entry.kind === 'roster' ? t`阵容` : t`建议` }}</span
-            >
-            <span class="choice-stats-history-time" :title="h.entry.ts ? historyTimeTitle(h.entry.ts) : undefined">{{
-              h.entry.ts ? timeAgo(h.entry.ts) : EMPTY_DISPLAY
-            }}</span>
-            <span class="choice-stats-history-count">{{ t`${h.changes.length} 条变更` }}</span>
-            <button
-              class="choice-icon-btn choice-stats-history-undo"
-              :title="t`撤销这一批应用`"
-              @click="undoHistoryEntry(h.entry.id)"
-            >
-              <i class="fa-solid fa-rotate-left"></i>
-            </button>
-          </div>
-          <div v-if="h.changes.length > 0" class="choice-stats-history-changes">
-            <div v-for="c in h.changes" :key="c.entryId" class="choice-stats-history-change">
-              <span class="choice-stats-type-badge">{{ c.name }}</span>
-              <span class="choice-stats-history-change-text">{{ c.change }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </ChoiceSectionCard>
-
     <!-- 命中榜（用户选择条目的排行；默认折叠） -->
     <ChoiceSectionCard id="choice-stats-anchor-hitrank" title="命中榜" icon="fa-solid fa-crown" data-anchor="hitrank">
       <template #extra>
@@ -828,30 +485,11 @@
       @confirm="confirmClear"
       @cancel="cancelClear"
     />
-    <ConfirmDialog
-      :open="applyOpen"
-      :title="applyTitle"
-      :message="applyMessage"
-      :confirm-text="applyConfirmText"
-      :cancel-text="applyCancelText"
-      @confirm="confirmApply"
-      @cancel="cancelApply"
-    />
-    <ConfirmDialog
-      :open="rosterOpen"
-      :title="rosterTitle"
-      :message="rosterMessage"
-      :confirm-text="rosterConfirmText"
-      :cancel-text="rosterCancelText"
-      @confirm="confirmRoster"
-      @cancel="cancelRoster"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 import toastr from 'toastr';
-import { uuidv4 } from '@sillytavern/scripts/utils';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePoolSelectorStore } from '@/store/pool-selector';
 import type { DiceOutcome } from '@/core/dice';
@@ -861,83 +499,57 @@ import {
   hitLeaderboard,
   clearStats,
   applyEntryFilters,
-  entryInsight,
-  entrySuggestion,
   dailySeries,
   entrySampleDistribution,
   fullExpectedRate,
   windowMetrics,
-  applySuggestions,
-  undoLastApply,
-  undoApply,
-  applyHistorySummary,
-  planRoster,
-  applyRosterPlan,
-  reEnableEntry,
   diceWinRate,
   DICE_HISTORY_LIMIT,
   GLOBAL_SCOPE,
   NONE_SCOPE,
-  suggestionKey,
   type EntryGroup,
-  type EntryInsight,
   type EntryRankRow,
   type EntrySortBy,
   type HitRankRow,
-  type RosterAction,
-  type RosterPlan,
-  type Suggestion,
   type StatsView,
   type WindowMetrics,
 } from '@/core/stats';
 import { requestTab, focusPoolEntry } from '@/core/floating-state';
 import { EMPTY_DISPLAY } from '@/core/constants';
 import { formatDateTime, isoTimestamp, pad2 } from '@/util/time';
-import { aiAnalysisState, runAiAnalysis } from '@/core/ai-analysis';
-import { aiAttributionState } from '@/core/ai-attribution';
 import ConfirmDialog from '@/components/ConfirmDialog.vue';
 import { useConfirm } from '@/components/shared/useConfirm';
 import ChoiceSwitch from '@/components/shared/ChoiceSwitch.vue';
 import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import {
   SCHEMA_VERSION,
-  SUGGEST_MIN_SAMPLES,
-  SUGGEST_WEIGHT_MIN,
-  GenerationSettings,
-  AI_ANALYSIS_DEBOUNCE_MS,
+  STATS_MIN_SAMPLES,
   createEmptyDiceStats,
-  createEmptyCardStats,
-  type AiAnalysisEntry,
-  type CardStats,
   type DiceStats,
   type PoolConfigEntry,
 } from '@/type/settings';
-import { CARD_STAR_LABEL } from '@/core/cards-meta';
-import { BUILTIN_CARDS } from '@/core/cards-builtin';
 
 const gs = useGlobalSettingsStore();
 const stats = computed(() => gs.settings.stats);
 const masterPool = computed(() => gs.settings.master_pool);
 const configs = computed(() => gs.settings.configs);
 const groupOrder = computed(() => gs.settings.group_order);
-const sampleMin = SUGGEST_MIN_SAMPLES;
+const sampleMin = STATS_MIN_SAMPLES;
 
 // ── 区块标题 info tooltip：完整说明收进原生 title，页面只留一行副标题 ──
 /** 概览（汇总卡片 / 样本分布 / 趋势 三合一）说明 */
 const overviewHelp = computed(
   () =>
-    t`汇总卡片：当前维度（全局 = 所有配置聚合）的累计生成/选择/选择率/活跃天数/池内参与率/最近活动。样本分布：当前维度有效池 ${effectivePoolSize.value} 条目的样本覆盖——参与 ≥${sampleMin} 轮命中率才可信（可出建议），不足的只标「样本不足」，充足占比越高优化建议越可信；「参与」指条目进入过生成轮候选菜单（轮次共现），不代表选项一定出现在输出中。趋势：按天统计的生成/选择活动（仅行动选项视图计入，随选中维度），自 v51 起累积，历史不回填。`,
+    t`汇总卡片：当前维度（全局 = 所有配置聚合）的累计生成/选择/选择率/活跃天数/池内参与率/最近活动。样本分布：当前维度有效池 ${effectivePoolSize.value} 条目的样本覆盖——参与 ≥${sampleMin} 轮命中率读数才基本可信，不足的标「样本不足」，充足占比越高报表读数越可信；「参与」指条目进入过生成轮候选菜单（轮次共现），不代表选项一定出现在输出中。趋势：按天统计的生成/选择活动（仅行动选项视图计入，随选中维度），自 v51 起累积，历史不回填。`,
 );
 const leaderboardHelp = computed(() =>
   [
-    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中；统计满 ${sampleMin} 轮后按平均每轮点选数校正，多选时基线随之抬高），高于期望越多越值得提权，低于越多越值得降权。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
-    view.value.isGlobal ? t` 全局 = 所有配置混合累计，不代表任何单一场景；建议功能需切换到具体配置维度。` : '',
+    t`命中轮次 = 选项被选中且文本匹配到该条目的轮次（精确归因：输出选项与候选 type+内容 做相似度匹配，被 AI 舍弃的候选不产生命中）；命中率与「期望」对比：期望 = 该条目方向被 AI 采纳输出时的随机点选基准（仅在输出匹配到该条目的轮次按「该条目被匹配到的输出数 ÷ 该轮输出条数」累计；AI 完全自由发挥的轮次不累计期望也不产生命中；统计满 ${sampleMin} 轮后按平均每轮点选数校正，多选时基线随之抬高），实际命中率持续高于期望说明该条目方向更常被采纳、低于期望说明更常被绕开。单个 config 维度额外显示近 ${sampleMin} 轮窗口命中率。参与轮次 = 该条目被抽入候选菜单的轮次（共现归因）：AI 输出为自由文本，被 AI 舍弃的候选也计参与；生成条数按 AI 输出条数计，池子小于请求条数或 AI 自由发挥时，参与条目数可能少于或多于生成条数。`,
+    view.value.isGlobal ? t` 全局 = 所有配置混合累计，不代表任何单一场景。` : '',
   ].join(''),
 );
 const hitRankHelp = t`仅列出被选择过的条目（精确归因：输出选项文本匹配到该条目才算命中，被 AI 舍弃的候选不产生命中），按命中次数排序。`;
-const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的判定结局计数（D100 或骰式）与每日判定次数。随「统计采集」开关积累；不参与条目建议/权重。清空统计时一并清除。`;
-const rosterHelp = t`为目标在役条数 N 生成落出/补入清单：超过 N 的条目按表现（超额命中率，窗口优先/全量兜底）从末尾落出（软停用、保留统计），空位由替补席（曾停用条目）优先补入，再按探索预算（每次至多一半空位）从未入池条目补入，空缺可再次应用继续填。pinned 与样本不足（参与 <${sampleMin} 轮）豁免；点「应用」确认后写入，可撤销。`;
-const historyHelp = t`最近应用到当前配置的自动化批次（建议/阵容），刷新不丢。撤销恢复应用前的权重/启闭状态并重置对应条目的冷却观察期。`;
+const diceHelp = t`骰子判定战绩（全局维度，不随条目池配置切换）：记录点击选项时的判定结局计数（D100 或骰式）与每日判定次数。随「统计采集」开关积累。清空统计时一并清除。`;
 const manageHelp = t`导出统计为 JSON 便于备份与分析（含全部维度）；清空后所有维度与计数归零，用于重新统计。统计不与角色/聊天绑定，按条目池配置分维度累计。`;
 
 // ── 维度 ──
@@ -1001,158 +613,15 @@ const poolCapsule = computed(() => {
 const effectivePoolSize = computed(() => poolCapsule.value.size);
 
 /** 统计采集开关（默认关）：关 = 零采集零写入，统计页横幅提示；开 = 自开启时刻积累，
- *  既有历史保留。只想看统计的用户开启此项即可 */
+ *  既有历史保留 */
 const statsEnabled = computed({
   get: () => gs.settings.stats_enabled,
   set: (v: boolean) => {
     gs.settings.stats_enabled = v;
   },
 });
-/** 自动化开关（默认关，依赖统计采集）：关 = 纯报表（无建议引擎/阵容/AI）；
- *  开 = 在统计数据基础上启用自动化。仅统计开启时才有意义，UI 上置灰引导 */
-const automationEnabled = computed({
-  get: () => gs.settings.automation_enabled,
-  set: (v: boolean) => {
-    gs.settings.automation_enabled = v;
-  },
-});
-/** 控制簇四开关说明（统计采集 / 自动化建议 / AI 归因 / AI 建议理由；常驻可见） */
-const controlHelp = t`统计采集：开启后记录行动选项的生成/选择数据（仅行动选项视图），驱动下方报表与建议引擎；关闭期间零记录，既有历史保留。自动化建议：在统计数据基础上启用建议引擎（提权/降权/回捞，只调权重、永不自动停用条目）、阵容计划与 AI 增强；只想看统计报表的用户保持关闭即可。自动化依赖统计采集，统计关闭时自动化不可用。AI 归因：每轮行动选项生成后，后台异步调 AI 把选项语义匹配到候选条目，结果与本地 Dice 归因 diff 后对称修正统计（默认关：每次生成会多一次 API 请求，且将条目内容送往模型）。AI 建议理由：为当前维度有统计建议的条目生成自然语言解释（打开统计页/切维度按需触发，默认开；仅展示，不改变建议动作与写入链路）。两个 AI 功能均需已配置 API，未配置时静默降级为纯统计。`;
-const canApply = computed(() => {
-  if (!statsEnabled.value || !automationEnabled.value) return false;
-  const scoped = scopeId.value;
-  if (scoped === GLOBAL_SCOPE || scoped === NONE_SCOPE) return false;
-  return configs.value.some(c => c.id === scoped);
-});
-
-// ── AI 增强开关（独立，默认：归因关 / 分析开；见 settings.ts 字段注释） ──
-const aiAttributionEnabled = computed({
-  get: () => gs.settings.ai_attribution_enabled,
-  set: (v: boolean) => {
-    gs.settings.ai_attribution_enabled = v;
-  },
-});
-const aiAnalysisEnabled = computed({
-  get: () => gs.settings.ai_analysis_enabled,
-  set: (v: boolean) => {
-    gs.settings.ai_analysis_enabled = v;
-  },
-});
-
-/** 当前维度 AI 理由缓存状态（供行内理由 + 按钮/状态文案） */
-const aiCache = computed(() => gs.settings.stats.ai_analysis[scopeId.value]);
-/** 行内 AI 理由（R2 指纹绑定）：仅当「当前建议」与缓存理由对应的建议指纹一致才展示——
- *  建议消失/变化（配置写入、数据波动）后旧理由立即隐藏，拒用过期解释误导用户。
- *  rowMeta 已有每行 suggestion（一次性计算），此处零额外建议计算。
- *  受 ai_analysis_enabled 开关统一控制：开关关时返回 null，行内理由与「已为 N 条建议生成
- *  理由」读数（aiCacheEntryCount 经此函数）一并隐藏，与「AI 分析/取消」按钮的开关门一致，
- *  杜绝「关掉开关后按钮消失、旧理由仍挂」的 gate 漂移 */
-const aiReasonOf = (row: EntryRankRow): AiAnalysisEntry | null => {
-  if (!gs.settings.ai_analysis_enabled) return null;
-  const cached = aiCache.value?.entries[row.entryId];
-  if (!cached || !cached.reason) return null;
-  const s = rowMeta.value.get(row.entryId)?.suggestion ?? null;
-  if (!s || cached.suggestion_key !== suggestionKey(s)) return null;
-  return cached;
-};
-/** AI 增强区块状态读数：当前维度实际可展示（指纹校验通过）的 AI 理由条数 */
-const aiCacheEntryCount = computed(() => {
-  let n = 0;
-  for (const g of groups.value) {
-    for (const r of g.rows) {
-      if (aiReasonOf(r)) n += 1;
-    }
-  }
-  return n;
-});
-/** 上次分析时间文案（timeAgo 定义在下文，函数内引用无 TDZ 问题） */
-const aiCacheTimeText = computed(() => timeAgo(aiCache.value?.updated_at ?? 0));
-
-/** AI 分析按钮文案：运行中显示分批进度；空闲显示缓存条数/时间 */
-const aiAnalyzeLabel = computed(() => {
-  if (aiAnalysisState.running) {
-    return aiAnalysisState.total > 0 ? t`AI 分析中 (${aiAnalysisState.done}/${aiAnalysisState.total})` : t`AI 分析中…`;
-  }
-  const n = aiCacheEntryCount.value;
-  if (n > 0) return t`刷新 AI 理由 (${n})`;
-  return t`AI 分析`;
-});
-
-/** 自动分析:打开/切维度/本维度统计有新数据时防抖触发一次；单飞与失效判定由
- *  runAiAnalysis/aiAnalysisNeeded 内部保证（打开页、切维度经 watch 也走同一调度）。
- *  只监听当前维度的活动时间戳——其他维度活动不再触发本维度的防抖（R1）。 */
-let aiAutoTimer: ReturnType<typeof setTimeout> | null = null;
-const scopeActivityTs = computed(() =>
-  scopeId.value === GLOBAL_SCOPE ? stats.value.updated_at : (stats.value.entries[scopeId.value]?.updated_at ?? 0),
-);
-const scheduleAiAnalysis = () => {
-  if (aiAutoTimer) clearTimeout(aiAutoTimer);
-  aiAutoTimer = setTimeout(() => {
-    void runAiAnalysis(scopeId.value);
-  }, AI_ANALYSIS_DEBOUNCE_MS);
-};
-watch(scopeId, scheduleAiAnalysis);
-watch(scopeActivityTs, scheduleAiAnalysis);
-onMounted(scheduleAiAnalysis);
-// 卸载清理：防抖定时器与手动分析的中止句柄一并释放，避免切 tab 后残留触发后台请求
-onUnmounted(() => {
-  if (aiAutoTimer) {
-    clearTimeout(aiAutoTimer);
-    aiAutoTimer = null;
-  }
-  aiAbort?.abort();
-  aiAbort = null;
-});
-
-/** 手动「AI 分析」按钮：强制跳过缓存失效判定重跑，并登记取消句柄（旁边「取消」按钮可中止） */
-let aiAbort: AbortController | null = null;
-const onRunAiAnalysis = () => {
-  if (!gs.settings.ai_analysis_enabled) return;
-  aiAbort?.abort();
-  aiAbort = new AbortController();
-  void runAiAnalysis(scopeId.value, true, aiAbort.signal).finally(() => {
-    if (aiAbort) aiAbort = null;
-  });
-};
-const onCancelAiAnalysis = () => {
-  aiAbort?.abort();
-  aiAbort = null;
-};
-
-// ── 无 config 引导 ──
-const onCreateDefaultConfig = () => {
-  // 清空既有 is_default：当前仅"无任何配置"场景可达，防御未来放开入口导致双 default
-  //（effectiveConfig 取 find(is_default) 首个，双 default 会造成绑定解析歧义）
-  for (const c of gs.settings.configs) c.is_default = false;
-  const entries: PoolConfigEntry[] = masterPool.value.map(e => ({
-    entry_id: e.id,
-    pinned: e.pinned,
-    weight: e.weight,
-    enabled: true,
-  }));
-  const cfg = {
-    id: uuidv4(),
-    name: t`默认配置`,
-    entries,
-    is_default: true,
-    rules: '',
-    // generation 为 v35 起废弃的死字段（schema 必填），不承载任何运行时数据
-    generation: GenerationSettings.parse({}),
-  };
-  gs.settings.configs.push(cfg);
-  // 迁移「未绑定档」历史统计到新配置维度：新配置成为 is_default 即生效，
-  // 后续会话不再记 NONE_SCOPE。若不迁移，历史数据留在未绑定档、新维度从零
-  // 开始，引导文案"创建后即可应用建议"因新维度样本不足而落空（数据断层）。
-  // 整块迁移保证建议引擎基于同一份历史样本、入榜数据不丢失
-  const stats = gs.settings.stats;
-  const noneScope = stats.entries[NONE_SCOPE];
-  if (noneScope && (noneScope.total_generated > 0 || Object.keys(noneScope.by_entry).length > 0)) {
-    stats.entries[cfg.id] = noneScope;
-    delete stats.entries[NONE_SCOPE];
-  }
-  scopeId.value = cfg.id;
-  toastr.success(t`已创建默认配置（未绑定档历史统计已并入），可在统计页应用优化建议`);
-};
+/** 控制簇开关说明（统计采集；常驻可见） */
+const controlHelp = t`统计采集：开启后记录行动选项的生成/选择数据（仅行动选项视图），驱动下方报表；关闭期间零记录，既有历史保留。统计页为纯报表，不会改写任何条目池配置。`;
 
 // ── 汇总卡片 ──
 const selectRateText = computed(() => {
@@ -1164,7 +633,7 @@ const selectRateText = computed(() => {
 /** 有 daily 记录的天数（按天活动计数存在即算活跃日） */
 const activeDays = computed(() => Object.keys(view.value.daily).length);
 
-// ── 样本量分布诊断（为优化建议提供置信度参考；第三档「从未参与」基于有效池对照） ──
+// ── 样本量分布诊断（第三档「从未参与」基于有效池对照） ──
 const distribution = computed(() => entrySampleDistribution(view.value, poolCapsule.value.size, poolCapsule.value.ids));
 const sampleTotal = computed(
   () => distribution.value.sufficient + distribution.value.insufficient + distribution.value.never,
@@ -1239,32 +708,6 @@ const diceHistory = computed(() => [...(diceStats.value.history ?? [])].reverse(
 const diceHistoryLimit = DICE_HISTORY_LIMIT;
 const rollLabelHist = (o: DiceOutcome): string =>
   o === 'crit_success' ? t`大成功` : o === 'crit_fail' ? t`大失败` : o === 'success' ? t`成功` : t`失败`;
-
-// ── 卡牌（统计层，全局维度，不随 config 切换） ──
-const cardStats = computed<CardStats>(() => stats.value.card ?? createEmptyCardStats());
-const cardHelp = t`卡牌系统统计（全局维度，不随条目池配置切换）：幸运数命中/开包/得卡/行动币收支，以及每卡触发次数。随「统计采集」开关积累；清空统计时一并清除（行动币余额/收藏属游戏进度层，不清除）。注意：收入只记正向、失败扣币不入账，故获得−消费与当前余额不对应；支出一律来自开卡包。`;
-/** 每卡触发次数（join 卡定义，按触发次数降序取前 20） */
-const cardTopTriggers = computed(() => {
-  const per = cardStats.value.per_card ?? {};
-  return Object.entries(per)
-    .map(([card_id, v]) => {
-      const def = BUILTIN_CARDS.find(c => c.id === card_id) ?? gs.settings.card_definitions[card_id];
-      return { card_id, triggers: v.triggers, name: def?.name ?? card_id, star: def?.star ?? '1' };
-    })
-    .filter(x => x.triggers > 0)
-    .sort((a, b) => b.triggers - a.triggers)
-    .slice(0, 20);
-});
-
-// 行动币获得构成（按结局键记录的 earned 分布）：四结局都展示——失败结局叠加套装加成
-// 可能为正收入（recordCurrencyOutcome 按传入结局键记账），只列 success 两键会漏显
-const earnedByOutcome = computed(() =>
-  (['crit_success', 'success', 'fail', 'crit_fail'] as const)
-    .map(k => ({ label: rollLabelHist(k), v: cardStats.value.currency_earned_by_outcome[k] ?? 0 }))
-    .filter(e => e.v > 0)
-    .map(e => `${e.label} +${e.v}`)
-    .join(' · '),
-);
 
 // ── 条目榜 ──
 const groups = computed(() => entryGroups(view.value, masterPool.value, groupOrder.value, poolCapsule.value.cfgMap));
@@ -1346,8 +789,7 @@ const groupSummary = (g: EntryGroup): string => {
   return t`未参与（${g.rows.length} 条）`;
 };
 
-/** 组头「N 条建议」徽标：该组当前可应用建议的条数（仅具体 config 维度 + 被引用的条目） */
-const groupSuggestCount = (g: EntryGroup): number => (canApply.value ? g.rows.filter(r => canApplyRow(r)).length : 0);
+/** 组头汇总读数由 groupSummary 承担；分组头部不再挂建议徽标（v78 自动化移除） */
 
 const rateText = (rate: number | null): string => (rate === null ? EMPTY_DISPLAY : Math.round(rate * 100) + '%');
 const rateWidth = (rate: number) => Math.max(4, Math.round(rate * 100)) + '%';
@@ -1409,78 +851,12 @@ const locateEntry = (entryId: string) => {
   focusPoolEntry(entryId);
 };
 
-/** 每行建议/洞察一次性计算（entrySuggestion 每行只调 1 次，模板多处复用）：
- *  insightOf/suggestionOf/badgeOf/applyableCount/applyAll 均改读该 Map，
- *  避免大池渲染时每行 4-6 次重复遍历 recent 窗口（entryMetrics 内部遍历至 50 条）。
- *  连带缓存窗口/全量期望指标与洞察徽标（windowMetrics/fullExpectedRate/buildInsightBadge
- *  各自只算 1 次）——行内命中率、tooltip 与徽标直接从缓存读，模板渲染不再逐行重复计算。
- *  基于过滤前全量 groups 构建，切换搜索/筛选时建议结果不受影响。 */
+/** 每行窗口/期望指标一次性计算（模板多处复用，避免大池渲染时每行重复遍历 recent 窗口）：
+ *  行内命中率 tooltip、窗口读数与期望读数直接从缓存读。
+ *  基于过滤前全量 groups 构建，切换搜索/筛选时读数不受影响。 */
 type RowMeta = {
-  insight: EntryInsight;
-  suggestion: Suggestion | null;
   window: WindowMetrics | null;
   expectedRate: number | null;
-  badge: InsightBadge | null;
-};
-
-type InsightBadge = { text: string; cls: string; title: string };
-
-/** 洞察徽标（展示层派生，经 rowMeta 每行只算一次）：标签文案/样式类/tooltip 单一
- *  真相源——6 种标签（候选降权/权重回捞/表现良好/样本不足/已停用/冷却中）的文案与
- *  语义色映射集中在此，模板只渲染不重复 if/else，防止两处漂移。建议类标签 tooltip
- *  复用 suggestionTitle 附依据。 */
-const buildInsightBadge = (insight: EntryInsight, suggestion: Suggestion | null): InsightBadge | null => {
-  if (!insight) return null;
-  switch (insight) {
-    case 'downgrade':
-      return { text: t`候选降权`, cls: 'choice-stats-insight--bad', title: suggestionTitle(suggestion) };
-    case 'recover':
-      return { text: t`权重回捞`, cls: 'choice-stats-insight--good', title: suggestionTitle(suggestion) };
-    case 'good':
-      return { text: t`表现良好`, cls: 'choice-stats-insight--good', title: suggestionTitle(suggestion) };
-    case 'insufficient':
-      return {
-        text: t`样本不足`,
-        cls: 'choice-stats-insight--insufficient',
-        title: t`参与轮次不足 ${sampleMin} 轮，命中率噪声大，暂不判断质量`,
-      };
-    case 'disabled':
-      return {
-        text: t`已停用`,
-        cls: 'choice-stats-insight--disabled',
-        title: t`该条目已停用（阵容落出），不再参与生成；可在条目池页手动重新启用`,
-      };
-    case 'cooldown':
-      return {
-        text: t`冷却中`,
-        cls: 'choice-stats-insight--cooldown',
-        title: t`最近一次自动化调整后不足 ${sampleMin} 轮新数据，暂不重新评级；调整超过 7 天且已有 ≥3 轮新数据时放宽`,
-      };
-    case 'floor':
-      return {
-        text: t`已到下限`,
-        cls: 'choice-stats-insight--floor',
-        title: t`权重已到自动化下限（${SUGGEST_WEIGHT_MIN}）且表现持续低于期望，建议引擎不再调整；可在阵容计划落出或手动处理`,
-      };
-    default:
-      return null;
-  }
-};
-
-/** 建议动作 → 文案（单一真相源，`suggestionTitle` 与 `applyConfirmMessage` 共用，防两处漂移） */
-const actionLabel = (s: Suggestion): string =>
-  s.action === 'down' ? t`降权` : s.reason === 'recover' ? t`回捞` : t`提权`;
-
-/** 洞察标签 tooltip：附建议依据（依据口径 / 命中率 / 期望 / 超额）；回捞建议若作用于
- *  手动设置的低权重（从未被自动化调整），追加覆盖提示 */
-const suggestionTitle = (s: Suggestion | null): string => {
-  if (!s) return t`基于近 ${sampleMin} 轮或全量样本的统计建议`;
-  const newWeightText = s.newWeight !== undefined ? ` → ${s.newWeight}` : '';
-  const act = actionLabel(s);
-  const manualNote = s.reason === 'recover' && s.manualLow ? t`（该权重为手动设置，回捞会覆盖手动值）` : '';
-  // 基线描述先算再插值：插值里嵌反引号模板会让运行时 i18n 键与对账工具的提取口径错位
-  const basisText = s.basis === '窗口' ? t`近 ${s.samples} 轮` : t`全量 ${s.samples} 轮`;
-  return t`${basisText}命中率 ${rateText(s.rate)}，期望 ${rateText(s.expected)}：建议${act}${newWeightText}${manualNote}`;
 };
 
 const rowMeta = computed<Map<string, RowMeta>>(() => {
@@ -1488,14 +864,9 @@ const rowMeta = computed<Map<string, RowMeta>>(() => {
   const avgPicks = view.value.avgPicks;
   for (const g of groups.value) {
     for (const r of g.rows) {
-      const suggestion = entrySuggestion(r, avgPicks);
-      const insight = entryInsight(r, suggestion);
       map.set(r.entryId, {
-        suggestion,
-        insight,
         window: windowMetrics(r.recent, avgPicks),
         expectedRate: fullExpectedRate(r),
-        badge: buildInsightBadge(insight, suggestion),
       });
     }
   }
@@ -1503,297 +874,7 @@ const rowMeta = computed<Map<string, RowMeta>>(() => {
 });
 
 /** 读取行级元数据（rowMeta 基于全量 groups 必然收录，兜底防未来新增行路径） */
-const metaOf = (row: EntryRankRow): RowMeta => {
-  const m = rowMeta.value.get(row.entryId);
-  return m ?? { insight: null, suggestion: null, window: null, expectedRate: null, badge: null };
-};
-
-const insightOf = (row: EntryRankRow): EntryInsight => metaOf(row).insight;
-const suggestionOf = (row: EntryRankRow): Suggestion | null => metaOf(row).suggestion;
-
-/** 洞察徽标读取（模板多个属性共用同一缓存项） */
-const badgeOf = (row: EntryRankRow): InsightBadge | null => metaOf(row).badge;
-
-/** 该行建议可应用：仅具体 config 维度 + 条目被 config 引用。未引用条目的历史数据
- *  残留只展示洞察标签、不提供写入（applySuggestions 在 config 中找不到引用会 skipped，
- *  出「永远无法应用」的建议会让批量应用计数虚高） */
-const canApplyRow = (row: EntryRankRow): boolean => canApply.value && row.referenced && suggestionOf(row) !== null;
-
-// ── 建议应用与撤销 ──
-const applyableCount = computed(() =>
-  canApply.value ? filteredGroups.value.flatMap(g => g.rows.filter(r => canApplyRow(r))).length : 0,
-);
-
-const pending = ref<Suggestion[] | null>(null);
-const {
-  open: applyOpen,
-  show: showApplyConfirm,
-  confirm: confirmApply,
-  cancel: cancelApply,
-  title: applyTitle,
-  message: applyMessage,
-  confirmText: applyConfirmText,
-  cancelText: applyCancelText,
-} = useConfirm();
-
-/** 当前维度可撤销的批次计数（持久历史派生，切维度/刷新后仍正确）。
- *  只数「目标 config 仍存活」的历史槽——config 已删除的槽点击撤销会静默失败
- *  （undoLastApply 对死槽直接移除），显示计数会误导用户以为可撤销。 */
-const undoCount = computed(() => {
-  if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return 0;
-  const alive = new Set(configs.value.map(c => c.id));
-  return gs.settings.apply_history.reduce(
-    (n, e) => (e.scope_id === scopeId.value && alive.has(e.scope_id) ? n + 1 : n),
-    0,
-  );
-});
-
-/** 应用历史面板数据：当前 config 维度的批次（新→旧），join 变更摘要。
- *  poolMap 预建一次复用，避免每个历史批次在 applyHistorySummary 内重建 O(history×pool) */
-const historyEntries = computed(() => {
-  if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return [];
-  const poolMap = new Map(masterPool.value.map(e => [e.id, e]));
-  return gs.settings.apply_history
-    .filter(e => e.scope_id === scopeId.value)
-    .slice()
-    .reverse()
-    .map(entry => ({ entry, changes: applyHistorySummary(entry, poolMap) }));
-});
-
-/** 粘性子头快捷跳转已移除（用户要求删掉跳转按钮）；各 section 的 anchor id 与
- *  scroll-margin-top 保留，为将来可能的定位/跳转预留。 */
-const historyTimeTitle = (ts: number): string => formatDateTime(ts);
-
-const undoHistoryEntry = (entryId: string) => {
-  if (undoApply(entryId)) {
-    toastr.success(t`已撤销该批应用`);
-  } else {
-    // 零回滚（该批字段已被后续应用/手动编辑全覆盖）：明示而非假成功
-    toastr.warning(t`该批没有可回滚的字段（已被后续改动覆盖）`);
-  }
-};
-
-const applyConfirmMessage = computed(() => {
-  const list = pending.value ?? [];
-  if (list.length === 0) return '';
-  const lines = list
-    .map(s => {
-      const row = groups.value.flatMap(g => g.rows).find(r => r.entryId === s.entryId);
-      const name = (row?.content || s.entryId).slice(0, 24);
-      const change = `${t`权重`} ${s.currentWeight} → ${s.newWeight}`;
-      const basis = s.basis === '窗口' ? t`近 ${s.samples} 轮` : t`全量 ${s.samples} 轮`;
-      return `· ${name}：${actionLabel(s)}（${change}；${basis}命中 ${rateText(s.rate)}，期望 ${rateText(s.expected)}）`;
-    })
-    .join('\n');
-  // 「应用全部」作用于搜索/筛选后的行：范围小于未筛选全集时明示，防「以为应用了全部」
-  const applyableTotal = groups.value.flatMap(g => g.rows).filter(r => canApplyRow(r)).length;
-  const scopeNote =
-    pendingFiltered.value && list.length < applyableTotal
-      ? t`\n\n当前仅包含搜索/筛选结果（未筛选时共 ${applyableTotal} 条可应用）。`
-      : '';
-  return t`将应用到当前配置：\n${lines}${scopeNote}\n\n以上均为权重调整，不影响条目启用状态；应用后可在统计页撤销。`;
-});
-
-/** 「应用全部」标记：本次确认清单来自筛选后的行（applyConfirmMessage 据此决定是否附范围提示） */
-const pendingFiltered = ref(false);
-
-/** 应用一批建议：设 pending → 弹确认 → 确认后写入。取消/外层守卫失败则只复位 pending。
- *  filtered=true 表示清单来自「应用全部」且受当前搜索/筛选影响。
- *  showApplyConfirm 弹窗的确认/取消分别走 confirmApply/cancelApply（关闭弹窗 + resolve），
- *  applyConfirmMessage 在 pending 已设后 show() 时同步求值，与原 computed 行为等价 */
-const runApply = async (list: Suggestion[], filtered = false) => {
-  pending.value = list;
-  pendingFiltered.value = filtered;
-  const ok = await showApplyConfirm({
-    title: t`应用统计建议`,
-    message: applyConfirmMessage.value,
-    confirmText: t`应用`,
-    cancelText: t`取消`,
-  });
-  pending.value = null;
-  if (!ok || list.length === 0 || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
-  const res = applySuggestions(scopeId.value, list);
-  toastr.success(
-    res.skipped > 0
-      ? t`已应用 ${res.applied} 条建议（跳过 ${res.skipped} 条，可在统计页撤销）`
-      : t`已应用 ${res.applied} 条建议（可在统计页撤销）`,
-  );
-};
-
-const applyOne = (s: Suggestion) => runApply([s]);
-
-/** 行内应用按钮（模板无法用非空断言，包装一层判空） */
-const applySuggestion = (row: EntryRankRow) => {
-  if (!canApplyRow(row)) return;
-  const s = suggestionOf(row);
-  if (s) applyOne(s);
-};
-
-/** 行内「重新启用」：阵容落出（enabled=false）的条目就地恢复（写入 config，不记历史、不刷冷却） */
-const reEnable = (row: EntryRankRow) => {
-  if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
-  if (reEnableEntry(scopeId.value, row.entryId)) {
-    toastr.success(t`已重新启用该条目`);
-  }
-};
-
-const applyAll = () => {
-  const list = filteredGroups.value
-    .flatMap(g => g.rows)
-    .filter(r => canApplyRow(r))
-    .map(r => suggestionOf(r))
-    .filter((s): s is Suggestion => s !== null);
-  void runApply(list, true);
-};
-
-const onUndo = () => {
-  if (scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
-  if (undoLastApply(scopeId.value)) {
-    toastr.success(t`已撤销最近一次应用`);
-  } else {
-    // 零回滚：明示而非假成功（槽保留，撤销更近批次后仍可回滚）
-    // undoLastApply 已把零回滚死记录自动跳过：走到这里 = 本 scope 无可撤销历史
-    toastr.warning(t`没有可撤销的应用记录`);
-  }
-};
-
-// ── 阵容计划（固定名额：落出/补入，半自动） ──
-// 与建议引擎并存：建议引擎管权重，阵容计划管成员资格；二者写同一 config 层、共用单槽撤销。
-
-const rosterEnabled = computed({
-  get: () => gs.settings.roster_enabled,
-  set: (v: boolean) => {
-    gs.settings.roster_enabled = v;
-  },
-});
-
-/** 用文本态承载目标条数，避免 type=number 的空串被 v-model.number 钳成 0；
- *  解析失败/空串 → null（关闭计划），落盘时写入实际有限数或 null。
- *  不 clamp 用户输入（项目约束）：任意 ≥1 的有限数均接受 */
-const rosterSizeText = ref(
-  gs.settings.roster_size !== null && gs.settings.roster_size !== undefined ? String(gs.settings.roster_size) : '',
-);
-const rosterTarget = computed<number | null>(() => {
-  const n = Number(rosterSizeText.value);
-  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : null;
-});
-watch(rosterTarget, v => {
-  gs.settings.roster_size = v;
-});
-/** 失焦时把输入框回填为已落盘的规范化值（空 → ''，有限数 → 取整字符串），消除
- *  「输入 12.5 显示 12.5、落盘 12」「输入 0 显示 0、落盘 null」的显示与落盘不一致。 */
-const syncRosterDisplay = (): void => {
-  const t = rosterTarget.value;
-  rosterSizeText.value = t === null ? '' : String(t);
-};
-
-/** 当前选中维度的配置（具体 config 才有写入目标） */
-const activeConfig = computed(() => configs.value.find(c => c.id === scopeId.value));
-
-/** 阵容计划（纯函数派生，随维度/池/统计/目标条数响应刷新） */
-const rosterPlan = computed<RosterPlan | null>(() => {
-  if (!rosterEnabled.value || rosterTarget.value === null || !activeConfig.value) return null;
-  return planRoster(view.value, masterPool.value, activeConfig.value, rosterTarget.value);
-});
-
-/** 替补席 = config 中 disabled 且仍存在于 master_pool 的条目数 */
-const benchCount = computed(() => {
-  const cfg = activeConfig.value;
-  if (!cfg) return 0;
-  const ids = new Set(masterPool.value.map(e => e.id));
-  return cfg.entries.filter(e => e.enabled === false && ids.has(e.entry_id)).length;
-});
-
-/** 未入池 = master_pool 中未被 config 引用的条目数 */
-const unreferencedCount = computed(() => {
-  const cfg = activeConfig.value;
-  if (!cfg) return 0;
-  const ref = new Set(cfg.entries.map(e => e.entry_id));
-  return masterPool.value.filter(e => !ref.has(e.id)).length;
-});
-
-/** 应用当前计划后仍低于目标的条数：探索补入每次只填剩余空位的一半，达目标需再次应用 */
-const rosterPostApplyShortfall = computed(() => {
-  const p = rosterPlan.value;
-  if (!p || !rosterEnabled.value) return 0;
-  return Math.max(0, p.target - (p.activeCount - p.drops.length + p.promotes.length));
-});
-
-/** 超额命中率展示（带符号、百分比） */
-const excessText = (v: number): string => (v >= 0 ? '+' : '') + Math.round(v * 100) + '%';
-
-const rosterTypeLabel = (a: RosterAction): string => typeLabel({ deleted: false, type: a.type });
-
-const rosterText = (a: RosterAction): string => a.content || a.type || t`（空内容）`;
-
-/** 落出/补入行 tooltip：附依据（口径/命中率/期望/超额） */
-const rosterReason = (a: RosterAction): string => {
-  const basis =
-    a.samples !== undefined && a.score !== undefined
-      ? t`近 ${a.samples} 轮超额 ${excessText(a.score)}`
-      : a.reason === 'explore'
-        ? t`未入池条目，探索补入`
-        : t`样本不足，替补补入`;
-  if (a.kind === 'drop') return t`落出：${basis}`;
-  return a.reason === 'bench' ? t`替补补入：${basis}` : t`探索补入：${basis}`;
-};
-
-/** 计划无可执行动作时的说明 */
-const rosterEmptyText = computed(() => {
-  const p = rosterPlan.value;
-  if (!p) return '';
-  if (p.activeCount > p.target) {
-    return t`在役 ${p.activeCount} 条超出目标 ${p.target}，但可落出的非 pinned 且样本充足的条目不足（其余被豁免），暂无可执行动作。`;
-  }
-  if (p.activeCount < p.target) {
-    return t`在役 ${p.activeCount} 条低于目标 ${p.target}，但替补席与未入池条目已无可补入（未入池按探索预算进一步降低填充）。`;
-  }
-  return t`当前在役 ${p.activeCount} 条，正符合目标，无需调整。`;
-});
-
-const pendingRoster = ref<RosterPlan | null>(null);
-const {
-  open: rosterOpen,
-  show: showRosterConfirm,
-  confirm: confirmRoster,
-  cancel: cancelRoster,
-  title: rosterTitle,
-  message: rosterMessage,
-  confirmText: rosterConfirmText,
-  cancelText: rosterCancelText,
-} = useConfirm();
-
-const rosterConfirmMessage = computed(() => {
-  const p = pendingRoster.value;
-  if (!p) return '';
-  const lines = [
-    ...p.drops.map(a => `· ${t`落出`} ${rosterText(a)}（${rosterReason(a)}）`),
-    ...p.promotes.map(a => `· ${t`补入`} ${rosterText(a)}（${rosterReason(a)}）`),
-  ];
-  return t`将应用到当前配置：\n${lines.join('\n')}\n\n落出为软停用（条目保留、统计不丢），可在条目池页手动重新启用。`;
-});
-
-/** 应用阵容计划：设 pendingRoster → 弹确认 → 确认后写入。取消/守卫失败只复位 pending。
- *  rosterConfirmMessage 在 pendingRoster 已设后 show() 时同步求值，与原 computed 行为等价 */
-const applyRoster = async () => {
-  const p = rosterPlan.value;
-  if (!p || (p.drops.length === 0 && p.promotes.length === 0)) return;
-  pendingRoster.value = p;
-  const ok = await showRosterConfirm({
-    title: t`应用阵容计划`,
-    message: rosterConfirmMessage.value,
-    confirmText: t`应用`,
-    cancelText: t`取消`,
-  });
-  pendingRoster.value = null;
-  if (!ok || scopeId.value === GLOBAL_SCOPE || scopeId.value === NONE_SCOPE) return;
-  const res = applyRosterPlan(scopeId.value, p);
-  toastr.success(
-    res.skipped > 0
-      ? t`已应用 ${res.applied} 条阵容变更（跳过 ${res.skipped} 条，可在统计页撤销）`
-      : t`已应用 ${res.applied} 条阵容变更（可在统计页撤销）`,
-  );
-};
+const metaOf = (row: EntryRankRow): RowMeta => rowMeta.value.get(row.entryId) ?? { window: null, expectedRate: null };
 
 // ── 命中榜（用户选择条目的排行） ──
 const hitRank = computed(() => hitLeaderboard(view.value, masterPool.value));
@@ -1820,8 +901,6 @@ const exportStats = () => {
       // 骰子判定战绩（全局维度原始结构）
       dice: stats.value.dice,
     },
-    // 自动化应用历史（建议/阵容批次快照，随 apply_history 持久化）
-    apply_history: gs.settings.apply_history,
     leaderboard_scope: view.value.scopeId,
     leaderboard: groups.value
       .flatMap(g => g.rows)
@@ -1840,7 +919,6 @@ const exportStats = () => {
         effective_pinned: r.effectivePinned,
         last_included_at: r.last_included_at,
         last_selected_text: r.last_selected_text,
-        insight: insightOf(r),
       })),
   };
   const d = new Date();
@@ -1900,10 +978,6 @@ const onClearStats = async () => {
 .choice-stats-scope-select {
   flex: 0 1 220px;
   min-width: 120px;
-}
-
-.choice-stats-undo {
-  flex-shrink: 0;
 }
 
 .choice-stats-dim-note {
@@ -2118,15 +1192,6 @@ const onClearStats = async () => {
   color: var(--choice-color-info);
 }
 
-/* 固定卡标题右侧：帮助 + 操作按钮聚成一组，靠右 */
-.choice-stats-card-head-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--choice-space-2);
-  justify-content: flex-end;
-}
-
 /* 说明入口：悬停显示完整口径/规则说明（原生 title，触屏长按可见） */
 .choice-stats-info {
   flex-shrink: 0;
@@ -2149,10 +1214,6 @@ const onClearStats = async () => {
   margin-left: auto;
 }
 
-.choice-stats-apply-all {
-  white-space: nowrap;
-}
-
 /* 一行副标题：只保留读数式要点，完整说明进标题旁 info tooltip */
 .choice-stats-sub {
   margin: 0 0 var(--choice-space-2);
@@ -2162,11 +1223,10 @@ const onClearStats = async () => {
 
 /* 分段按钮组（趋势天数 / 排序维度）已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子 */
 
-/* ── 键盘焦点可见态：组头/撤销与图标按钮统一描边（对照 border-active），
+/* ── 键盘焦点可见态：组头与图标按钮统一描边（对照 border-active），
     分段按钮已统一为 global.css 的 .choice-seg/.choice-seg-btn 原子，focus 由原子承担，
     hover 反馈保留原样 */
 .choice-stats-group-head:focus-visible,
-.choice-stats-undo:focus-visible,
 .choice-icon-btn:focus-visible {
   outline: 1px solid var(--choice-border-active);
   outline-offset: 1px;
@@ -2287,52 +1347,6 @@ const onClearStats = async () => {
   flex-shrink: 0;
 }
 
-/* ── 洞察徽标 ── */
-.choice-stats-insight {
-  flex-shrink: 0;
-  padding: 1px var(--choice-space-2);
-  border-radius: var(--choice-radius-full);
-  font-size: var(--choice-text-xs);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.choice-stats-insight--bad {
-  background: var(--choice-color-warning-bg);
-  color: var(--choice-color-warning);
-}
-
-.choice-stats-insight--good {
-  background: var(--choice-color-success-bg);
-  color: var(--choice-color-success);
-}
-
-.choice-stats-insight--insufficient {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text-muted);
-}
-
-/* 已停用（真实启用态）：中性但比「样本不足」更沉，暗示该条目已不在生成中 */
-.choice-stats-insight--disabled {
-  background: var(--choice-bg-hover);
-  color: var(--choice-text-secondary);
-  text-decoration: line-through;
-}
-
-/* 冷却中（自动化调整后观察期）：信息色提示"系统正在等新数据"，区别于样本不足 */
-.choice-stats-insight--cooldown {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-}
-
-/* 已到下限（权重到自动化下限且持续低迷，建议引擎沉默）：警示色弱化——
- * 需要用户行动（阵容落出/手动处理）但不是新建议，用边框区分于「候选降权」 */
-.choice-stats-insight--floor {
-  background: var(--choice-color-warning-bg);
-  color: var(--choice-color-warning);
-  box-shadow: inset 0 0 0 1px var(--choice-color-warning);
-}
-
 /* ── 样本量分布诊断 ── */
 .choice-stats-sample {
   display: flex;
@@ -2387,10 +1401,8 @@ const onClearStats = async () => {
   font-weight: 600;
 }
 
-/* 定位/应用/重新启用按钮：行内靠右 */
-.choice-stats-locate,
-.choice-stats-apply,
-.choice-stats-reenable {
+/* 定位按钮：行内靠右 */
+.choice-stats-locate {
   flex-shrink: 0;
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
@@ -2398,15 +1410,6 @@ const onClearStats = async () => {
 
 .choice-stats-locate:hover {
   color: var(--choice-color-info);
-}
-
-.choice-stats-apply:hover {
-  color: var(--choice-color-success);
-}
-
-/* 重新启用：暖色提示「恢复」，区别于应用（成功绿）与定位（信息蓝） */
-.choice-stats-reenable:hover {
-  color: var(--choice-color-warning);
 }
 
 /* 未命中轮次用 muted 色，区别于命中的 secondary */
@@ -2420,59 +1423,13 @@ const onClearStats = async () => {
   color: var(--choice-color-info);
 }
 
-/* ── AI 增强 ── */
-/* 开关行：两开关并排、紧凑，窄屏自动换行 */
-.choice-stats-ai-row {
+/* ── 开关行：紧凑排列，窄屏自动换行 ── */
+.choice-stats-switch-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--choice-space-3);
   margin-bottom: var(--choice-space-2);
-}
-
-/* 条目榜头部的 AI 分析按钮：运行中禁用态 + 主色提示 */
-.choice-stats-ai-btn {
-  white-space: nowrap;
-}
-
-.choice-stats-ai-btn--running {
-  color: var(--choice-color-info);
-}
-
-/* 行内 AI 理由：一行 muted 小字（2 行截断），brain 图标起视觉锚点；
-   不与统计读数混排，独立一行避免窄屏挤压 */
-.choice-stats-ai-reason {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 2px;
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  line-height: 1.35;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.choice-stats-ai-reason i {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--choice-color-info);
-}
-
-/* 低置信理由（confidence<0.4）：淡化 + 提示图标变色，避免过度采信 */
-.choice-stats-ai-reason--low {
-  opacity: 0.65;
-}
-
-.choice-stats-ai-reason--low i {
-  color: var(--choice-text-muted);
-}
-
-/* L1 归因状态读数：队列/修正量，与缓存理由读数同级 */
-.choice-stats-ai-l1 {
-  font-variant-numeric: tabular-nums;
 }
 
 /* 命中率/期望/窗口紧凑读数（meta 行内）：用 success/info/success 区分 */
@@ -2578,18 +1535,6 @@ const onClearStats = async () => {
   font-size: var(--choice-text-xs);
   color: var(--choice-text-muted);
   text-align: right;
-}
-
-/* 组头「N 条建议」徽标：提示该组存在可应用建议（面向决策的驾驶舱视角） */
-.choice-stats-suggest-badge {
-  flex-shrink: 0;
-  padding: 1px var(--choice-space-2);
-  border-radius: var(--choice-radius-full);
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-  font-size: var(--choice-text-xs);
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 /* 展开后的组内容限高 + 内部滚动：条目再多也只占固定高度，不再无限撑长页面 */
@@ -2728,177 +1673,6 @@ const onClearStats = async () => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--choice-space-2);
-}
-
-/* ── 阵容计划 ── */
-.choice-stats-roster-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--choice-space-3);
-  margin-bottom: var(--choice-space-2);
-}
-
-.choice-stats-roster-size {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--choice-space-1);
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-  white-space: nowrap;
-}
-
-.choice-stats-roster-size--off {
-  opacity: 0.5;
-}
-
-.choice-stats-roster-input {
-  width: 80px;
-  min-width: 0;
-}
-
-.choice-stats-roster-readout {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  margin-bottom: var(--choice-space-2);
-}
-
-.choice-stats-roster {
-  /* 落出/补入两列：宽屏并排、窄屏自然堆叠（auto-fit 保证不横向溢出） */
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--choice-space-3);
-  margin-bottom: var(--choice-space-2);
-}
-
-/* 无可执行动作的空提示横跨两列，避免只占第一格 */
-.choice-stats-roster > .choice-empty-hint {
-  grid-column: 1 / -1;
-}
-
-.choice-stats-roster-col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-}
-
-.choice-stats-roster-col-head {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  font-size: var(--choice-text-sm);
-  font-weight: 600;
-}
-
-.choice-stats-roster-col-head--drop {
-  color: var(--choice-color-error);
-}
-
-.choice-stats-roster-col-head--promote {
-  color: var(--choice-color-success);
-}
-
-.choice-stats-roster-item {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  padding: 2px 0;
-  min-width: 0;
-}
-
-.choice-stats-roster-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--choice-text-sm);
-  color: var(--choice-text);
-}
-
-/* ── 应用历史 ── */
-.choice-stats-history {
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-}
-
-.choice-stats-history-item {
-  background: var(--choice-bg-element);
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-md);
-  padding: var(--choice-space-2) var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-1);
-}
-
-.choice-stats-history-head {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  flex-wrap: wrap;
-}
-
-.choice-stats-kind {
-  flex-shrink: 0;
-  padding: 1px var(--choice-space-2);
-  border-radius: var(--choice-radius-full);
-  font-size: var(--choice-text-xs);
-  font-weight: 600;
-}
-
-.choice-stats-kind--suggestions {
-  background: var(--choice-color-info-bg);
-  color: var(--choice-color-info);
-}
-
-.choice-stats-kind--roster {
-  background: var(--choice-color-warning-bg);
-  color: var(--choice-color-warning);
-}
-
-.choice-stats-history-time {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  /* 数字对齐：时间戳数字位宽不抖动 */
-  font-variant-numeric: tabular-nums;
-}
-
-.choice-stats-history-count {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-}
-
-.choice-stats-history-undo {
-  margin-left: auto;
-}
-
-.choice-stats-history-changes {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.choice-stats-history-change {
-  display: flex;
-  align-items: center;
-  gap: var(--choice-space-2);
-  min-width: 0;
-}
-
-.choice-stats-history-change .choice-stats-type-badge {
-  flex-shrink: 0;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.choice-stats-history-change-text {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-secondary);
-  min-width: 0;
 }
 
 /* ── 骰子最近判定历史（v61） ── */

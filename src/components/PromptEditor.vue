@@ -1,6 +1,198 @@
 <template>
   <div class="choice-prompt-editor">
     <div class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-layer-group"></i>{{ t`提示词来源` }}</h4>
+      <div class="choice-seg" data-tour="prompt-source">
+        <button
+          class="choice-seg-btn"
+          :class="{ active: globalStore.settings.prompt_source === 'extension' }"
+          @click="globalStore.settings.prompt_source = 'extension'"
+        >
+          {{ t`本扩展提示词` }}
+        </button>
+        <button
+          class="choice-seg-btn"
+          :class="{ active: globalStore.settings.prompt_source === 'st_preset' }"
+          @click="globalStore.settings.prompt_source = 'st_preset'"
+        >
+          {{ t`酒馆预设` }}
+        </button>
+      </div>
+      <span class="choice-field-hint">{{
+        globalStore.settings.prompt_source === 'st_preset'
+          ? t`完全使用酒馆当前 Chat Completion 预设生成：预设里的世界观、文风、自定义条目全部生效；本扩展的提示词配置与模块列表在本模式下隐藏、不参与组装（切回「本扩展提示词」后照常可用），下方上下文设置仍然生效；生成的模型与渠道仍用本扩展配置的 API`
+          : t`使用下方模块列表组装提示词（默认）。适合完全自定义选项生成的上下文与规则`
+      }}</span>
+
+      <template v-if="globalStore.settings.prompt_source === 'st_preset'">
+        <label class="choice-field">
+          <span>{{ t`使用预设` }}</span>
+          <select v-model="globalStore.settings.st_preset_name" class="choice-select">
+            <option value="">{{ t`跟随酒馆当前预设` }}</option>
+            <option v-for="name in presetNames" :key="name" :value="name">{{ name }}</option>
+          </select>
+        </label>
+        <span v-if="presetNames.length === 0" class="choice-field-hint" style="color: var(--choice-color-warning)">{{
+          t`未读取到酒馆的对话补全预设，请先在酒馆中配置预设，或改回本扩展提示词`
+        }}</span>
+        <label class="choice-check">
+          <input v-model="globalStore.settings.st_preset_sampling" type="checkbox" />
+          {{ t`采样参数跟随预设` }}
+        </label>
+        <span class="choice-field-hint">{{
+          t`开启后温度、top_p、惩罚项与输出上限取自预设（输出上限低于一轮候选所需时会自动抬到够写完，温度过高则可能让 JSON 失效）；连接地址与模型始终用本扩展的 API 配置`
+        }}</span>
+        <label class="choice-check">
+          <input v-model="globalStore.settings.st_preset_post_processing" type="checkbox" />
+          {{ t`提示词后处理跟随预设` }}
+        </label>
+        <span class="choice-field-hint">{{
+          t`把预设声明的提示词后处理（合并同角色、严格交替等）透传给请求，由酒馆后端统一执行；取值顺序：SPreset 强制后处理 → 预设内保存的后处理 → 酒馆当前设置`
+        }}</span>
+        <div class="choice-field">
+          <span>{{ t`预设脚本层` }}</span>
+        </div>
+        <div class="choice-seg" data-tour="preset-script-layer">
+          <button
+            class="choice-seg-btn"
+            :class="{ active: globalStore.settings.st_preset_script_processing === 'off' }"
+            @click="globalStore.settings.st_preset_script_processing = 'off'"
+          >
+            {{ t`关闭` }}
+          </button>
+          <button
+            class="choice-seg-btn"
+            :class="{ active: globalStore.settings.st_preset_script_processing === 'prompt_ready' }"
+            @click="globalStore.settings.st_preset_script_processing = 'prompt_ready'"
+          >
+            {{ t`仅广播` }}
+          </button>
+          <button
+            class="choice-seg-btn"
+            :class="{ active: globalStore.settings.st_preset_script_processing === 'tavern_helper' }"
+            @click="globalStore.settings.st_preset_script_processing = 'tavern_helper'"
+          >
+            {{ t`酒馆助手` }}
+          </button>
+        </div>
+        <span
+          class="choice-field-hint"
+          :title="
+            t`仅广播只对监听提示词就绪事件的改写脚本生效（变量/自动执行类不感知）；酒馆助手档的条件合并与强制后处理生效，入口条件与输出侧任何档位都不执行，后处理跟随酒馆当前选中的预设`
+          "
+          >{{
+            t`预设自带的脚本默认不参与选项生成。关闭＝不带；仅广播＝改写提示词的脚本生效；酒馆助手＝交给酒馆助手插件执行（需安装）`
+          }}</span
+        >
+        <span class="choice-field-hint">{{
+          t`能力边界：预设模式只取预设的提示词栈，加上本扩展填入的槽位（角色卡、persona、世界书、聊天历史）与本扩展的任务指令；酒馆其他扩展注入的内容（作者注、向量库、摘要等）不在其中，与主生成看到的上下文并不完全一致`
+        }}</span>
+        <div v-if="companionHint" class="choice-preset-companion" :title="companionHintTitle">
+          <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
+          <span>{{ companionHint }}</span>
+        </div>
+      </template>
+    </div>
+
+    <!-- 预设条目覆盖层：仅预设模式显示。不改酒馆预设文件，在插件侧禁用/替换预设条目 -->
+    <div v-if="globalStore.settings.prompt_source === 'st_preset'" class="choice-section">
+      <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`预设条目` }}</h4>
+      <span class="choice-field-hint">{{
+        t`列出当前生效预设的全部条目：可禁用、用插件内容替换条目原文，也可开启酒馆里已停用的条目——这些改动只影响选项生成，酒馆预设文件本身不被修改，恢复后即回到预设原样。标记为「运行时填充」的条目由本扩展按当前场景实时填入，不可禁用或覆盖`
+      }}</span>
+      <div v-if="presetEntries.length === 0" class="choice-field-hint">{{ t`未读取到预设条目` }}</div>
+      <div v-else class="choice-preset-entry-list">
+        <div
+          v-for="(entry, idx) in presetEntries"
+          :key="entry.identifier"
+          class="choice-preset-entry"
+          :class="{
+            'choice-preset-entry--disabled': entry.pluginDisabled || (entry.stDisabled && !entry.forceEnabled),
+          }"
+        >
+          <div class="choice-preset-entry-row">
+            <span class="choice-preset-entry-idx">{{ idx + 1 }}</span>
+            <span class="choice-preset-entry-role" :class="'choice-preset-entry-role--' + entry.role">{{
+              entry.role
+            }}</span>
+            <span class="choice-preset-entry-name" :title="entry.identifier">{{
+              entry.title || entry.identifier
+            }}</span>
+            <span v-if="entry.isMarker" class="choice-preset-entry-badge">{{ t`运行时填充` }}</span>
+            <span v-else-if="entry.pluginDisabled" class="choice-preset-entry-badge choice-preset-entry-badge--off">{{
+              t`已禁用`
+            }}</span>
+            <span
+              v-else-if="entry.stDisabled && entry.forceEnabled"
+              class="choice-preset-entry-badge choice-preset-entry-badge--on"
+              >{{ t`已启用` }}</span
+            >
+            <span v-else-if="entry.stDisabled" class="choice-preset-entry-badge">{{ t`酒馆已停用` }}</span>
+            <span v-else-if="entry.overridden" class="choice-preset-entry-badge choice-preset-entry-badge--on">{{
+              t`已覆盖`
+            }}</span>
+            <span
+              v-if="entry.legacyOverride"
+              class="choice-preset-entry-badge"
+              :title="
+                t`旧版全局覆盖：只按条目标识符保存，对所有含该标识符的预设都生效。当前预设的修改只写当前预设的键，不会动它；点「恢复原样」会把它一并清掉。`
+              "
+              >{{ t`全局覆盖` }}</span
+            >
+            <span class="choice-preset-entry-actions">
+              <template v-if="!entry.isMarker">
+                <button
+                  v-if="entry.stDisabled"
+                  class="choice-btn-sm"
+                  :class="{ active: entry.forceEnabled }"
+                  :title="
+                    entry.forceEnabled
+                      ? t`取消强制启用，回到酒馆的停用状态`
+                      : t`在插件内强制启用（不改酒馆预设，仅选项生成生效）`
+                  "
+                  @click="togglePresetEntryForce(entry.identifier)"
+                >
+                  <i :class="entry.forceEnabled ? 'fa-solid fa-toggle-on' : 'fa-solid fa-toggle-off'"></i>
+                </button>
+                <button
+                  class="choice-btn-sm"
+                  :title="entry.pluginDisabled ? t`恢复该条目参与组装` : t`禁用该条目（本扩展侧，不改酒馆预设）`"
+                  @click="togglePresetEntry(entry.identifier)"
+                >
+                  <i :class="entry.pluginDisabled ? 'fa-solid fa-rotate-left' : 'fa-solid fa-ban'"></i>
+                </button>
+                <button
+                  class="choice-btn-sm"
+                  :title="entry.expanded ? t`收起内容编辑` : t`用插件内容替换条目原文`"
+                  @click="togglePresetEntryExpand(idx)"
+                >
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+              </template>
+            </span>
+          </div>
+          <div v-if="entry.expanded && !entry.isMarker" class="choice-preset-entry-editor">
+            <textarea
+              class="choice-textarea"
+              rows="4"
+              :placeholder="t`留空并失焦 = 恢复预设原文；填写 = 用此内容替换条目原文`"
+              :value="overrideContentOf(entry.identifier) ?? entry.originalContent"
+              @change="onPresetEntryContentInput(entry.identifier, $event)"
+            ></textarea>
+            <button
+              v-if="overrideContentOf(entry.identifier) !== undefined"
+              class="choice-btn-sm"
+              :title="t`清除内容覆盖，恢复预设原文`"
+              @click="clearPresetEntryContent(entry.identifier)"
+            >
+              {{ t`恢复原文` }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-sliders"></i>{{ t`上下文设置` }}</h4>
       <div class="choice-page-toolbar" data-tour="prompt-toolbar">
         <label
@@ -23,7 +215,12 @@
             @change="rules.context_rounds = Math.max(1, Math.round(Number(rules.context_rounds)) || 1)"
           />
         </label>
-        <label class="choice-context-rounds" :title="t`开启后启用柏宝书记忆源（摘要+状态）作为提示词模块`">
+        <!-- 记忆摘要：扩展模式走摘要模块；预设模式由组装器附加同源摘要消息——
+             两模式语义对齐（都把外部记忆摘要作为记忆上下文），不再因模式切换静默缺席 -->
+        <label
+          class="choice-context-rounds"
+          :title="t`开启后把柏宝书的剧情摘要作为记忆上下文注入（扩展模式走模块管线，预设模式由组装器附加同源摘要）`"
+        >
           <input v-model="rules.baibai_enabled" type="checkbox" />
           {{ t`柏宝书` }}
         </label>
@@ -39,7 +236,9 @@
       </div>
     </div>
 
-    <div class="choice-section">
+    <!-- 提示词配置栏与模块列表同属模块管线：预设模式下不参与组装，整块隐藏
+         （配置不丢——切回「本扩展提示词」后原样可用） -->
+    <div v-if="globalStore.settings.prompt_source !== 'st_preset'" class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-diagram-project"></i>{{ t`提示词配置` }}</h4>
       <div class="choice-config-bar">
         <div class="choice-config-row">
@@ -118,7 +317,7 @@
       </div>
     </div>
 
-    <div class="choice-section">
+    <div v-if="globalStore.settings.prompt_source !== 'st_preset'" class="choice-section">
       <h4 class="choice-section-title"><i class="fa-solid fa-list-ul"></i>{{ t`模块列表` }}</h4>
       <div class="choice-module-toolbar">
         <div class="choice-module-toolbar-left">
@@ -395,6 +594,21 @@ import type { PromptModule } from '@/type/settings';
 import { BAIBAI_MODULE_IDS, PromptModule as PromptModuleSchema } from '@/type/settings';
 import { isoTimestamp } from '@/util/time';
 import { toggleChatBinding, toggleCharacterBinding } from '@/core/bindings';
+import {
+  listStPresetNames,
+  onStPresetChanged,
+  readActiveStPreset,
+  type StPresetSnapshot,
+} from '@/core/st-preset-source';
+import { readPresetCompanionScripts, type PresetCompanionScripts } from '@/core/st-preset-scripts';
+import { NATIVE_MARKER_SLOTS } from '@/core/preset-messages';
+import {
+  clearPresetContentOverride,
+  getPresetOverride,
+  hasLegacyPresetOverride,
+  togglePresetOverrideFlag,
+  writePresetContentOverride,
+} from '@/core/preset-overrides';
 import { z } from 'zod';
 
 const globalStore = useGlobalSettingsStore();
@@ -402,6 +616,189 @@ const characterStore = useCharacterSettingsStore();
 const chatStore = useChatSettingsStore();
 const promptConfigSelector = usePromptConfigSelectorStore();
 const rules = globalStore.settings.prompt_rules;
+
+/** 酒馆 CC 预设名列表（预设模式的下拉选项）。预设由酒馆在设置加载时读入，本扩展只读；
+ *  列表在进入预设模式时刷新一次即可——酒馆内新增/改名预设后重新进入本页会取到新列表。 */
+const presetNames = ref<string[]>([]);
+
+// ── 预设条目覆盖层（仅预设模式显示）────────────────────────────
+// 快照在进入预设模式 / 切换预设名时刷新一次；条目内容可能很大，避免每帧重读宿主对象。
+const presetSnapshot = ref<StPresetSnapshot | null>(null);
+const expandedEntries = ref(new Set<number>());
+
+// ── 预设配套脚本可见化（只读计数/启用态，不读脚本正文）──────────────────
+// 预设包常内嵌正则与外部脚本：正则的提示词侧已随本扩展生效；外部脚本仅在
+// 酒馆主生成流程执行，选项生成的预设模式不经过它们。把差异摆到明面上，防「选项质量
+// 为什么与主生成不一样」的静默困惑。随预设名/来源切换刷新一次；脚本启停无事件可订阅，
+// 提示为快照性质（重进本页即刷新）。
+const companionScripts = ref<PresetCompanionScripts | null>(null);
+
+/** 宿主预设切换事件的退订句柄（组件卸载时清理）。 */
+let stopPresetWatch: (() => void) | null = null;
+
+/** 刷新预设快照（预设列表 + 条目快照 + 配套脚本概览）。
+ *
+ *  三处触发：进入/切换预设模式、酒馆切换 CC 预设（跟随模式下预设名会变）。
+ *  酒馆那次不能省——覆盖层的键按预设名隔离，快照不刷新就会把覆盖写进上一个
+ *  预设的名字下，生成时查不到，覆盖静默失效。 */
+const refreshPresetSnapshot = (): void => {
+  if (globalStore.settings.prompt_source !== 'st_preset') return;
+  presetNames.value = listStPresetNames();
+  presetSnapshot.value = readActiveStPreset(globalStore.settings.st_preset_name);
+  companionScripts.value = readPresetCompanionScripts(globalStore.settings.st_preset_name);
+  expandedEntries.value = new Set();
+};
+
+watch(
+  () => [globalStore.settings.prompt_source, globalStore.settings.st_preset_name] as const,
+  () => {
+    refreshPresetSnapshot();
+  },
+  { immediate: true },
+);
+
+const companionHint = computed(() => {
+  const info = companionScripts.value;
+  if (!info) return '';
+  const parts: string[] = [];
+  if (info.regexCount > 0) parts.push(t`预设正则 ×${info.regexCount}`);
+  if (info.helperTotal > 0) {
+    const helperActive = info.helperInstalled && info.helperScopeEnabled && info.helperEnabled > 0;
+    if (helperActive) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（仅主对话执行）`);
+    else if (info.helperEnabled > 0) parts.push(t`酒馆助手脚本 ×${info.helperEnabled}（酒馆助手未启用）`);
+    else parts.push(t`酒馆助手脚本 ×${info.helperTotal}（均已停用）`);
+  }
+  if (info.spresetPresent) {
+    parts.push(
+      info.spresetModules.length
+        ? t`SPreset 框架（${info.spresetModules.join('、')}）`
+        : t`SPreset 框架（未启用处理模块）`,
+    );
+  }
+  return parts.length ? t`该预设自带：${parts.join('；')}` : '';
+});
+
+const companionHintTitle = computed(() => {
+  const info = companionScripts.value;
+  if (!info) return '';
+  const lines = [
+    t`预设绑定正则由酒馆正则扩展自动加载，其中作用于提示词的规则已随选项生成的历史消息生效；正则跟随酒馆当前选中的预设。`,
+    t`酒馆助手预设脚本仅在酒馆主生成流程中执行，选项生成的预设模式不经过它们——选项生成的行为因此可能与主生成不同。`,
+    t`SPreset 框架的强制后处理模式已由「提示词后处理跟随预设」自动采用；其余载荷级处理（条件合并等）仅在脚本层「酒馆助手」档生效，入口条件与输出侧处理在任何档位都不执行。`,
+  ];
+  if (info.differsFromSelected) {
+    lines.push(t`注意：当前固定使用的预设与酒馆选中的预设不同——提示词取固定预设，而预设正则仍跟随酒馆选中的预设。`);
+  }
+  return lines.join('\n');
+});
+
+/** 覆盖层的响应式入口：模板与操作函数都经它读写，deep watch 统一落盘。 */
+const overridesRef = computed(() => globalStore.settings.st_preset_overrides);
+
+/** 生效预设名（覆盖层按预设名隔离的键用）：快照里是解析后的真实预设名，
+ *  不是用户填的固定名——填了空表示跟随酒馆选中预设。 */
+const activePresetName = computed(() => presetSnapshot.value?.name ?? '');
+
+/** 条目的生效覆盖值：先查 `预设名::标识符`，再回退旧版全局键（兼容老配置）。 */
+const effectiveOverride = (id: string) => getPresetOverride(overridesRef.value, activePresetName.value, id);
+
+type PresetEntryRow = {
+  identifier: string;
+  title: string;
+  role: string;
+  isMarker: boolean;
+  /** 酒馆侧 prompt_order.enabled === false（酒馆自己停用的条目，默认不参与组装）。 */
+  stDisabled: boolean;
+  /** 覆盖层 enabled=true：插件内强制开启酒馆已停用的条目。 */
+  forceEnabled: boolean;
+  originalContent: string;
+  expanded: boolean;
+  pluginDisabled: boolean;
+  overridden: boolean;
+  /** 旧版全局覆盖（只按条目标识符存）：对所有含该 id 的预设都生效。 */
+  legacyOverride: boolean;
+};
+
+/** rows：按酒馆 prompt_order 顺序列出当前预设条目（含覆盖状态）。 */
+const presetEntries = computed<PresetEntryRow[]>(() => {
+  const snap = presetSnapshot.value;
+  const overrides = overridesRef.value;
+  if (!snap) return [];
+  const byId = new Map(snap.prompts.map(p => [String(p?.identifier ?? '').trim(), p]));
+  const rows: PresetEntryRow[] = [];
+  const seen = new Set<string>();
+  for (const entry of snap.order) {
+    const id = String(entry?.identifier ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const prompt = byId.get(id);
+    if (!prompt) continue;
+    const ov = effectiveOverride(id);
+    rows.push({
+      identifier: id,
+      title: String(prompt.name ?? '').trim(),
+      role: String(prompt.role ?? 'system').toLowerCase(),
+      isMarker: prompt.marker === true || (NATIVE_MARKER_SLOTS as readonly string[]).includes(id),
+      stDisabled: entry?.enabled === false,
+      forceEnabled: ov?.enabled === true,
+      originalContent: String(prompt.content ?? ''),
+      expanded: expandedEntries.value.has(rows.length),
+      pluginDisabled: ov?.disabled === true,
+      overridden: ov?.content !== undefined,
+      // 旧版全局覆盖（只按条目标识符存）：对所有含该 id 的预设都生效，UI 需明示。
+      // 覆盖层改成按预设隔离后，它不会随当前预设的编辑消失——徽标按「旧键还在不在」判。
+      legacyOverride: hasLegacyPresetOverride(overrides, id),
+    });
+  }
+  return rows;
+});
+
+/** 禁用/恢复条目（本扩展侧覆盖层，酒馆预设不动）。已有内容/强制启用覆盖时只翻 disabled 位，
+ *  其余覆盖保留——「恢复原样」由清除覆盖负责。
+ *
+ *  写入按预设名隔离的键（`预设名::标识符`）：内置标识符（main/nsfw/jailbreak）在所有预设里
+ *  同名，只按标识符存会让一个预设的改动静默作用到别的预设。旧版全局键原样保留——
+ *  它对其它预设仍然生效，在当前预设翻个开关就把全局覆盖抹掉，等于让别的预设的覆盖
+ *  静默失效；只有「恢复原样」才连它一起清（见 clearPresetContentOverride）。 */
+const togglePresetEntry = (id: string): void => {
+  if (!activePresetName.value) return;
+  togglePresetOverrideFlag(globalStore.settings.st_preset_overrides, activePresetName.value, id, 'disabled');
+};
+
+/** 强制启用/取消（仅对酒馆已停用的条目显示）：插件侧开启不改酒馆预设，只影响选项生成。 */
+const togglePresetEntryForce = (id: string): void => {
+  if (!activePresetName.value) return;
+  togglePresetOverrideFlag(globalStore.settings.st_preset_overrides, activePresetName.value, id, 'enabled');
+};
+
+const overrideContentOf = (id: string): string | undefined => effectiveOverride(id)?.content;
+
+/** 写入内容覆盖。空值 = 清除覆盖（恢复预设原文）——条目级「清空」想表达的是不参与，
+ *  用禁用表达更明确，且防误触空 textarea 把条目静默清空。 */
+const onPresetEntryContentInput = (id: string, e: Event): void => {
+  setPresetEntryContent(id, String((e.target as HTMLTextAreaElement)?.value ?? ''));
+};
+
+const setPresetEntryContent = (id: string, value: string): void => {
+  if (!activePresetName.value) return;
+  if (!value.trim()) {
+    clearPresetEntryContent(id);
+    return;
+  }
+  writePresetContentOverride(globalStore.settings.st_preset_overrides, activePresetName.value, id, value);
+};
+
+const clearPresetEntryContent = (id: string): void => {
+  if (!activePresetName.value) return;
+  clearPresetContentOverride(globalStore.settings.st_preset_overrides, activePresetName.value, id);
+};
+
+const togglePresetEntryExpand = (idx: number): void => {
+  const next = new Set(expandedEntries.value);
+  if (next.has(idx)) next.delete(idx);
+  else next.add(idx);
+  expandedEntries.value = next;
+};
 
 /** 只读模块：仅允许移动和开关，不可编辑/删除/复制 */
 const READONLY_MODULE_IDS = new Set([
@@ -859,9 +1256,12 @@ function onDocumentClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', onDocumentClick);
+  // 酒馆切换 CC 预设后刷新快照（覆盖层按预设名隔离，预设名变了键也得跟着变）
+  stopPresetWatch = onStPresetChanged(refreshPresetSnapshot);
 });
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick);
+  stopPresetWatch?.();
 });
 </script>
 
@@ -870,6 +1270,111 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--choice-space-2);
+}
+
+/* 预设条目覆盖层：紧凑行列表，窄屏可换行 */
+.choice-preset-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* 预设配套脚本可见化：单行附件式提示，机制口径进 hover（不上主文案） */
+.choice-preset-companion {
+  display: flex;
+  align-items: baseline;
+  gap: var(--choice-space-1);
+  flex-wrap: wrap;
+  font-size: var(--choice-text-xs);
+  color: var(--choice-text-muted);
+  line-height: var(--choice-line-height);
+  cursor: help;
+}
+
+.choice-preset-entry {
+  border: 1px solid var(--choice-border);
+  border-radius: var(--choice-radius-sm, 6px);
+  padding: var(--choice-space-1) var(--choice-space-2);
+}
+
+.choice-preset-entry--disabled {
+  opacity: 0.55;
+}
+
+.choice-preset-entry-row {
+  display: flex;
+  align-items: center;
+  gap: var(--choice-space-1);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.choice-preset-entry-idx {
+  min-width: 1.6em;
+  text-align: right;
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
+}
+
+.choice-preset-entry-role {
+  font-size: var(--choice-text-xs);
+  padding: 0 0.4em;
+  border-radius: 4px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-muted);
+}
+
+.choice-preset-entry-role--user {
+  color: var(--choice-color-info, #4a90d9);
+}
+
+.choice-preset-entry-role--assistant {
+  color: var(--choice-color-warning, #d98a2b);
+}
+
+.choice-preset-entry-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--choice-text-sm);
+}
+
+.choice-preset-entry-badge {
+  font-size: var(--choice-text-xs);
+  padding: 0 0.4em;
+  border-radius: 4px;
+  background: var(--choice-bg-element);
+  color: var(--choice-text-muted);
+  white-space: nowrap;
+}
+
+.choice-preset-entry-badge--on {
+  color: var(--choice-color-success, #3d9970);
+}
+
+.choice-preset-entry-badge--off {
+  color: var(--choice-color-danger, #d94a4a);
+}
+
+.choice-preset-entry-actions {
+  display: flex;
+  gap: var(--choice-space-1);
+}
+
+.choice-preset-entry-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-space-1);
+  margin-top: var(--choice-space-1);
+}
+
+.choice-preset-entry-editor .choice-textarea {
+  width: 100%;
+  resize: vertical;
 }
 
 .choice-page-toolbar {
@@ -1056,34 +1561,6 @@ onUnmounted(() => {
   justify-content: space-between;
   font-size: var(--choice-text-sm);
   color: var(--choice-text-secondary);
-}
-
-.choice-beginner-section {
-  border: 1px solid var(--choice-border);
-  border-radius: var(--choice-radius-sm);
-  overflow: hidden;
-}
-
-.choice-beginner-body {
-  padding: var(--choice-space-2) var(--choice-space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--choice-space-2);
-  border-top: 1px solid var(--choice-border);
-}
-
-.choice-field-module {
-  font-size: var(--choice-text-xs);
-  color: var(--choice-text-muted);
-  background: var(--choice-bg-card);
-  padding: 1px var(--choice-space-2);
-  border-radius: var(--choice-radius-full);
-}
-
-.choice-restore-btn {
-  font-size: var(--choice-text-xs);
-  padding: 2px var(--choice-space-2);
-  margin-left: auto;
 }
 
 .choice-enrich-badge-sm {

@@ -20,7 +20,6 @@ import {
   PROMPT_TEXT_MIGRATIONS,
   type PromptConfig,
   type GlobalSettings as GlobalSettingsType,
-  type Card,
   type PoolConfig,
   type PoolConfigEntry,
   type PoolEntry,
@@ -40,8 +39,6 @@ import { useCharacterSettingsStore } from '@/store/character-settings';
 import { detectSTTheme, getSTInkFallback, watchSTTheme } from '@/core/theme-detector';
 import { getStCharacter } from '@/core/st-character';
 import { scheduleCharacterPersist } from '@/util/character-bindings';
-import { BUILTIN_CARDS } from '@/core/cards-builtin';
-import { cardMaxDurability } from '@/core/cards-constraints';
 
 /**
  * 旧版默认条目（v23 前 buildDefaultEntries 产出）的 type 集合。
@@ -414,7 +411,7 @@ const migratePromptModules = (
   }
 
   if (version < 7) {
-    // v7: 追加柏宝书记忆源模块（baibai_summary、baibai_state）
+    // v7: 追加记忆摘要源模块（baibai_summary、baibai_state）
     const defaults = klona(DEFAULT_MODULES);
     const existingIds = new Set(validated.prompt_rules.modules.map(m => m.id));
     for (const d of defaults) {
@@ -493,7 +490,7 @@ const migratePromptModules = (
   }
 
   if (version < 11) {
-    // v11: 柏宝书模块默认启用，调整顺序
+    // v11: 记忆摘要模块默认启用，调整顺序
     const baibaiSummary = validated.prompt_rules.modules.find(m => m.id === 'baibai_summary');
     if (baibaiSummary) baibaiSummary.enabled = true;
     resetOrderFromDefaults(validated);
@@ -805,7 +802,6 @@ const applyDefaults = (
     const saneLegacyPool = (v: unknown): PoolEntry[] =>
       foldLegacy && Array.isArray(v) ? v.filter((e): e is PoolEntry => !!e && typeof e === 'object') : [];
     const oldGlobalPool: PoolEntry[] = saneLegacyPool(_.get(extension_settings, [setting_field, 'pool']));
-    const oldGlobalGen = _.get(extension_settings, [setting_field, 'generation']);
     let charName = '';
     let oldCharPool: PoolEntry[] = [];
     try {
@@ -851,11 +847,6 @@ const applyDefaults = (
         entries: makeEntries(oldGlobalPool),
         is_default: true,
         rules: '',
-        // 用 schema 默认而非硬编码字面量：避免字段遗漏（曾漏 count_mode，本次漏 oversample_pct）。
-        // 旧 generation 对象经 parse 补齐后增字段（oversample_pct/dedup_* 等）——直接透传原始
-        // 对象会让本会话内消费端读到 undefined（generator 对 dedup_enabled 无 ?? 兜底，去重
-        // 静默失效），重载后才被 zod prefault 自愈；解析失败（旧档字段形态漂移）回退全默认。
-        generation: GenerationSettings.safeParse(oldGlobalGen ?? {}).data ?? GenerationSettings.parse({}),
       });
     }
 
@@ -867,7 +858,6 @@ const applyDefaults = (
         entries: makeEntries(oldCharPool),
         is_default: configs.length === 0,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
       try {
         const ch = getStCharacter(this_chid);
@@ -894,7 +884,6 @@ const applyDefaults = (
         entries: makeEntries(oldChatPool),
         is_default: configs.length === 0,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
       try {
         const cMeta = chat_metadata?.[setting_field];
@@ -926,7 +915,6 @@ const applyDefaults = (
         })),
         is_default: true,
         rules: '',
-        generation: GenerationSettings.parse({}),
       });
     }
 
@@ -952,10 +940,6 @@ const applyDefaults = (
   }
 
   if ((validated.schema_version ?? 0) < 10) {
-    // 移除 pinned_follows_condition（条件改为 AI 判断）
-    for (const cfg of validated.configs) {
-      delete (cfg.generation as any).pinned_follows_condition;
-    }
     // 填充 group_order：从现有条目的 category 去重后按字母排序
     if (!validated.group_order || validated.group_order.length === 0) {
       const cats = new Set<string>();
@@ -991,7 +975,6 @@ const applyDefaults = (
           })),
           is_default: true,
           rules: '',
-          generation: GenerationSettings.parse({}),
         },
       ];
     }
@@ -1214,12 +1197,11 @@ const applyDefaults = (
   // 建配置/补标记/去重自愈/修字数四块对全向已无意义，全向配置与条目由 v44 迁移块统一清理）。
 
   // v35: 配置彻底解耦为"独立模块"——条目池配置只管条目引用、提示词配置只管提示词文本
-  // （modules/person_style/option_rules），人称/字数/轮数/预填充/柏宝书/抽取参数全部收归全局。
+  // （modules/person_style/option_rules），人称/字数/轮数/预填充/记忆摘要/抽取参数全部收归全局。
   // 两步自愈，把历史耦合期被改写的用户值还原：
-  // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）从默认
-  //    条目池配置的 generation 快照播种——历史上生成设置页冗余比例读生效池配置，切池配置
-  //    即跳变；generator 与生成设置页已改读全局。
-  // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/柏宝书抄回
+  // ① 抽取参数全局化：根字段 settings.generation（分组抽取/打乱/固定溢出/冗余比例）落地全局
+  //    ——历史上生成设置页冗余比例读生效池配置，切池配置即跳变；generator 与生成设置页已改读全局。
+  // ② 提示词全局字段还原：从默认提示词配置快照把人称/字数/轮数/预填充/记忆摘要抄回
   //    prompt_rules——历史上切换提示词配置全量换入这些字段，用户自定义润色字数被洗成 30/80、
   //    人称跟着跳变。默认提示词配置的快照是用户真实值的可靠来源：切换链路只会把 pr 写回
   //    "正在离开的配置"，离开简洁时 pr 必为简洁自己的值，故简洁快照从未被污染。
@@ -1227,9 +1209,10 @@ const applyDefaults = (
   // pr，本 heal 会回退那次未同步的编辑——属可接受代价（切配置的连带污染远高频，且字段
   // 现已全局化，用户改回一次即永久生效）。幂等：v35 只跑一次（schema_version 守卫）。
   if ((validated.schema_version ?? 0) < 35) {
-    // ① 全局抽取参数播种（无任何池配置的极端态回退 schema 默认）
-    const defPool = validated.configs.find(c => c.is_default) ?? validated.configs[0] ?? null;
-    validated.generation = defPool ? klona(defPool.generation) : GenerationSettings.parse({});
+    // ① 全局抽取参数播种。曾从默认池配置的 generation 快照取值；v81 起该字段已删除
+    //    （zod strip 先于迁移运行，老值不可达），冻结在 v35 前的远古档直升时回退 schema
+    //    默认——与 v35 自身「旧 generation 形态漂移则回退全默认」的既定口径一致
+    validated.generation = GenerationSettings.parse({});
 
     // ② 提示词全局字段还原
     const defPrompt = validated.prompt_configs.find(c => c.is_default);
@@ -1636,7 +1619,7 @@ const applyDefaults = (
     for (const cfg of validated.prompt_configs) resyncModuleOrders(cfg.modules);
   }
 
-  // v45: 柏宝书摘要 marker 从「世界书深度（历史前）」之上移到其下——两者都注入在聊天历史之前，
+  // v45: 记忆摘要 marker 从「世界书深度（历史前）」之上移到其下——两者都注入在聊天历史之前，
   // 按"静态世界设定 → 历史记忆摘要 → 当前对话"的信息流重排（摘要是"发生过的事件"，比世界书
   // 设定更贴近时间线末端）。只交换这两个模块的 order，且仅在它们仍处于旧相邻关系（摘要恰好
   // 紧挨在世界书深度之上）时生效：用户已手动移动过任一 marker 的不动，同 v41/v42「用户自定义
@@ -2115,27 +2098,23 @@ const applyDefaults = (
     }
   }
 
-  // v61：新增 card_obtained（历史获得记录，独立于当前持有 card_collection）。收藏进度/成就/套装
-  // 改以其为准，分解只删持有、不抹掉图鉴。老存档无此字段：把存量收藏补种为历史（obtained_at 沿用
-  // CardOwned 里已有的 obtained_at，count=1），这样已持有的卡立即计入；已分解的卡历史无法回溯，
-  // 从升级起对未来获得生效（zod prefault 保证 card_obtained 恒为对象）。
-  if ((validated.schema_version ?? 0) < 61) {
-    const obtained = validated.card_obtained ?? {};
-    for (const [id, owned] of Object.entries(validated.card_collection ?? {})) {
-      if (obtained[id]) continue;
-      // obtained_at 有 zod default(0)，旧档缺失字段在 parse 时已被补 0——`?? Date.now()`
-      // 的兜底会被 0 截胡永不可达；0（epoch 1970）也绝非合法获得时间，按缺失处理
-      obtained[id] = { card_id: id, obtained_at: owned?.obtained_at || Date.now(), count: 1 };
-    }
-    validated.card_obtained = obtained;
-  }
-
-  // v66 卡牌瘦身：删除血战/副本、诅咒、每日任务、保底与耐久/等级。zod 解析会 strip 新 schema
-  // 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象——旧键会残留在运行时对象里
-  // 并被 deep watch 继续落盘，必须在此显式 delete 才算清干净。card_collection 条目内的
-  // level/durability/max_durability 与 stats.card 的废弃计数字段同理。
-  if ((validated.schema_version ?? 0) < 66) {
-    const legacyKeys = [
+  // v77：卡牌系统整体移除（判定管线叠加层/卡组/收藏/行动币/开包/角色主题池/统计分区）。
+  // zod 解析会 strip 新 schema 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象
+  // ——旧键会残留在运行时对象里并被 deep watch 继续落盘，必须在此显式 delete 才算清干净
+  // （同 v66 先例）。清单一并覆盖各历史版本残留（battle_* 血战、card_debuffs/pity/daily、
+  // card_achievements，原 v61/v66/v68 迁移清理的键），老档从任意版本直升都被清干净。
+  if ((validated.schema_version ?? 0) < 77) {
+    const cardKeys = [
+      'card_enabled',
+      'card_collection',
+      'card_obtained',
+      'card_decks',
+      'card_definitions',
+      'card_character_pools',
+      'card_currency',
+      'auto_deck_enabled',
+      'card_starter_granted',
+      // 更早期卡牌 subsystem（血战/副本/诅咒/保底/每日/成就）的遗留键，原 v66/v68 块清理对象
       'battle_enabled',
       'battle_player_hp',
       'battle_player_max_hp',
@@ -2148,15 +2127,42 @@ const applyDefaults = (
       'card_debuffs',
       'card_pity',
       'card_daily',
+      'card_achievements',
+      // 更早期卡牌迭代的散键（幸运数阈值/开包份数），代码史无记录、仅个别老档残留
+      'card_lucky_number',
+      'card_pack_offer',
     ];
-    for (const key of legacyKeys) delete (validated as Record<string, unknown>)[key];
-    for (const owned of Object.values(validated.card_collection ?? {})) {
-      delete (owned as Record<string, unknown>).level;
-      delete (owned as Record<string, unknown>).durability;
-      delete (owned as Record<string, unknown>).max_durability;
+    for (const key of cardKeys) delete (validated as Record<string, unknown>)[key];
+    delete (validated.stats as Record<string, unknown>).card;
+  }
+
+  // v78：自动化系统整体移除（建议引擎/阵容计划/L1 AI 归因/L2 AI 建议理由/应用撤销槽）。
+  // zod 解析会 strip 新 schema 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象
+  // ——旧键会残留在运行时对象里并被 deep watch 继续落盘，必须在此显式 delete 才算清干净
+  // （同 v66/v77 先例）。顶层 6 个自动化字段 + stats.ai_analysis（L2 理由缓存）+ 各条目
+  // last_weight_changed_at（建议/阵容冷却标记，唯一消费方已删），老档从任意版本直升都被清干净。
+  if ((validated.schema_version ?? 0) < 78) {
+    for (const key of [
+      'automation_enabled',
+      'roster_size',
+      'roster_enabled',
+      'ai_attribution_enabled',
+      'ai_analysis_enabled',
+      'apply_history',
+    ]) {
+      delete (validated as Record<string, unknown>)[key];
     }
-    const legacyStatKeys = ['pity_epicplus_hits', 'daily_rewards_claimed'] as const;
-    for (const key of legacyStatKeys) delete (validated.stats.card as Record<string, unknown>)[key];
+    const stats = validated.stats as Record<string, unknown> | undefined;
+    if (stats) {
+      delete stats.ai_analysis;
+      const entries = stats.entries as
+        Record<string, { by_entry?: Record<string, Record<string, unknown>> }> | undefined;
+      for (const scope of Object.values(entries ?? {})) {
+        for (const e of Object.values(scope?.by_entry ?? {})) {
+          delete e.last_weight_changed_at;
+        }
+      }
+    }
   }
 
   // v67：判定注释改版——结构化头部（点数/需求/差值/程度）与纪律尾注改由代码层固定拼装
@@ -2215,30 +2221,6 @@ const applyDefaults = (
       const current = dice[field];
       if (typeof current !== 'string' || !froms.includes(current)) continue;
       dice[field] = SEND_TEMPLATE_DEFAULTS[field as keyof typeof SEND_TEMPLATE_DEFAULTS];
-    }
-  }
-
-  // v68 卡牌再瘦身：移除套装系统（CARD_SETS + 10 张 set_ 内置卡 + 套装共鸣）与收藏成就。
-  // 同 v66 的坑——zod 解析会 strip 不认识的键，但 validateInplace 用 _.assign 就地合并回
-  // 原对象，旧键会残留并被 deep watch 继续落盘，必须显式 delete：
-  // ① card_achievements 整键；② 收藏/图鉴里的 set_ 前缀套装卡条目（卡定义已不存在，
-  // 留着会虚增图鉴计数）；③ 卡组槽位里指向套装卡的 card_id（置空，槽位随 normalize 补空）；
-  // ④ card_definitions 条目内的 set 残留字段（Card 类型已删该字段）。
-  if ((validated.schema_version ?? 0) < 68) {
-    delete (validated as Record<string, unknown>).card_achievements;
-    const isLegacySetCard = (id: string): boolean => typeof id === 'string' && id.startsWith('set_');
-    for (const record of [validated.card_collection, validated.card_obtained]) {
-      for (const id of Object.keys(record ?? {})) {
-        if (isLegacySetCard(id)) delete (record as Record<string, unknown>)[id];
-      }
-    }
-    for (const deck of Object.values(validated.card_decks ?? {})) {
-      for (const slot of (deck as { slots?: Array<{ card_id: string }> })?.slots ?? []) {
-        if (isLegacySetCard(slot.card_id)) slot.card_id = '';
-      }
-    }
-    for (const def of Object.values(validated.card_definitions ?? {})) {
-      delete (def as Record<string, unknown>).set;
     }
   }
 
@@ -2383,34 +2365,294 @@ const applyDefaults = (
     for (const cfg of validated.prompt_configs) migrateV74(cfg.modules);
   }
 
-  // v70：恢复卡牌触发磨损与破损修复——CardOwned 新增 durability/max_durability/broken。
-  // 老档（v66 起删除了 level/durability/max_durability，v70 重新引入）无这些字段：
-  // zod 解析会把缺失字段补上 schema 默认值（durability=0 / max_durability=1），
-  // 无法用「字段是否缺失」区分旧档与新卡——以 max_durability 为哨兵：新卡恒为真实
-  // 满耐久（cardMaxDurability 钳制 ≥10），旧档被补成 1。max_durability ≤1 即旧档，
-  // 按卡定义补满耐久（内置卡 BUILTIN_CARDS ∪ card_definitions 角色主题卡，都含 star/type）、
-  // broken=false——零行为变化，后续正常触发磨损。
-  if ((validated.schema_version ?? 0) < 70) {
-    const defById = new Map<string, { star: Card['star']; type: Card['type'] }>();
-    for (const c of BUILTIN_CARDS) defById.set(c.id, { star: c.star, type: c.type });
-    for (const [id, def] of Object.entries(validated.card_definitions ?? {})) {
-      if (def) defById.set(id, { star: def.star, type: def.type });
-    }
-    for (const owned of Object.values(validated.card_collection ?? {})) {
-      if (!owned || owned.max_durability > 1) continue; // 已是 v70 新卡，跳过
-      const def = defById.get(owned.card_id);
-      const max = def ? cardMaxDurability(def) : 1;
-      owned.max_durability = max;
-      owned.durability = max;
-      owned.broken = false;
+  // v75：提示词三类强化——句式、防全知补漏、去主角化。三项动因（当时的第四项「新增
+  // {{option_style}} 占位符」已在 v76 撤除，见该块注释）：
+  // ① 选项 content 句式死板（整批以主体名开头的「主谓宾」动作链）——core_rules 只约束了
+  //    「拉开差距」没约束句式，补「开头句式错开 + 可省略主语」；② 全知残留：knowledge_boundary
+  //    只管信息来源不管掌握程度，剧情刚写过「获得力量/被告知」就被放大成熟练精通（定位要害、
+  //    精确操控）——补「已知≠熟练」与「获取过程从严认定」，difficulty_rules 的「主角擅长面」
+  //    同步改为「只认已明确展示过的本领」（措辞主角→主体，兼容非 user 主体条目）；
+  // ③ 去主角化（防媚主）：各方态度按立场展开，不天然讨好顺从主体（参考正文预设防媚措辞），
+  //    core_rules 同时静态补「防极端化」两句。exact-match（内容 === 旧默认字面量才换，同
+  //    v69/v71/v74 模式）保证用户自定义过的模块不动；to 取自 DEFAULT_MODULES（零漂移）。
+  //    ⚠️ 本块的 to 值（当时含 {{option_style}} 的文本）已被 v76 块再次覆盖，属预期链路。
+  if ((validated.schema_version ?? 0) < 75) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V75_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v74 及以前的默认内容（冻结字面量）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'knowledge_boundary',
+        `【认知边界：非全知约束】
+以下规则高于本批候选的一切信息来源约束：
+
+1. 信息分层：你读到的全部内容里，只有两类能被候选直接依赖——①此刻可感知：当前场景里该主体眼前能看到、耳边能听到、能碰到、能闻到的具体细节（道具、在场者状态与台词、空间特征）；②该主体已知：角色设定与经历中明确属于该主体早已知道的事（自己的名字、与在场者既有关系、亲历过的往事）。其余一律视为该主体此刻不知道——包括世界书/背景里只有读者能看到的信息（他人秘密计划、远方发生的事、尚未公开的真相、角色未被告知的身份）。
+
+2. 禁止越界：候选不得让该主体直接使用它看不到、不知道的信息作为依据；不得对视线外/未被当面告知的事物行动（不许「去后门堵住他」这类）。他人此刻的内心与打算不是可直接引用的事实——不许写「他知道真相」「她打算瞒住」这类全知断言，只能写成该主体观察得到的迹象（神色、动作、语气、前后矛盾的言行），行动基于迹象与怀疑展开。若确要推动一条隐藏线索，必须通过此刻可见的钩子触发——看见异样、听见动静、被当面告知、从某个细节察觉——并写成「因注意到…/因怀疑…而行动」。
+
+3. 逐条核查：每条候选落地前，在 <thinking> 里自问——这条依赖的信息，是该主体此刻能感知的、还是早已知道的？若依赖了只有读者能看到的信息，把它改成由可感知钩子触发，或直接删除该候选。`,
+        newContentById.get('knowledge_boundary') ?? '',
+      ],
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"；他人内心与意图不当事实断言（不写"他心虚了""她打算瞒住"这类全知句），只写该主体看得见的迹象（神色、动作、语气），行动基于迹象与怀疑展开。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与需求值（见输出格式），档位整批尽量错开、需求值随难度区分。
+
+输出格式是硬约束：全部候选输出成 <options> 内的 JSON 数组，数组用 [ ] 包裹、每个候选是一个对象、元素间用逗号分隔，对象形如 {"title":"标题|档位|需求值","content":"正文"}。title 是简洁行动标题，可用竖线追加标注：第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；第二条竖线后为 0-100 的需求值整数，代表达成该选项所需的骰子点数下限（掷出 ≥ 需求值才算成功、点数越大越好）——行动越难、成功把握越低，标得越高；拿不准档位或需求值就省略对应竖线段，不许乱标。content 是候选正文字符串，每条 {{min_chars}}-{{max_chars}} 字；content 用单个 JSON 字符串表示、不要在其中换行，可含任意字符（包括 []、【】），一切结构只由外层 JSON 承担，不要用括号在正文里做任何标记。只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'difficulty_rules',
+        `【难度与需求值判定】
+判定难度用两条轴，别混为一谈：
+- 档位（保守/平衡/大胆）看这条候选的风险与力度——推进多猛、代价多大、主角多出格：保守=稳当留余地，平衡=正常推进，大胆=押上筹码。
+- 需求值（0-100 的整数）看这条候选在当前场景里达成的把握——掷骰要 ≥ 这个数才算成功，值越高越难、把握越低。
+
+需求值有个大致刻度，方便你对齐：
+- <40 顺手：几乎没阻力，主角熟练或场景毫无障碍（寒暄、惯常动作、明摆着能成的尝试）。
+- 40-59 一般：稍有不确定，多数情况（寻常说服、需要点技巧的动作）。
+- 60-79 吃力：明显障碍或本领不够，得靠运气或本事（硬闯、高难度周旋、冒险之举）。
+- 80-89 艰险：成功渺茫、赌注很大（近乎不可能的强求、直面强敌的硬拼）。
+- 90 以上只在主角远超常人、又天时地利时用，绝大多数候选不该落这一档。
+
+给一条候选定需求值时，依次掂量：
+1. 行动性质：纯对话/观察通常低于硬动作（撬锁、潜行、搏斗、跳窗、诱哄强敌）。
+2. 场景障碍：此刻场景是否正向拦着这条路——戒备的守卫、锁死的门、当众的监视、敌意的在场。
+3. 主体本领：是否落在主角的擅长面上。同样一扇门，惯偷与书生开锁的需求值要拉开。
+4. 失败后果：代价越重，越该谨慎，但它抬的是档位风险，不直接抬需求值。
+5. 把握合并：把前面几点拢成一个直觉把握，再映射成需求值；别标 0 或 100 走极端，拿不准宁可从低。
+
+档位和需求值可以各走各的：一条「大胆」的动作若是主角的拿手绝活，需求值未必高；反过来在极不利的场景里，「保守」动作也可能需求值偏高。别机械地让档位越高、需求值越高。
+
+整批候选的需求值要拉开落差，别全挤在同一档。按场景基调可以整体偏稳或偏激进，但同一批里尽量保留一条明显更险的压轴候选和一条更稳的保底候选——除非眼下只剩一条路可走。`,
+        newContentById.get('difficulty_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 认知边界核查：逐条自问——这条候选依赖的信息，是该主体此刻能感知、或早已知道的吗？凡依赖隐藏信息（他人秘密、未公开真相、视线外动向），改成由可见钩子触发（注意到异样/被当面告知/察觉细节）或弃掉；他人内心与意图不当事实写，只写可观察迹象；不替演候选落地后其他各方的反应。
+4. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？需求值（0-100 的整数）是否按场景达成把握标定——档位看风险力度、需求值看达成难度，两者独立不必趋同？整批需求值是否拉开落差、没有全挤在同一区间？核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV75 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V75_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV75(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV75(cfg.modules);
+  }
+
+  // v76：撤除 v75 引入的「选项文风」（option_style）——用户反馈该配置项体验不佳，整体移除：
+  // 字段、生成页输入框、{{option_style}} 占位符与注入逻辑全部删除。v75 迁移已把含占位符的
+  // core_rules 写进存档（工作副本 + 各 prompt_configs 快照），若只删代码，占位符会以字面量
+  // 残留在提示词里（模型会看到 {{option_style}}），必须再做一次 exact-match 修正：
+  // 内容 === v75 默认（含占位符）才替换为去掉占位符的当前默认。同样只动从未自定义过的档。
+  if ((validated.schema_version ?? 0) < 76) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V76_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      // [模块 id, v75 默认内容（冻结字面量，含 {{option_style}}）, 新默认内容（取自 DEFAULT_MODULES）]
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"；他人内心与意图不当事实断言（不写"他心虚了""她打算瞒住"这类全知句），只写该主体看得见的迹象（神色、动作、语气），行动基于迹象与怀疑展开。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与需求值（见输出格式），档位整批尽量错开、需求值随难度区分。开头句式同样要错开：主体名、省略主语的动词句、场景中正在发生的动作、环境或时间的变化都可直接起句，禁止整批每条都以主体名开头。整批文风保持平实可信：不追求把每条都写成高光时刻，不搞两极分化（要么彻底躺平、要么孤注一掷），避免浮夸中二的措辞与分析腔（不在选项里堆术语、报数据）。
+
+输出格式是硬约束：全部候选输出成 <options> 内的 JSON 数组，数组用 [ ] 包裹、每个候选是一个对象、元素间用逗号分隔，对象形如 {"title":"标题|档位|需求值","content":"正文"}。title 是简洁行动标题，可用竖线追加标注：第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；第二条竖线后为 0-100 的需求值整数，代表达成该选项所需的骰子点数下限（掷出 ≥ 需求值才算成功、点数越大越好）——行动越难、成功把握越低，标得越高；拿不准档位或需求值就省略对应竖线段，不许乱标。content 是候选正文字符串，每条 {{min_chars}}-{{max_chars}} 字；content 用单个 JSON 字符串表示、不要在其中换行，可含任意字符（包括 []、【】），一切结构只由外层 JSON 承担，不要用括号在正文里做任何标记。只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。{{option_style}}`,
+        newContentById.get('core_rules') ?? '',
+      ],
+    ];
+    const migrateV76 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V76_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV76(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV76(cfg.modules);
+    // zod 解析会 strip 新 schema 不认识的键，但 validateInplace 用 _.assign 就地合并回原对象，
+    // 旧键会残留在运行时对象里并被 deep watch 继续落盘，必须显式 delete（同 v66 先例）
+    delete (validated.prompt_rules as Record<string, unknown>).option_style;
+  }
+
+  // v80：死设置字段清理——ui.opacity（外观页透明度滑条，UI 已删）与 ui.panel_height
+  // （旧「行内设置面板高度」，真身是 ui.option_panel_height）。两字段全仓库零读写，
+  // zod strip 后 validateInplace 仍会把旧键就地合并回来，必须显式 delete（同 v66/v77/v78 先例）。
+  if ((validated.schema_version ?? 0) < 80) {
+    const ui = validated.ui as Record<string, unknown> | undefined;
+    if (ui) {
+      delete ui.opacity;
+      delete ui.panel_height;
     }
   }
 
+  // v81：PoolConfig.generation 死数据清除——v35 起抽取参数收归全局 settings.generation，
+  // 池配置上的 generation 快照自此无人读取（PoolEditor 曾在新建时持续写入）。zod strip 后
+  // validateInplace 仍会把旧键就地合并回来，必须显式 delete（同 v66/v77/v78 先例）。
+  if ((validated.schema_version ?? 0) < 81) {
+    for (const cfg of validated.configs) {
+      delete (cfg as Record<string, unknown>).generation;
+    }
+  }
+
+  // v82：主体锚点补回——v74~v81 的默认文案把 {{user}} 系统性换成了中性词「主体」，
+  // 而全文没有一处说明「主体默认指谁」。模型于是自行用「他/她」开头指代 {{user}}，
+  // 同一批选项主语忽隐忽现。本版在 knowledge_boundary 补「主体默认是 {{user}}」定义，
+  // core_rules/thinking_prompt 补「首次指代写名字、不用代词开头」。
+  // exact-match（内容 === v81 默认才换，同 v74/v76 模式）保证用户自定义过的模块不动；
+  // to 取自 DEFAULT_MODULES（JSON 单一事实源，迁移终态零漂移）。
+  if ((validated.schema_version ?? 0) < 82) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const V82_CONTENT_TARGETS: ReadonlyArray<readonly [string, string, string]> = [
+      [
+        'knowledge_boundary',
+        `【认知边界：非全知约束】
+以下规则高于本批候选的一切信息来源约束：
+
+1. 信息分层：你读到的全部内容里，只有两类能被候选直接依赖——①此刻可感知：当前场景里该主体眼前能看到、耳边能听到、能碰到、能闻到的具体细节（道具、在场者状态与台词、空间特征）；②该主体已知：角色设定与经历中明确属于该主体早已知道的事（自己的名字、与在场者既有关系、亲历过的往事）。判定是否「已知」从严：只有设定或剧情明确写过该主体通过看、听、读或被当面告知获取过的信息才算已知，没有交代获取过程的倾向于当作不知道。其余一律视为该主体此刻不知道——包括世界书/背景里只有读者能看到的信息（他人秘密计划、远方发生的事、尚未公开的真相、角色未被告知的身份）。
+
+2. 禁止越界：候选不得让该主体直接使用它看不到、不知道的信息作为依据；不得对视线外/未被当面告知的事物行动（不许「去后门堵住他」这类）。他人此刻的内心与打算不是可直接引用的事实——不许写「他知道真相」「她打算瞒住」这类全知断言，只能写成该主体观察得到的迹象（神色、动作、语气、前后矛盾的言行），行动基于迹象与怀疑展开。若确要推动一条隐藏线索，必须通过此刻可见的钩子触发——看见异样、听见动静、被当面告知、从某个细节察觉——并写成「因注意到…/因怀疑…而行动」。
+
+3. 已知不等于熟练：该主体新获得的力量、装备、身份、信息一律按生疏处理——只写试探性、不熟练的使用，不得写出只有熟练者才掌握的细节（要害位置、运作原理、精确操控、术语与数据），除非设定或剧情已明确展示过该主体的对应熟练度。主体为其他角色、势力或事件演化时同理，按其自身设定收敛。
+
+4. 去主角化：各方对主体的态度按各自立场与既有关系展开，不天然友好、敬畏或顺从主体；候选不得为讨好主体而压低难度、白送机缘或让他人无理由配合。
+
+5. 逐条核查：每条候选落地前，在 <thinking> 里自问——这条依赖的信息，是该主体此刻能感知的、还是早已知道的？该主体新获得的力量是否被写成了熟练操作？若是，改成试探性使用或弃掉。若依赖了只有读者能看到的信息，把它改成由可感知钩子触发，或直接删除该候选。`,
+        newContentById.get('knowledge_boundary') ?? '',
+      ],
+      [
+        'core_rules',
+        `每条候选落在当前场景一个具体可见的细节上（道具、状态、台词、空间特征），不凭空引入新设定，也不复述已发生的事。
+
+候选独立于正文（本身不算已发生）；只写所选主体自身的行动与台词，不替演它落地后其他各方的反应；只用该主体此刻能知道的信息，涉及未公开真相时写成"因怀疑/听说而行动"；他人内心与意图不当事实断言（不写"他心虚了""她打算瞒住"这类全知句），只写该主体看得见的迹象（神色、动作、语气），行动基于迹象与怀疑展开。需要言语的候选，话必须说出来：用『……』直接引语给出完整可朗读的台词，整句可直接发进正文；禁止只描述说话动作不给原话——"询问她是否知道地址""淡然问她记不记得"这类转述是错误示范，应写成『珞花现在住哪儿？』『还记得被狗追三条街的事吗？』；凡选项里含说/问/告诉的意图，就必须配一句『……』原话。纯动作/观察/场景演化的候选不受此限，不必硬塞台词。整批候选在主体、切入点、风险上拉开差距——至少一条往前推进实质一步（带来新信息、新事件或关系变化），可含 0-1 条"不行动/改话题"；每条标题里标注风险档位（保守/平衡/大胆，见输出格式）与需求值（见输出格式），档位整批尽量错开、需求值随难度区分。开头句式同样要错开：主体名、省略主语的动词句、场景中正在发生的动作、环境或时间的变化都可直接起句，禁止整批每条都以主体名开头。整批文风保持平实可信：不追求把每条都写成高光时刻，不搞两极分化（要么彻底躺平、要么孤注一掷），避免浮夸中二的措辞与分析腔（不在选项里堆术语、报数据）。
+
+输出格式是硬约束：全部候选输出成 <options> 内的 JSON 数组，数组用 [ ] 包裹、每个候选是一个对象、元素间用逗号分隔，对象形如 {"title":"标题|档位|需求值","content":"正文"}。title 是简洁行动标题，可用竖线追加标注：第一条竖线后标注 保守/平衡/大胆 三档之一，按该选项风险与力度判断；第二条竖线后为 0-100 的需求值整数，代表达成该选项所需的骰子点数下限（掷出 ≥ 需求值才算成功、点数越大越好）——行动越难、成功把握越低，标得越高；拿不准档位或需求值就省略对应竖线段，不许乱标。content 是候选正文字符串，每条 {{min_chars}}-{{max_chars}} 字；content 用单个 JSON 字符串表示、不要在其中换行，可含任意字符（包括 []、【】），一切结构只由外层 JSON 承担，不要用括号在正文里做任何标记。只许出现 <thinking> 与 <options> 两个标签，不输出 {{xxx}} 占位符、不造额外标签，</options> 之后一字不写。人称：严格按 {{option_person}} 写，忽略上方聊天记录正文自己的人称选择。`,
+        newContentById.get('core_rules') ?? '',
+      ],
+      [
+        'thinking_prompt',
+        `正式输出前，把思考写出来，全部裹在 <thinking> 标签里。逐条作答，每一条一两句即可：
+1. 现在是什么场景？——地点、在场者、最新一条动作/台词各是什么，场景停在哪个留白上；从最近一两层正文挑 2-3 个能直接落进候选的细节。
+2. 本轮素材（固定+候选条目）分别指向什么方向？由谁来做、做到什么程度、会带来什么变化；选哪几个组合进这批候选。
+3. 认知边界核查：逐条自问——这条候选依赖的信息，是该主体此刻能感知、或早已知道的吗？该主体新获得的力量是否被写成了熟练操作？若是，改成试探性使用或弃掉。凡依赖隐藏信息（他人秘密、未公开真相、视线外动向），改成由可见钩子触发（注意到异样/被当面告知/察觉细节）或弃掉；他人内心与意图不当事实写，只写可观察迹象；不替演候选落地后其他各方的反应。
+4. 这批候选的差异与合规：有没有重复的，或只是"叹气/沉默/转身离开/凝视"这类空动作？需要言语的候选是否都把话落成了『……』原话、而不是"询问""问道"这类转述？开头句式是否雷同——整批是否每条都以主体名开头？主体、切入点、风险是否拉开差距？风险档位（保守/平衡/大胆）是否标对、整批错开？需求值（0-100 的整数）是否按场景达成把握标定——档位看风险力度、需求值看达成难度，两者独立不必趋同？整批需求值是否拉开落差、没有全挤在同一区间？若主体本领有限（生疏、新获得力量、普通人），同一瞬间能落地的具体行动本就不多——宁可部分候选在安全区内变化，不许靠给主体发明能力凑差异。核对：恰好 {{count}} 条，格式与字数按系统消息的格式规则，人称按 {{option_person}}。核对无误即进入 <options>。`,
+        newContentById.get('thinking_prompt') ?? '',
+      ],
+    ];
+    const migrateV82 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        for (const [id, from, to] of V82_CONTENT_TARGETS) {
+          if (mod.id === id && mod.content === from) {
+            mod.content = to;
+            break;
+          }
+        }
+      }
+    };
+    migrateV82(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV82(cfg.modules);
+  }
+
+  // v83：提示词去宿主术语——v82 及以前的默认文案里写「世界书/背景」，模型并不知道
+  // 世界书是什么，只会把它当成剧情里的某本书或直接忽略。改为「背景设定资料」。
+  // 同样按 exact-match 只换仍等于 v82 默认文案的模块，用户改过的不动。
+  if ((validated.schema_version ?? 0) < 83) {
+    const newContentById = new Map(DEFAULT_MODULES.map(m => [m.id, m.content]));
+    const KB_FROM = `【认知边界：非全知约束】
+以下规则高于本批候选的一切信息来源约束：
+
+0. 主体默认是 {{user}}：本文与后续规则里的「主体」指候选的行动执行者。未特别说明时，主体就是 {{user}}；只有本轮素材明确指向其他角色、势力或剧情演化时，主体才随之改变。
+
+1. 信息分层：你读到的全部内容里，只有两类能被候选直接依赖——①此刻可感知：当前场景里该主体眼前能看到、耳边能听到、能碰到、能闻到的具体细节（道具、在场者状态与台词、空间特征）；②该主体已知：角色设定与经历中明确属于该主体早已知道的事（自己的名字、与在场者既有关系、亲历过的往事）。判定是否「已知」从严：只有设定或剧情明确写过该主体通过看、听、读或被当面告知获取过的信息才算已知，没有交代获取过程的倾向于当作不知道。其余一律视为该主体此刻不知道——包括世界书/背景里只有读者能看到的信息（他人秘密计划、远方发生的事、尚未公开的真相、角色未被告知的身份）。
+
+2. 禁止越界：候选不得让该主体直接使用它看不到、不知道的信息作为依据；不得对视线外/未被当面告知的事物行动（不许「去后门堵住他」这类）。他人此刻的内心与打算不是可直接引用的事实——不许写「他知道真相」「她打算瞒住」这类全知断言，只能写成该主体观察得到的迹象（神色、动作、语气、前后矛盾的言行），行动基于迹象与怀疑展开。若确要推动一条隐藏线索，必须通过此刻可见的钩子触发——看见异样、听见动静、被当面告知、从某个细节察觉——并写成「因注意到…/因怀疑…而行动」。
+
+3. 已知不等于熟练：该主体新获得的力量、装备、身份、信息一律按生疏处理——只写试探性、不熟练的使用，不得写出只有熟练者才掌握的细节（要害位置、运作原理、精确操控、术语与数据），除非设定或剧情已明确展示过该主体的对应熟练度。主体为其他角色、势力或事件演化时同理，按其自身设定收敛。
+
+4. 去主角化：各方对主体的态度按各自立场与既有关系展开，不天然友好、敬畏或顺从主体；候选不得为讨好主体而压低难度、白送机缘或让他人无理由配合。
+
+5. 逐条核查：每条候选落地前，在 <thinking> 里自问——这条依赖的信息，是该主体此刻能感知的、还是早已知道的？该主体新获得的力量是否被写成了熟练操作？若是，改成试探性使用或弃掉。若依赖了只有读者能看到的信息，把它改成由可感知钩子触发，或直接删除该候选。`;
+    const migrateV83 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        if (mod.id !== 'knowledge_boundary') continue;
+        // 只换完全等于 v82 默认文案的；用户自己编辑过（哪怕改了一个字）就不动
+        const next = newContentById.get('knowledge_boundary') ?? '';
+        if (next && mod.content === KB_FROM) mod.content = next;
+      }
+    };
+    migrateV83(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV83(cfg.modules);
+  }
+
+  // v84：指代规则收紧——v82 的「不要用「他/她」开头」被模型理解成只看句首，
+  // 于是先写物件/环境分句、再用「他/她」指代 {{user}}（实测：「手机被按熄收回裤兜，
+  // 他站在原地没动」）。本版把那句改成「第一次指向 {{user}} 的主语/宾语必须是名字」，
+  // 并给出正反例。这里按片段替换而非整模块 exact-match：用户可能在别的段落自定义过，
+  // 但这一段是同一处默认规则，保留旧句就会继续生成歧义指代。新句已含新文案，
+  // 重复执行不会二次替换。
+  if ((validated.schema_version ?? 0) < 84) {
+    const CORE_OLD =
+      '指代要清楚：主体是 {{user}} 时，每条候选首次指代用 {{user}} 的名字或省略主语的动词句，不要用「他/她」开头——代词只在同一句内二次指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const CORE_NEW =
+      '指代必须能唯一落到人：主体是 {{user}} 时，每条候选里第一次指向 {{user}} 的主语或宾语按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，也可以整句省略主语；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const THINK_OLD = '指代是否清楚——主体是 {{user}} 时有没有用「他/她」开头、让读者不知道说的是谁？';
+    const THINK_NEW =
+      '指代是否清楚——主体是 {{user}} 时，第一次指向他的主语/宾语是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？';
+    const migrateV84 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        if (mod.id === 'core_rules' && mod.content.includes(CORE_OLD)) {
+          mod.content = mod.content.replace(CORE_OLD, CORE_NEW);
+        } else if (mod.id === 'thinking_prompt' && mod.content.includes(THINK_OLD)) {
+          mod.content = mod.content.replace(THINK_OLD, THINK_NEW);
+        }
+      }
+    };
+    migrateV84(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV84(cfg.modules);
+  }
+
+  // v85：v84 的「第一次指向写名字」被模型进一步理解成「每条都以名字开头」，
+  // 整批选项变成「user……」「名字 + 动作」的同构句，丢掉了省略主语/场景起句的变化。
+  // 本版明确：名字只在必须写出主语/宾语时使用，能省略主语就省略；整批开头仍要错开。
+  // 仍按片段替换，只有命中 v84 文案才换。
+  if ((validated.schema_version ?? 0) < 85) {
+    const CORE_OLD =
+      '指代必须能唯一落到人：主体是 {{user}} 时，每条候选里第一次指向 {{user}} 的主语或宾语按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，也可以整句省略主语；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const CORE_NEW =
+      '指代必须能唯一落到人：主体是 {{user}} 时，第一次出现主语/宾语指代按 {{option_person}} 写——第三人称写 {{user}} 的名字，第二人称写「你」，能省略主语就省略（如「按熄手机，收回裤兜」）；不要先用物件/环境分句起头、再用「他/她」指代 {{user}}。错误示范：「手机被按熄收回裤兜，他站在原地没动」；应写成「手机被按熄收回裤兜，{{user}} 站在原地没动」或「按熄手机收回裤兜，站在原地没动」。这不是要求每条都以名字开头——名字只在必须写出主语/宾语时使用，整批开头仍要错开，不要全是「名字 + 动作」。代词只在同一句内第二次及以后指代时使用；主体是其他角色时同理，首次出现写清是谁。';
+    const THINK_OLD =
+      '指代是否清楚——主体是 {{user}} 时，第一次指向他的主语/宾语是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？';
+    const THINK_NEW =
+      '指代是否清楚——主体是 {{user}} 时，第一次出现主语/宾语指代是不是名字（第二人称是「你」）或省略主语？有没有先用物件/环境分句起头、再用「他/她」指代？有没有反过来整批都用名字开头、把省略主语这个选项丢了？';
+    const migrateV85 = (modules: PromptModuleType[]): void => {
+      for (const mod of modules) {
+        if (mod.id === 'core_rules' && mod.content.includes(CORE_OLD)) {
+          mod.content = mod.content.replace(CORE_OLD, CORE_NEW);
+        } else if (mod.id === 'thinking_prompt' && mod.content.includes(THINK_OLD)) {
+          mod.content = mod.content.replace(THINK_OLD, THINK_NEW);
+        }
+      }
+    };
+    migrateV85(validated.prompt_rules.modules);
+    for (const cfg of validated.prompt_configs) migrateV85(cfg.modules);
+  }
   validated.schema_version = SCHEMA_VERSION;
 };
 
 // PromptConfig 与 PromptRules 共有、切换配置时需同步的字段集。
-// 提示词降复杂化后，仅 modules 随配置切换同步；人称/字数/上下文轮数与模式/预填充/柏宝书
+// 提示词降复杂化后，仅 modules 随配置切换同步；人称/字数/上下文轮数与模式/预填充/记忆摘要
 // 是全局生成设置（prompt_rules 单一来源），严禁随配置切换——历史上全量同步曾把用户自定义的
 // 润色字数洗成 30/80、人称跟着配置跳变（用户实测连环踩雷）。显式逐字段赋值：新增需同步字段时
 // vue-tsc 会在此处报缺字段，避免静默丢失——新增"生成侧"字段时严禁加进本集合。
@@ -3246,7 +3488,6 @@ export const useGlobalSettingsStore = defineStore('global-settings', () => {
         })),
         is_default: true,
         rules: '',
-        generation: GenerationSettings.parse({}),
       },
     ];
 

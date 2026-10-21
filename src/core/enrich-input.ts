@@ -1,14 +1,17 @@
-import { callSecondaryApiWithRetry } from './api-client';
+import { callSecondaryApiWithRetry, type PresetScriptLayer, type SamplingOverride } from './api-client';
 import {
   buildMessages,
+  buildPresetModeMessages,
+  buildWICached,
   resolveCustomApi,
-  applyWIExcl,
   parseOptions,
   resolveCount,
-  resolveWIParticipation,
-  runWIExclWindow,
 } from './generator';
-import type { Ctx } from './generator';
+import { ensureEnrichModules } from './enrich-modules';
+import { applySamplingFloor } from './sampling';
+import type { Ctx, PromptModule } from './generator';
+import { readActiveStPreset } from './st-preset-source';
+import { resolvePresetPostProcessing } from './st-preset-scripts';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { pinia } from '@/pinia';
@@ -32,21 +35,27 @@ export async function enrichUserInput(input: string): Promise<string[]> {
     throw new Error('未配置生成 API');
   }
 
-  const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
-  let modules = sourceModules;
-
-  // 若 enrich_prompt 模块被禁用或不存在，从 DEFAULT_MODULES 临时注入其 JSON 默认内容。
-  // 不再用代码常量覆盖 content：JSON 是模块内容的单一事实源（choice-prompts-optimized.json），
-  // 代码常量会让此路径回退到早已演进的旧文案，与编辑器/生成链路出现双来源漂移
-  if (!modules.some(m => m.id === 'enrich_prompt')) {
-    const defaultEnrich = DEFAULT_MODULES.find(m => m.id === 'enrich_prompt');
-    if (defaultEnrich) {
-      modules = [...modules, { ...defaultEnrich }];
-    }
-  }
-
   const enrichCount = resolveCount(gs.settings.ui.enrich_count);
   const pr = gs.settings.prompt_rules;
+
+  // 提示词来源与选项生成同口径：'st_preset' 时只用酒馆预设 + 内置润色任务指令
+  // （完全不读本扩展模块）；未找到预设时抛错由调用方提示，不静默降级
+  const presetMode = gs.settings.prompt_source === 'st_preset';
+  const presetSnapshot = presetMode ? readActiveStPreset(gs.settings.st_preset_name) : null;
+  if (presetMode && (!presetSnapshot || !presetSnapshot.prompts.length)) {
+    throw new Error('未找到可用的酒馆预设，请检查酒馆的 Chat Completion 预设，或改回本扩展提示词');
+  }
+
+  // 模块只在扩展模式参与（预设模式走内置任务指令）
+  let modules: PromptModule[] = [];
+  if (!presetSnapshot) {
+    const sourceModules = gs.sortedEnabledModules.length > 0 ? gs.sortedEnabledModules : DEFAULT_MODULES;
+    // 补齐被删掉的润色规则模块（被停用的不动，见 ensureEnrichModules 注释）：
+    // 不再用代码常量覆盖 content——JSON 是模块内容的单一事实源
+    // （choice-prompts-optimized.json），代码常量会让此路径回退到早已演进的旧文案
+    modules = ensureEnrichModules(sourceModules, gs.allModules, DEFAULT_MODULES);
+  }
+
   const enrichCtx: Ctx = {
     count: enrichCount,
     pinnedCount: 0,
@@ -71,26 +80,50 @@ export async function enrichUserInput(input: string): Promise<string[]> {
   const signal = enrichController.signal;
 
   try {
-    // WI 排他窗口（互斥 + 即用即还，见 generator.runWIExclWindow）：仅消息构建读取世界书，
-    // 构建完成立即还原，与选项生成/卡牌池链路并发时不再交错践踏全局 WI 状态
-    const messages = await runWIExclWindow(async () => {
-      const { allExcl, enabled } = await resolveWIParticipation(gwi, cwi);
-      const restore = gwi.enabled
-        ? await applyWIExcl(allExcl, enabled, cwi.book_entry_modes, cwi.book_entry_overrides)
-        : null;
-      try {
-        return await buildMessages(modules, enrichCtx, gwi, gs.settings.prompt_rules.context_rounds, true);
-      } finally {
-        restore?.restore();
-      }
-    });
+    // 世界书构建（缓存 + 排他窗口，见 buildWICached）：与选项生成/知识分析共用同一份
+    // 缓存，同一轮不再重复扫描世界书、重复执行 EJS
+    // 扩展模式没启用任何世界书模块时跳过；预设模式始终需要（槽位 + 深度注入都取自它）
+    const needsWI = presetSnapshot
+      ? true
+      : modules.some(
+          m =>
+            m.enabled && ['world_info_before', 'world_info_after', 'wi_depth_before', 'wi_depth_after'].includes(m.id),
+        );
+    const wiBuckets = needsWI ? await buildWICached(gwi, cwi) : null;
+    const { messages } = presetSnapshot
+      ? await buildPresetModeMessages(
+          enrichCtx,
+          gs.settings.prompt_rules.context_rounds,
+          presetSnapshot,
+          true,
+          false,
+          wiBuckets,
+        )
+      : await buildMessages(modules, enrichCtx, gs.settings.prompt_rules.context_rounds, true, false, wiBuckets);
 
+    // 采样：预设模式跟随酒馆预设，但 max_tokens 另套输出下限——
+    // 预设为正文续写设计，值往往只有几百，润色多个版本会被截在半截
+    const sampling: SamplingOverride | undefined = applySamplingFloor(
+      presetSnapshot && gs.settings.st_preset_sampling ? presetSnapshot.sampling : undefined,
+      enrichCount,
+      pr.enrich_max_chars,
+    );
+    // 后处理透传与脚本层档位（仅预设模式；扩展模式恒不生效），与 generateOptions 同口径
+    const postProcessing =
+      presetSnapshot && gs.settings.st_preset_post_processing
+        ? resolvePresetPostProcessing(gs.settings.st_preset_name, presetSnapshot.postProcessing)
+        : undefined;
+    const scriptLayer: PresetScriptLayer = presetSnapshot ? gs.settings.st_preset_script_processing : 'off';
     const raw = await callSecondaryApiWithRetry(
       messages,
       api,
       gs.settings.retry_count,
       gs.settings.retry_interval,
       signal,
+      false,
+      sampling,
+      postProcessing,
+      scriptLayer,
     );
     return parseOptions(raw, enrichCount);
   } catch (e) {

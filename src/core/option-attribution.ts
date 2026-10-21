@@ -1,4 +1,5 @@
 import { OPTION_MATCH_MARGIN, type PoolEntry } from '@/type/settings';
+import { bigramsOf, diceCoefficient, normalizeText } from '@/core/text-similarity';
 
 /**
  * 选项→条目精确归因（纯函数）：生成时把每条输出选项近似归属到当轮候选条目，
@@ -14,22 +15,13 @@ import { OPTION_MATCH_MARGIN, type PoolEntry } from '@/type/settings';
 const buildEntrySignal = (entry: PoolEntry): string => entry.type + entry.content;
 
 /** 去空白归一（中文二元组对空白不敏感，去除避免「type 内容」与「type内容」失配） */
-const normalize = (s: string): string => s.replace(/\s+/g, '');
+const normalize = normalizeText;
 
 /** 字符串的字符二元组集合（中文短文本的次序敏感特征，实现简单） */
-const bigrams = (s: string): Set<string> => {
-  const out = new Set<string>();
-  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
-  return out;
-};
+const bigrams = bigramsOf;
 
 /** Dice 系数 = 2|A∩B| / (|A|+|B|)，对文本长度差异不敏感（Jaccard 在长选项上稀释严重） */
-const dice = (a: Set<string>, b: Set<string>): number => {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const g of a) if (b.has(g)) inter += 1;
-  return (2 * inter) / (a.size + b.size);
-};
+const dice = diceCoefficient;
 
 /**
  * 选项正文是否以候选 type 起始（允许紧跟正文无分隔，如「顺势行动武…」）。
@@ -65,8 +57,7 @@ export function prepareMatchSignals(candidates: PoolEntry[]): EntryMatchSignal[]
 }
 
 /** 前缀精确匹配 → { via: 'prefix' }；Dice 兜底命中 → { via: 'dice' }；未命中 → { id: null, via: null }。
- *  匹配方式供 L1 AI 归因「前置快检」使用：全部选项都经 type 前缀命中（Dice 已高置信、
- *  AI 结果几乎必然一致）时直接跳过外部请求，不重复打 API。 */
+ *  via 仅作匹配路径标记（调试/测试区分前缀与兜底），不参与统计记账。 */
 export type OptionMatch = {
   id: string | null;
   via: 'prefix' | 'dice' | null;
@@ -92,9 +83,8 @@ export function matchOptionToEntry(optionText: string, signals: EntryMatchSignal
   const checkText = title ? `${title} ${body}`.trim() : raw;
   // type 前缀匹配只在「最长命中 type 唯一」时直接认定：type 是类别词，池内同 type 多条目
   // 是常态，AI 标题又常直接复用 type 词——此前「首个命中即返回」在同 type 竞争时恒归
-  // 候选序靠前的条目（系统性偏差，违反「平票归属近随机归 null 宁缺勿错」），且 allPrefixMatched
-  // 快检会据此跳过 L1 AI 归因，偏差无自愈路径。改判：最长命中 type 有多条目共享时前缀
-  // 不可区分，落 Dice 分支靠分差保护（区分不开归 null）。
+  // 候选序靠前的条目（系统性偏差，违反「平票归属近随机归 null 宁缺勿错」）。改判：最长
+  // 命中 type 有多条目共享时前缀不可区分，落 Dice 分支靠分差保护（区分不开归 null）。
   const prefixHits = signals.filter(s => startsWithType(checkText, s.type));
   if (prefixHits.length > 0) {
     const topLen = Math.max(...prefixHits.map(s => s.type.length));

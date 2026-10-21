@@ -36,8 +36,9 @@ import {
 import { setEntryVisible } from '@/core/entry-points';
 
 const MENU_WIDTH = 140;
-// 三项菜单估高（项高 ~40px + 上下 padding），仅用于底部视口钳制；与实际渲染高度略有
-// 出入可接受——钳制目标是「打开设置/隐藏悬浮球」可达而非像素级贴边
+// 菜单估高（项高 ~40px + 上下 padding）：
+// 仅用于底部视口钳制；与实际渲染高度略有出入可接受——钳制目标是「打开设置/隐藏
+// 悬浮球」可达而非像素级贴边
 const MENU_HEIGHT_EST = 132;
 
 const menuEl = ref<HTMLElement | null>(null);

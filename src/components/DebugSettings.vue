@@ -10,12 +10,76 @@
       <p>{{ t`API 数` }}: {{ globalStore.settings.apis.length }}</p>
     </div>
 
+    <ChoiceSectionCard title="上次生成上下文" icon="fa-solid fa-gauge">
+      <div v-if="!lastGenerationContext" class="choice-empty-hint">{{ t`尚未生成过` }}</div>
+      <div v-else class="choice-debug-messages">
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`来源` }}</span>
+          <span class="choice-debug-content">{{
+            lastGenerationContext.promptSource === 'st_preset' ? t`酒馆预设` : t`本扩展提示词`
+          }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`知识` }}</span>
+          <span class="choice-debug-content"
+            >{{
+              lastGenerationContext.knowledgeMerge
+                ? t`合并请求（边界表随请求下发）`
+                : lastGenerationContext.knowledgeInjected
+                  ? t`独立注入`
+                  : t`未注入`
+            }}{{ lastGenerationContext.knowledgeStale ? t`（报告已过期）` : '' }}</span
+          >
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`输出上限` }}</span>
+          <span class="choice-debug-content">{{ lastGenerationContext.samplingMaxTokens ?? t`沿用 API 配置` }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`后处理` }}</span>
+          <span class="choice-debug-content">{{ lastGenerationContext.postProcessing || t`无` }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`脚本层` }}</span>
+          <span class="choice-debug-content">{{ lastGenerationContext.scriptLayer }}</span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`世界书` }}</span>
+          <span class="choice-debug-content">{{ t`构建 ${wiStats.builds} 次 / 命中缓存 ${wiStats.hits} 次` }}</span>
+        </div>
+      </div>
+    </ChoiceSectionCard>
+
     <ChoiceSectionCard title="上次生成的消息" icon="fa-solid fa-terminal">
       <div v-if="!lastBuildMessages" class="choice-empty-hint">{{ t`尚未生成过` }}</div>
       <div v-else class="choice-debug-messages">
         <div v-for="(m, i) in lastBuildMessages" :key="i" class="choice-debug-msg">
           <span class="choice-debug-role" :class="'role-' + m.role">{{ m.role }}</span>
           <span class="choice-debug-content">{{ truncate(m.content) }}</span>
+        </div>
+      </div>
+    </ChoiceSectionCard>
+
+    <ChoiceSectionCard title="上次知识注入" icon="fa-solid fa-user-shield">
+      <div v-if="!lastKnowledgeInjection || !lastKnowledgeInjection.total" class="choice-empty-hint">
+        {{ t`本次未注入知识边界（未启用、报告为空或全部省略）` }}
+      </div>
+      <div v-else class="choice-debug-messages">
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`条目` }}</span>
+          <span class="choice-debug-content">
+            {{
+              t`已注入 ${lastKnowledgeInjection.chosen.length} / ${lastKnowledgeInjection.total} 条，省略 ${lastKnowledgeInjection.omitted} 条`
+            }}
+          </span>
+        </div>
+        <div class="choice-debug-msg">
+          <span class="choice-debug-role">{{ t`字符` }}</span>
+          <span class="choice-debug-content">{{ lastKnowledgeInjection.usedChars }}</span>
+        </div>
+        <div v-for="c in lastKnowledgeInjection.chosen" :key="c.id" class="choice-debug-msg">
+          <span class="choice-debug-role">{{ c.status }}</span>
+          <span class="choice-debug-content">{{ c.topic }}</span>
         </div>
       </div>
     </ChoiceSectionCard>
@@ -84,7 +148,13 @@
 import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
 import toastr from 'toastr';
 import { useGlobalSettingsStore } from '@/store/global-settings';
-import { lastBuildMessages, lastDedupReport } from '@/core/generator';
+import {
+  lastBuildMessages,
+  lastDedupReport,
+  lastGenerationContext,
+  lastKnowledgeInjection,
+  wiStats,
+} from '@/core/generator';
 
 const globalStore = useGlobalSettingsStore();
 

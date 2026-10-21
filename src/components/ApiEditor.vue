@@ -36,7 +36,7 @@
         {{ t`请求附带 tool_choice:none` }}
       </label>
       <span class="choice-field-hint">{{
-        t`绕过预设防截断类脚本（如 Aether）对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
+        t`绕过预设防截断类脚本对生成请求的改写；该字段不会被转发给上游 API，一般无需关闭`
       }}</span>
     </ChoiceSectionCard>
 
@@ -162,6 +162,9 @@
             </label>
           </div>
           <span v-if="selectedPreset" class="choice-field-hint">{{ selectedPreset.keyHint }}</span>
+          <span v-if="presetSamplingActive" class="choice-field-hint">{{
+            t`当前提示词来源为「酒馆预设」且采样参数跟随预设：温度与最大 Token 会被预设值覆盖；连接地址与模型仍用此处配置`
+          }}</span>
           <div class="choice-api-bottom-row">
             <div class="choice-api-checks">
               <label class="choice-check">
@@ -197,6 +200,11 @@ import { normalizeApiUrl } from '@/core/api-client';
 import { API_PRESETS, presetForApiUrl } from '@/core/api-presets';
 
 const globalStore = useGlobalSettingsStore();
+
+/** 预设模式 + 采样跟随：本页的温度/最大 Token 会被预设值覆盖，提示用户避免误解 */
+const presetSamplingActive = computed(
+  () => globalStore.settings.prompt_source === 'st_preset' && globalStore.settings.st_preset_sampling,
+);
 
 const EMPTY_API = (): SecondaryApi => ({
   id: uuidv4(),

@@ -1,13 +1,21 @@
 import toastr from 'toastr';
 import ActionOptionsPanel from '@/components/ActionOptionsPanel.vue';
 import { chat } from '@sillytavern/script';
-import { generateOptions, generatorState, resolveCustomApi } from '@/core/generator';
+import { generateOptions, generatorState, resetWICache, resolveCustomApi } from '@/core/generator';
 import { getMessageSwipeId, storeGeneration } from '@/core/options-store';
 import { cancelEnrich } from '@/core/enrich-input';
+import {
+  flushKnowledgeRefreshAfterGeneration,
+  isKnowledgeMergeActive,
+  knowledgeState,
+  maybeAutoAnalyze,
+  resetKnowledgeScheduling,
+  scheduleKnowledgeRefresh,
+} from '@/core/knowledge-analysis';
+import { isMessageCoveredByFingerprint } from '@/core/knowledge-report';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
-import { setAttributionPanelRefreshHook } from '@/core/ai-attribution';
 import { eventSource, event_types } from '@sillytavern/scripts/events';
 
 export function initPanelMount() {
@@ -19,9 +27,6 @@ export function initPanelMount() {
   app.mount($container[0]);
 
   const panelStore = usePanelStateStore(pinia);
-  // 注册 L1 归因写回后的面板刷新钩子：ai-attribution 不直接 import panel-state（会成环），
-  // 改由面板层在此注入 refreshFromMessageIfCurrent，写回消息后同步面板持有的 generation 副本
-  setAttributionPanelRefreshHook((messageId, swipeId) => panelStore.refreshFromMessageIfCurrent(messageId, swipeId));
 
   const getPanelMessageId = (): number | null => {
     try {
@@ -82,8 +87,7 @@ export function initPanelMount() {
 
   // 不能把 generateOptions 的 await 留在监听器里：ST 的 eventSource.emit 串行 await
   // 每个监听器（public/lib/eventemitter.js），而 MESSAGE_RECEIVED 之后紧接着才 emit
-  // CHARACTER_MESSAGE_RENDERED——酒馆助手前端卡渲染正挂在该事件上
-  // （JS-Slash-Runner src/store/iframe_runtimes/message.ts）。监听器不返回就会把
+  // CHARACTER_MESSAGE_RENDERED——第三方前端卡渲染正挂在该事件上。监听器不返回就会把
   // 整次二次 API 调用的耗时推迟到正文卡片渲染之前。故通过检查后脱钩 fire-and-forget：
   //   - storeGeneration 内部自带 saveChatDebounced（options-store.ts），落盘不依赖
   //     ST 主保存时序；
@@ -102,7 +106,42 @@ export function initPanelMount() {
         // 0 楼通常是开场白（greeting）：无玩家输入语境，自动生成无意义，跳过
         return;
       }
+      // 知识边界自动刷新：与自动生成并行（fire-and-forget），本轮选项用上一份报告、
+      // 下一轮用新报告，不额外增加出选项的等待时间。不 await 的理由同上——ST 的
+      // eventSource.emit 会串行 await 监听器，返回 Promise 会拖住后续渲染事件。
       const gs = useGlobalSettingsStore(pinia);
+      const willGenerate =
+        gs.settings.auto_generate &&
+        !generatorState.loading &&
+        !!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis);
+      const startGeneration = () => {
+        const swipeId = getMessageSwipeId(messageId);
+        void (async () => {
+          const generation = await generateOptions({ messageId, swipeId });
+          // 合并请求在途期间挂起的事件在此补跑（报告已最新的话调度层会跳过）
+          flushKnowledgeRefreshAfterGeneration();
+          if (!generation) {
+            return;
+          }
+          storeGeneration(messageId, swipeId, generation);
+          // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
+          panelStore.autoSetCollapsed(false);
+          resync();
+        })().catch(error => console.error('[Choice] onMessageReceived failed', error));
+      };
+      // 合并模式下由 generateOptions 顺带分析：只在「本次确实会生成」时让路，
+      // 否则（auto_generate 关 / 生成在途 / 无 API）仍需独立分析，不然报告永远停在旧状态。
+      // 先启动选项生成：generateOptions 在首个 await 前同步置位 loading 并把消息构建
+      // 排进 runWIExclWindow 队列；随后触发的分析构建排在它之后，用户可见的选项请求
+      // 不再被后台分析构建拖慢（两条 API 请求本身仍并行）。
+      if (willGenerate && !isKnowledgeMergeActive()) {
+        startGeneration();
+        maybeAutoAnalyze(type === 'swipe');
+        return;
+      }
+      if (!(willGenerate && isKnowledgeMergeActive())) {
+        maybeAutoAnalyze(type === 'swipe');
+      }
       if (!gs.settings.auto_generate) {
         return;
       }
@@ -116,17 +155,7 @@ export function initPanelMount() {
         toastr.warning(t`未配置 API，跳过自动生成选项`);
         return;
       }
-      const swipeId = getMessageSwipeId(messageId);
-      void (async () => {
-        const generation = await generateOptions({ messageId, swipeId });
-        if (!generation) {
-          return;
-        }
-        storeGeneration(messageId, swipeId, generation);
-        // 自动生成完成后的展开走 autoSetCollapsed：锁定时保持用户钉住的状态
-        panelStore.autoSetCollapsed(false);
-        resync();
-      })().catch(error => console.error('[Choice] onMessageReceived failed', error));
+      startGeneration();
     } catch (error) {
       console.error('[Choice] onMessageReceived failed', error);
     }
@@ -141,17 +170,44 @@ export function initPanelMount() {
   };
 
   eventSource.on(event_types.MESSAGE_RECEIVED, onMessageReceived);
-  eventSource.on(event_types.MESSAGE_SWIPED, safeResync);
-  eventSource.on(event_types.MESSAGE_DELETED, safeResync);
-  eventSource.on(event_types.MESSAGE_UPDATED, safeResync);
+  eventSource.on(event_types.MESSAGE_SWIPED, () => {
+    safeResync();
+    // 切换分支会换掉整楼内容：报告必须按新分支重算（防抖合并连续滑动）
+    scheduleKnowledgeRefresh('swiped');
+  });
+  eventSource.on(event_types.MESSAGE_DELETED, () => {
+    safeResync();
+    // 删楼后楼层数可能不变（删一增一），内容指纹才是可靠依据
+    scheduleKnowledgeRefresh('deleted');
+  });
+  eventSource.on(event_types.MESSAGE_UPDATED, (messageId: number) => {
+    safeResync();
+    // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过。
+    // 但早期未抽样楼层不在指纹里，必须按楼层位置强制分析，否则「谁告诉了主角什么」
+    // 被改掉后报告会一直停在旧结论。
+    const covered =
+      typeof messageId !== 'number' || isMessageCoveredByFingerprint(chat as unknown as StChatMessage[], messageId);
+    scheduleKnowledgeRefresh('edited', !covered);
+  });
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
     safeResync();
     // 发消息后自动收起走 autoSetCollapsed：锁定时常开面板不被动收起
     panelStore.autoSetCollapsed(true);
   });
   eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, safeResync);
-  eventSource.on(event_types.CHAT_CHANGED, safeResync);
-  eventSource.on(event_types.MORE_MESSAGES_LOADED, safeResync);
+  eventSource.on(event_types.CHAT_CHANGED, () => {
+    // 换聊天先清空调度：防抖定时器属于旧聊天，跨聊天触发会分析错内容
+    resetKnowledgeScheduling();
+    // 世界书缓存同理：键含聊天指纹，但切聊天后立即作废更稳妥（不残留旧世界的 EJS 产物）
+    resetWICache();
+    safeResync();
+  });
+  eventSource.on(event_types.MORE_MESSAGES_LOADED, () => {
+    safeResync();
+    // 载入更早的历史会改变分析窗口与指纹；即使自动分析关闭，也要让面板的过期提示重算
+    knowledgeState.tick += 1;
+    scheduleKnowledgeRefresh('loaded');
+  });
   eventSource.on(event_types.APP_READY, safeResync);
   eventSource.on(event_types.GENERATION_ENDED, safeResync);
 

@@ -16,6 +16,22 @@
           <input v-model="globalStore.settings.world_info.render_world_info_ejs" type="checkbox" />
           {{ t`EJS 渲染` }}
         </label>
+        <label
+          class="choice-field"
+          :title="
+            t`世界书预算估算用的上下文长度（预算 = 该值 × 酒馆的世界书预算百分比）。默认 128000：不沿用主生成的较小上下文，否则额外启用的世界书条目会被预算挤掉。设得过大可能让副请求超出模型真实上下文，按副 API 模型的上下文调小即可。`
+          "
+        >
+          <span>{{ t`预算上下文` }}</span>
+          <input
+            v-model.number="globalStore.settings.world_info.scan_max_context"
+            type="number"
+            min="1024"
+            max="2000000"
+            step="1024"
+            class="choice-input choice-input-w-sm"
+          />
+        </label>
       </div>
     </div>
 
@@ -40,7 +56,7 @@
             <span v-if="book.source === 'global'" class="choice-wi-badge badge-global">{{ t`全局` }}</span>
             <span v-if="book.source === 'character'" class="choice-wi-badge badge-character">{{ t`角色` }}</span>
             <span v-if="book.source === 'chat'" class="choice-wi-badge badge-chat">{{ t`聊天` }}</span>
-            <span v-if="book.isShujuku" class="choice-wi-badge badge-shujuku">{{ t`数据库` }}</span>
+            <span v-if="book.isExternalMemory" class="choice-wi-badge badge-external-memory">{{ t`数据库` }}</span>
             <span v-if="getBookMode(book.name) === 'custom'" class="choice-wi-badge badge-custom">{{ t`自定义` }}</span>
             <!-- 三态钩 + 自定义：循环 条目全关 → 条目启用（默认）→ 条目全启用；勾选条目进入自定义 -->
             <span
@@ -158,7 +174,7 @@ import toastr from 'toastr';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import ChoiceSectionCard from '@/components/shared/ChoiceSectionCard.vue';
-import { getShujukuTargetBook } from '@/core/shujuku-bridge';
+import { getExternalStructuredBook } from '@/core/structured-memory-bridge';
 import type { WIBookMode } from '@/type/settings';
 
 const chatStore = useChatSettingsStore();
@@ -185,7 +201,7 @@ type BookInfo = {
   name: string;
   source: 'global' | 'character' | 'chat' | '';
   active: boolean;
-  isShujuku: boolean;
+  isExternalMemory: boolean;
 };
 
 type EntryInfo = {
@@ -347,21 +363,21 @@ const refreshAll = async () => {
   const enabledSet = new Set(chatStore.settings.world_info.enabled_books);
   const charWorld = getStCharacter(this_chid)?.data?.extensions?.world as string | undefined;
   const chatBook = typeof chat_metadata?.[METADATA_KEY] === 'string' ? chat_metadata[METADATA_KEY] : '';
-  const shujukuBook = await getShujukuTargetBook();
+  const externalBook = await getExternalStructuredBook();
   const result: BookInfo[] = [];
   for (const name of world_names ?? []) {
     const isGlobal = global.includes(name) && !enabledSet.has(name);
     const isCharacter = charWorld === name;
     const isChat = chatBook === name;
-    const isShujuku = shujukuBook === name;
+    const isExternal = externalBook === name;
     result.push({
       name,
       source: isGlobal ? 'global' : isCharacter ? 'character' : isChat ? 'chat' : '',
-      // active 只表示 ST 源激活（global/character/chat/shujuku），不把 enabledSet 算进去——
+      // active 只表示 ST 源激活（global/character/chat/外部记忆源），不把 enabledSet 算进去——
       // 否则 disableBook 只改 enabled_books 时 book.active 残留 true，书不即时移动、要等下次 refreshAll。
       // 扩展显式启用的归属由 activeBooks/inactiveBooks computed 用 live enabled_books.includes 决定。
-      active: global.includes(name) || isCharacter || isChat || isShujuku,
-      isShujuku,
+      active: global.includes(name) || isCharacter || isChat || isExternal,
+      isExternalMemory: isExternal,
     });
   }
   allBooks.value = result;
@@ -514,7 +530,7 @@ onUnmounted(() => {
   border-color: var(--choice-primary-light);
 }
 
-.badge-shujuku {
+.badge-external-memory {
   color: var(--choice-color-success);
   background: var(--choice-color-success-bg);
   border-color: var(--choice-color-success-bg);

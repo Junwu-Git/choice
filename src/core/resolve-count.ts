@@ -1,6 +1,6 @@
-import { GenerationSettings } from '@/type/settings';
+import { GLOBAL_COUNT_MODE_DEFAULT } from '@/type/settings';
 
-const RESOLVE_COUNT_DEFAULT = parseInt(GenerationSettings.parse({}).count_mode, 10) || 4;
+const RESOLVE_COUNT_DEFAULT = parseInt(GLOBAL_COUNT_MODE_DEFAULT, 10) || 4;
 
 /** 解析 global_count_mode（自由文本「4」或「3-6」）：非法输入（非数字/0）此前产出 count=0
  *  → 池抽取为空、整趟请求照发后才报「未能解析出任何选项」，把配置问题误导成模型问题；
