@@ -38,10 +38,12 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 ### 判定与提示词
 
 - 独立分析：读 persona + 世界书 + 角色卡 + 同一份 `buildChatHistory` 窗口，判 `{{user}}` 三态（known/uncertain/unknown）与来源（witnessed/heard/read/inferred/none），口径同 `knowledge_boundary`（获取从严、他人内心不可断言）。**增量窗口**：只有 `received` 用 `resolveAnalysisHistoryStart` 从上次分析前一条开始（旧事实在已有表/摘要里）；`edited/deleted/swiped/loaded` 走完整窗口，避免漏掉被改的旧楼层。
+- **分析上下文独立设置**（`knowledge.context_mode`/`knowledge.context_rounds`，不随提示词页联动）：分析读聊天用自己的窗口——边界判定要「主角此刻知道什么」，与出选项的近景深度不同，跟着提示词页联动会把分析窗口设成「恰好够写选项」。`buildChatHistory`/`historyWindowStart` 的第 4/2 个可选参数 `mode` 由分析侧显式传入，缺省仍读提示词页（选项/润色/条目生成零改动）；完整窗口起点与正文截尾必须传同一套参数，否则增量起点（基于 fullStart）与实际发送窗口对不上。**轮数模式含隐藏楼**（第 5/3 个可选参数 `includeHidden`，分析侧 `mode==='rounds'` 时传 true）：酒馆的「隐藏」只承诺「不发给生成侧」，不承诺「剧情没发生过」——边界判定恰恰关心主角经历过什么；「仅可见消息」名字即语义维持可见口径。**指纹与覆盖判定同口径**（`computeChatFingerprint`/`isMessageCoveredByFingerprint` 的 `includeHidden` 参数，口径单一来源 `knowledgeFingerprintScope()`）：改隐藏楼在轮数模式下必须触发重算，否则报告永远停在旧结论。选项生成绝不传 includeHidden（与主生成 coreChat 同口径）；隐藏楼 depth 按 `-1` 落「最旧」档（酒馆正则按可见楼定位，隐藏楼无稳定 depth 含义）。
 - **提示词绝不出现宿主术语**（角色卡/世界书/酒馆/楼层）：一律写「背景设定资料/角色设定/剧情/第 N 条消息」，否则模型会当剧情材料或忽略。`choice-prompts-optimized.json` 同规则（v83 exact-match 换旧默认，不动用户自定义），`tests/knowledge-merge.test.ts` 锁定。
 - **世界书与生成侧同源**：`before+anBefore+em`、`after+anAfter`、`depthBefore`、`depthAfter` 四段齐全；一轮回复只构建一次（EJS setvar 有副作用）——见 `buildWICached`。
 - **不发 `<recent_floors>`、不记录楼层号**：历史无编号，额外索引会被当剧情材料且易切出半截标签；`evidence_floors` 已随 v82 删除（迁移显式 `delete`）。
 - **历史摘要层**：`buildChatHistory` 前插 `getExternalSummary(historyStart)`（外部记忆可用时），与正文 `[historyStart, 末尾)` 零重复；增量窗口把 `historyStart` 前移到上次分析处，摘要边界同步。摘要只核对已有条目的出处/因果，不作新增依据；与对话冲突以对话为准。桥接不可用零变化。
+- **三态优先级写进分析提示词**（`KNOWLEDGE_RULES_BODY` 覆盖范围段 + `buildMergedKnowledgeTask` 收尾句）：重要程度固定「未知 > 存疑 > 已知」，补齐按此顺序（先未知再存疑最后已知），容量取舍反向（先丢已知再丢存疑，未知留到最后）——与注入选材（locked→unknown→uncertain→known）、容量淘汰（known→uncertain→unknown）同口径；勿回退成「优先保留对当前场景有影响的」旧句，`tests/knowledge-merge.test.ts` 锁定。
 
 ### 数据模型
 
@@ -73,13 +75,14 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 - **合并模式不注入**（`shouldInjectKnowledge(injectEnabled, knowledgeMerge)`）：合并任务自带同一张表并要求「先更新边界再生成」，再注入一份旧表会出现两份互相矛盾的结论。报告过期时注入头部追加一句「以上为上一次分析的结论，与当前场景冲突时以场景为准」（`RenderOptions.stale`）——旧结论仍作约束，但不当作当前事实。
 - `knowledge-injection.ts`：`buildSceneText` 取最后 4 条可见消息，按 topic/别名/关键词命中评分；顺序 锁定→unknown→uncertain→known命中→known补齐（组内按 `entrySortScore`；**锁定组内 unknown→uncertain→known**，预算紧张时先保约束项，渲染分组仍按 known→uncertain→unknown）。预算 `knowledge.inject_max_entries`=24、`knowledge.inject_char_budget`=2500，**固定头部先预扣 120 字**。**有场景文本时**未命中 known 最多占 known 配额一半（高权重豁免；无场景不砍）。**三级降级**：放不下完整形态时 known 退化为「- 主题」单行；unknown/uncertain/锁定绝不降级，直接省略；**条数硬上限**不突破。**一条都放不下时仍输出头部 + 「未注入具体条目」的非全知提醒**（静默返回空会让模型以为没有约束）；尾部省略文案统一为「未注入」。场景命中数复用 `scored` 的结果，不再二次扫描。`renderKnowledgeInjectionDetailed` 返回 `{block, chosen, omitted, usedChars, total}`，`lastKnowledgeInjection` 已在调试页展示；宏必须 `substituteParams`；`lastBuildMessages` 覆盖为注入后形态。
 - `scheduleKnowledgeRefresh(reason, force, delta)`：`received` 立即（并行生成，`delta=true`）；`edited/deleted/swiped/loaded` 1200ms 防抖（完整窗口）；`force=true` 表示指纹覆盖不到的早期楼层被编辑，只跳过过期判定（功能开关/API 仍生效）；**未触发的防抖任务与在途 pending 会合并需求（force 取 OR、delta 取 AND）**，后续 `received` 不能把之前那次完整窗口/强制分析冲掉；`CHAT_CHANGED` 调 `resetKnowledgeScheduling()` 清定时器并取消在途。`MORE_MESSAGES_LOADED` 还要 bump `knowledgeState.tick`，让面板过期提示立即重算。
+- **自动重跑间隔（`knowledge.auto_refresh_interval`，默认 10 轮）**：报告落后当前聊天累计 N 轮（一轮=2 条楼层）新消息才自动重跑，省掉无边界变化轮次的后台 API 调用；`1`=每轮都跑的旧行为。**只节流「新消息自然增长」的增量 received 路径**（`shouldAutoAnalyzeNow` 纯函数，有单测）：编辑/删除/滑动/载入（force/完整窗口）不受间隔约束，立即重跑；从未分析（based_on=0）与删楼回退（drift<0）放行。到点后一次请求只发增量窗口（received 本就是 delta），跨过轮次的旧事实靠已有表+摘要兜底。**合并模式（merge_with_generation）是否追加任务套同一判定**（generator 的 `knowledgeDue`），但注入侧的 stale 提示仍按「报告落后即提示」原语义，不跟间隔走。
 - **swipe 事件顺序**：酒馆 `MESSAGE_SWIPED` 在新分支 `Generate('swipe')` **之前**触发（`chat[mesId].mes` 仍是旧分支，DOM 只显示 `...`），流式结束后才以 `MESSAGE_RECEIVED(type='swipe')` 补发。因此 `swiped` 的防抖分析通常因指纹未变被 `shouldSkipRefresh` 跳过；真正的新分支分析必须由 `MESSAGE_RECEIVED` 按**完整窗口**跑（`maybeAutoAnalyze(type === 'swipe')` → `delta=false`），否则 `based_on_message - 1` 会落到末尾，只发最后一条。
 - **构建排队顺序**：`onMessageReceived` 先 `startGeneration()` 再 `maybeAutoAnalyze()`。`generateOptions` 在首个 await 前同步置位 `generatorState.loading` 并把消息构建排进 `runWIExclWindow`；分析构建随后入队。两条 API 请求本身并行，但用户可见的选项请求不再等后台分析构建。合并模式下仍由 `generateOptions` 顺带分析，`maybeAutoAnalyze` 让路。
 - **指纹分层**：尾部 12 条逐条**全文**参与（不再截 400 字），更早按步长 8 抽样（头 80 字）。未抽样楼层的编辑不改变指纹，由 `MESSAGE_UPDATED` + `isMessageCoveredByFingerprint` 按楼层位置强制分析兜底；隐藏楼层不参与指纹。
 
 ### 合并请求（`knowledge.merge_with_generation`，默认关）
 
-- 触发：`enabled && auto_analyze && merge_with_generation && isKnowledgeReportStale()`；一次返回 `<knowledge_patch>` + `<options>`，先更新边界再写候选。
+- 触发：`enabled && auto_analyze && merge_with_generation && isKnowledgeReportStale() && shouldAutoAnalyzeNow(...)`（间隔判定与独立分析 received 路径同口径，见上方「自动重跑间隔」）；一次返回 `<knowledge_patch>` + `<options>`，先更新边界再写候选。
 - **「只许两个标签」分散在 3 个模块**（`system_prompt`/`core_rules`/`thinking_prompt`），统一 `adaptPromptForMerge` 就地改写（`MERGE_PROMPT_REWRITES`），**不要整模块跳过**（内有必需规则）。`assistant_thinking` 整条丢弃（`MERGE_DROPPED_MODULE_IDS`）。预设模式改 `OPTION_SYSTEM` 契约句 + `OPTION_USER` 收尾句。**改写必须覆盖「`<options>` 之外一个字都不写」这类句式**——补丁块就在 `<options>` 之前，原句留着等于禁止输出补丁；预设条目自身也走 `rewriteTagContractOnly`（只改契约句，叙事内容不动）。
 - **合并请求在途时独立分析挂起**（`generatorState.mergeActive` + `knowledge-analysis.flushKnowledgeRefreshAfterGeneration`）：两次请求争同一个修订号，后到者被并发守卫丢弃、白耗一次上下文；挂起的事件在生成结束后补跑（报告已最新则跳过）。
 - 合并任务只补三态/source/字段，不复述 `knowledge_boundary` 已有规则，写成一整段。

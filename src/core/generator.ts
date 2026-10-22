@@ -47,7 +47,7 @@ import {
   rewriteTagContractOnly,
   stripMergedKnowledge,
 } from '@/core/knowledge-task';
-import { renderExistingTable, computeChatFingerprint } from '@/core/knowledge-report';
+import { renderExistingTable, computeChatFingerprint, shouldAutoAnalyzeNow } from '@/core/knowledge-report';
 import { waitForHostIdle } from '@/core/host-generation';
 import { calcRegexDepth } from '@/core/history-window';
 import { appendRuntimeLineTo } from '@/core/runtime-line';
@@ -75,6 +75,7 @@ import type {
   PromptModule,
   WIBookMode,
   WorldInfoGlobalSettings,
+  ContextMode,
 } from '@/type/settings';
 import { DEFAULT_MODULES, GenerationSettings, OPTION_MATCH_THRESHOLD } from '@/type/settings';
 // re-export 供润色链路复用（enrich-input 不重复 import 类型来源）
@@ -567,14 +568,19 @@ export const buildPresetModeMessages = async (
  * （is_system 过滤 + rounds 截尾），供记忆摘要作 before 边界——摘要层 [0, start)
  * 与正文层 [start, 末尾) 顺序相接不重复，对齐「摘要+原生历史」两层记忆模型。
  * 两处窗口选取逻辑必须同步改。窗口为空（无可发正文）返回 -1。
+ * mode 缺省读提示词页 context_mode；知识边界分析传自己的独立窗口设置
+ * （不随提示词页联动——分析与出选项要的历史深度本来就不同）。
+ * includeHidden=true（知识分析轮数模式专用）：隐藏楼也算剧情经历——酒馆的「隐藏」
+ * 只承诺「不发给生成侧」，不承诺「剧情没发生过」；边界判定恰恰关心主角经历过什么。
+ * 选项生成不得传 true（与主生成 coreChat 同口径）。
  */
-export const historyWindowStart = (contextRounds: number): number => {
+export const historyWindowStart = (contextRounds: number, mode?: ContextMode, includeHidden = false): number => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
-  const mode = gs.settings.prompt_rules.context_mode;
-  const visible = chatArr.filter((m: any) => !m.is_system);
-  const msgs = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
+  const windowMode = mode ?? gs.settings.prompt_rules.context_mode;
+  const pool = includeHidden ? chatArr : chatArr.filter((m: any) => !m.is_system);
+  const msgs = windowMode === 'rounds' && contextRounds > 0 ? pool.slice(-contextRounds * 2) : pool;
   if (!msgs.length) return -1;
   return chatArr.indexOf(msgs[0]);
 };
@@ -587,24 +593,39 @@ export const historyWindowStart = (contextRounds: number): number => {
  * startRawIndex > 0 时只保留该原始下标之后的消息（知识边界增量分析用）：旧事实已经在
  * 已有表/摘要里，只发上次分析之后的新消息即可。过滤发生在 rounds 截尾之后，depth 仍
  * 相对末尾计算，与生成侧口径一致。
+ * mode 缺省读提示词页 context_mode（选项生成/润色/条目生成共用）；知识边界分析传
+ * 自己的独立窗口设置——分析侧重看更长历史更稳，不该被出选项的近景窗口牵着走。
+ * includeHidden=true（知识分析轮数模式专用）：隐藏楼也算剧情经历，不再被剔除——
+ * 但酒馆正则的 depth 以「可见聊天」为基准，隐藏楼的 pos 仍按可见序编号，否则
+ * minDepth/maxDepth 规则在两个链路切在不同楼层。选项生成不得传 true。
  */
-export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true, startRawIndex = 0): ChatMsg[] => {
+export const buildChatHistory = (
+  contextRounds: number,
+  wrapCurrentScene = true,
+  startRawIndex = 0,
+  mode?: ContextMode,
+  includeHidden = false,
+): ChatMsg[] => {
   const ctx = window.SillyTavern?.getContext?.();
   const chatArr: any[] = ctx?.chat ?? [];
   const gs = useGlobalSettingsStore();
-  const mode = gs.settings.prompt_rules.context_mode;
+  const windowMode = mode ?? gs.settings.prompt_rules.context_mode;
   // 镜像 ST 主生成 coreChat：先剔除隐藏楼层（is_system），再按模式截尾。
   // visible_only：全量未隐藏消息；rounds：未隐藏消息的最后 N*2 条（隐藏楼层不再占轮数槽位，
   // 避免被截进 N*2 窗口后再丢弃导致实际发送轮数偏少）。
   // 原 `m.is_hidden` 过滤是死代码——酒馆原始 chat 对象无此字段，隐藏真实字段是 is_system。
+  // includeHidden=true 时跳过剔除（隐藏楼占轮数槽位），visible 仍按可见序给 pos 编号。
   // 带原始下标是为了增量分析能在截尾后继续前移起点（不能先 slice 再 indexOf，重复文本会错位）。
   // pos = 该消息在「全部可见消息」中的位置：酒馆正则的 depth 以整段可见聊天为基准
   // （script.js:4445），轮数模式截尾后仍按全量算，才与主生成一致（见 history-window.ts）
+  let visiblePos = 0;
   const visible = chatArr
     .map((m: any, index: number) => ({ m, index }))
-    .filter(x => !x.m.is_system)
-    .map((x, pos) => ({ ...x, pos }));
-  const picked = mode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
+    .filter(x => includeHidden || !x.m.is_system)
+    .map(x => ({ ...x, pos: x.m.is_system ? -1 : visiblePos++ }));
+  // depth 基准 = 全部可见楼数（不含 includeHidden 带入的隐藏楼），与酒馆主生成一致
+  const visibleCount = chatArr.filter((m: any) => !m.is_system).length;
+  const picked = windowMode === 'rounds' && contextRounds > 0 ? visible.slice(-contextRounds * 2) : visible;
   const pickedRaw = picked.filter(x => x.index >= startRawIndex);
   const msgs = pickedRaw.map(x => x.m);
   const rules = gs.sortedEnabledFilterRules;
@@ -627,8 +648,11 @@ export const buildChatHistory = (contextRounds: number, wrapCurrentScene = true,
     const placement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
     // depth 按「全部可见消息」算（与酒馆主生成同口径），不按截尾后的窗口长度算：
     // 轮数模式下窗口只有 N*2 条，用窗口长度会把同一条消息的 depth 抬高，
-    // minDepth/maxDepth 限定的正则会在两个链路里切在不同楼层
-    const regexDepth = calcRegexDepth(visible.length, pickedRaw[i].pos);
+    // minDepth/maxDepth 限定的正则会在两个链路里切在不同楼层。
+    // includeHidden 时基准仍是可见楼数（visibleCount），隐藏楼 pos=-1（不占可见序）：
+    // 酒馆正则按可见楼定位，隐藏楼没有稳定的 depth 含义，-1 经 Math.max 落在「最旧」档，
+    // 与主生成跳过它们的事实不冲突（主生成根本不发送隐藏楼）。
+    const regexDepth = calcRegexDepth(visibleCount, pickedRaw[i].pos);
     let content = stRegexOn
       ? getRegexedString(String(m.mes ?? ''), placement, { isPrompt: true, depth: regexDepth })
       : String(m.mes ?? '');
@@ -1216,11 +1240,22 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // 快照在发请求前拍下，落库时用同一套并发守卫（见 knowledge-state）。
     // 报告是否落后（合并判定与注入提示共用，避免重复算一次聊天指纹）
     const knowledgeStale = gs.settings.knowledge.enabled ? isKnowledgeReportStale() : false;
+    // 间隔节流与独立分析的 received 路径同口径：未到间隔不追加合并任务，省的是
+    // 同一份输出 token（合并任务的补丁块）；编辑/删除/滑动等 force 事件已由调度层
+    // 转成独立分析，不会走到这里。未到间隔时注入侧照常带 stale 提示（见下方注入）。
+    const knowledgeDue =
+      knowledgeStale &&
+      shouldAutoAnalyzeNow(
+        cs.settings.knowledge_report.based_on_message,
+        chat.length,
+        gs.settings.knowledge.auto_refresh_interval,
+        false,
+      );
     const knowledgeMerge =
       gs.settings.knowledge.enabled &&
       gs.settings.knowledge.auto_analyze &&
       gs.settings.knowledge.merge_with_generation &&
-      knowledgeStale
+      knowledgeDue
         ? takeSnapshot()
         : null;
     // 合并请求在途标记：独立分析据此挂起（见 knowledge-analysis.scheduleKnowledgeRefresh），

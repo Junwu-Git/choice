@@ -24,9 +24,10 @@ import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/cor
 import { buildChatHistory, buildWICached, generatorState, historyWindowStart } from '@/core/generator';
 import { getExternalSummary } from '@/core/memory-summary-bridge';
 import { renderMemorySummaryContent } from '@/core/preset-task';
-import { parseKnowledgeResponse, renderExistingTable, resolveAnalysisHistoryStart } from '@/core/knowledge-report';
+import { parseKnowledgeResponse, renderExistingTable, resolveAnalysisHistoryStart, shouldAutoAnalyzeNow } from '@/core/knowledge-report';
 import {
   commitKnowledgePatches,
+  currentMessageCount,
   isKnowledgeReportStale,
   knowledgeDriftMessages,
   knowledgeState,
@@ -36,6 +37,7 @@ import { KNOWLEDGE_SYSTEM_PROMPT } from '@/core/knowledge-task';
 import { getStCharacter, readCharacterFields } from '@/core/st-character';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
+import type { ContextMode } from '@/type/settings';
 
 // 面板与调度仍从本模块取这些入口（既有 import 零改动）；实现已迁到 knowledge-state，
 // 因为 generator 也要用同一份快照/落库语义，留在本模块会形成 knowledge-analysis ⇄ generator 环。
@@ -70,9 +72,11 @@ const ANALYSIS_USER_INCREMENTAL = `请对照「已有知识边界表」与最近
  *  applyWIExcl 改写的是酒馆全局状态，构建完立即还原，请求期间不持有。 */
 async function buildAnalysisMessages(
   contextRounds: number,
+  windowMode: ContextMode,
   existingTable: string,
   revision: number,
   historyStart: number,
+  includeHidden: boolean,
 ): Promise<ChatMsg[]> {
   const gs = useGlobalSettingsStore();
   const cs = useChatSettingsStore();
@@ -117,7 +121,12 @@ async function buildAnalysisMessages(
   const summary = getExternalSummary(historyStart);
   if (summary) msgs.push({ role: 'system', content: renderMemorySummaryContent(summary) });
 
-  msgs.push(...buildChatHistory(contextRounds, true, historyStart));
+  // 分析读聊天用自己的独立窗口（knowledge.context_mode/context_rounds）：
+  // 边界判定要的是「主角此刻知道什么」，与出选项的近景上下文深度本来就不同，
+  // 跟着提示词页联动会把分析窗口设成「恰好够写选项」——历史一长早期事实全部出窗。
+  // 轮数模式含隐藏楼（includeHidden）：隐藏在酒馆里只承诺「不发给生成侧」，
+  // 不承诺「剧情没发生过」——被隐藏的「谁告诉了主角什么」同样是主角的经历。
+  msgs.push(...buildChatHistory(contextRounds, true, historyStart, windowMode, includeHidden));
 
   // depthAfter（D0-D2）在生成侧紧跟历史之后，分析侧保持同一相对位置
   if (wi?.depthAfter) msgs.push({ role: 'system', content: wi.depthAfter });
@@ -170,11 +179,21 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false, d
   const tableRevision = rebuild ? 0 : snapshot.revision;
   const existingTable = renderExistingTable(previous, tableRevision);
 
+  // 分析读聊天用自己的独立窗口设置（knowledge.context_mode/context_rounds），
+  // 不随提示词页联动；完整窗口起点与 buildChatHistory 的截尾用同一套参数，
+  // 否则增量起点（基于 fullStart）与实际发送的正文窗口对不上。
+  const contextRounds = gs.settings.knowledge.context_rounds;
+  const windowMode = gs.settings.knowledge.context_mode;
+  // 轮数模式含隐藏楼：「仅可见消息」名字即语义维持可见口径；轮数模式关心的是
+  // 「主角经历过什么」，被隐藏的剧情楼照样是主角的经历。两个口径必须贯穿
+  // 窗口起点、正文截尾与指纹（过期判定），否则改隐藏楼不触发重算。
+  const includeHidden = windowMode === 'rounds';
+
   // 增量窗口：只有「收到新回复」时只发上次分析之后的消息（保留一条重叠）。
   // 旧事实已经在已有表与摘要里；编辑/删除/滑动/载入更多历史都可能改到旧楼层，
   // 必须走完整窗口，否则被改的早期信息永远进不了判定。
   const historyStart = resolveAnalysisHistoryStart(
-    historyWindowStart(gs.settings.prompt_rules.context_rounds),
+    historyWindowStart(contextRounds, windowMode, includeHidden),
     cs.settings.knowledge_report.based_on_message,
     snapshot.messageCount,
     delta && !rebuild,
@@ -184,10 +203,12 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false, d
   knowledgeController = new AbortController();
   try {
     const messages = await buildAnalysisMessages(
-      gs.settings.prompt_rules.context_rounds,
+      contextRounds,
+      windowMode,
       existingTable,
       tableRevision,
       historyStart,
+      includeHidden,
     );
     const raw = await callSecondaryApiWithRetry(
       messages,
@@ -268,13 +289,29 @@ export function cancelKnowledgeAnalysis(): void {
   // loading 复位交给 analyzeKnowledgeBoundary 的 finally（与 cancelPoolGen 同款约定）
 }
 
-function shouldSkipRefresh(force = false): boolean {
+function shouldSkipRefresh(force = false, delta = true): boolean {
   const gs = useGlobalSettingsStore();
   if (!gs.settings.knowledge.enabled || !gs.settings.knowledge.auto_analyze) return true;
   if (!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) return true;
   // force 只跳过「报告是否过期」这一项：指纹覆盖不到的早期编辑不会改变过期判定，
-  // 但功能开关与 API 配置仍然必须尊重。
-  return !force && !isKnowledgeReportStale();
+  // 但功能开关与 API 配置仍然必须尊重。force 路径不设间隔节流——它的语义是
+  // 「内容变了」，立即重跑。
+  if (force) return false;
+  if (!isKnowledgeReportStale()) return true;
+  // 间隔节流只作用于「新消息自然增长」的增量 received 路径：
+  // 报告落后不足 interval 轮时先跳过，省一次后台 API 调用。编辑/删除/滑动等
+  // 内容变化事件（force / 完整窗口）不受间隔约束——它们改变的是既有楼层内容，
+  // 越晚重跑旧结论在新剧情面前越危险。
+  if (delta && !shouldAutoAnalyzeNow(driftBaseOfReport(), currentMessageCount(), gs.settings.knowledge.auto_refresh_interval, false)) {
+    return true;
+  }
+  return false;
+}
+
+/** 间隔判定用的报告基线：based_on_message=0（从未分析/只有手动条目）视为「必须立即建基准」，
+ *  与 shouldAutoAnalyzeNow 的 basedOnMessage<=0 放行语义一致。 */
+function driftBaseOfReport(): number {
+  return useChatSettingsStore().settings.knowledge_report.based_on_message;
 }
 
 /** 合并模式是否接管了本轮分析：由选项生成请求顺带完成，独立分析必须让路，
@@ -319,7 +356,7 @@ export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, d
       force = force || timerForce;
       delta = delta && timerDelta;
     }
-    if (shouldSkipRefresh(force)) return;
+    if (shouldSkipRefresh(force, delta)) return;
     if (knowledgeState.loading) {
       pendingForce = pendingForce || force;
       // 只要有一个待处理事件需要完整窗口，补跑就必须用完整窗口（AND，不是 OR）。
@@ -345,7 +382,7 @@ export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, d
       const carriedDelta = timerDelta;
       timerForce = false;
       timerDelta = false;
-      if (shouldSkipRefresh(carriedForce)) return;
+      if (shouldSkipRefresh(carriedForce, carriedDelta)) return;
       void analyzeKnowledgeBoundary(false, false, carriedDelta);
     }, EDIT_DEBOUNCE_MS);
   } catch (error) {

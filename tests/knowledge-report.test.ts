@@ -21,6 +21,7 @@ import {
   parseKnowledgeExport,
   renderExistingTable,
   resolveAnalysisHistoryStart,
+  shouldAutoAnalyzeNow,
   type KnowledgePatch,
 } from '@/core/knowledge-report';
 import {
@@ -1001,6 +1002,22 @@ describe('computeChatFingerprint', () => {
     expect(a).toBe(b);
   });
 
+  it('includeHidden=true 时隐藏楼层参与指纹（轮数模式分析窗口口径）', () => {
+    const msgs = [
+      { mes: '隐藏剧情楼', is_system: true },
+      { mes: '你好', is_user: true },
+    ];
+    // 缺省口径：隐藏楼不算，改它指纹不变
+    const beforeDefault = computeChatFingerprint(msgs);
+    const editedHidden = [{ ...msgs[0], mes: '隐藏楼被改写' }, msgs[1]];
+    expect(computeChatFingerprint(editedHidden)).toBe(beforeDefault);
+    // 轮数模式口径：隐藏楼参与指纹，改它必须触发重算
+    const beforeWide = computeChatFingerprint(msgs, true);
+    expect(computeChatFingerprint(editedHidden, true)).not.toBe(beforeWide);
+    // 池大小前缀（visible.length → pool.length）也随之变化
+    expect(computeChatFingerprint(msgs, true)).not.toBe(computeChatFingerprint(msgs));
+  });
+
   it('同一内容稳定', () => {
     const msgs = [{ mes: '甲', is_user: true }, { mes: '乙' }];
     expect(computeChatFingerprint(msgs)).toBe(computeChatFingerprint(msgs));
@@ -1055,6 +1072,21 @@ describe('isMessageCoveredByFingerprint — 未抽样编辑的强制分析判定
     expect(isMessageCoveredByFingerprint(m, 3)).toBe(true);
   });
 
+  it('includeHidden=true 时隐藏楼层按池内位置判定覆盖（轮数模式口径）', () => {
+    const m = msgs(30);
+    m[3].is_system = true;
+    m[9].is_system = true;
+    // 缺省口径：隐藏楼一律视为已覆盖
+    expect(isMessageCoveredByFingerprint(m, 3)).toBe(true);
+    expect(isMessageCoveredByFingerprint(m, 9)).toBe(true);
+    // 轮数模式口径：隐藏楼参与指纹，覆盖判定也按池内（含隐藏楼）位置算
+    // 池内可见序：3 与 9 都不在 0/8/16 采样点，也不在尾部 12 条 → 未覆盖，编辑须强制分析
+    expect(isMessageCoveredByFingerprint(m, 3, true)).toBe(false);
+    expect(isMessageCoveredByFingerprint(m, 9, true)).toBe(false);
+    // 池内采样点（原始下标 8，可见楼）在轮数口径下仍覆盖
+    expect(isMessageCoveredByFingerprint(m, 8, true)).toBe(true);
+  });
+
   it('越界下标按覆盖处理（没有可分析的编辑）', () => {
     expect(isMessageCoveredByFingerprint(msgs(5), 99)).toBe(true);
   });
@@ -1077,6 +1109,44 @@ describe('resolveAnalysisHistoryStart — 增量分析窗口', () => {
 
   it('完整窗口没有可见消息（-1）时从 0 开始', () => {
     expect(resolveAnalysisHistoryStart(-1, 3, 5, true)).toBe(2);
+  });
+});
+
+describe('shouldAutoAnalyzeNow — 自动重跑间隔节流', () => {
+  // 一轮 = 用户消息 + 回复共 2 条楼层；received 只在回复到达时触发，
+  // 正常流程下落后条数为偶数（2/4/6…）
+  it('间隔未满不触发：落后 4 条 < 3 轮（6 条）', () => {
+    expect(shouldAutoAnalyzeNow(10, 14, 3, false)).toBe(false);
+  });
+
+  it('间隔达到即触发：落后 6 条 ≥ 3 轮', () => {
+    expect(shouldAutoAnalyzeNow(10, 16, 3, false)).toBe(true);
+  });
+
+  it('默认间隔 10 轮：落后 20 条恰好触发，18 条不触发', () => {
+    expect(shouldAutoAnalyzeNow(50, 70, 10, false)).toBe(true);
+    expect(shouldAutoAnalyzeNow(50, 68, 10, false)).toBe(false);
+  });
+
+  it('interval=1 恒触发（每轮都分析的旧行为）', () => {
+    expect(shouldAutoAnalyzeNow(10, 12, 1, false)).toBe(true);
+    expect(shouldAutoAnalyzeNow(10, 11, 1, false)).toBe(true);
+  });
+
+  it('force（编辑/删除/滑动等强制事件）不受间隔约束', () => {
+    expect(shouldAutoAnalyzeNow(10, 11, 10, true)).toBe(true);
+  });
+
+  it('从未分析（basedOn=0）不节流：首份报告是基准，立即建立', () => {
+    expect(shouldAutoAnalyzeNow(0, 1, 10, false)).toBe(true);
+  });
+
+  it('删楼导致落后为负（楼层数回退）时放行', () => {
+    expect(shouldAutoAnalyzeNow(20, 18, 10, false)).toBe(true);
+  });
+
+  it('非有限值兜底为放行（设置损坏不拖死自动分析）', () => {
+    expect(shouldAutoAnalyzeNow(10, 12, Number.NaN, false)).toBe(true);
   });
 });
 

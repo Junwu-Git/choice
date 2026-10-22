@@ -341,6 +341,12 @@ const FilterSettings = z.object({
 });
 type FilterSettings = z.infer<typeof FilterSettings>;
 
+/** 上下文窗口模式：rounds = 取最后 N 轮（一轮 = 用户消息 + 回复共 2 条楼层）；
+ *  visible_only = 全量未隐藏消息（不限轮数）。选项生成（prompt_rules）与
+ *  知识边界分析（knowledge）各持一份，互不联动。 */
+const ContextMode = z.enum(['rounds', 'visible_only']);
+export type ContextMode = z.infer<typeof ContextMode>;
+
 const PromptRules = z
   .object({
     system_prompt: z.string().default(''),
@@ -351,7 +357,7 @@ const PromptRules = z
     chat_filter_groups: z.array(ChatFilterGroup).default([]),
     modules: z.array(PromptModule).prefault([]),
     /** 上下文模式：rounds = 取最后 N 轮（含隐藏消息）；visible_only = 仅未隐藏消息（不限轮数） */
-    context_mode: z.enum(['rounds', 'visible_only']).default('visible_only'),
+    context_mode: ContextMode.default('visible_only'),
     /** 记忆摘要总开关：关闭时摘要模块在 PromptEditor 中隐藏且不注入。
      *  字段名是已存配置的键，保留历史命名，改名需要迁移。 */
     baibai_enabled: z.boolean().default(false),
@@ -1244,11 +1250,23 @@ export type KnowledgeReport = z.infer<typeof KnowledgeReport>;
  *  inject_enabled 默认开 = 把最新报告注入选项生成请求（扩展模式与预设模式共用同一注入点）。
  *  merge_with_generation 默认关 = 分析并入选项生成请求（省一次上下文发送，但要求模型
  *  在一次回复里同时完成判定与写作）；默认关保证存量用户请求形态零变化。
- *  注入预算可调：长聊与短上下文模型对条数/字符数的容忍度差异很大。 */
+ *  注入预算可调：长聊与短上下文模型对条数/字符数的容忍度差异很大。
+ *  auto_refresh_interval 默认 10 = 报告落后当前聊天累计 N 轮新消息才自动重跑分析：
+ *  每轮一跑的间隔太密，多数轮次剧情没有边界变化，白耗一次后台 API 调用。只节流
+ *  「新消息自然增长」的 received 路径；编辑/删除/滑动等内容变化仍立即刷新，且越过的
+ *  轮次走完整窗口补算（旧档缺字段由 default 补齐，行为收紧但零迁移）。
+ *  context_mode/context_rounds 是分析读聊天的**独立窗口设置**（不随选项提示词页联动）：
+ *  边界判定关心的是「主角此刻知道什么」，与出选项要的近景上下文不同——分析侧重看
+ *  更长的历史更稳。默认与提示词页相同，存量用户零变化。 */
 export const KnowledgeSettings = z
   .object({
     enabled: z.boolean().default(true),
     auto_analyze: z.boolean().default(true),
+    auto_refresh_interval: z.number().int().min(1).max(100).default(10).catch(10),
+    /** 分析读取聊天的窗口模式（与提示词页 context_mode 同语义，但独立生效不联动） */
+    context_mode: ContextMode.default('visible_only'),
+    /** rounds 模式下分析读取的轮数；visible_only 模式下忽略 */
+    context_rounds: z.number().min(0).default(10).catch(10),
     inject_enabled: z.boolean().default(true),
     merge_with_generation: z.boolean().default(false),
     inject_max_entries: z.number().int().min(1).max(60).default(24).catch(24),

@@ -102,6 +102,48 @@
           <small>{{ t`AI 回复后自动重跑；编辑、删除楼层与切换分支也会合并刷新` }}</small>
         </span>
       </label>
+      <label
+        v-if="gs.settings.knowledge.auto_analyze"
+        class="choice-field choice-knowledge-interval"
+        :title="t`报告落后不足 N 轮时先不重跑：多数轮次剧情没有边界变化，重跑只是白耗一次后台 API 调用。到点后一次性补算跨过的轮次（完整窗口）；编辑、删除、切换分支不受间隔约束，仍立即重跑`"
+      >
+        <span>{{ t`自动重跑间隔` }}</span>
+        <span class="choice-knowledge-interval-input">
+          <input
+            v-model.number="autoRefreshInterval"
+            class="choice-input choice-input-w-sm"
+            type="number"
+            min="1"
+            max="100"
+            @blur="clampInterval"
+          />
+          <small>{{ t`轮（1 = 每轮都分析）` }}</small>
+        </span>
+      </label>
+      <label
+        class="choice-field choice-knowledge-interval"
+        :title="
+          t`分析读取聊天的窗口设置，与选项提示词页互不影响：边界判定关心「主角此刻知道什么」，历史更长更稳；出选项只要近景。轮数模式把隐藏楼也算作剧情经历（5 轮 = 最后 10 条楼层，含被隐藏的）；仅可见消息则完全排除隐藏楼。仅分析读取生效，注入选项的仍是最新报告`
+        "
+      >
+        <span>{{ t`分析上下文读取` }}</span>
+        <span class="choice-knowledge-interval-input">
+          <select v-model="gs.settings.knowledge.context_mode" class="choice-select">
+            <option value="visible_only">{{ t`仅可见消息` }}</option>
+            <option value="rounds">{{ t`轮数模式` }}</option>
+          </select>
+          <input
+            v-if="gs.settings.knowledge.context_mode === 'rounds'"
+            v-model.number="knowledgeContextRounds"
+            class="choice-input choice-input-w-sm"
+            type="number"
+            min="1"
+            @change="clampKnowledgeContext"
+            @blur="clampKnowledgeContext"
+          />
+          <small v-if="gs.settings.knowledge.context_mode === 'rounds'">{{ t`轮` }}</small>
+        </span>
+      </label>
       <label class="choice-toggle">
         <input v-model="gs.settings.knowledge.inject_enabled" type="checkbox" :title="t`把报告注入选项生成请求`" />
         <span class="choice-toggle-custom"></span>
@@ -350,7 +392,7 @@ import {
   tidyKnowledgeReport,
   updateManualEntry,
 } from '@/core/knowledge-actions';
-import { buildKnowledgeExport, parseKnowledgeExport, IMPORTANCE_LABEL, SOURCE_LABEL } from '@/core/knowledge-report';
+import { buildKnowledgeExport, parseKnowledgeExport, IMPORTANCE_LABEL, SOURCE_LABEL, shouldAutoAnalyzeNow } from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type {
@@ -503,7 +545,21 @@ const stale = computed(() => {
 const staleText = computed(() => {
   void knowledgeState.tick;
   const diff = knowledgeDriftMessages();
-  return diff > 0 ? t`聊天已有 ${diff} 条新消息，报告可能过期，建议重新分析` : t`聊天楼层内容有变动，报告可能过期`;
+  if (diff <= 0) return t`聊天楼层内容有变动，报告可能过期`;
+  // 间隔节流期内提示「到点自动重跑」而非「建议重新分析」——自动分析开着时
+  // 用户什么都不用做，旧的「建议」文案会让人误以为必须手动点一次
+  if (
+    gs.settings.knowledge.auto_analyze &&
+    !shouldAutoAnalyzeNow(
+      report.value.based_on_message,
+      report.value.based_on_message + diff,
+      gs.settings.knowledge.auto_refresh_interval,
+      false,
+    )
+  ) {
+    return t`聊天已有 ${diff} 条新消息，未到自动重跑间隔（${gs.settings.knowledge.auto_refresh_interval} 轮），到点后自动补算`;
+  }
+  return t`聊天已有 ${diff} 条新消息，报告可能过期，建议重新分析`;
 });
 
 const injectMaxEntries = computed({
@@ -512,6 +568,36 @@ const injectMaxEntries = computed({
     if (Number.isFinite(v)) gs.settings.knowledge.inject_max_entries = Math.min(60, Math.max(1, Math.round(v)));
   },
 });
+
+/** 自动重跑间隔（轮）：与注入预算同款钳制——v-model.number 清空时给空串，
+ *  不能让设置落成 NaN；1 = 每轮都分析的旧行为。 */
+const autoRefreshInterval = computed({
+  get: () => gs.settings.knowledge.auto_refresh_interval,
+  set: (v: number) => {
+    if (Number.isFinite(v)) gs.settings.knowledge.auto_refresh_interval = Math.min(100, Math.max(1, Math.round(v)));
+  },
+});
+
+const clampInterval = () => {
+  const k = gs.settings.knowledge;
+  if (!Number.isFinite(k.auto_refresh_interval)) k.auto_refresh_interval = 10;
+  k.auto_refresh_interval = Math.min(100, Math.max(1, Math.round(k.auto_refresh_interval)));
+};
+
+/** 分析上下文轮数（仅 rounds 模式生效）：钳制口径与提示词页一致——0/负数兜底为 1
+ *  （0 并非「不限」，visible_only 模式才是「不限」）。 */
+const knowledgeContextRounds = computed({
+  get: () => gs.settings.knowledge.context_rounds,
+  set: (v: number) => {
+    if (Number.isFinite(v)) gs.settings.knowledge.context_rounds = Math.max(1, Math.round(v));
+  },
+});
+
+const clampKnowledgeContext = () => {
+  const k = gs.settings.knowledge;
+  if (!Number.isFinite(k.context_rounds)) k.context_rounds = 10;
+  k.context_rounds = Math.max(1, Math.round(k.context_rounds));
+};
 
 const injectCharBudget = computed({
   get: () => gs.settings.knowledge.inject_char_budget,
@@ -710,6 +796,18 @@ const onImport = () => {
   align-items: center;
   gap: var(--choice-space-1);
   color: var(--choice-color-warning);
+}
+
+/* 自动重跑间隔：数字输入 + 后缀说明并排，与「注入预算」的输入风格一致 */
+.choice-knowledge-interval-input {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--choice-space-2);
+}
+
+.choice-knowledge-interval-input small {
+  color: var(--choice-text-muted);
+  font-size: var(--choice-text-xs);
 }
 
 .choice-knowledge-budget {

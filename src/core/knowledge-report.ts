@@ -1270,33 +1270,45 @@ const FINGERPRINT_EARLY_SNIPPET = 80;
 
 export function computeChatFingerprint(
   messages: Array<{ mes?: unknown; is_system?: boolean; is_user?: boolean; role?: string }>,
+  /** 分析窗口口径：轮数模式下隐藏楼参与分析，也必须参与指纹——否则改隐藏楼
+   *  永远不触发重算，报告停在旧结论。缺省 false 维持「只看可见楼」的旧口径
+   *  （注入场景文本、选项生成侧的调用零变化）。 */
+  includeHidden = false,
 ): string {
-  const visible = messages.filter(m => !m.is_system);
+  const pool = includeHidden ? messages : messages.filter(m => !m.is_system);
   const roleOf = (m: { is_user?: boolean; role?: string }): string => m.role ?? (m.is_user ? 'user' : 'assistant');
-  const tailStart = Math.max(0, visible.length - FINGERPRINT_TAIL);
+  const tailStart = Math.max(0, pool.length - FINGERPRINT_TAIL);
   const early: string[] = [];
   for (let i = 0; i < tailStart; i += FINGERPRINT_EARLY_STEP) {
-    const text = String(visible[i].mes ?? '');
-    early.push(`${roleOf(visible[i])}:${text.length}:${text.slice(0, FINGERPRINT_EARLY_SNIPPET)}`);
+    const text = String(pool[i].mes ?? '');
+    early.push(`${roleOf(pool[i])}:${text.length}:${text.slice(0, FINGERPRINT_EARLY_SNIPPET)}`);
   }
-  const tail = visible.slice(tailStart).map(m => {
+  const tail = pool.slice(tailStart).map(m => {
     const text = String(m.mes ?? '');
     // 不再截断：尾部 12 条是编辑最频繁的区域，400 字之后的改动同样必须触发重算。
     return `${roleOf(m)}:${text.length}:${text}`;
   });
-  return `${visible.length}:${fnv1a([...early, '|', ...tail].join('\n'))}`;
+  return `${pool.length}:${fnv1a([...early, '|', ...tail].join('\n'))}`;
 }
 
 /** 原始楼层是否被指纹覆盖（尾部逐条全文 + 早期抽样点）。
  *  未覆盖的楼层被编辑时指纹不会变化，调度层必须强制分析，否则「谁告诉了主角什么」
- *  这类早期信息被改掉后，报告会一直停留在旧结论。隐藏楼层不参与指纹，视为已覆盖。 */
-export function isMessageCoveredByFingerprint(messages: Array<{ is_system?: boolean }>, rawIndex: number): boolean {
+ *  这类早期信息被改掉后，报告会一直停留在旧结论。
+ *  includeHidden=false（缺省）：隐藏楼不参与指纹，视为已覆盖——强制分析无意义，
+ *  分析窗口根本不含它们。includeHidden=true（分析轮数模式）：隐藏楼参与指纹，
+ *  未覆盖的隐藏楼被编辑同样必须强制分析。 */
+export function isMessageCoveredByFingerprint(
+  messages: Array<{ is_system?: boolean }>,
+  rawIndex: number,
+  includeHidden = false,
+): boolean {
   const target = messages[rawIndex];
-  if (!target || target.is_system) return true;
-  const visibleBefore = messages.slice(0, rawIndex).filter(m => !m.is_system).length;
-  const visibleCount = messages.filter(m => !m.is_system).length;
-  const tailStart = Math.max(0, visibleCount - FINGERPRINT_TAIL);
-  return visibleBefore >= tailStart || visibleBefore % FINGERPRINT_EARLY_STEP === 0;
+  if (!target) return true;
+  if (target.is_system && !includeHidden) return true;
+  const poolBefore = messages.slice(0, rawIndex).filter(m => includeHidden || !m.is_system).length;
+  const poolCount = messages.filter(m => includeHidden || !m.is_system).length;
+  const tailStart = Math.max(0, poolCount - FINGERPRINT_TAIL);
+  return poolBefore >= tailStart || poolBefore % FINGERPRINT_EARLY_STEP === 0;
 }
 
 /** 增量分析的历史起点：只发送上次分析之后的新消息（保留一条重叠）。
@@ -1311,6 +1323,28 @@ export function resolveAnalysisHistoryStart(
 ): number {
   if (!delta || basedOnMessage <= 0 || basedOnMessage > messageCount) return fullStart;
   return Math.max(fullStart < 0 ? 0 : fullStart, basedOnMessage - 1);
+}
+
+/** 自动分析是否已到重跑间隔：报告落后当前聊天累计 `intervalRounds` 轮新对话才触发，
+ *  减少无边界变化轮次的后台 API 调用。一轮 = 用户消息 + 回复共 2 条（酒馆楼层数口径），
+ *  received 只在回复到达时触发，正常流程下落后条数恰为偶数。
+ *  只在「新消息自然增长」的 received 路径节流：编辑/删除/滑动（force/fullWindow）
+ *  语义是「内容变了」，必须立即重跑，不排队。
+ *  从未分析（basedOn=0）不节流——首份报告是后续一切判断的基准，越早建立越好。
+ *  删楼导致 drift 为负时同样放行：楼层数回退意味着内容结构变化，宁多跑不漏判。
+ *  intervalRounds<=1 恒放行 = 每轮都分析的旧行为。 */
+export function shouldAutoAnalyzeNow(
+  basedOnMessage: number,
+  messageCount: number,
+  intervalRounds: number,
+  force: boolean,
+): boolean {
+  if (force || basedOnMessage <= 0) return true;
+  if (!Number.isFinite(intervalRounds) || intervalRounds <= 1) return true;
+  const drift = messageCount - basedOnMessage;
+  // 删楼让当前消息数低于分析基线：内容已回退，越晚重跑越危险，立即放行
+  if (drift < 0) return true;
+  return drift >= intervalRounds * 2;
 }
 
 /** 导出格式版本：导入侧据此拒绝未来格式，避免把不认识的字段静默吞掉。 */

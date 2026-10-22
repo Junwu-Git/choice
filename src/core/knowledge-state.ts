@@ -17,6 +17,7 @@ import {
   type KnowledgePatch,
 } from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
+import { useGlobalSettingsStore } from '@/store/global-settings';
 import type { KnowledgeReportEntry } from '@/type/settings';
 
 /** 分析请求状态：面板据此切「分析/取消」按钮，与 generatorState/poolGenState 分离。
@@ -66,7 +67,7 @@ export function takeSnapshot(): AnalysisSnapshot {
   return {
     chatIdentity: snapshotChatIdentity(),
     messageCount: messages.length,
-    fingerprint: computeChatFingerprint(messages),
+    fingerprint: computeChatFingerprint(messages, knowledgeFingerprintScope()),
     revision: report.revision,
     entries: report.entries.map(e => ({ ...e, aliases: [...e.aliases], keywords: [...e.keywords] })),
   };
@@ -87,13 +88,24 @@ export function takeGuardSnapshot(): {
   return {
     chatIdentity: snapshotChatIdentity(),
     messageCount: messages.length,
-    fingerprint: computeChatFingerprint(messages),
+    fingerprint: computeChatFingerprint(messages, knowledgeFingerprintScope()),
     revision: report.revision,
   };
 }
 
-/** 报告是否落后于当前聊天：有指纹时只比指纹（隐藏楼层变动不触发重跑），
- *  旧报告没有指纹（升级前的存档）时回退到楼层数比较。
+/** 当前分析窗口的指纹口径（单一来源）：轮数模式含隐藏楼（分析窗口参与指纹），
+ *  「仅可见消息」维持可见口径。knowledge-analysis / panel-mount / 本模块三处
+ *  调用都必须经它取口径，两处各算各的会让「改隐藏楼」在轮数模式下漏判重算。 */
+export function knowledgeFingerprintScope(): boolean {
+  try {
+    return useGlobalSettingsStore().settings.knowledge.context_mode === 'rounds';
+  } catch {
+    return false;
+  }
+}
+
+/** 报告是否落后于当前聊天：有指纹时只比指纹（口径随分析窗口，隐藏楼在轮数
+ *  模式下参与比对），旧报告没有指纹（升级前的存档）时回退到楼层数比较。
  *  只有手动条目（从未分析，based_on_message=0）视为过期，让自动刷新建立基准；
  *  面板的过期提示另按 based_on_message>0 判断，避免出现「基于第 0 楼」。 */
 export function isKnowledgeReportStale(): boolean {
@@ -103,7 +115,8 @@ export function isKnowledgeReportStale(): boolean {
     if (!report.updated_at) return true;
     if (!report.based_on_message) return true;
     const messages = currentChat();
-    if (report.based_on_fingerprint) return report.based_on_fingerprint !== computeChatFingerprint(messages);
+    if (report.based_on_fingerprint)
+      return report.based_on_fingerprint !== computeChatFingerprint(messages, knowledgeFingerprintScope());
     return report.based_on_message !== messages.length;
   } catch {
     return false;

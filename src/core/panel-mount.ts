@@ -13,6 +13,7 @@ import {
   scheduleKnowledgeRefresh,
 } from '@/core/knowledge-analysis';
 import { isMessageCoveredByFingerprint } from '@/core/knowledge-report';
+import { knowledgeFingerprintScope } from '@/core/knowledge-state';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -184,9 +185,10 @@ export function initPanelMount() {
     safeResync();
     // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过。
     // 但早期未抽样楼层不在指纹里，必须按楼层位置强制分析，否则「谁告诉了主角什么」
-    // 被改掉后报告会一直停在旧结论。
+    // 被改掉后报告会一直停在旧结论。覆盖检查与指纹同口径（轮数模式含隐藏楼）。
     const covered =
-      typeof messageId !== 'number' || isMessageCoveredByFingerprint(chat as unknown as StChatMessage[], messageId);
+      typeof messageId !== 'number' ||
+      isMessageCoveredByFingerprint(chat as unknown as StChatMessage[], messageId, knowledgeFingerprintScope());
     scheduleKnowledgeRefresh('edited', !covered);
   });
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
