@@ -105,7 +105,9 @@
       <label
         v-if="gs.settings.knowledge.auto_analyze"
         class="choice-field choice-knowledge-interval"
-        :title="t`报告落后不足 N 轮时先不重跑：多数轮次剧情没有边界变化，重跑只是白耗一次后台 API 调用。到点后一次性补算跨过的轮次（完整窗口）；编辑、删除、切换分支不受间隔约束，仍立即重跑`"
+        :title="
+          t`报告落后不足 N 轮时先不重跑：多数轮次剧情没有边界变化，重跑只是白耗一次后台 API 调用。到点后一次性补算跨过的轮次（完整窗口）；编辑、删除、切换分支不受间隔约束，仍立即重跑`
+        "
       >
         <span>{{ t`自动重跑间隔` }}</span>
         <span class="choice-knowledge-interval-input">
@@ -392,7 +394,13 @@ import {
   tidyKnowledgeReport,
   updateManualEntry,
 } from '@/core/knowledge-actions';
-import { buildKnowledgeExport, parseKnowledgeExport, IMPORTANCE_LABEL, SOURCE_LABEL, shouldAutoAnalyzeNow } from '@/core/knowledge-report';
+import {
+  buildKnowledgeExport,
+  parseKnowledgeExport,
+  IMPORTANCE_LABEL,
+  SOURCE_LABEL,
+  shouldAutoAnalyzeNow,
+} from '@/core/knowledge-report';
 import { useChatSettingsStore } from '@/store/chat-settings';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import type {

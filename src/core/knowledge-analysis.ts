@@ -24,7 +24,12 @@ import { callSecondaryApiWithRetry, resolveCustomApi, type ChatMsg } from '@/cor
 import { buildChatHistory, buildWICached, generatorState, historyWindowStart } from '@/core/generator';
 import { getExternalSummary } from '@/core/memory-summary-bridge';
 import { renderMemorySummaryContent } from '@/core/preset-task';
-import { parseKnowledgeResponse, renderExistingTable, resolveAnalysisHistoryStart, shouldAutoAnalyzeNow } from '@/core/knowledge-report';
+import {
+  parseKnowledgeResponse,
+  renderExistingTable,
+  resolveAnalysisHistoryStart,
+  shouldAutoAnalyzeNow,
+} from '@/core/knowledge-report';
 import {
   commitKnowledgePatches,
   currentMessageCount,
@@ -302,7 +307,15 @@ function shouldSkipRefresh(force = false, delta = true): boolean {
   // 报告落后不足 interval 轮时先跳过，省一次后台 API 调用。编辑/删除/滑动等
   // 内容变化事件（force / 完整窗口）不受间隔约束——它们改变的是既有楼层内容，
   // 越晚重跑旧结论在新剧情面前越危险。
-  if (delta && !shouldAutoAnalyzeNow(driftBaseOfReport(), currentMessageCount(), gs.settings.knowledge.auto_refresh_interval, false)) {
+  if (
+    delta &&
+    !shouldAutoAnalyzeNow(
+      driftBaseOfReport(),
+      currentMessageCount(),
+      gs.settings.knowledge.auto_refresh_interval,
+      false,
+    )
+  ) {
     return true;
   }
   return false;
