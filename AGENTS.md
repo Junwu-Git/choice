@@ -129,6 +129,7 @@ SillyTavern 扩展：独立调 API 异步生成行动选项，玩家点选后填
 - 选项行样式（`.choice-option-*`/`.choice-roll-chip`）只在 global.css；悬浮球独立版式但复用解析/行为层。
 - 悬浮球知识分析态：`knowledgeState.loading` 时挂 `--knowledge`（与 `--generating` 独立，可并存），内环外一颗绿色小光点（`--choice-color-success`）2.6s 反向公转；选项生成仍是 1.5s 正向快环 + `fa-spinner`。拖拽时收起，`prefers-reduced-motion` 下静止；合并模式分析并进选项请求，只显示 `--generating`。
 - `setEntryVisible` 拒绝关闭最后一个入口。z 序：panel 10 / floating 30000 / dialog 30100 / dropdown 30200 / popover 30300。
+- **手机端视口**：软键盘与地址栏只改视口高度不改宽度，且键盘滑出动画期间 `resize` 连发十几帧、每帧只缩几十 px。球位是 `useStorage` 持久化的，按缩小后的高度钳制并落盘会把球逐帧顶上去、键盘收起后回不到原位（真机「输入法弹出时悬浮球乱跳」）。现行语义：**跟页面上推、但绝不落盘**——`handleResize` 用 `floating-state.isTransientViewportShrink()` 判定临时缩高，此时只改渲染位置 `x/y`，`posX/posY` 不动，收起后自然弹回原位。上移量 = **溢出量 + 保留的底部留白**（球原间隙，以 `BUBBLE_MARGIN_Y`=80 封顶）。两个已废弃写法勿回退：①「按整个键盘高度上移」——只被盖住几 px 的球会直接飞到页面顶部（真机反馈）；②「夹到 `innerHeight - 直径`」——球压在输入栏和发送键上。配套两条：**轻点不落盘**（`onEnd` 里 `moved >= TAP_SLOP` 才写 posX/posY，否则键盘开着时点一下球就把临时位置写成存档）、**弹层锚点取渲染位置**（`syncPopoverAnchor` 用 `x/y`，用 posX/posY 会把选项 popover 开到键盘后面）。宽度变化（旋屏 / 桌面拖窗口）才同步基线并照常落盘；非触屏不启用。**勿在组件里另写 `innerHeight` 比较**，也勿给球加 `visualViewport.offsetTop` 补偿——`getBoundingClientRect` 带补偿会污染 `useDraggable` 拖拽锚点。
 - i18n：中文源串做键；改文案跑 `pnpm i18n:check`；插值勿嵌反引号模板。
 - 引导单一来源 `guide-content.ts`；唯一 `v-html` 在 `OnboardingWizard`（静态内容）。
 

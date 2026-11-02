@@ -76,6 +76,9 @@ import {
   isMobileBubble,
   snapBubblePosition,
   getSnapOffset,
+  isTransientViewportShrink,
+  transientViewportInset,
+  BUBBLE_MARGIN_Y,
 } from '@/core/floating-state';
 import FloatingContextMenu from '@/components/FloatingContextMenu.vue';
 import FloatingOptions from '@/components/FloatingOptions.vue';
@@ -167,10 +170,16 @@ const bubbleEl = ref<HTMLElement | null>(null);
 // 早于 pressed 类生效；且 scale 不改 translate，残余偏差 ≤2.4px 不可见。
 const isPressed = ref(false);
 
+// 弹层锚点取「渲染位置」x/y 而非存档 posX/posY：键盘弹出时球会被临时上推到键盘上方
+// （存档不动），用存档会把选项 popover / 快捷菜单开到被键盘遮住的地方
+const syncPopoverAnchor = () => {
+  bubbleX.value = x.value;
+  bubbleY.value = y.value;
+};
+
 const handleClick = () => {
   isBubbleContextMenuOpen.value = false;
-  bubbleX.value = posX.value;
-  bubbleY.value = posY.value;
+  syncPopoverAnchor();
   // 单击行为由 ui.bubble_click_action 决定：
   // - 'settings'：恢复"点击打开/关闭设置"的旧语义（弹窗不参与，保持关闭）；
   // - 'options'：设置面板开着时点气泡关闭设置（气泡在遮罩之上可命中，第二次点击
@@ -208,8 +217,13 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
       width: window.innerWidth,
       height: window.innerHeight,
     });
-    posX.value = snapped.x;
-    posY.value = snapped.y;
+    // 指针净位移（点击判定同源）：轻点不落盘——键盘弹出时球会被临时上推到键盘上方，
+    // 此时轻点若把渲染位置写进存档，收起键盘后球就停在被推上去的地方了
+    const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+    if (moved >= TAP_SLOP) {
+      posX.value = snapped.x;
+      posY.value = snapped.y;
+    }
     x.value = snapped.x;
     y.value = snapped.y;
     isSnappedLeft.value = snapped.snappedLeft;
@@ -219,7 +233,6 @@ const { x, y, isDragging } = useDraggable(bubbleEl, {
 
     // 点击判定用指针净位移而非元素位置差：元素位置被视觉位移污染（见 isPressed 注释），
     // 指针位移才是"点击意图"的正确度量。8px 容忍触摸抖动，与长按取消共用同一阈值
-    const moved = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
     if (moved < TAP_SLOP && !longPressTriggered) {
       handleClick();
     }
@@ -260,8 +273,7 @@ const onPointerDown = (e: PointerEvent) => {
     longPressTimer = setTimeout(() => {
       longPressTriggered = true;
       isPressed.value = false;
-      bubbleX.value = posX.value;
-      bubbleY.value = posY.value;
+      syncPopoverAnchor();
       // 快捷菜单与选项 popover 互斥：长按打开菜单时收起已弹出的选项
       closeBubbleOptions();
       isBubbleContextMenuOpen.value = true;
@@ -281,8 +293,7 @@ const onPointerCancel = () => {
 // pointerdown 关闭逻辑忽略气泡来源的点击，不会被同一次右键的 pointerdown 立即关掉
 const onContextMenu = (e: MouseEvent) => {
   e.preventDefault();
-  bubbleX.value = posX.value;
-  bubbleY.value = posY.value;
+  syncPopoverAnchor();
   // 快捷菜单与选项 popover 互斥：右键打开菜单时收起已弹出的选项
   closeBubbleOptions();
   isBubbleContextMenuOpen.value = true;
@@ -307,6 +318,12 @@ watch(
 const isResizing = ref(false);
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 const handleResize = () => {
+  // 触屏软键盘/地址栏只缩视口高度：这是临时变化——按缩小后的高度钳制「渲染位置」，
+  // 球才跟着页面上推、不会被大键盘整个盖住；但**绝不落盘**：球位走 useStorage，临时值
+  // 一写，键盘收起后就回不到原位（真机反馈「输入法弹出时悬浮球乱跳」的根因）。
+  // 钳制基准恒为存档 posX/posY，所以收起时自动弹回原位，反复弹收也不累积漂移。
+  // 判定与基线在 floating-state 单一来源，勿在此另写一套 innerHeight 比较
+  const transient = isTransientViewportShrink();
   isResizing.value = true;
   let clampedX: number;
   if (isSnappedLeft.value) {
@@ -316,9 +333,24 @@ const handleResize = () => {
   } else {
     clampedX = Math.max(0, Math.min(posX.value, window.innerWidth - BUBBLE_SIZE.value));
   }
-  const clampedY = Math.max(0, Math.min(posY.value, window.innerHeight - BUBBLE_SIZE.value));
-  posX.value = clampedX;
-  posY.value = clampedY;
+  const clampedY = (() => {
+    const size = BUBBLE_SIZE.value;
+    const maxY = window.innerHeight - size;
+    // 键盘/地址栏把视口顶矮时，球被盖住才动，且只动到「刚好露出来 + 保留原底部留白」：
+    // 按整个键盘高度上移（= 保持距底边距离）会让只被盖住几 px 的球直接飞到页面顶部，
+    // 那正是「跟着上推」第一版的问题。留白取球原本的底部间隙、并以默认留白封顶——
+    // 贴底拖放的球只移到刚好可见，默认位置的球则停在输入栏上方 80px（不压发送键）
+    const over = posY.value - maxY;
+    if (transient && over > 0) {
+      const gap = Math.min(BUBBLE_MARGIN_Y, Math.max(0, transientViewportInset() - over));
+      return Math.max(0, Math.min(posY.value - over - gap, maxY));
+    }
+    return Math.max(0, Math.min(posY.value, maxY));
+  })();
+  if (!transient) {
+    posX.value = clampedX;
+    posY.value = clampedY;
+  }
   x.value = clampedX;
   y.value = clampedY;
   bubbleX.value = clampedX;
