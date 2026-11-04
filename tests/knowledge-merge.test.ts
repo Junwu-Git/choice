@@ -256,6 +256,26 @@ describe('buildMergedKnowledgeTask', () => {
     expect(task).toContain('<memory_summary>');
     expect(task).toContain('只用于核对既有条目的出处');
   });
+
+  it('重要程度固定为：未知 > 存疑 > 已知，覆盖与容量取舍都按此排序', () => {
+    const task = buildMergedKnowledgeTask({ existingTable: '', revision: 0 });
+    // 三态优先级是用户指令，分析侧必须与注入/淘汰的机械层同口径
+    expect(task).toContain('未知 > 存疑 > 已知');
+    // 补齐顺序：未知先补，其次存疑，最后已知
+    expect(task).toContain('先补齐未知');
+    // 容量取舍：放不下时反向舍弃，未知留到最后
+    expect(task).toContain('先丢已知');
+    // 旧的「按场景影响取舍」口径已废除——它会把场景相关性排到三态之前
+    expect(task).not.toContain('对当前场景有影响');
+  });
+
+  it('独立分析的系统提示同样声明三态优先级', () => {
+    // KNOWLEDGE_RULES_BODY 被两条链路共用，system 提示里必须能查到同一口径
+    expect(KNOWLEDGE_SYSTEM_PROMPT).toContain('未知 > 存疑 > 已知');
+    expect(KNOWLEDGE_SYSTEM_PROMPT).toContain('先补齐未知');
+    expect(KNOWLEDGE_SYSTEM_PROMPT).toContain('先丢已知');
+    expect(KNOWLEDGE_SYSTEM_PROMPT).not.toContain('对当前场景有影响');
+  });
 });
 
 describe('合并模式的标签契约改写', () => {
