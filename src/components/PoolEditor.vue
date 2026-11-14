@@ -11,7 +11,12 @@
           <input v-model="globalStore.settings.generation.categories_enabled" type="checkbox" />
           {{ t`分组抽取` }}
         </label>
-        <label class="choice-check" :title="t`结果随机打乱，避免固定条目总在开头`">
+        <label
+          class="choice-check"
+          :title="
+            t`开启时随机打乱候选顺序；关闭时按条目库显示顺序（分组 + 组内）发送，并要求 AI 按此顺序输出；固定条目仍在最前`
+          "
+        >
           <input v-model="globalStore.settings.generation.shuffle_final" type="checkbox" />
           {{ t`打乱结果` }}
         </label>

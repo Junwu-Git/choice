@@ -22,6 +22,7 @@ import {
   renderExistingTable,
   resolveAnalysisHistoryStart,
   shouldAutoAnalyzeNow,
+  shouldSkipKnowledgeRefresh,
   type KnowledgePatch,
 } from '@/core/knowledge-report';
 import {
@@ -1147,6 +1148,41 @@ describe('shouldAutoAnalyzeNow — 自动重跑间隔节流', () => {
 
   it('非有限值兜底为放行（设置损坏不拖死自动分析）', () => {
     expect(shouldAutoAnalyzeNow(10, 12, Number.NaN, false)).toBe(true);
+  });
+});
+
+describe('shouldSkipKnowledgeRefresh — 编辑只记账，不额外发请求', () => {
+  const base = {
+    needFullWindow: false,
+    stale: false,
+    delta: false,
+    basedOnMessage: 10,
+    messageCount: 10,
+    intervalRounds: 10,
+  };
+
+  it('报告新鲜且没有编辑时跳过', () => {
+    expect(shouldSkipKnowledgeRefresh(base)).toBe(true);
+  });
+
+  it('编辑过（needFullWindow）即使指纹没变也视为过期，下一次必须跑完整窗口', () => {
+    expect(shouldSkipKnowledgeRefresh({ ...base, needFullWindow: true })).toBe(false);
+  });
+
+  it('编辑后的下一次 received 仍按间隔排队，改字本身不会立即触发请求', () => {
+    const editedReceived = { ...base, needFullWindow: true, delta: true };
+    // 落后 2 条（1 轮）< 10 轮：继续等，标记保留
+    expect(shouldSkipKnowledgeRefresh({ ...editedReceived, messageCount: 12 })).toBe(true);
+    // 落后 20 条（10 轮）：到点，按完整窗口补算
+    expect(shouldSkipKnowledgeRefresh({ ...editedReceived, messageCount: 30 })).toBe(false);
+  });
+
+  it('报告过期 + 新回复：仍受间隔节流', () => {
+    expect(shouldSkipKnowledgeRefresh({ ...base, stale: true, delta: true, messageCount: 14 })).toBe(true);
+  });
+
+  it('删除/滑动/载入（delta=false）不受间隔约束', () => {
+    expect(shouldSkipKnowledgeRefresh({ ...base, stale: true, delta: false, messageCount: 11 })).toBe(false);
   });
 });
 

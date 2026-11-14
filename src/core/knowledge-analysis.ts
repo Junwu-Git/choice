@@ -6,7 +6,7 @@
  * 静态规则（knowledge_boundary 模块）只能约束「不许越界」却给不出具体边界，
  * 实测仍会写出全知候选。把判定提前固化成一个可查看、可复用的表，注入时只给结论。
  * 开启 knowledge.merge_with_generation 后，本轮分析改由 generateOptions 顺带完成
- * （省一次上下文发送），本模块只保留编辑/删除/滑动等不伴随生成的事件与手动入口。
+ * （省一次上下文发送），本模块只保留删除/滑动等不伴随生成的事件与手动入口。
  *
  * 为什么是增量补丁而不是整表重写：报告随聊天长期存在，整表重写有两个硬伤——
  * ① 请求输出随表变大线性增长；② 早期事件滚出上下文窗口后，模型看不到出处就会把
@@ -28,7 +28,7 @@ import {
   parseKnowledgeResponse,
   renderExistingTable,
   resolveAnalysisHistoryStart,
-  shouldAutoAnalyzeNow,
+  shouldSkipKnowledgeRefresh,
 } from '@/core/knowledge-report';
 import {
   commitKnowledgePatches,
@@ -50,22 +50,20 @@ export { isKnowledgeReportStale, knowledgeDriftMessages, knowledgeState };
 
 let knowledgeController: AbortController | null = null;
 
-/** 防抖调度状态：编辑/删除/滑动在短时间连续发生时只发一次请求。
+/** 防抖调度状态：删除/滑动/载入在短时间连续发生时只发一次请求。
  *  与 loading 分开记——分析在途时再来事件，结束后补跑一次（pending 标志）。 */
 const EDIT_DEBOUNCE_MS = 1200;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 /** 尚未触发的防抖任务参数：新事件到来时要把它们合并进来，不能直接丢掉。 */
-let timerForce = false;
 let timerDelta = false;
-/** 在途期间攒下的补跑参数：force 表示「指纹覆盖不到的编辑」，delta 表示「只发新消息」。 */
+/** 在途期间攒下的补跑参数：delta 表示「只发新消息」。 */
 let pendingReason: RefreshReason | null = null;
-let pendingForce = false;
 let pendingDelta = false;
 /** 合并请求在途时挂起的事件：合并请求结束后由生成链路调用 flush 补跑
  *  （knowledge-analysis 不能反向 import generator：generator 已依赖本模块的快照语义）。 */
-let mergePending: { reason: RefreshReason; force: boolean; delta: boolean } | null = null;
+let mergePending: { reason: RefreshReason; delta: boolean } | null = null;
 
-type RefreshReason = 'received' | 'edited' | 'deleted' | 'swiped' | 'loaded';
+type RefreshReason = 'received' | 'deleted' | 'swiped' | 'loaded';
 
 const ANALYSIS_USER_FIRST = `请分析以上对话与设定，输出 {{user}} 当前的知识边界表（首次分析，输出完整表）。只输出 JSON 对象。`;
 
@@ -195,8 +193,8 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false, d
   const includeHidden = windowMode === 'rounds';
 
   // 增量窗口：只有「收到新回复」时只发上次分析之后的消息（保留一条重叠）。
-  // 旧事实已经在已有表与摘要里；编辑/删除/滑动/载入更多历史都可能改到旧楼层，
-  // 必须走完整窗口，否则被改的早期信息永远进不了判定。
+  // 旧事实已经在已有表与摘要里；删除/滑动/载入更多历史，以及编辑过楼层后的下一次分析，
+  // 都可能改到旧楼层，必须走完整窗口，否则被改的早期信息永远进不了判定。
   const historyStart = resolveAnalysisHistoryStart(
     historyWindowStart(contextRounds, windowMode, includeHidden),
     cs.settings.knowledge_report.based_on_message,
@@ -276,15 +274,13 @@ export async function analyzeKnowledgeBoundary(manual = true, rebuild = false, d
     knowledgeController = null;
     knowledgeState.loading = false;
     knowledgeState.tick += 1;
-    // 在途期间有新事件：结束后补跑一次（只补一次，避免连续编辑时无限追请求）
+    // 在途期间有新事件：结束后补跑一次（只补一次，避免连续操作时无限追请求）
     if (pendingReason) {
       const reason = pendingReason;
-      const force = pendingForce;
       const pendingDeltaValue = pendingDelta;
       pendingReason = null;
-      pendingForce = false;
       pendingDelta = false;
-      scheduleKnowledgeRefresh(reason, force, pendingDeltaValue);
+      scheduleKnowledgeRefresh(reason, pendingDeltaValue);
     }
   }
 }
@@ -294,31 +290,20 @@ export function cancelKnowledgeAnalysis(): void {
   // loading 复位交给 analyzeKnowledgeBoundary 的 finally（与 cancelPoolGen 同款约定）
 }
 
-function shouldSkipRefresh(force = false, delta = true): boolean {
+function shouldSkipRefresh(delta = true): boolean {
   const gs = useGlobalSettingsStore();
   if (!gs.settings.knowledge.enabled || !gs.settings.knowledge.auto_analyze) return true;
   if (!resolveCustomApi(gs.settings.active_api_id, gs.settings.apis)) return true;
-  // force 只跳过「报告是否过期」这一项：指纹覆盖不到的早期编辑不会改变过期判定，
-  // 但功能开关与 API 配置仍然必须尊重。force 路径不设间隔节流——它的语义是
-  // 「内容变了」，立即重跑。
-  if (force) return false;
-  if (!isKnowledgeReportStale()) return true;
-  // 间隔节流只作用于「新消息自然增长」的增量 received 路径：
-  // 报告落后不足 interval 轮时先跳过，省一次后台 API 调用。编辑/删除/滑动等
-  // 内容变化事件（force / 完整窗口）不受间隔约束——它们改变的是既有楼层内容，
-  // 越晚重跑旧结论在新剧情面前越危险。
-  if (
-    delta &&
-    !shouldAutoAnalyzeNow(
-      driftBaseOfReport(),
-      currentMessageCount(),
-      gs.settings.knowledge.auto_refresh_interval,
-      false,
-    )
-  ) {
-    return true;
-  }
-  return false;
+  // 编辑记账（needFullWindow）不排请求，但下一次分析必须看到它：视为过期并改用完整窗口；
+  // 间隔节流仍按传入的 delta 判定（只有 received 是「新消息自然增长」）。
+  return shouldSkipKnowledgeRefresh({
+    needFullWindow: knowledgeState.fullWindowNeeded,
+    stale: isKnowledgeReportStale(),
+    delta,
+    basedOnMessage: driftBaseOfReport(),
+    messageCount: currentMessageCount(),
+    intervalRounds: gs.settings.knowledge.auto_refresh_interval,
+  });
 }
 
 /** 间隔判定用的报告基线：based_on_message=0（从未分析/只有手动条目）视为「必须立即建基准」，
@@ -338,16 +323,27 @@ export function isKnowledgeMergeActive(): boolean {
   );
 }
 
+/** 聊天楼层被编辑：只记账，不立即发分析请求。
+ *  用户改字/润色不该额外烧一次后台 API；下一次自动分析（新回复到点或手动）改用完整
+ *  窗口，把被改的旧楼层重新读进来。未抽样早期楼层不改变指纹，这个标记同时让调度层把它
+ *  视为「过期」，否则报告会永远停在旧结论。 */
+export function noteKnowledgeContentEdited(): void {
+  knowledgeState.editSeq += 1;
+  knowledgeState.fullWindowNeeded = true;
+  // 聊天数组不是响应式：面板的过期提示不会自己发现内容变了
+  knowledgeState.tick += 1;
+}
+
 /** 自动刷新调度：
  *  - received（新回复）立即执行，保持与选项生成并行——本轮用旧报告，下一轮用新报告；
  *    这是唯一走增量窗口的事件（只发上次分析之后的新消息）；
- *  - edited / deleted / swiped / loaded 合并防抖，避免连续编辑/滚动加载逐字发请求；
+ *  - deleted / swiped / loaded 合并防抖，避免连续删除/滚动加载逐次发请求；
  *    这些事件可能改到旧楼层，必须用完整窗口；
- *  - force=true 表示「指纹覆盖不到的早期楼层被编辑」，只跳过过期判定，仍需功能开关/API；
- *  - 尚未触发的防抖任务与在途 pending 都会合并 force/完整窗口需求（force 取 OR、delta 取 AND），
- *    避免后续的 received 把之前那次「必须完整窗口」的编辑需求冲掉；结束后按合并结果补跑一次。
+ *  - 编辑不进本函数（见 noteKnowledgeContentEdited）：只标记 fullWindowNeeded，不排请求；
+ *  - 尚未触发的防抖任务与在途 pending 都会合并「完整窗口」需求（delta 取 AND），
+ *    避免后续的 received 把之前那次完整窗口需求冲掉；结束后按合并结果补跑一次。
  *  不 await 是因为 ST 的 eventSource.emit 串行 await 监听器。 */
-export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, delta = reason === 'received'): void {
+export function scheduleKnowledgeRefresh(reason: RefreshReason, delta = reason === 'received'): void {
   try {
     // 合并请求在途：本次独立分析与合并请求争同一个修订号，后到者会被并发守卫丢弃、
     // 白耗一次上下文。事件先挂起，等合并请求结束后由生成链路 flush 补跑。
@@ -355,23 +351,20 @@ export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, d
       mergePending = mergePending
         ? {
             reason,
-            force: mergePending.force || force,
             // 只要有一个待处理事件需要完整窗口，补跑就必须用完整窗口（AND）
             delta: mergePending.delta && delta,
           }
-        : { reason, force, delta };
+        : { reason, delta };
       return;
     }
-    // 继承尚未触发的防抖任务：新事件不能把它的 force 或「完整窗口」需求丢掉。
-    // 例如早期未抽样楼层刚被编辑（force + 完整窗口），随后又来了一条新回复——
-    // 若直接按 received 的增量窗口跑，那次编辑就永远进不了判定。
+    // 继承尚未触发的防抖任务：新事件不能把它的「完整窗口」需求丢掉。
+    // 例如删除楼层（完整窗口）的防抖还没触发，随后又来了一条新回复——若直接按
+    // received 的增量窗口跑，删楼影响到的旧结论就永远进不了判定。
     if (refreshTimer) {
-      force = force || timerForce;
       delta = delta && timerDelta;
     }
-    if (shouldSkipRefresh(force, delta)) return;
+    if (shouldSkipRefresh(delta)) return;
     if (knowledgeState.loading) {
-      pendingForce = pendingForce || force;
       // 只要有一个待处理事件需要完整窗口，补跑就必须用完整窗口（AND，不是 OR）。
       pendingDelta = pendingReason === null ? delta : pendingDelta && delta;
       pendingReason = reason;
@@ -380,23 +373,21 @@ export function scheduleKnowledgeRefresh(reason: RefreshReason, force = false, d
     if (refreshTimer) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
-      timerForce = false;
       timerDelta = false;
     }
     if (reason === 'received') {
-      void analyzeKnowledgeBoundary(false, false, delta);
+      // 编辑过楼层时下一次分析必须用完整窗口：delta 只是「省上下文」的优化，
+      // 不能拿它换掉被改旧楼层的重读。
+      void analyzeKnowledgeBoundary(false, false, delta && !knowledgeState.fullWindowNeeded);
       return;
     }
-    timerForce = force;
     timerDelta = delta;
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
-      const carriedForce = timerForce;
       const carriedDelta = timerDelta;
-      timerForce = false;
       timerDelta = false;
-      if (shouldSkipRefresh(carriedForce, carriedDelta)) return;
-      void analyzeKnowledgeBoundary(false, false, carriedDelta);
+      if (shouldSkipRefresh(carriedDelta)) return;
+      void analyzeKnowledgeBoundary(false, false, carriedDelta && !knowledgeState.fullWindowNeeded);
     }, EDIT_DEBOUNCE_MS);
   } catch (error) {
     console.error('[Choice] scheduleKnowledgeRefresh failed', error);
@@ -409,12 +400,12 @@ export function resetKnowledgeScheduling(): void {
     clearTimeout(refreshTimer);
     refreshTimer = null;
   }
-  timerForce = false;
   timerDelta = false;
   pendingReason = null;
-  pendingForce = false;
   pendingDelta = false;
   mergePending = null;
+  // 「需要完整窗口」属于旧聊天；新聊天按自己的报告重新判定
+  knowledgeState.fullWindowNeeded = false;
   cancelKnowledgeAnalysis();
   knowledgeState.tick += 1;
 }
@@ -422,13 +413,13 @@ export function resetKnowledgeScheduling(): void {
 /** 合并请求结束后补跑挂起的事件。
  *
  *  由生成链路在 generateOptions 返回后调用（见 panel-mount / ActionOptionsPanel）：
- *  合并请求在途期间到达的事件（新一轮回复、编辑、滑动）在此补跑一次独立分析。
+ *  合并请求在途期间到达的事件（新一轮回复、删除、滑动）在此补跑一次独立分析。
  *  报告若已被合并请求更新到最新，调度层的过期判定会自然跳过（不重复请求）。 */
 export function flushKnowledgeRefreshAfterGeneration(): void {
   if (!mergePending) return;
-  const { reason, force, delta } = mergePending;
+  const { reason, delta } = mergePending;
   mergePending = null;
-  scheduleKnowledgeRefresh(reason, force, delta);
+  scheduleKnowledgeRefresh(reason, delta);
 }
 
 /** 兼容旧入口：MESSAGE_RECEIVED 的自动分析（内部走统一调度）。
@@ -437,5 +428,5 @@ export function flushKnowledgeRefreshAfterGeneration(): void {
  *  不增加楼层数，增量起点（based_on_message - 1）会落到末尾，只能看到最后一条，
  *  必须用完整窗口才能复核被替换分支留下的旧结论。 */
 export function maybeAutoAnalyze(fullWindow = false): void {
-  scheduleKnowledgeRefresh('received', false, !fullWindow);
+  scheduleKnowledgeRefresh('received', !fullWindow);
 }

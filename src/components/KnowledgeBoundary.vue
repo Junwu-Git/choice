@@ -99,14 +99,14 @@
         <span class="choice-toggle-custom"></span>
         <span class="choice-toggle-label">
           <strong>{{ t`自动刷新` }}</strong>
-          <small>{{ t`AI 回复后自动重跑；编辑、删除楼层与切换分支也会合并刷新` }}</small>
+          <small>{{ t`AI 回复后按间隔自动重跑；编辑消息不额外发请求，下次分析按完整窗口补算` }}</small>
         </span>
       </label>
       <label
         v-if="gs.settings.knowledge.auto_analyze"
         class="choice-field choice-knowledge-interval"
         :title="
-          t`报告落后不足 N 轮时先不重跑：多数轮次剧情没有边界变化，重跑只是白耗一次后台 API 调用。到点后一次性补算跨过的轮次（完整窗口）；编辑、删除、切换分支不受间隔约束，仍立即重跑`
+          t`报告落后不足 N 轮时先不重跑：多数轮次剧情没有边界变化，重跑只是白耗一次后台 API 调用。到点后一次性补算跨过的轮次（完整窗口）；编辑消息只标记过期，随下一次自动分析补算；删除楼层、切换分支不受间隔约束，仍立即重跑`
         "
       >
         <span>{{ t`自动重跑间隔` }}</span>
@@ -541,19 +541,25 @@ const statusText = computed(() => {
     : t`更新于 ${hh}:${mm} · 修订 r${r.revision}`;
 });
 
-/** 过期判定：楼层数或内容指纹变了都算过期。knowledgeState.tick 用来在分析/调度后
+/** 过期判定：楼层数或内容指纹变了都算过期；编辑只记账时（fullWindowNeeded）
+ *  指纹可能没变（早期未抽样楼层），同样算过期。knowledgeState.tick 用来在分析/调度后
  *  强制重算（聊天数组不是 Vue 响应式，computed 不会自己发现内容变了）。
  *  从未跑过分析的报告（based_on_message=0，只有手动条目）不提示过期——
  *  它本来就没有基准楼层，提示「有新消息」会误导。 */
 const stale = computed(() => {
   void knowledgeState.tick;
-  return report.value.based_on_message > 0 && isKnowledgeReportStale();
+  return report.value.based_on_message > 0 && (isKnowledgeReportStale() || knowledgeState.fullWindowNeeded);
 });
 
 const staleText = computed(() => {
   void knowledgeState.tick;
   const diff = knowledgeDriftMessages();
-  if (diff <= 0) return t`聊天楼层内容有变动，报告可能过期`;
+  if (diff <= 0) {
+    // 编辑只记账、不立即发请求：自动分析开着时下一次到点会补算，关着才需要手动
+    return gs.settings.knowledge.auto_analyze
+      ? t`聊天内容有改动，下次自动分析会按完整窗口补算`
+      : t`聊天楼层内容有变动，报告可能过期，建议重新分析`;
+  }
   // 间隔节流期内提示「到点自动重跑」而非「建议重新分析」——自动分析开着时
   // 用户什么都不用做，旧的「建议」文案会让人误以为必须手动点一次
   if (

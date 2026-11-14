@@ -9,11 +9,12 @@ import {
   isKnowledgeMergeActive,
   knowledgeState,
   maybeAutoAnalyze,
+  noteKnowledgeContentEdited,
   resetKnowledgeScheduling,
   scheduleKnowledgeRefresh,
 } from '@/core/knowledge-analysis';
 import { isMessageCoveredByFingerprint } from '@/core/knowledge-report';
-import { knowledgeFingerprintScope } from '@/core/knowledge-state';
+import { isKnowledgeReportStale, knowledgeFingerprintScope } from '@/core/knowledge-state';
 import { pinia } from '@/pinia';
 import { useGlobalSettingsStore } from '@/store/global-settings';
 import { usePanelStateStore } from '@/store/panel-state';
@@ -183,13 +184,18 @@ export function initPanelMount() {
   });
   eventSource.on(event_types.MESSAGE_UPDATED, (messageId: number) => {
     safeResync();
-    // 编辑楼层内容：只改扩展自身元数据时指纹不变，调度内部会跳过。
-    // 但早期未抽样楼层不在指纹里，必须按楼层位置强制分析，否则「谁告诉了主角什么」
-    // 被改掉后报告会一直停在旧结论。覆盖检查与指纹同口径（轮数模式含隐藏楼）。
+    // 编辑只记账，不立即发分析请求：改字/润色不该额外烧一次后台 API。
+    // 覆盖到的楼层改了内容 → 指纹过期；早期未抽样楼层不参与指纹，必须按楼层位置
+    // 记下「需要完整窗口」，下一次自动分析才会重读被改的旧楼层。
+    // 取消编辑（酒馆同样发 MESSAGE_UPDATED）不改变内容：指纹没变就不记账，避免假过期。
     const covered =
       typeof messageId !== 'number' ||
       isMessageCoveredByFingerprint(chat as unknown as StChatMessage[], messageId, knowledgeFingerprintScope());
-    scheduleKnowledgeRefresh('edited', !covered);
+    if (!covered || isKnowledgeReportStale()) {
+      noteKnowledgeContentEdited();
+    } else {
+      knowledgeState.tick += 1;
+    }
   });
   eventSource.on(event_types.USER_MESSAGE_RENDERED, () => {
     safeResync();

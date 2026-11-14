@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolvePool } from '@/core/pool-resolver';
+import { resolvePool, sortPoolByLibraryOrder } from '@/core/pool-resolver';
 import type { PoolEntry } from '@/type/settings';
 
 let seq = 0;
@@ -32,6 +32,12 @@ afterEach(() => {
 // Math.random 恒返 0.999 时：shuffled 恒为恒等排列（floor(0.999×(i+1)) = i），
 // weightedPick 的 key = rand^(1/w) 随 w 单调升 → 稳定排序后恒选权重最高者
 const mockDeterministic = () => vi.spyOn(Math, 'random').mockReturnValue(0.999);
+
+/** 按给定序列依次返回随机数（用尽后重复最后一个），用于构造指定的 Fisher-Yates 结果。 */
+const mockRandomSequence = (...values: number[]) => {
+  let i = 0;
+  return vi.spyOn(Math, 'random').mockImplementation(() => values[Math.min(i++, values.length - 1)]);
+};
 
 describe('resolvePool 基本结构', () => {
   it('固定条目全部保留，非固定抽取量 = count − pinned，两者不重叠、不重复', () => {
@@ -152,5 +158,55 @@ describe('分类轮询抽取', () => {
     const pool = [...Array.from({ length: 4 }, () => entry({ category: 'A' })), entry({ category: 'B' })];
     const { drawn } = run(pool, { count: 4, categoriesEnabled: false });
     expect(drawn.filter(e => e.category === 'B')).toHaveLength(0);
+  });
+});
+
+describe('sortPoolByLibraryOrder — 条目库显示顺序', () => {
+  it('命名分组按 group_order，未收录分组按名称补后，未分组恒最后；组内保持原顺序', () => {
+    const pool = [
+      entry({ id: 'u1', category: '' }),
+      entry({ id: 'b1', category: 'B' }),
+      entry({ id: 'a1', category: 'A' }),
+      entry({ id: 'a2', category: 'A' }),
+      entry({ id: 'c1', category: 'C' }),
+      entry({ id: 'b2', category: 'B' }),
+    ];
+    expect(sortPoolByLibraryOrder(pool, ['B', 'A']).map(e => e.id)).toEqual(['b1', 'b2', 'a1', 'a2', 'c1', 'u1']);
+  });
+
+  it('group_order 的空串/重复/已不存在分组被忽略', () => {
+    const pool = [entry({ id: 'a1', category: 'A' }), entry({ id: 'b1', category: 'B' }), entry({ id: 'u1' })];
+    expect(sortPoolByLibraryOrder(pool, ['', 'A', 'A', 'missing', 'B']).map(e => e.id)).toEqual(['a1', 'b1', 'u1']);
+  });
+
+  it('分类名去空白后归组（与条目库分组同口径）', () => {
+    const pool = [entry({ id: 'a1', category: ' A ' }), entry({ id: 'b1', category: 'B' })];
+    expect(sortPoolByLibraryOrder(pool, ['A']).map(e => e.id)).toEqual(['a1', 'b1']);
+  });
+});
+
+describe('关闭打乱结果时的候选顺序', () => {
+  it('分类轮询先抽到 A2、B1 也排回条目库顺序', () => {
+    mockDeterministic();
+    const pool = [
+      entry({ id: 'a1', category: 'A' }),
+      entry({ id: 'a2', category: 'A' }),
+      entry({ id: 'a3', category: 'A' }),
+      entry({ id: 'b1', category: 'B' }),
+    ];
+    const { drawn } = run(pool, { count: 3, categoriesEnabled: true });
+    expect(drawn.map(e => e.id)).toEqual(['a1', 'a2', 'b1']);
+  });
+
+  it('固定条目 trim 随机截断后仍按条目库顺序返回', () => {
+    // 截断先打乱：[p1,p2,p3] → [p3,p2,p1]，取前 2 = [p3,p2]；再排回库顺序
+    mockRandomSequence(0, 0.9);
+    const pool = [
+      entry({ id: 'p1', pinned: true }),
+      entry({ id: 'p2', pinned: true }),
+      entry({ id: 'p3', pinned: true }),
+    ];
+    const { pinned } = run(pool, { count: 2, pinnedOverflow: 'trim' });
+    expect(pinned.map(e => e.id)).toEqual(['p2', 'p3']);
   });
 });

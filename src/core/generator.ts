@@ -1238,11 +1238,15 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     // thinking + options，会把 knowledge_patch 挤掉）。stale 很关键：报告新鲜时没有
     // 增量可算，追加任务只会白增输出长度。
     // 快照在发请求前拍下，落库时用同一套并发守卫（见 knowledge-state）。
-    // 报告是否落后（合并判定与注入提示共用，避免重复算一次聊天指纹）
-    const knowledgeStale = gs.settings.knowledge.enabled ? isKnowledgeReportStale() : false;
+    // 报告是否落后（合并判定与注入提示共用，避免重复算一次聊天指纹）。
+    // fullWindowNeeded 也要算进来：编辑未抽样早期楼层不改变指纹，但它同样让报告过期，
+    // 不认这个标记的话合并模式永远等不到那次补算。
+    const knowledgeStale = gs.settings.knowledge.enabled
+      ? isKnowledgeReportStale() || knowledgeState.fullWindowNeeded
+      : false;
     // 间隔节流与独立分析的 received 路径同口径：未到间隔不追加合并任务，省的是
-    // 同一份输出 token（合并任务的补丁块）；编辑/删除/滑动等 force 事件已由调度层
-    // 转成独立分析，不会走到这里。未到间隔时注入侧照常带 stale 提示（见下方注入）。
+    // 同一份输出 token（合并任务的补丁块）；删除/滑动等完整窗口事件已由调度层转成
+    // 独立分析，不会走到这里。未到间隔时注入侧照常带 stale 提示（见下方注入）。
     const knowledgeDue =
       knowledgeStale &&
       shouldAutoAnalyzeNow(
@@ -1340,6 +1344,15 @@ export async function generateOptions(_target: GenerateTarget): Promise<ChoiceGe
     if (gs.settings.dice.enabled && gs.settings.dice.low_roll) {
       appendRuntimeLine(
         t`判定方向（COC 百分位，覆盖前文「越难标得越高」的说明）：标题第三段的需求值代表达成该行动所需的能力/技艺水平（0-100），掷出 ≤ 需求值才算成功——行动对能力要求越高标得越低，越有把握标得越高。`,
+      );
+    }
+
+    // 关闭「打乱结果」时让输出顺序对齐条目库：候选列表已由 resolvePool 排回库顺序，
+    // 但模型仍可能自行调序；这句是它读到的最后一条顺序指令（合并任务仍排在其后）。
+    // 分区语义不变：固定条目仍先输出，候选按条目池段内顺序随后。
+    if (!gen.shuffle_final && (pool.pinned.length > 0 || pool.drawn.length > 0)) {
+      appendRuntimeLine(
+        t`候选素材已按条目库顺序给出：先按「固定条目」段中出现的顺序输出固定条目的候选，再按「候选条目池」段中出现的顺序输出其余候选；自行补充的候选放在最后。不要打乱这个顺序。`,
       );
     }
 

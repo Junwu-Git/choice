@@ -1263,7 +1263,7 @@ export function renderExistingTable(entries: KnowledgeReportEntry[], revision = 
  *  哈希开销可忽略）；更早的楼层按步长抽样（每 8 条取一条的头 80 字）——长聊里改掉
  *  早期一条「谁告诉了主角什么」同样必须触发重算，但逐条全量哈希会让每次事件都扫整个
  *  聊天。抽样点之外的早期编辑不会改变指纹，由 `isMessageCoveredByFingerprint` 在
- *  MESSAGE_UPDATED 时按楼层位置强制分析兜底。 */
+ *  MESSAGE_UPDATED 时标记「需要完整窗口」，下一次分析补算。 */
 const FINGERPRINT_TAIL = 12;
 const FINGERPRINT_EARLY_STEP = 8;
 const FINGERPRINT_EARLY_SNIPPET = 80;
@@ -1292,11 +1292,11 @@ export function computeChatFingerprint(
 }
 
 /** 原始楼层是否被指纹覆盖（尾部逐条全文 + 早期抽样点）。
- *  未覆盖的楼层被编辑时指纹不会变化，调度层必须强制分析，否则「谁告诉了主角什么」
- *  这类早期信息被改掉后，报告会一直停留在旧结论。
+ *  未覆盖的楼层被编辑时指纹不会变化，调度层必须记下「需要完整窗口」，否则「谁告诉了
+ *  主角什么」这类早期信息被改掉后，报告会一直停留在旧结论。
  *  includeHidden=false（缺省）：隐藏楼不参与指纹，视为已覆盖——强制分析无意义，
  *  分析窗口根本不含它们。includeHidden=true（分析轮数模式）：隐藏楼参与指纹，
- *  未覆盖的隐藏楼被编辑同样必须强制分析。 */
+ *  未覆盖的隐藏楼被编辑同样要记下「需要完整窗口」。 */
 export function isMessageCoveredByFingerprint(
   messages: Array<{ is_system?: boolean }>,
   rawIndex: number,
@@ -1313,7 +1313,8 @@ export function isMessageCoveredByFingerprint(
 
 /** 增量分析的历史起点：只发送上次分析之后的新消息（保留一条重叠）。
  *  `based_on_message` 是消息总数（原始下标），不是楼层号。只有 `received` 用增量：
- *  编辑/删除/滑动/载入更多历史都可能改到旧楼层，必须走完整窗口，否则改动会漏判。
+ *  删除/滑动/载入更多历史，以及编辑过楼层后的下一次分析，都可能改到旧楼层，
+ *  必须走完整窗口，否则改动会漏判。
  *  无可见历史（fullStart < 0）时从 0 开始；`basedOn` 超出当前消息数（删楼）时回退完整窗口。 */
 export function resolveAnalysisHistoryStart(
   fullStart: number,
@@ -1328,8 +1329,8 @@ export function resolveAnalysisHistoryStart(
 /** 自动分析是否已到重跑间隔：报告落后当前聊天累计 `intervalRounds` 轮新对话才触发，
  *  减少无边界变化轮次的后台 API 调用。一轮 = 用户消息 + 回复共 2 条（酒馆楼层数口径），
  *  received 只在回复到达时触发，正常流程下落后条数恰为偶数。
- *  只在「新消息自然增长」的 received 路径节流：编辑/删除/滑动（force/fullWindow）
- *  语义是「内容变了」，必须立即重跑，不排队。
+ *  只在「新消息自然增长」的 received 路径节流：删除/滑动（完整窗口）语义是
+ *  「内容变了」，必须立即重跑，不排队；编辑只记账，下一次 received 到点再跑。
  *  从未分析（basedOn=0）不节流——首份报告是后续一切判断的基准，越早建立越好。
  *  删楼导致 drift 为负时同样放行：楼层数回退意味着内容结构变化，宁多跑不漏判。
  *  intervalRounds<=1 恒放行 = 每轮都分析的旧行为。 */
@@ -1345,6 +1346,25 @@ export function shouldAutoAnalyzeNow(
   // 删楼让当前消息数低于分析基线：内容已回退，越晚重跑越危险，立即放行
   if (drift < 0) return true;
   return drift >= intervalRounds * 2;
+}
+
+/** 一次自动刷新是否该跳过（只判内容维度；功能开关与 API 配置由调度层先判）。
+ *  needFullWindow=true 表示聊天楼层被编辑过：未抽样早期楼层的编辑不改变指纹，但下一次
+ *  分析必须用完整窗口重读，否则「谁告诉了主角什么」被改掉后报告会停在旧结论。
+ *  间隔节流只认 delta（「新消息自然增长」的 received）：编辑只记账、不排请求，下一次
+ *  received 仍按间隔到点再跑——不会因为改了一个字就额外烧一次后台 API 调用。 */
+export function shouldSkipKnowledgeRefresh(params: {
+  needFullWindow: boolean;
+  stale: boolean;
+  delta: boolean;
+  basedOnMessage: number;
+  messageCount: number;
+  intervalRounds: number;
+}): boolean {
+  if (!params.needFullWindow && !params.stale) return true;
+  return (
+    params.delta && !shouldAutoAnalyzeNow(params.basedOnMessage, params.messageCount, params.intervalRounds, false)
+  );
 }
 
 /** 导出格式版本：导入侧据此拒绝未来格式，避免把不认识的字段静默吞掉。 */

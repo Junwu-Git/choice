@@ -22,9 +22,11 @@ import type { KnowledgeReportEntry } from '@/type/settings';
 
 /** 分析请求状态：面板据此切「分析/取消」按钮，与 generatorState/poolGenState 分离。
  *  tick 在每次调度/分析完成后自增，供面板的过期提示重新计算（聊天数组不是响应式）。
+ *  fullWindowNeeded 表示聊天楼层被编辑过、下一次分析必须用完整窗口：编辑只记账不排请求，
+ *  未抽样早期楼层的改动又不会改变指纹，没有这个标记下一次增量分析不会重读被改的旧楼层。
  *  放在本模块而不是 knowledge-analysis：合并请求在 generator 里落库后同样要 bump tick，
  *  而 generator 不能 import knowledge-analysis（后者依赖 generator 的 buildChatHistory）。 */
-export const knowledgeState = reactive({ loading: false, tick: 0 });
+export const knowledgeState = reactive({ loading: false, tick: 0, fullWindowNeeded: false, editSeq: 0 });
 
 export type AnalysisSnapshot = {
   chatIdentity: string;
@@ -35,6 +37,9 @@ export type AnalysisSnapshot = {
    *  落库必须基于「发给模型的那张表」，否则会用新表的 updated_at_message 配旧快照的
    *  messageCount，写出错误的时间戳。 */
   entries: KnowledgeReportEntry[];
+  /** 拍快照时的编辑序号：落库成功时只有序号未变才清 fullWindowNeeded——
+   *  请求期间又有编辑，那次改动不在本次快照里，下一次仍必须用完整窗口。 */
+  editSeq: number;
 };
 
 /** 当前聊天身份快照：请求可能跨秒级，期间切聊天会把结果写进错的聊天。
@@ -70,6 +75,7 @@ export function takeSnapshot(): AnalysisSnapshot {
     fingerprint: computeChatFingerprint(messages, knowledgeFingerprintScope()),
     revision: report.revision,
     entries: report.entries.map(e => ({ ...e, aliases: [...e.aliases], keywords: [...e.keywords] })),
+    editSeq: knowledgeState.editSeq,
   };
 }
 
@@ -164,5 +170,9 @@ export function commitKnowledgePatches(
     entries: merged.entries,
     last_changes: [...merged.changes, ...cs.settings.knowledge_report.last_changes].slice(0, 20),
   };
+  // 完整窗口已落库且期间没有新的编辑：补算完成，清掉「需要完整窗口」标记。
+  // 若请求期间又发生编辑（editSeq 变化），保留标记——那次改动不在本次快照里。
+  // 放在落库唯一出口：独立分析与合并请求共用，否则合并模式下标记永远清不掉。
+  if (snapshot.editSeq === knowledgeState.editSeq) knowledgeState.fullWindowNeeded = false;
   return 'committed';
 }

@@ -60,7 +60,8 @@ const drawByCategories = (pool: PoolEntry[], amount: number): PoolEntry[] => {
   }
   const groups = new Map<string, PoolEntry[]>();
   for (const entry of pool) {
-    const key = entry.category || '';
+    // 与条目库分组同口径：分类名去空白后归组（否则「 A」与「A」会被当成两组）
+    const key = (entry.category || '').trim();
     let group = groups.get(key);
     if (!group) {
       group = [];
@@ -92,6 +93,36 @@ const drawByCategories = (pool: PoolEntry[], amount: number): PoolEntry[] => {
   return drawn;
 };
 
+/** 条目库的显示顺序（与 EntryPoolDialog 的 groupedEntries 同口径）：
+ *  命名分组按 group_order，未收录的分组按名称补后，「未分组」恒最后；组内保持入参顺序。
+ *  为什么需要它：effectivePool 直接来自 master_pool 存储序，分组拖拽后组间顺序会与
+ *  条目库页面不一致；「打乱结果」关闭时用户期望候选按自己在条目库里看到的顺序排列。 */
+export function sortPoolByLibraryOrder(entries: PoolEntry[], groupOrder: readonly string[]): PoolEntry[] {
+  const groups = new Map<string, PoolEntry[]>();
+  for (const entry of entries) {
+    const key = (entry.category || '').trim();
+    let group = groups.get(key);
+    if (!group) {
+      group = [];
+      groups.set(key, group);
+    }
+    group.push(entry);
+  }
+  const orderedKeys: string[] = [];
+  const used = new Set<string>();
+  for (const raw of groupOrder) {
+    const key = raw.trim();
+    // 空串不是用户分组；重复键与已不存在的分组跳过，避免同一组出现两次
+    if (!key || used.has(key) || !groups.has(key)) continue;
+    orderedKeys.push(key);
+    used.add(key);
+  }
+  const rest = [...groups.keys()].filter(key => key !== '' && !used.has(key)).sort((a, b) => a.localeCompare(b));
+  orderedKeys.push(...rest);
+  if (groups.has('')) orderedKeys.push('');
+  return orderedKeys.flatMap(key => groups.get(key) ?? []);
+}
+
 export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
   const pinned = input.effectivePool.filter(entry => entry.pinned);
   const pool = input.effectivePool.filter(entry => !entry.pinned);
@@ -114,11 +145,19 @@ export function resolvePool(input: ResolvePoolInput): ResolvePoolResult {
     ? drawByCategories(pool, drawAmount(pool, remaining, input.oversamplePct))
     : weightedPick(pool, drawAmount(pool, remaining, input.oversamplePct));
 
+  // 关闭「打乱结果」：把抽取/截断后的子集排回 effectivePool 的原始顺序（= 条目库显示顺序）。
+  // 抽取本身仍随机（权重/分类决定选中谁），这里只恢复「选中项之间的相对顺序」。
+  const byPoolOrder = (list: PoolEntry[]): PoolEntry[] => {
+    if (input.shuffleFinal) return list;
+    const order = new Map(input.effectivePool.map((e, index) => [e.id, index]));
+    return [...list].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  };
+
   // shuffleFinal 时分别打乱 pinned/drawn，确保发给 AI 的提示词顺序随机。
   // 不再返回合并的 selected/underflow：唯一消费方 generator 只读 pinned/drawn，
   // 之前的 selected 合并 + 单独 shuffle 属未被消费的死计算
   return {
-    pinned: input.shuffleFinal ? shuffled(pinnedUsed) : pinnedUsed,
-    drawn: input.shuffleFinal ? shuffled(drawn) : drawn,
+    pinned: input.shuffleFinal ? shuffled(pinnedUsed) : byPoolOrder(pinnedUsed),
+    drawn: input.shuffleFinal ? shuffled(drawn) : byPoolOrder(drawn),
   };
 }
